@@ -1,0 +1,68 @@
+name:                examples
+version:             0.1.0.0
+github:              "githubuser/borl-model-based"
+license:             AllRightsReserved
+author:              "Manuel Schneckenreither"
+maintainer:          "manuel.schneckenreither@uibk.ac.at"
+copyright:           "2018 Manuel Schneckenreither"
+
+# Metadata used when publishing your package
+synopsis:            Blackwell optimal reinforcement learning
+category:            Machine Learning
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/borl-model-based#readme>
+
+dependencies:
+  - base >= 4.7 && < 5
+  - containers
+  - random
+  - lens
+
+executables:
+  gridworld:
+    main:                Gridworld.hs
+    other-modules :      Helper
+    source-dirs:         .
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl-model-based
+
+  gridworld-mini:
+    main:                GridworldMini.hs
+    other-modules :      Helper
+    source-dirs:         .
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl-model-based
+
+  multichain:
+    main:                Multichain.hs
+    other-modules :      Helper
+    source-dirs:         .
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl-model-based
+
+  three-states:
+    main:                ThreeStates.hs
+    other-modules :      Helper
+    source-dirs:         .
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl-model-based
+
