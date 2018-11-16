@@ -1,6 +1,6 @@
 name:                examples
 version:             0.1.0.0
-github:              "githubuser/borl-model-based"
+github:              "githubuser/borl"
 license:             AllRightsReserved
 author:              "Manuel Schneckenreither"
 maintainer:          "manuel.schneckenreither@uibk.ac.at"
@@ -13,7 +13,7 @@ category:            Machine Learning
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/borl-model-based#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/borl#readme>
 
 dependencies:
   - base >= 4.7 && < 5
@@ -31,7 +31,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl-model-based
+    - borl
 
   gridworld-mini:
     main:                GridworldMini.hs
@@ -42,7 +42,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl-model-based
+    - borl
 
   multichain:
     main:                Multichain.hs
@@ -53,7 +53,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl-model-based
+    - borl
 
   three-states:
     main:                ThreeStates.hs
@@ -64,5 +64,5 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl-model-based
+    - borl
 

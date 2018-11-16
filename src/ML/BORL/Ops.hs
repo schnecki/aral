@@ -3,7 +3,7 @@
 module ML.BORL.Ops
     ( step
     , stepExecute
-    , chooseNextAction
+    , nextAction
     ) where
 
 import           ML.BORL.Parameters
@@ -21,13 +21,12 @@ import           Text.Printf
 
 
 step :: (Show s, Ord s) => BORL s -> IO (BORL s)
-step borl = chooseNextAction borl >>= stepExecute borl
+step borl = nextAction borl >>= stepExecute borl
 
-stepExecute :: (Show s, Ord s) => BORL s -> (Bool, [(Probability, (Reward, s))]) -> IO (BORL s)
-stepExecute borl (randomAction, possNxtStates) = do
-  rand <- randomRIO (0, 1)
-  when (null possNxtStates) (print "possNxtStates")
-  let (_, (reward, stateNext)) = snd $ foldl' (\(ps, c) c'@(p, _) -> if ps <= rand && ps + p > rand then (ps + p, c') else (ps + p, c)) (0, head possNxtStates) possNxtStates
+stepExecute :: (Show s, Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
+stepExecute borl (randomAction, act@(aNr, action)) = do
+  let state = borl ^. s
+  (reward, stateNext) <- action state
   let mv = borl ^. v
       mw = borl ^. w
       mPsiRho = borl ^. psiStates._1
@@ -35,21 +34,18 @@ stepExecute borl (randomAction, possNxtStates) = do
       mPsiW = borl ^. psiStates._3
       mr0 = borl ^. r0
       mr1 = borl ^. r1
-      state = borl ^. s
   let bta = borl ^. parameters . beta
       alp = borl ^. parameters . alpha
       dlt = borl ^. parameters . delta
       (ga0, ga1) = borl ^. gammas
       period = borl ^. t
-  let vValState = M.findWithDefault 0 state mv
-      vValStateNext = M.findWithDefault 0 stateNext mv
-      rhoVal = case borl ^. rho of
-        Left v     -> v
-        Right mrho -> M.findWithDefault 0 state mrho
-      wValState = M.findWithDefault 0 state mw
-      wValStateNext = M.findWithDefault 0 stateNext mw
-      r0ValState = M.findWithDefault 0 state mr0
-      r1ValState = M.findWithDefault 0 state mr1
+  let vValState = vValue borl state act
+      vValStateNext = vStateValue borl stateNext
+      rhoVal = rhoValue borl state act
+      wValState = wValue borl state act
+      wValStateNext = wStateValue borl state
+      r0ValState = rValue borl RSmall state act
+      r1ValState = rValue borl RBig state act
 
 
   let rhoState | isUnichain borl  = reward + vValStateNext - vValState
@@ -99,24 +95,22 @@ stepExecute borl (randomAction, possNxtStates) = do
     set parameters params' borl'
 
 -- | This function chooses the next action from the current state s and all possible actions.
-chooseNextAction :: (Show s, Ord s) => BORL s -> IO (Bool, [(Probability, (Reward, s))])
-chooseNextAction borl = do
-  let expl = borl ^. parameters . exploration
+nextAction :: (Show s, Ord s) => BORL s -> IO (Bool, ActionIndexed s)
+nextAction borl = do
+  let explore = borl ^. parameters . exploration
   let state = borl ^. s
-  let as = map snd $ filter fst $ zip ((borl ^. actionFilter) state) $ map snd (borl ^. actionList)
+  let as = actionsIndexed borl state
   when (null as) (error "Empty action list")
-  possS <- mapM (\f -> f state) as
   rand <- randomRIO (0, 1)
-  if rand < expl
+  if rand < explore
     then do
       r <- randomRIO (0, length as - 1)
-      return (True, possS !! r)
+      return (True,  as !! r)
     else do
-      when (any (\a -> sum (map fst a) >= 1.001 || sum (map fst a) <= 0.999) possS) (error $ "Transition probabilities must add up to 1 but are: " ++ show (map (map fst) possS))
-      let bestRho | isUnichain borl = possS
-                  | otherwise = head $ groupBy (epsCompare (==) `on` expectedRho borl) $ sortBy (epsCompare compare `on` expectedRho borl) possS
-          bestV = head $ groupBy (epsCompare (==) `on` expectedV borl) $ sortBy (epsCompare compare `on` expectedV borl) bestRho
-          bestE = sortBy (epsCompare compare `on` expectedE borl) bestV
+      let bestRho | isUnichain borl = as
+                  | otherwise = head $ groupBy (epsCompare (==) `on` rhoValue borl state) $ sortBy (epsCompare compare `on` rhoValue borl state) as
+          bestV = head $ groupBy (epsCompare (==) `on` vValue borl state) $ sortBy (epsCompare compare `on` vValue borl state) bestRho
+          bestE = sortBy (epsCompare compare `on` eValue borl state) bestV
       if length bestE > 1
         then do
           r <- randomRIO (0, length bestE - 1)
@@ -128,25 +122,41 @@ chooseNextAction borl = do
       | abs (x - y) <= eps = f 0 0
       | otherwise = y `f` x
 
+actions :: BORL s -> s -> [Action s]
+actions borl state = map snd (actionsIndexed borl state)
 
--- | Expected average value of state s, that is y_{-1}(s).
-expectedRho :: (Ord s) => BORL s -> [(Probability, (Reward, s))] -> Double
-expectedRho borl as =
+actionsIndexed :: BORL s -> s -> [ActionIndexed s]
+actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
+
+
+-- | Expected average value of state-action tuple, that is y_{-1}(s,a).
+rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+rhoValue borl state (a,_) =
   case borl ^. rho of
     Left v  -> v
-    Right m -> sum $ map (\(p,(r,s'))-> p * M.findWithDefault 0 s' m) as
+    Right m -> M.findWithDefault 0 (state,a) m
 
-rhoValue :: (Ord s) => BORL s -> s -> Double
-rhoValue borl s' =   case borl ^. rho of
-    Left v  -> v
-    Right m -> M.findWithDefault 0 s' m
+rhoStateValue :: (Ord s) => BORL s -> s -> Double
+rhoStateValue borl state = case borl ^. rho of
+  Left v  -> v
+  Right m -> maximum $ map (rhoValue borl state) (actionsIndexed borl state)
 
-
--- | Calculates the expected bias value for a given list of action outcomes.
-expectedV :: (Ord s) => BORL s -> [(Probability, (Reward, s))] -> Double
-expectedV borl as = sum $ map (\(p, (r, s')) -> p * (r + M.findWithDefault 0 s' mv)) as
+vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+vValue borl state (a,_) = M.findWithDefault 0 (state, a) mv
   where
     mv = borl ^. v
+
+vStateValue :: (Ord s) => BORL s -> s -> Double
+vStateValue borl state = maximum $ map (vValue borl state) (actionsIndexed borl state)
+
+
+wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+wValue borl state (a,_) = M.findWithDefault 0 (state, a) mw
+  where
+    mw = borl ^. w
+
+wStateValue :: (Ord s) => BORL s -> s -> Double
+wStateValue borl state = maximum $ map (wValue borl state) (actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -156,18 +166,21 @@ data RSize
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-expectedR :: (Ord s) => BORL s -> RSize -> (Probability, (Reward, s)) -> Double
-expectedR borl size (p, (r, s')) = p * (r + ga * M.findWithDefault 0 s' mr)
+rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> Double
+rValue borl size state (a, _) = M.findWithDefault 0 (state, a) mr
   where
-    (mr, ga) =
+    mr =
       case size of
-        RSmall -> (mr0, ga0)
-        RBig   -> (mr1, ga1)
-    mr0 = borl ^. r0
-    mr1 = borl ^. r1
-    (ga0, ga1) = borl ^. gammas
+        RSmall -> borl ^. r0
+        RBig   -> borl ^. r1
+
+-- | Calculates the difference between the expected discounted values.
+eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+eValue borl state act = rValue borl RBig state act - rValue borl RSmall state act
 
 
 -- | Calculates the difference between the expected discounted values.
-expectedE :: (Ord s) => BORL s -> [(Probability, (Reward, s))] -> Double
-expectedE borl xs = sum (map (expectedR borl RBig) xs) - sum (map (expectedR borl RSmall) xs)
+eStateValue :: (Ord s) => BORL s -> s -> Double
+eStateValue borl state = maximum (map (rValue borl RBig state) as) - maximum (map (rValue borl RSmall state) as)
+  where as = actionsIndexed borl state
+

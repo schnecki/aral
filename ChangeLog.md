@@ -1,3 +1,3 @@
-# Changelog for borl-model-based
+# Changelog for borl
 
 ## Unreleased changes
