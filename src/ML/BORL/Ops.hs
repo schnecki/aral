@@ -24,7 +24,7 @@ step :: (Show s, Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl
 
 stepExecute :: (Show s, Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
-stepExecute borl (randomAction, act@(aNr, action)) = do
+stepExecute borl (randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
   (reward, stateNext) <- action state
   let mv = borl ^. v
@@ -46,17 +46,18 @@ stepExecute borl (randomAction, act@(aNr, action)) = do
       wValStateNext = wStateValue borl state
       r0ValState = rValue borl RSmall state act
       r1ValState = rValue borl RBig state act
+  let label = (state,aNr)
 
 
   let rhoState | isUnichain borl  = reward + vValStateNext - vValState
-               | otherwise = (100 * rhoValue borl stateNext + reward) / 101 -- approximation
+               | otherwise = (100 * rhoStateValue borl stateNext + reward) / 101 -- approximation
       -- rhoState = reward
       rhoVal' = (1 - alp) * rhoVal + alp * rhoState
 
       -- multichain use exponential smoothing with g + Pg = 0
       rhoNew = case borl ^. rho of
         Left _  -> Left rhoVal'
-        Right m -> Right (M.insert state rhoVal' m)
+        Right m -> Right (M.insert label rhoVal' m)
       psiRho = rhoVal' - rhoVal                                         -- should converge to 0
 
   let vValState'  = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
@@ -65,8 +66,8 @@ stepExecute borl (randomAction, act@(aNr, action)) = do
   let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
       psiW = vValState' + wValState' - wValStateNext                    -- should converge to 0
 
-  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * M.findWithDefault 0 stateNext mr0)
-      r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * M.findWithDefault 0 stateNext mr1)
+  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rStateValue borl RSmall stateNext)
+      r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rStateValue borl RBig stateNext)
       params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
 
   let (psiValRho,psiValV,psiValW) = borl ^. psis
@@ -82,8 +83,8 @@ stepExecute borl (randomAction, act@(aNr, action)) = do
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
 
   let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-            | otherwise = set v (M.insert state vValStateNew mv) $ set w (M.insert state wValState' mw) $ set rho rhoNew $
-                          set r0 (M.insert state r0ValState' mr0) $ set r1 (M.insert state r1ValState' mr1) borl
+            | otherwise = set v (M.insert label vValStateNew mv) $ set w (M.insert label wValState' mw) $ set rho rhoNew $
+                          set r0 (M.insert label r0ValState' mr0) $ set r1 (M.insert label r1ValState' mr1) borl
 
   -- update values
   return $
@@ -173,6 +174,9 @@ rValue borl size state (a, _) = M.findWithDefault 0 (state, a) mr
       case size of
         RSmall -> borl ^. r0
         RBig   -> borl ^. r1
+
+rStateValue :: (Ord s) => BORL s -> RSize -> s -> Double
+rStateValue borl size state = maximum $ map (rValue borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
 eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double

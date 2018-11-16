@@ -13,7 +13,7 @@ import           Data.List     (find, sortBy)
 import           System.IO
 import           System.Random
 
-askUser :: (Ord s, Show s) => Bool -> [(String,String)] -> [(String, Action s)] -> BORL s -> IO ()
+askUser :: (Ord s, Show s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
 askUser showHelp addUsage cmds ql = do
   let usage =
         sortBy (compare `on` fst) $
@@ -57,4 +57,4 @@ askUser showHelp addUsage cmds ql = do
     _ ->
       case find ((== c) . fst) cmds of
         Nothing -> unless (c == "q") (step ql >>= \x -> print (prettyBORLTables True False True x) >> return x >>= askUser False addUsage cmds)
-        Just (_, cmd) -> cmd (ql ^. s) >>= curry (stepExecute ql) False >>= askUser False addUsage cmds
+        Just (_, cmd) -> stepExecute ql (False, cmd) >>= askUser False addUsage cmds

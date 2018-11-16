@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import           ML.BORL
@@ -21,7 +22,8 @@ main = do
   let rl = mkBORLUnichain initState actions (const $ repeat True) params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
-  where cmds = map (second goalState) [("i",moveUp),("j",moveLeft), ("k",moveDown), ("l", moveRight) ]
+  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] names
+        names = ["up", "down", "left", "right"]
         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 params :: Parameters
@@ -53,44 +55,46 @@ instance Show St where
 
 
 -- Actions
-actions :: [St -> IO [(Probability, (Reward, St))]]
-actions = map goalState [moveUp, moveDown, moveLeft, moveRight]
+actions :: [Action St]
+actions = zipWith Action
+  (map goalState [moveUp, moveDown, moveLeft, moveRight])
+  ["up", "down", "left", "right"]
 
 
-goalState :: Action St -> Action St
+-- goalState :: Action St -> Action St
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   case getCurrentIdx st of
     -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
-    (0, 2) -> return [(1, (10, fromIdx (x,y)))]
+    (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
-  where stepRew = map (second (first (+ 1)))
+  where stepRew = first (+ 1)
 
 
-moveUp :: St -> IO [(Probability, (Reward, St))]
+moveUp :: St -> IO (Reward,St)
 moveUp st
-    | m == 0 = return [(1, (-1, st))]
-    | otherwise = return [(1, (0, fromIdx (m-1,n)))]
+    | m == 0 = return (-1, st)
+    | otherwise = return (0, fromIdx (m-1,n))
   where (m,n) = getCurrentIdx st
 
-moveDown :: St -> IO [(Probability, (Reward, St))]
+moveDown :: St -> IO (Reward,St)
 moveDown st
-    | m == maxX = return [(1,(-1, st))]
-    | otherwise = return [(1, (0, fromIdx (m+1,n)))]
+    | m == maxX = return (-1, st)
+    | otherwise = return (0, fromIdx (m+1,n))
   where (m,n) = getCurrentIdx st
 
-moveLeft :: St -> IO [(Probability, (Reward, St))]
+moveLeft :: St -> IO (Reward,St)
 moveLeft st
-    | n == 0 = return [(1, (-1, st))]
-    | otherwise = return [(1, (0, fromIdx (m,n-1)))]
+    | n == 0 = return (-1, st)
+    | otherwise = return (0, fromIdx (m,n-1))
   where (m,n) = getCurrentIdx st
 
-moveRight :: St -> IO [(Probability, (Reward, St))]
+moveRight :: St -> IO (Reward,St)
 moveRight st
-    | n == maxY = return [(1, (-1, st))]
-    | otherwise = return [(1, (0, fromIdx (m,n+1)))]
+    | n == maxY = return (-1, st)
+    | otherwise = return (0, fromIdx (m,n+1))
   where (m,n) = getCurrentIdx st
 
 

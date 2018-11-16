@@ -1,4 +1,4 @@
-
+{-# LANGUAGE OverloadedStrings #-}
 
 module ML.BORL.Pretty
     ( prettyV
@@ -16,7 +16,7 @@ import           ML.BORL.Type
 import           Control.Arrow      (second)
 import           Control.Lens
 import           Data.Function      (on)
-import           Data.List          (sortBy)
+import           Data.List          (find, sortBy)
 import qualified Data.Map.Strict    as M
 import           Prelude            hiding ((<>))
 import           Text.PrettyPrint   as P
@@ -58,8 +58,11 @@ prettyTable = vcat . prettyTableRows
 prettyTableRows :: (Ord s, Show s) => M.Map s Double -> [Doc]
 prettyTableRows m = map (\(k,v) -> text (show k) <> colon <+> printFloat v) (sortBy (compare `on` fst) $ M.toList m)
 
-prettyTables :: (Ord s, Ord s1, Show s, Show s1) => M.Map s Double -> M.Map s1 Double -> Doc
-prettyTables m1 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows m1) (prettyTableRows m2)
+prettyTablesStateAction :: (Ord s, Ord s1, Show s, Show s1) => M.Map s Double -> M.Map s1 Double -> Doc
+prettyTablesStateAction m1 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows m1) (prettyTableRows m2)
+
+prettyTablesState :: (Ord s, Ord s1, Show s, Show s1) => M.Map s Double -> M.Map s1 Double -> Doc
+prettyTablesState m1 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows m1) (prettyTableRows m2)
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> Doc
@@ -91,21 +94,26 @@ prettyBORLTables t1 t2 t3 borl =
   colon $$
   nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
   (case borl ^. rho of
-     Left v -> text "Rho" <> colon $$ nest 45 (printFloat v)
-     Right m -> prBoolTbls True (text "Rho" $$ nest 40 (text "Psi Rho")) m (borl ^. psiStates . _1)) $$
-  prBoolTbls t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w) $+$
-  prBoolTbls t2 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. psiStates._2) (borl ^. psiStates._3) $$
-  prBoolTbls t2 (text "V+Psi V" $$ nest 40 (text "W + Psi W")) (M.fromList $ zipWith add (M.toList $ borl ^. v) (M.toList $ borl ^. psiStates._2))
-  (M.fromList $ zipWith add (M.toList $ borl ^. w) (M.toList $ borl ^. psiStates._3)) $+$
-  prBoolTbls t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1) $+$
-  prBoolTbls t3 (text "E" $$ nest 40 (text "Visits [%]")) e vis
+     Left v  -> text "Rho" <> colon $$ nest 45 (printFloat v)
+     Right m -> text "Rho" $+$ prettyTable (M.mapKeys prettyAction m)) $$
+  prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w) $+$
+  prBoolTblsState t2 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. psiStates._2) (borl ^. psiStates._3) $$
+  -- prBoolTbls t2 (text "V+Psi V" $$ nest 40 (text "W + Psi W")) (M.fromList $ zipWith add (M.toList $ borl ^. v) (M.toList $ borl ^. psiStates._2))
+  -- (M.fromList $ zipWith add (M.toList $ borl ^. w) (M.toList $ borl ^. psiStates._3)) $+$
+  prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1) $+$
+  (if t3 then text "E" $+$ prettyTable (M.mapKeys prettyAction e) else empty) $+$
+  text "Visits [%]" $+$ prettyTable vis
   where
     e = M.fromList $ zipWith subtr (M.toList $ borl ^. r1) (M.toList $ borl ^. r0)
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     add (k, v1) (_, v2) = (k, v1 + v2)
-    prBoolTbls True h m1 m2 = h $+$ prettyTables m1 m2
-    prBoolTbls False _ _ _  = empty
+    prBoolTblsState True h m1 m2 = h $+$ prettyTablesState m1 m2
+    prBoolTblsState False _ _ _  = empty
+    prBoolTblsStateAction True h m1 m2 = h $+$ prettyTablesStateAction (M.mapKeys prettyAction m1) (M.mapKeys prettyAction m2)
+    prBoolTblsStateAction False _ _ _  = empty
+    prettyAction (s,aIdx) = (s, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+
 
 prettyBORL :: (Ord s, Show s) => BORL s -> Doc
 prettyBORL = prettyBORLTables True True True

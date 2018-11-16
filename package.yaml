@@ -27,6 +27,7 @@ library:
   - random
   - lens
   - pretty
+  - text
 
 
 tests:

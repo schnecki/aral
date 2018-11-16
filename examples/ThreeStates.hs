@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- This is example is a three-state MDP from Mahedevan 1996 (Figure 2).
 
 -- The provided solution is that a) the average reward rho=1 and b) the bias values are
@@ -57,8 +58,10 @@ type R = Double
 type P = Double
 
 -- Actions
-actions :: [St -> IO [(Probability, (Reward, St))]]
-actions = [moveLeft, moveRight]
+actions :: [Action St]
+actions =
+
+  [Action moveLeft "left", Action moveRight "right"]
 
 actionFilter :: St -> [Bool]
 actionFilter A = [True, True]
@@ -66,18 +69,18 @@ actionFilter B = [False, True]
 actionFilter C = [True, False]
 
 
-moveLeft :: St -> IO [(Probability, (Reward, St))]
+moveLeft :: St -> IO (Reward,St)
 moveLeft s =
   return $
   case s of
-    A -> [(1, (2, B))]
-    B -> [(1, (0, A))]
-    C -> [(1, (2, A))]
+    A -> (2, B)
+    B -> (0, A)
+    C -> (2, A)
 
-moveRight :: St -> IO [(Probability, (Reward, St))]
+moveRight :: St -> IO (Reward,St)
 moveRight s =
   return $
   case s of
-    A -> [(1, (0, C))]
-    B -> [(1, (0, A))]
-    C -> [(1, (2, A))]
+    A -> (0, C)
+    B -> (0, A)
+    C -> (2, A)

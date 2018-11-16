@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- This is example is a multichain example from Puttermann 1994 (Example 8.2.2). For multichain MDPs the average reward
 -- value may differ between set of recurrent states.
 
@@ -27,6 +28,7 @@ import           Helper
 import           Control.Arrow (first, second)
 import           Control.Lens  (set, (^.))
 import           Control.Monad (foldM, unless, when)
+import           Data.List     (foldl')
 import           System.IO
 import           System.Random
 
@@ -63,19 +65,21 @@ type R = Double
 type P = Double
 
 -- Actions
-actions :: [St -> IO [(Probability, (Reward, St))]]
-actions = reset : replicate 300 move
+actions :: [Action St]
+actions = Action reset "reset" : replicate 300 (Action move "move")
 
-reset :: St -> IO [(Probability, (Reward, St))]
+reset :: St -> IO (Reward,St)
 reset s = do x <- randomRIO (4,5)
-             return [(1, (0, St x))]
+             return (0, St x)
 
-move :: St -> IO [(Probability, (Reward, St))]
-move s =
-  return $
-  case s of
-    St 1 -> [(1, (2, St 1))]
-    St 2 -> [(0.4, (5, St 2)), (0.6, (5, St 3))]
-    St 3 -> [(0.7, (4, St 2)), (0.3, (4, St 3))]
-    St 4 -> [(0.5, (1, St 1)), (0.2, (1, St 2)), (0.3, (1, St 5))]
-    St 5 -> [(0.2, (3, St 1)), (0.3, (3, St 2)), (0.3, (3, St 3)), (0.2, (3, St 4))]
+move :: St -> IO (Reward,St)
+move s = do
+  rand <- randomRIO (0, 1 :: Double)
+  let possMove = case s of
+         St 1 -> [(1.0, (2, St 1))]
+         St 2 -> [(0.4, (5, St 2)), (0.6, (5, St 3))]
+         St 3 -> [(0.7, (4, St 2)), (0.3, (4, St 3))]
+         St 4 -> [(0.5, (1, St 1)), (0.2, (1, St 2)), (0.3, (1, St 5))]
+         St 5 -> [(0.2, (3, St 1)), (0.3, (3, St 2)), (0.3, (3, St 3)), (0.2, (3, St 4))]
+  return $ snd $ snd $ foldl' (\(ps, c) c'@(p, _) -> if ps <= rand && ps + p > rand then (ps + p, c') else (ps + p, c)) (0, head possMove) possMove
+
