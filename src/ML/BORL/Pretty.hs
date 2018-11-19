@@ -13,7 +13,6 @@ module ML.BORL.Pretty
 import           ML.BORL.Parameters
 import           ML.BORL.Type
 
-import           Control.Arrow      (second)
 import           Control.Lens
 import           Data.Function      (on)
 import           Data.List          (find, sortBy)

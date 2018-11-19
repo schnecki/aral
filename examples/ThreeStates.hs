@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
--- This is example is a three-state MDP from Mahedevan 1996 (Figure 2).
+-- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
+-- (Figure 2, p.166).
 
 -- The provided solution is that a) the average reward rho=1 and b) the bias values are
 
@@ -60,8 +61,8 @@ type P = Double
 -- Actions
 actions :: [Action St]
 actions =
-
-  [Action moveLeft "left", Action moveRight "right"]
+  [ Action moveLeft "left "
+  , Action moveRight "right"]
 
 actionFilter :: St -> [Bool]
 actionFilter A = [True, True]

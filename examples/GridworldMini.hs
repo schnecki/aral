@@ -19,33 +19,37 @@ maxY = 2                        -- [0..maxY]
 
 main :: IO ()
 main = do
-  let rl = mkBORLUnichain initState actions (const $ repeat True) params decay
-  askUser True usage cmds rl -- maybe increase learning by setting estimate of rho
+  let rl = mkBORLUnichain initState actions actFilter params decay
+  askUser True usage cmds rl    -- maybe increase learning by setting estimate of rho
   where
-    cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] names
-    names = ["up", "down", "left", "right"]
+    cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
+names = ["random", "up   ", "down ", "left ", "right"]
 
 initState :: St
 initState = fromIdx (0,0)
 
+actFilter :: St -> [Bool]
+actFilter st | st == fromIdx (0,2) = True : repeat False
+actFilter _  = False : repeat True
+
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.001 0.001 0.001 1.0 0.1 0.0 0.2 0.2
+params = Parameters 0.2 0.2 0.2 1.0 1.0 0.1 1.5 0.2
 
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 1000 == 0 = Parameters alp (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (max 0.01 $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | t `mod` 200 == 0 = Parameters (f $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
-  where
-    slower = 0.995
-    slow = 0.95
-    faster = 1.0 / 0.995
-    f = max 0.001
+
+  where slower = 0.995
+        slow = 0.95
+        faster = 1.0/0.995
+        f = max 0.001
 
 
 -- State
@@ -61,9 +65,8 @@ instance Show St where
 -- Actions
 actions :: [Action St]
 actions = zipWith Action
-  (map goalState [moveUp, moveDown, moveLeft, moveRight])
-  ["up", "down", "left", "right"]
-
+  (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
+  names
 
 goalState :: Num a => (St -> IO (a, St)) -> St -> IO (a, St)
 goalState f st = do
@@ -75,6 +78,10 @@ goalState f st = do
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
   where stepRew = first (+ 1)
+
+
+moveRand :: St -> IO (Reward, St)
+moveRand = moveUp
 
 
 moveUp :: St -> IO (Reward,St)

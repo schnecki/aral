@@ -28,7 +28,19 @@ library:
   - lens
   - pretty
   - text
-
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wredundant-constraints
+    -fwarn-tabs
+  when:
+  - condition: flag(fast)
+    then:
+      ghc-options: -O2
+    else:
+      ghc-options: -O0
 
 tests:
   borl-test:

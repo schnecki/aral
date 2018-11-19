@@ -4,7 +4,6 @@ module ML.BORL.Type where
 
 import           Control.Lens
 import qualified Data.Map.Strict    as M
-import           Data.Monoid
 import qualified Data.Text          as T
 import           ML.BORL.Parameters
 
@@ -13,7 +12,7 @@ type Period = Integer
 type Reward = Double
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
 type ActionIndex = Int
-type InitState s = s                            -- ^ Initial state
+type InitialState s = s                            -- ^ Initial state
 type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the parameters at time t.
 
 data Action s = Action { actionFunction :: s -> IO (Reward, s) -- ^ An action which returns a reward r and a new state s'
@@ -57,12 +56,17 @@ data BORL s = BORL
   }
 makeLenses ''BORL
 
+default_gamma0, default_gamma1 :: Double
+default_gamma0 = 0.25
+default_gamma1 = 0.99
 
-mkBORLUnichain :: (Ord s) => InitState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLUnichain init as asFilter params decayFunction = BORL (zip [0..] as) asFilter init 0 params decayFunction (0.25, 0.75) (Left 0) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
+mkBORLUnichain :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
+mkBORLUnichain initialState as asFilter params decayFun =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
 
-mkBORLMultichain :: (Ord s) => InitState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLMultichain init as asFilter params decayFunction = BORL (zip [0..] as) asFilter init 0 params decayFunction (0.25, 0.75) (Right mempty) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
+mkBORLMultichain :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
+mkBORLMultichain initialState as asFilter params decayFun =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right mempty) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
 
 
 isMultichain :: BORL s -> Bool

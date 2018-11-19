@@ -13,17 +13,15 @@ import           Control.Applicative ((<|>))
 import           Control.Lens
 import           Control.Monad
 import           Data.Function       (on)
-import           Data.List           (foldl', groupBy, sortBy)
+import           Data.List           (groupBy, sortBy)
 import qualified Data.Map.Strict     as M
-import           Data.Maybe          (fromJust)
 import           System.Random
-import           Text.Printf
 
 
-step :: (Show s, Ord s) => BORL s -> IO (BORL s)
+step :: (Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl
 
-stepExecute :: (Show s, Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
+stepExecute :: (Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
 stepExecute borl (randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
   (reward, stateNext) <- action state
@@ -96,7 +94,7 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
     set parameters params' borl'
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (Show s, Ord s) => BORL s -> IO (Bool, ActionIndexed s)
+nextAction :: (Ord s) => BORL s -> IO (Bool, ActionIndexed s)
 nextAction borl = do
   let explore = borl ^. parameters . exploration
   let state = borl ^. s
@@ -112,6 +110,8 @@ nextAction borl = do
                   | otherwise = head $ groupBy (epsCompare (==) `on` rhoValue borl state) $ sortBy (epsCompare compare `on` rhoValue borl state) as
           bestV = head $ groupBy (epsCompare (==) `on` vValue borl state) $ sortBy (epsCompare compare `on` vValue borl state) bestRho
           bestE = sortBy (epsCompare compare `on` eValue borl state) bestV
+          bestR = sortBy (epsCompare compare `on` rValue borl RBig state) bestV
+      -- return (False, head bestR)
       if length bestE > 1
         then do
           r <- randomRIO (0, length bestE - 1)
@@ -123,8 +123,8 @@ nextAction borl = do
       | abs (x - y) <= eps = f 0 0
       | otherwise = y `f` x
 
-actions :: BORL s -> s -> [Action s]
-actions borl state = map snd (actionsIndexed borl state)
+-- actions :: BORL s -> s -> [Action s]
+-- actions borl state = map snd (actionsIndexed borl state)
 
 actionsIndexed :: BORL s -> s -> [ActionIndexed s]
 actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)

@@ -35,11 +35,10 @@ initState = fromIdx (0,0)
 
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (f $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | t `mod` 200 == 0 = Parameters (f $ slow * alp) (f $ slow * bet) (f $ slow * del) (max 0.1 $ slow * eps) (f $ slow * exp) rand zeta xi -- (1 - slow * (1-frc)) mRho
   | otherwise = p
 
-  where slower = 0.995
-        slow = 0.95
+  where slow = 0.95
         faster = 1.0/0.995
         f = max 0.001
 
