@@ -2,10 +2,14 @@
 
 module ML.BORL.Type where
 
+import           ML.BORL.Parameters
+import           ML.BORL.Proxy
+
+
 import           Control.Lens
 import qualified Data.Map.Strict    as M
 import qualified Data.Text          as T
-import           ML.BORL.Parameters
+
 
 -- Types
 type Period = Integer
@@ -43,16 +47,16 @@ data BORL s = BORL
   , _gammas        :: !(Double, Double) -- ^ Two gamma values in ascending order
 
   -- Values:
-  , _rho           :: !(Either Double (M.Map (s,ActionIndex) Double))   -- ^ Either unichain or multichain y_{-1} values.
-  , _psis          :: !(Double, Double, Double)                         -- ^ Exponentially smoothed psi values.
-  , _psiStates     :: !(M.Map s Double, M.Map s Double, M.Map s Double) -- ^ Psi values for the states.
-  , _v             :: !(M.Map (s,ActionIndex) Double)                   -- ^ Bias values (y_0).
-  , _w             :: !(M.Map (s,ActionIndex) Double)                   -- ^ y_1 values.
-  , _r0            :: !(M.Map (s,ActionIndex) Double)                   -- ^ Discounted values with first gamma value.
-  , _r1            :: !(M.Map (s,ActionIndex) Double)                   -- ^ Discounted values with second gamma value.
+  , _rho           :: !(Either Double (Proxy (s,ActionIndex))) -- ^ Either unichain or multichain y_{-1} values.
+  , _psis          :: !(Double, Double, Double)                -- ^ Exponentially smoothed psi values.
+  , _psiStates     :: !(Proxy s, Proxy s, Proxy s)             -- ^ Psi values for the states.
+  , _v             :: !(Proxy (s,ActionIndex))                 -- ^ Bias values (y_0).
+  , _w             :: !(Proxy (s,ActionIndex))                 -- ^ y_1 values.
+  , _r0            :: !(Proxy (s,ActionIndex))                 -- ^ Discounted values with first gamma value.
+  , _r1            :: !(Proxy (s,ActionIndex))                 -- ^ Discounted values with second gamma value.
 
   -- Stats:
-  , _visits        :: !(M.Map s Integer)                                -- ^ Counts the visits of the states
+  , _visits        :: !(M.Map s Integer)                       -- ^ Counts the visits of the states
   }
 makeLenses ''BORL
 
@@ -60,14 +64,19 @@ default_gamma0, default_gamma1 :: Double
 default_gamma0 = 0.25
 default_gamma1 = 0.99
 
-mkBORLUnichain :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLUnichain initialState as asFilter params decayFun =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
+mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
+mkBORLUnichainTabular initialState as asFilter params decayFun =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+  where
+    tabS = Table mempty
+    tabSA = Table mempty
 
-mkBORLMultichain :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLMultichain initialState as asFilter params decayFun =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right mempty) (0, 0, 0) (mempty, mempty, mempty) mempty mempty mempty mempty mempty
-
+mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
+mkBORLMultichainTabular initialState as asFilter params decayFun =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+  where
+    tabS = Table mempty
+    tabSA = Table mempty
 
 isMultichain :: BORL s -> Bool
 isMultichain borl =

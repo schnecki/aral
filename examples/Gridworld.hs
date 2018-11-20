@@ -19,7 +19,7 @@ maxY = 4                        -- [0..maxY]
 main :: IO ()
 main = do
 
-  let rl = mkBORLUnichain initState actions actFilter params decay
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)

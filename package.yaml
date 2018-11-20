@@ -1,6 +1,6 @@
 name:                borl
 version:             0.1.0.0
-github:              "githubuser/borl"
+github:              "github.com/schnecki"
 license:             AllRightsReserved
 author:              "Manuel Schneckenreither"
 maintainer:          "manuel.schneckenreither@uibk.ac.at"
@@ -35,12 +35,12 @@ library:
     -Wincomplete-uni-patterns
     -Wredundant-constraints
     -fwarn-tabs
-  when:
-  - condition: flag(fast)
-    then:
-      ghc-options: -O2
-    else:
-      ghc-options: -O0
+  # when:
+  # - condition: flag(fast)
+  #   then:
+  #     ghc-options: -O2
+  #   else:
+  #     ghc-options: -O0
 
 tests:
   borl-test:

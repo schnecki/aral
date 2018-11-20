@@ -7,6 +7,7 @@ module ML.BORL.Ops
     ) where
 
 import           ML.BORL.Parameters
+import qualified ML.BORL.Proxy       as P
 import           ML.BORL.Type
 
 import           Control.Applicative ((<|>))
@@ -16,9 +17,6 @@ import           Data.Function       (on)
 import           Data.List           (groupBy, sortBy)
 import qualified Data.Map.Strict     as M
 import           System.Random
-
-import           Debug.Trace
-
 
 step :: (Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl
@@ -57,7 +55,7 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       -- multichain use exponential smoothing with g + Pg = 0
       rhoNew = case borl ^. rho of
         Left _  -> Left rhoVal'
-        Right m -> Right (M.insert label rhoVal' m)
+        Right m -> Right (P.insert label rhoVal' m)
       psiRho = rhoVal' - rhoVal                                         -- should converge to 0
 
   let vValState'  = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
@@ -74,17 +72,17 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       psiValRho' = (1-0.03) * psiValRho + 0.03 * abs psiRho
       psiValV' = (1-0.03) * psiValV + 0.03 * abs psiV
       psiValW' = (1-0.03) * psiValW + 0.03 * abs psiW
-      psiStateRho' = M.insert stateNext ((1-0.03) * M.findWithDefault 0 stateNext mPsiRho + 0.03 * psiRho) mPsiRho
-      psiStateV'   = M.insert stateNext ((1-0.03) * M.findWithDefault 0 stateNext mPsiV + 0.03 * psiV) mPsiV
-      psiStateW'   = M.insert stateNext ((1-0.03) * M.findWithDefault 0 stateNext mPsiW + 0.03 * psiW) mPsiW
+      psiStateRho' = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiRho + 0.03 * psiRho) mPsiRho
+      psiStateV'   = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiV + 0.03 * psiV) mPsiV
+      psiStateW'   = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiW + 0.03 * psiW) mPsiW
 
   -- enforce values
   let vValStateNew = vValState' - if randomAction || psiValV' > borl ^. parameters.zeta then 0 else borl ^. parameters.xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
 
   let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-            | otherwise = set v (M.insert label vValStateNew mv) $ set w (M.insert label wValState' mw) $ set rho rhoNew $
-                          set r0 (M.insert label r0ValState' mr0) $ set r1 (M.insert label r1ValState' mr1) borl
+            | otherwise = set v (P.insert label vValStateNew mv) $ set w (P.insert label wValState' mw) $ set rho rhoNew $
+                          set r0 (P.insert label r0ValState' mr0) $ set r1 (P.insert label r1ValState' mr1) borl
 
   -- update values
   return $
@@ -136,16 +134,16 @@ actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) s
 rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
 rhoValue borl state (a,_) =
   case borl ^. rho of
-    Left v  -> v
-    Right m -> M.findWithDefault 0 (state,a) m
+    Left r  -> r
+    Right m -> P.findWithDefault 0 (state,a) m
 
 rhoStateValue :: (Ord s) => BORL s -> s -> Double
 rhoStateValue borl state = case borl ^. rho of
-  Left v  -> v
-  Right m -> maximum $ map (rhoValue borl state) (actionsIndexed borl state)
+  Left r  -> r
+  Right _ -> maximum $ map (rhoValue borl state) (actionsIndexed borl state)
 
 vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-vValue borl state (a,_) = M.findWithDefault 0 (state, a) mv
+vValue borl state (a,_) = P.findWithDefault 0 (state, a) mv
   where
     mv = borl ^. v
 
@@ -154,7 +152,7 @@ vStateValue borl state = maximum $ map (vValue borl state) (actionsIndexed borl 
 
 
 wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-wValue borl state (a,_) = M.findWithDefault 0 (state, a) mw
+wValue borl state (a,_) = P.findWithDefault 0 (state, a) mw
   where
     mw = borl ^. w
 
@@ -170,7 +168,7 @@ data RSize
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> Double
-rValue borl size state (a, _) = M.findWithDefault 0 (state, a) mr
+rValue borl size state (a, _) = P.findWithDefault 0 (state, a) mr
   where
     mr =
       case size of
