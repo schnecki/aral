@@ -37,20 +37,25 @@ main = do
   where cmds = []
         usage = []
 
-params :: Parameters
-params = Parameters 0.005 0.07 0.07 1.5 1.0 0.1 1.0 0.2
-
 initState :: St
 initState = A
 
+
+-- | BORL Parameters.
+params :: Parameters
+params = Parameters 0.2 0.2 0.2 1.0 1.0 0.01 1.5 0.2
+
+
+-- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 100 == 0 = Parameters alp bet del (f $ slower * eps) (max 0.01 $ slower * exp) rand zeta xi
+  | t `mod` 200 == 0 = Parameters (f $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
 
-  where slower = 0.99
+  where slower = 0.995
         slow = 0.95
-        f = max 0.05
+        faster = 1.0/0.995
+        f = max 0.001
 
 
 -- State

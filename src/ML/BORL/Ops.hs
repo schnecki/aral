@@ -17,6 +17,8 @@ import           Data.List           (groupBy, sortBy)
 import qualified Data.Map.Strict     as M
 import           System.Random
 
+import           Debug.Trace
+
 
 step :: (Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl

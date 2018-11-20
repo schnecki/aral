@@ -19,12 +19,13 @@ maxY = 4                        -- [0..maxY]
 main :: IO ()
 main = do
 
-  let rl = mkBORLUnichain initState actions (const $ repeat True) params decay
+  let rl = mkBORLUnichain initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] names
-        names = ["up", "down", "left", "right"]
+  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+
+names = ["random", "up   ", "down ", "left ", "right"]
 
 params :: Parameters
 params = Parameters 0.2 0.2 0.2 1.0 1.0 0.1 1.5 0.2
@@ -56,8 +57,16 @@ instance Show St where
 -- Actions
 actions :: [Action St]
 actions = zipWith Action
-  (map goalState [moveUp, moveDown, moveLeft, moveRight])
-  ["up", "down", "left", "right"]
+  (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
+  names
+
+actFilter :: St -> [Bool]
+actFilter st | st == fromIdx (0,2) = True : repeat False
+actFilter _  = False : repeat True
+
+
+moveRand :: St -> IO (Reward, St)
+moveRand = moveUp
 
 
 -- goalState :: Action St -> Action St
