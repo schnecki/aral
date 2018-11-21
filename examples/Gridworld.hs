@@ -28,7 +28,7 @@ main = do
 names = ["random", "up   ", "down ", "left ", "right"]
 
 params :: Parameters
-params = Parameters 0.2 0.2 0.2 1.0 1.0 0.1 1.5 0.2
+params = Parameters 0.2 0.2 0.2 1.0 1.0 0.1 0.5 0.2
 
 
 initState :: St

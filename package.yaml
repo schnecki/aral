@@ -19,6 +19,12 @@ category:            Machine Learning
 # common to point users to the README.md file.
 description:         Please see the README on GitHub at <https://github.com/githubuser/borl#readme>
 
+flags:
+  fast:
+    description: Disables optimizations
+    manual: true
+    default: false
+
 library:
   source-dirs: src
   dependencies:
@@ -28,6 +34,11 @@ library:
   - lens
   - pretty
   - text
+  - singletons
+  - hmatrix
+  - reflection
+  - vector
+  - grenade
   ghc-options:
     -Wall
     -Wcompat
@@ -35,12 +46,12 @@ library:
     -Wincomplete-uni-patterns
     -Wredundant-constraints
     -fwarn-tabs
-  # when:
-  # - condition: flag(fast)
-  #   then:
-  #     ghc-options: -O2
-  #   else:
-  #     ghc-options: -O0
+  when:
+    - condition: flag(fast)
+      then:
+        ghc-options: -O2
+      else:
+        ghc-options: -O0
 
 tests:
   borl-test:
