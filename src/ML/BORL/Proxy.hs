@@ -8,9 +8,10 @@ module ML.BORL.Proxy
     ( Proxy (..)
     , ProxyType (..)
     , NNConfig (..)
+    , LookupType (..)
     , insert
-    , findWithDefault
-    , findNeuralNetwork
+    , lookupProxy
+    , lookupNeuralNetwork
     ) where
 
 
@@ -23,6 +24,10 @@ import           Data.Singletons.Prelude.List
 import           GHC.TypeLits
 import           Grenade
 
+
+type Period = Integer
+
+
 -- | Type of approximation (needed for scaling of values).
 data ProxyType
   = VTable
@@ -30,47 +35,54 @@ data ProxyType
   | R0Table
   | R1Table
 
+data LookupType = Target | Worker
+
 -- Todo: 2 Networks (target, worker)
 data Proxy k = Table
                { _proxyTable :: !(M.Map k Double)
                }
              | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL) =>
                 NN
-                { _proxyNN       :: !(Network layers shapes)
+                { _proxyNNTarget :: !(Network layers shapes)
+                , _proxyNNWorker :: !(Network layers shapes)
                 , _proxyType     :: !ProxyType
                 , _proxyNNConfig :: !(NNConfig k)
                 }
 makeLenses ''Proxy
 
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
-insert :: (Ord k) => k -> Double -> Proxy k -> Proxy k
-insert k v (Table m)          = Table (M.insert k v m)
-insert k v px@(NN net tp config) = checkTrainBatchsize ((k, scaleValue (getMaxVal px) v) : config ^. cache)
+insert :: (Ord k) => Period -> k -> Double -> Proxy k -> Proxy k
+insert _ k v (Table m)          = Table (M.insert k v m)
+insert period k v px@(NN netT netW tp config) = checkTrainBatchsize ((k, scaleValue (getMinMaxVal px) v) : config ^. cache)
   where
     checkTrainBatchsize cache'
-      | length cache' >= config ^. trainBatchSize = NN (trainNetwork (config ^. learningParams) net (map (first $ config ^. toNetInp) cache')) tp (cache .~ [] $ config)
-      | otherwise = NN net tp (cache .~  cache' $ config)
+      | length cache' >= config ^. trainBatchSize = updateTargetNet $ NN netT (trainNetwork (config ^. learningParams) netW (map (first $ config ^. toNetInp) cache')) tp (cache .~ [] $ config)
+      | otherwise = updateTargetNet $ NN netT netW tp (cache .~  cache' $ config)
+    updateTargetNet px@(NN _ nW _ _) | period `mod` config ^. updateTargetInterval == 0 = NN nW nW tp config
+                                     | otherwise = px
 
 
 -- | Retrieve a value.
-findWithDefault :: (Ord k) => Integer -> k -> Proxy k -> Double
-findWithDefault _ k (Table m) = M.findWithDefault 0 k m
-findWithDefault period k px  | period < 1000 = fromIntegral period/1000 * (unscaleValue (getMaxVal px) $ findNeuralNetwork k px)
-                             | otherwise = unscaleValue (getMaxVal px) $ findNeuralNetwork k px
+lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> Double
+lookupProxy _ _ k (Table m) = M.findWithDefault 0 k m
+lookupProxy period lkTp k px
+  | period < 1000 = 0 -- fromIntegral period / 1000 * (unscaleValue (getMinMaxVal px) $ lookupNeuralNetwork lkTp k px)
+  | otherwise = lookupNeuralNetwork lkTp k px
 
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
 -- to the original interval before returned.
-findNeuralNetwork :: k -> Proxy k -> Double
-findNeuralNetwork k px@(NN net _ conf)= head $ snd $ fromLastShapes net $ runNetwork net (toHeadShapes net $ (conf ^. toNetInp) k)
-findNeuralNetwork _ _ = error "findNeuralNetwork called on non-neural network proxy"
+lookupNeuralNetwork :: LookupType -> k -> Proxy k -> Double
+lookupNeuralNetwork Worker k px@(NN _ netW _ conf) = unscaleValue (getMinMaxVal px) $ head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
+lookupNeuralNetwork Target k px@(NN netT _ _ conf) = unscaleValue (getMinMaxVal px) $ head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
+lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 
 -- | Finds the correct value for scaling.
-getMaxVal :: Proxy k -> MaxValue
-getMaxVal Table {} = 1
-getMaxVal p@NN {}  = case p ^?! proxyType of
-  VTable  -> p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue
-  WTable  -> p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue
-  R0Table -> p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value
-  R1Table -> p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value
+getMinMaxVal :: Proxy k -> (MinValue,MaxValue)
+getMinMaxVal Table {} = (1,1)
+getMinMaxVal p@NN {}  = case p ^?! proxyType of
+  VTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
+  R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
+  R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)

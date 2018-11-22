@@ -110,7 +110,7 @@ mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = NN net net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 mkBORLMultichain ::
@@ -141,15 +141,19 @@ mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = NN net net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 -------------------- Other Constructors --------------------
 
 -- | Infer scaling by maximum reward.
 scalingByMaxReward :: Double -> ScalingNetOutParameters
-scalingByMaxReward maxR = ScalingNetOutParameters (3*maxR) (500*maxR) (1.5*maxDiscount default_gamma0) (1.5*maxDiscount default_gamma1)
+scalingByMaxReward maxR = ScalingNetOutParameters maxV (-maxV) maxW (-maxW) maxR0 (-maxR0) maxR1 (-maxR1)
   where maxDiscount g = sum $ take 1000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
+        maxV = 0.8 * maxR
+        maxW = 300 * maxR
+        maxR0 = 0.8 * maxDiscount default_gamma0
+        maxR1 = 0.8 * maxDiscount default_gamma1
 
 
 -------------------- Helpers --------------------
@@ -173,10 +177,10 @@ checkNN _ nnConfig borl
 
 -- | Converts the neural network state configuration to a state-action configuration.
 mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
-mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp sc) = NNConfig (toSA inp) [] bs lp (ppSA pp) sc
+mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp sc c) = NNConfig (toSA inp) [] bs lp (ppSA pp) sc c
   where
     maxVal = fromIntegral (length as)
     toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
-    toSA f (state, a) = f state ++ [scaleNegPosOne maxVal (fromIntegral a)]
+    toSA f (state, a) = f state ++ [scaleNegPosOne (0,maxVal) (fromIntegral a)]
     ppSA :: [s] -> [(s, ActionIndex)]
     ppSA = concatMap (\k -> map ((k,) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))

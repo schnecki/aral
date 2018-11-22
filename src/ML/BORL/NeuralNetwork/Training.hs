@@ -22,7 +22,7 @@ trainNetwork lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs 
     tapesAndActual = map runForward
     runForward (inp, _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)
     mkGradients (inp, target) (tape, output) =
-      trace ("inp/target/output: " ++ show (inp, target, output)) $
+      -- trace ("inp/target/output: " ++ show (inp, target, output)) $
       fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net [max (-0.9) $ min 0.9 target]))
 
 

@@ -11,12 +11,13 @@ type Cache k = [(k,Double)]
 
 
 data NNConfig k = NNConfig
-  { _toNetInp         :: k -> [Double]
-  , _cache            :: Cache k
-  , _trainBatchSize   :: Int
-  , _learningParams   :: LearningParameters
-  , _prettyPrintElems :: [k]
-  , _scaleParameters  :: ScalingNetOutParameters
+  { _toNetInp             :: k -> [Double]
+  , _cache                :: Cache k
+  , _trainBatchSize       :: Int
+  , _learningParams       :: LearningParameters
+  , _prettyPrintElems     :: [k]
+  , _scaleParameters      :: ScalingNetOutParameters
+  , _updateTargetInterval :: Integer
   }
 makeLenses ''NNConfig
 

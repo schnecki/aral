@@ -19,21 +19,20 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1]
+type NN = Network  '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 128 (LearningParameters 0.01 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10)
+nnConfig = NNConfig netInp [] 128 (LearningParameters 0.01 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
 
 netInp :: St -> [Double]
-netInp st = [scale maxX $ fst (getCurrentIdx st), scale maxY $ snd (getCurrentIdx st)]
-  where scale mx val = 2 * fromIntegral val / fromIntegral mx - 1
+netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 
 main :: IO ()
 main = do
 
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
-  net <- randomNetwork :: IO NN
+  net <- randomNetworkInitWith HeEtAl :: IO NN
   let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -43,7 +42,7 @@ main = do
 names = ["random", "up   ", "down ", "left ", "right"]
 
 params :: Parameters
-params = Parameters 0.2 0.2 0.2 1.0 1.0 0.1 0.5 0.2
+params = Parameters 0.2 1.0 1.0 1.0 1.0 0.1 0.5 0.2
 
 
 initState :: St

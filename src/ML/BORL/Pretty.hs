@@ -12,7 +12,7 @@ import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Type
 
-import           Control.Arrow         (first)
+import           Control.Arrow         (first, second)
 import           Control.Lens
 import           Data.Function         (on)
 import           Data.List             (find, sortBy)
@@ -41,7 +41,7 @@ prettyTable prettyKey p = vcat $ prettyTableRows prettyKey p
 prettyTableRows :: (Ord k', Show k') => (k -> k') -> P.Proxy k -> [Doc]
 prettyTableRows prettyAction p = case p of
   P.Table m -> map (\(k,val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
-  pr@P.NN{} -> map (\(k,val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) mList)
+  pr@P.NN{} -> map (\(k,(valT,valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mList)
     where mList = map (first prettyAction) (mkNNList pr)
 
 -- prettyTablesStateAction :: (Ord k, Ord k1, Show k, Show k1) => P.Proxy k -> P.Proxy k1 -> Doc
@@ -81,7 +81,7 @@ prettyBORLTables t1 t2 t3 borl =
   nest 45 (printFloat $ borl ^. parameters . zeta) $+$
   text "Scaling (V,W,R0,R1) by V" <>
   colon $$
-  nest 45 (scalingText) $+$
+  nest 45 scalingText $+$
   text "Psi Rho/Psi V/Psi W" <>
   colon $$
   nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
@@ -99,7 +99,7 @@ prettyBORLTables t1 t2 t3 borl =
     e =
       case (borl ^. r1, borl ^. r0) of
         (P.Table rm1, P.Table rm0) -> P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
-        (prNN1@P.NN {}, prNN0@P.NN {}) -> P.Table $ M.fromList $ zipWith subtr (mkNNList prNN1) (mkNNList prNN0)
+        (prNN1@P.NN {}, prNN0@P.NN {}) -> P.Table $ M.fromList $ zipWith subtr (map (second fst) $ mkNNList prNN1) (map (second fst) $ mkNNList prNN0)
         _ -> error "Pretty printing of mixed data structures is not allowed!"
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
@@ -109,16 +109,16 @@ prettyBORLTables t1 t2 t3 borl =
     scalingText =
       case borl ^. v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.NN _ _ conf ->
+        P.NN _ _ _ conf ->
           text
             (show
-               ( printFloat $ conf ^. scaleParameters . scaleMaxVValue
-               , printFloat $ conf ^. scaleParameters . scaleMaxWValue
-               , printFloat $ conf ^. scaleParameters . scaleMaxR0Value
-               , printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
+               ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
+               , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
+               , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
 
-mkNNList :: P.Proxy k -> [(k, Double)]
-mkNNList pr@(P.NN _ _ conf) = map (\inp -> (inp, P.findNeuralNetwork inp pr)) (P._prettyPrintElems conf)
+mkNNList :: P.Proxy k -> [(k, (Double, Double))]
+mkNNList pr@(P.NN _ _ _ conf) = map (\inp -> (inp, (P.lookupNeuralNetwork P.Target inp pr, P.lookupNeuralNetwork P.Worker inp pr))) (P._prettyPrintElems conf)
 mkNNList _ = error "mkNNList called on non-neural network"
 
 prettyBORL :: (Ord s, Show s) => BORL s -> Doc

@@ -7,7 +7,7 @@ module ML.BORL.Step
 import           ML.BORL.Action
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
-import qualified ML.BORL.Proxy       as P
+import           ML.BORL.Proxy       as P
 import           ML.BORL.Type
 
 import           Control.Applicative ((<|>))
@@ -52,7 +52,7 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       -- multichain use exponential smoothing with g + Pg = 0
       rhoNew = case borl ^. rho of
         Left _  -> Left rhoVal'
-        Right m -> Right (P.insert label rhoVal' m)
+        Right m -> Right (P.insert period label rhoVal' m)
       psiRho = rhoVal' - rhoVal                                         -- should converge to 0
 
   let vValState'  = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
@@ -75,8 +75,8 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
 
   let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-            | otherwise = set v (P.insert label vValStateNew mv) $ set w (P.insert label wValState' mw) $ set rho rhoNew $
-                          set r0 (P.insert label r0ValState' mr0) $ set r1 (P.insert label r1ValState' mr1) borl
+            | otherwise = set v (P.insert period label vValStateNew mv) $ set w (P.insert period label wValState' mw) $ set rho rhoNew $
+                          set r0 (P.insert period label r0ValState' mr0) $ set r1 (P.insert period label r1ValState' mr1) borl
 
   -- update values
   return $
@@ -123,40 +123,49 @@ actionsIndexed :: BORL s -> s -> [ActionIndexed s]
 actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
 
 
--- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-rhoValue borl state (a,_) =
-  case borl ^. rho of
-    Left r  -> r
-    Right m -> P.findWithDefault (borl ^. t) (state,a) m
-
 reduce :: [Double] -> Double
 reduce = maximum
 -- reduce xs = sum xs / fromIntegral (length xs)
 {-# INLINE reduce #-}
 
 
+-- | Expected average value of state-action tuple, that is y_{-1}(s,a).
+rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+rhoValue = rhoValueWith Worker
+
+rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+rhoValueWith lkTp borl state (a,_) =
+  case borl ^. rho of
+    Left r  -> r
+    Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
+
 rhoStateValue :: (Ord s) => BORL s -> s -> Double
 rhoStateValue borl state = case borl ^. rho of
   Left r  -> r
-  Right _ -> reduce $ map (rhoValue borl state) (actionsIndexed borl state)
+  Right _ -> reduce $ map (rhoValueWith Target borl state) (actionsIndexed borl state)
 
 vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-vValue borl state (a,_) = P.findWithDefault (borl ^. t) (state, a) mv
+vValue = vValueWith Worker
+
+vValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+vValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mv
   where
     mv = borl ^. v
 
 vStateValue :: (Ord s) => BORL s -> s -> Double
-vStateValue borl state = reduce $ map (vValue borl state) (actionsIndexed borl state)
+vStateValue borl state = reduce $ map (vValueWith Target borl state) (actionsIndexed borl state)
 
 
 wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-wValue borl state (a,_) = P.findWithDefault (borl ^. t) (state, a) mw
+wValue = wValueWith Worker
+
+wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+wValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mw
   where
     mw = borl ^. w
 
 wStateValue :: (Ord s) => BORL s -> s -> Double
-wStateValue borl state = reduce $ map (wValue borl state) (actionsIndexed borl state)
+wStateValue borl state = reduce $ map (wValueWith Target borl state) (actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -167,7 +176,11 @@ data RSize
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> Double
-rValue borl size state (a, _) = P.findWithDefault (borl ^. t) (state, a) mr
+rValue = rValueWith Worker
+
+-- | Calculates the expected discounted value with the provided gamma (small/big).
+rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> Double
+rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
       case size of
@@ -175,15 +188,14 @@ rValue borl size state (a, _) = P.findWithDefault (borl ^. t) (state, a) mr
         RBig   -> borl ^. r1
 
 rStateValue :: (Ord s) => BORL s -> RSize -> s -> Double
-rStateValue borl size state = reduce $ map (rValue borl size state) (actionsIndexed borl state)
+rStateValue borl size state = reduce $ map (rValueWith Target borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
 eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-eValue borl state act = rValue borl RBig state act - rValue borl RSmall state act
+eValue borl state act = rValueWith Target borl RBig state act - rValueWith Target borl RSmall state act
 
-
--- | Calculates the difference between the expected discounted values.
-eStateValue :: (Ord s) => BORL s -> s -> Double
-eStateValue borl state = reduce (map (rValue borl RBig state) as) - reduce (map (rValue borl RSmall state) as)
-  where as = actionsIndexed borl state
+--  | Calculates the difference between the expected discounted values.
+-- eStateValue :: (Ord s) => BORL s -> s -> Double
+-- eStateValue borl state = reduce (map (rValueWith Target borl RBig state) as) - reduce (map (rValueWith Target borl RSmall state) as)
+--   where as = actionsIndexed borl state
 
