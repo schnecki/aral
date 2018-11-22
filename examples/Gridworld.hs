@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
@@ -8,6 +9,8 @@ import           Helper
 import           Control.Arrow (first, second)
 import           Control.Lens  (set, (^.))
 import           Control.Monad (foldM, unless, when)
+
+import           Grenade
 import           System.IO
 import           System.Random
 
@@ -16,10 +19,21 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
+type NN = Network '[ FullyConnected 3 4, Relu, FullyConnected 4 1] '[ 'D1 3, 'D1 4, 'D1 4, 'D1 1]
+
+nnConfig :: NNConfig St
+nnConfig = NNConfig netInp [] 128 (LearningParameters 0.01 0.5 0.0001) ([minBound .. maxBound] :: [St])
+
+netInp :: St -> [Double]
+netInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
+
+
 main :: IO ()
 main = do
 
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  net <- randomNetwork :: IO NN
+  let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -52,6 +66,15 @@ instance Ord St where
 
 instance Show St where
   show xs = show (getCurrentIdx xs)
+
+instance Enum St where
+  fromEnum st = let (x,y) = getCurrentIdx st
+                in x * (maxX + 1) + y
+  toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
+
+instance Bounded St where
+  minBound = fromIdx (0,0)
+  maxBound = fromIdx (maxX, maxY)
 
 
 -- Actions

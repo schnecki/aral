@@ -9,16 +9,17 @@ module ML.BORL.Type where
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy
 
-import           Control.Arrow                (first)
 import           Control.Lens
 import qualified Data.Map.Strict              as M
+import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                    as T
 import           GHC.TypeLits
 import           Grenade
 
 
--- Types
+-------------------- Types --------------------
+
 type Period = Integer
 type Reward = Double
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
@@ -44,7 +45,7 @@ instance Show (Action s) where
 
 data BORL s = BORL
   { _actionList    :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
-  , _actionFilter  :: s -> [Bool]           -- ^ Function to filter actions in state s.
+  , _actionFilter  :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
   , _s             :: !s                    -- ^ Current state.
   , _t             :: !Integer              -- ^ Current time t.
   , _parameters    :: !Parameters           -- ^ Parameter setup.
@@ -75,6 +76,10 @@ idxStart :: Int
 idxStart = 0
 
 
+-------------------- Constructors --------------------
+
+-- Tabular representations
+
 mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLUnichainTabular initialState as asFilter params decayFun =
   BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
@@ -87,6 +92,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
+-- Neural network approximations
 
 mkBORLUnichain :: forall nrH nrL s layers shapes .
      (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
@@ -99,10 +105,45 @@ mkBORLUnichain :: forall nrH nrL s layers shapes .
   -> NNConfig s
   -> BORL s
 mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
-  BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) nnSA nnSA nnSA nnSA mempty
+  checkNN net nnConfig $ BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) nnSA nnSA nnSA nnSA mempty
   where
     nnSA = NN net (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
+
+mkBORLMultichain :: forall nrH nrL s layers shapes .
+     (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+  => InitialState s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> Network layers shapes
+  -> NNConfig s
+  -> BORL s
+mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
+  checkNN net nnConfig $ BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right nnSA) (0, 0, 0) nnSA nnSA nnSA nnSA mempty
+  where
+    nnSA = NN net (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+
+
+-- | Checks the neural network setup and throws an error in case of a faulty number of input or output nodes.
+checkNN ::
+     forall layers shapes nrH nrL s. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+  => Network layers shapes
+  -> NNConfig s
+  -> BORL s
+  -> BORL s
+checkNN _ nnConfig borl
+  | nnInpNodes /= stInp + 1 = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show (stInp + 1)
+  | nnOutNodes /= 1 = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be 1"
+  | otherwise = borl
+  where
+    nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
+    nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
+    stInp = length (toNetInp nnConfig (borl ^. s))
+
+
+-- | Converts the neural network state configuration to a state-action configuration.
 mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
 mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp) = NNConfig (toSA inp) [] bs lp (ppSA pp)
   where
@@ -111,6 +152,8 @@ mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp) = NNConfig (toSA inp) [] bs l
     toSA f (state, a) = f state ++ [fromIntegral (2 * a) / divisor - 1]
     ppSA :: [s] -> [(s, ActionIndex)]
     ppSA = concatMap (\k -> map ((\a -> (k, a)) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))
+
+-------------------- Properties --------------------
 
 
 isMultichain :: BORL s -> Bool

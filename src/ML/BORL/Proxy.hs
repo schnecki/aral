@@ -41,7 +41,7 @@ insert k v (NN net config) = checkTrainBatchsize ((k, v) : cache config)
   where
     checkTrainBatchsize cache'
       | length cache' >= trainBatchSize config = NN (trainNetwork (learningParams config) net (map (first $ toNetInp config) cache')) (config {cache = []})
-      | otherwise = NN net config
+      | otherwise = NN net (config {cache = cache'})
 
 
 -- | Retrieve a value.
@@ -51,3 +51,4 @@ findWithDefault _ k nn          = findNeuralNetwork k nn
 
 findNeuralNetwork :: k -> Proxy k -> Double
 findNeuralNetwork k (NN net conf)= head $ snd $ fromLastShapes net $ runNetwork net (toHeadShapes net $ toNetInp conf k)
+findNeuralNetwork _ _ = error "findNeuralNetwork called on non-neural network proxy"
