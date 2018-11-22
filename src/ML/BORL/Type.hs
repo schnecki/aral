@@ -1,14 +1,21 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module ML.BORL.Type where
 
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy
 
-
+import           Control.Arrow                (first)
 import           Control.Lens
-import qualified Data.Map.Strict    as M
-import qualified Data.Text          as T
+import qualified Data.Map.Strict              as M
+import           Data.Singletons.Prelude.List
+import qualified Data.Text                    as T
+import           GHC.TypeLits
+import           Grenade
 
 
 -- Types
@@ -71,12 +78,34 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
     tabS = Table mempty
     tabSA = Table mempty
 
+mkBORLUnichain :: forall nrH nrL s layers shapes .
+     (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+  => InitialState s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> Network layers shapes
+  -> NNConfig s
+  -> BORL s
+mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+  where
+    tabS = NN net nnConfig
+    tabSA = NN net (mkNNConfigSA nnConfig) :: Proxy (s, ActionIndex)
+    mkNNConfigSA :: NNConfig s -> NNConfig (s, ActionIndex)
+    mkNNConfigSA (NNConfig inp _ bs lp) = NNConfig (toSA inp) [] bs lp :: NNConfig (s, ActionIndex)
+    toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
+    toSA f (state,a) = f state ++ [fromIntegral (2 * a) / divisor - 1]
+    divisor = fromIntegral (length as)
+
 mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLMultichainTabular initialState as asFilter params decayFun =
   BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
   where
     tabS = Table mempty
     tabSA = Table mempty
+
 
 isMultichain :: BORL s -> Bool
 isMultichain borl =

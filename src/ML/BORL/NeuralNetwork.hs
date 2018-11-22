@@ -22,11 +22,12 @@
 module ML.BORL.NeuralNetwork
     ( toHeadShapes
     , fromLastShapes
-
+    , trainNetwork
     ) where
 
 -- import qualified CLaSH.Promoted.Nat as SV
 -- import qualified CLaSH.Sized.Vector as SV
+import           Data.List                    (foldl')
 import           Data.Proxy
 import           Data.Reflection
 import           Data.Singletons
@@ -38,22 +39,30 @@ import qualified Numeric.LinearAlgebra        as LA
 import           Numeric.LinearAlgebra.Static
 import           Unsafe.Coerce
 
-data NNBorl net = NNBorl { net :: forall layers shapes . (Network layers shapes ~ net) => net
-                         , nrInp :: Int
-                         }
 
 type family HeadShape (iShape :: Shape) (nr :: Nat) :: Shape
 type instance HeadShape ('D1 x) nr = 'D2 x (nr+1)
 
+trainNetwork :: (KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes) => LearningParameters -> Network layers shapes -> [([Double], Double)] -> Network layers shapes
+trainNetwork lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs $ tapesAndActual chs
+  where
+    tapesAndActual = map runForward
+    runForward (inp, _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)
+    mkGradients (_, target) (tape, output) = fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net [target]))
 
--- newtype MagicHeadShapes r = MagicHeadShapes (forall (n :: Nat) . KnownNat n => Proxy n -> r)
+
+mkLoss :: (Fractional a) => a -> a -> a
+mkLoss o t = let l = o-t in signum l * l^(2::Int)
+
 
 -- runNetwork :: forall layers shapes. Network layers shapes -> S (Head shapes) -> (Tapes layers shapes, S (Last shapes))
 
-data KnownNet layers shapes = forall (n :: Nat) net . (Network layers shapes ~ net, KnownNat n, Head shapes ~ 'D1 n) => KnownNet net
-
 toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> [Double] -> S (Head shapes)
 toHeadShapes _ inp = S1D $ vector inp
+
+toLastShapes :: (KnownNat nr, 'D1 nr ~ Last shapes) => Network layers shapes -> [Double] -> S (Last shapes)
+toLastShapes _ inp = S1D $ vector inp
+
 
 fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Double])
 fromLastShapes _ (tapes, S1D out) = (tapes, DV.toList $ extract out)

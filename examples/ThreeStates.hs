@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
@@ -25,13 +26,22 @@ import           Helper
 import           Control.Arrow (first, second)
 import           Control.Lens  (set, (^.))
 import           Control.Monad (foldM, unless, when)
+import           Grenade
 import           System.IO
 import           System.Random
+
+type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Relu] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+
+nnConfig :: NNConfig St
+nnConfig = NNConfig (return . fromIntegral . fromEnum) [] 1 (LearningParameters 0.05 0.9 0.0001)
 
 main :: IO ()
 main = do
 
-  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  nn <- randomNetwork :: IO NN
+
+  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  let rl = mkBORLUnichain initState actions actionFilter params decay nn nnConfig
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -59,7 +69,7 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
 
 
 -- State
-data St = B | A | C deriving (Ord, Eq, Show)
+data St = B | A | C deriving (Ord, Eq, Show, Enum)
 type R = Double
 type P = Double
 

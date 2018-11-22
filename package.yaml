@@ -25,9 +25,7 @@ flags:
     manual: true
     default: false
 
-library:
-  source-dirs: src
-  dependencies:
+dependencies:
   - base >= 4.7 && < 5
   - containers
   - random
@@ -39,6 +37,10 @@ library:
   - reflection
   - vector
   - grenade
+
+
+library:
+  source-dirs: src
   ghc-options:
     -Wall
     -Wcompat
@@ -53,6 +55,52 @@ library:
       else:
         ghc-options: -O0
 
+executables:
+  gridworld:
+    main:                Gridworld.hs
+    other-modules :      Helper
+    source-dirs:         examples
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+
+  gridworld-mini:
+    main:                GridworldMini.hs
+    other-modules :      Helper
+    source-dirs:         examples
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+
+  multichain:
+    main:                Multichain.hs
+    other-modules :      Helper
+    source-dirs:         examples
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+
+  three-states:
+    main:                ThreeStates.hs
+    other-modules :      Helper
+    source-dirs:         examples
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+
+
 tests:
   borl-test:
     main:                Main.hs
@@ -66,6 +114,4 @@ tests:
       - borl
       - QuickCheck
       - hspec
-      - containers
-      - lens
 
