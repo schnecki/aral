@@ -56,7 +56,6 @@ data BORL s = BORL
   -- Values:
   , _rho           :: !(Either Double (Proxy (s,ActionIndex))) -- ^ Either unichain or multichain y_{-1} values.
   , _psis          :: !(Double, Double, Double)                -- ^ Exponentially smoothed psi values.
-  , _psiStates     :: !(Proxy s, Proxy s, Proxy s)             -- ^ Psi values for the states.
   , _v             :: !(Proxy (s,ActionIndex))                 -- ^ Bias values (y_0).
   , _w             :: !(Proxy (s,ActionIndex))                 -- ^ y_1 values.
   , _r0            :: !(Proxy (s,ActionIndex))                 -- ^ Discounted values with first gamma value.
@@ -71,12 +70,23 @@ default_gamma0, default_gamma1 :: Double
 default_gamma0 = 0.25
 default_gamma1 = 0.99
 
+
+idxStart :: Int
+idxStart = 0
+
+
 mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLUnichainTabular initialState as asFilter params decayFun =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+  BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
   where
-    tabS = Table mempty
     tabSA = Table mempty
+
+mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
+mkBORLMultichainTabular initialState as asFilter params decayFun =
+  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
+  where
+    tabSA = Table mempty
+
 
 mkBORLUnichain :: forall nrH nrL s layers shapes .
      (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
@@ -89,22 +99,18 @@ mkBORLUnichain :: forall nrH nrL s layers shapes .
   -> NNConfig s
   -> BORL s
 mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+  BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) nnSA nnSA nnSA nnSA mempty
   where
-    tabS = NN net nnConfig
-    tabSA = NN net (mkNNConfigSA nnConfig) :: Proxy (s, ActionIndex)
-    mkNNConfigSA :: NNConfig s -> NNConfig (s, ActionIndex)
-    mkNNConfigSA (NNConfig inp _ bs lp) = NNConfig (toSA inp) [] bs lp :: NNConfig (s, ActionIndex)
-    toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
-    toSA f (state,a) = f state ++ [fromIntegral (2 * a) / divisor - 1]
-    divisor = fromIntegral (length as)
+    nnSA = NN net (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
-mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLMultichainTabular initialState as asFilter params decayFun =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) (tabS, tabS, tabS) tabSA tabSA tabSA tabSA mempty
+mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
+mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp) = NNConfig (toSA inp) [] bs lp (ppSA pp)
   where
-    tabS = Table mempty
-    tabSA = Table mempty
+    divisor = fromIntegral (length as)
+    toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
+    toSA f (state, a) = f state ++ [fromIntegral (2 * a) / divisor - 1]
+    ppSA :: [s] -> [(s, ActionIndex)]
+    ppSA = concatMap (\k -> map ((\a -> (k, a)) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))
 
 
 isMultichain :: BORL s -> Bool

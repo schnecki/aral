@@ -10,6 +10,7 @@ import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy      as P
 import           ML.BORL.Type
 
+import           Control.Arrow      (first)
 import           Control.Lens
 import           Data.Function      (on)
 import           Data.List          (find, sortBy)
@@ -38,7 +39,8 @@ prettyTable prettyKey p = vcat $ prettyTableRows prettyKey p
 prettyTableRows :: (Ord k', Show k') => (k -> k') -> P.Proxy k -> [Doc]
 prettyTableRows prettyAction p = case p of
   P.Table m -> map (\(k,val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
-  P.NN net conf -> [text "No tabular representation possible"]
+  pr@P.NN{} -> map (\(k,val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) mList)
+    where mList = map (first prettyAction) (mkNNList pr)
 
 -- prettyTablesStateAction :: (Ord k, Ord k1, Show k, Show k1) => P.Proxy k -> P.Proxy k1 -> Doc
 -- prettyTablesStateAction m1 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows m1) (prettyTableRows m2)
@@ -79,25 +81,23 @@ prettyBORLTables t1 t2 t3 borl =
      Left val -> text "Rho" <> colon $$ nest 45 (printFloat val)
      Right m  -> text "Rho" $+$ prettyProxy prettyAction m) $$
   prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w) $+$
-  prBoolTblsState t2 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. psiStates._2) (borl ^. psiStates._3) $$
-  -- prBoolTbls t2 (text "V+Psi V" $$ nest 40 (text "W + Psi W")) (M.fromList $ zipWith add (M.toList $ borl ^. v) (M.toList $ borl ^. psiStates._2))
-  -- (M.fromList $ zipWith add (M.toList $ borl ^. w) (M.toList $ borl ^. psiStates._3)) $+$
   prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1) $+$
   (if t3 then text "E" $+$ prettyTable prettyAction e else empty) $+$
   text "Visits [%]" $+$ prettyTable id (P.Table vis)
   where
     e = case (borl^.r1,borl^.r0) of
       (P.Table rm1, P.Table rm0) -> P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
-      (P.NN rm1 conf, P.NN rm0 _) -> undefined -- P.NN $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
+      (prNN1@P.NN{}, prNN0@P.NN{}) -> P.Table $ M.fromList $ zipWith subtr (mkNNList prNN1) (mkNNList prNN0)
+      _ -> error "Pretty printing of mixed data structures is not allowed!"
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    add (k, v1) (_, v2) = (k, v1 + v2)
-    prBoolTblsState True h m1 m2 = h $+$ prettyTablesState id m1 id m2
-    prBoolTblsState False _ _ _  = empty
     prBoolTblsStateAction True h m1 m2 = h $+$ prettyTablesState prettyAction m1 prettyAction m2
     prBoolTblsStateAction False _ _ _  = empty
-    prettyAction (s,aIdx) = (s, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+    prettyAction (st,aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
 
+mkNNList :: P.Proxy k -> [(k, Double)]
+mkNNList pr@(P.NN _ conf) = map (\inp -> (inp, P.findNeuralNetwork inp pr)) (P.prettyPrintElems conf)
+mkNNList _ = error "mkNNList called on non-neural network"
 
 prettyBORL :: (Ord s, Show s) => BORL s -> Doc
 prettyBORL = prettyBORLTables True True True

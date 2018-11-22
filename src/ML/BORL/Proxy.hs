@@ -8,6 +8,7 @@ module ML.BORL.Proxy
     , NNConfig (..)
     , insert
     , findWithDefault
+    , findNeuralNetwork
     ) where
 
 
@@ -26,23 +27,27 @@ data Proxy k = Table !(M.Map k Double)
              | forall layers shapes nrH nrL . (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL) => NN (Network layers shapes) (NNConfig k)
 
 data NNConfig k = NNConfig
-  { toNetInp       :: k -> [Double]
-  , cache          :: Cache k
-  , trainBatchSize :: Int
-  , learninParams  :: LearningParameters
+  { toNetInp         :: k -> [Double]
+  , cache            :: Cache k
+  , trainBatchSize   :: Int
+  , learningParams   :: LearningParameters
+  , prettyPrintElems :: [k]
   }
 
 -- | Insert (or update) a value.
 insert :: (Ord k) => k -> Double -> Proxy k -> Proxy k
 insert k v (Table m)                        = Table (M.insert k v m)
-insert k v (NN net (NNConfig toInp chs bs lp)) = checkTrainBatchsize ((k, v) : chs)
+insert k v (NN net config) = checkTrainBatchsize ((k, v) : cache config)
   where
     checkTrainBatchsize cache'
-      | length cache' >= bs = NN (trainNetwork lp net (map (first toInp) cache')) (NNConfig toInp [] bs lp)
-      | otherwise = NN net (NNConfig toInp cache' bs lp)
+      | length cache' >= trainBatchSize config = NN (trainNetwork (learningParams config) net (map (first $ toNetInp config) cache')) (config {cache = []})
+      | otherwise = NN net config
 
 
 -- | Retrieve a value.
 findWithDefault :: (Ord k) => Double -> k -> Proxy k -> Double
 findWithDefault def k (Table m) = M.findWithDefault def k m
-findWithDefault _ k (NN net conf) = head $ snd $ fromLastShapes net $ runNetwork net (toHeadShapes net $ toNetInp conf k)
+findWithDefault _ k nn          = findNeuralNetwork k nn
+
+findNeuralNetwork :: k -> Proxy k -> Double
+findNeuralNetwork k (NN net conf)= head $ snd $ fromLastShapes net $ runNetwork net (toHeadShapes net $ toNetInp conf k)

@@ -27,9 +27,6 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
   (reward, stateNext) <- action state
   let mv = borl ^. v
       mw = borl ^. w
-      mPsiRho = borl ^. psiStates._1
-      mPsiV = borl ^. psiStates._2
-      mPsiW = borl ^. psiStates._3
       mr0 = borl ^. r0
       mr1 = borl ^. r1
   let bta = borl ^. parameters . beta
@@ -72,9 +69,6 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       psiValRho' = (1-0.03) * psiValRho + 0.03 * abs psiRho
       psiValV' = (1-0.03) * psiValV + 0.03 * abs psiV
       psiValW' = (1-0.03) * psiValW + 0.03 * abs psiW
-      psiStateRho' = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiRho + 0.03 * psiRho) mPsiRho
-      psiStateV'   = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiV + 0.03 * psiV) mPsiV
-      psiStateW'   = P.insert stateNext ((1-0.03) * P.findWithDefault 0 stateNext mPsiW + 0.03 * psiW) mPsiW
 
   -- enforce values
   let vValStateNew = vValState' - if randomAction || psiValV' > borl ^. parameters.zeta then 0 else borl ^. parameters.xi * psiW
@@ -86,7 +80,6 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
 
   -- update values
   return $
-    set psiStates (psiStateRho', psiStateV',psiStateW') $
     set psis (psiValRho', psiValV', psiValW' ) $
     set visits (M.alter (\mV -> ((+1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
