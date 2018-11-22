@@ -25,18 +25,18 @@ import           Helper
 
 import           Grenade
 
-type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 4, Relu, FullyConnected 4 1, Trivial] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig (return . fromIntegral . fromEnum) [] 1 (LearningParameters 0.01 0.9 0.0001) ([minBound .. maxBound] :: [St])
+nnConfig = NNConfig (return . fromIntegral . fromEnum) [] 64 (LearningParameters 0.01 0.9 0.0001) ([minBound .. maxBound] :: [St])
 
 main :: IO ()
 main = do
 
   nn <- randomNetwork :: IO NN
 
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   let rl = mkBORLUnichain initState actions actionFilter params decay nn nnConfig
+  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

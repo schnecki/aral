@@ -19,13 +19,14 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network '[ FullyConnected 3 4, Relu, FullyConnected 4 1] '[ 'D1 3, 'D1 4, 'D1 4, 'D1 1]
+type NN = Network '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig netInp [] 128 (LearningParameters 0.01 0.5 0.0001) ([minBound .. maxBound] :: [St])
 
 netInp :: St -> [Double]
-netInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
+netInp st = [scale maxX $ fst (getCurrentIdx st), scale maxY $ snd (getCurrentIdx st)]
+  where scale mx val = 2 * fromIntegral val / fromIntegral mx - 1
 
 
 main :: IO ()

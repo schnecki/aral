@@ -87,4 +87,3 @@ fromLastShapes _ _                = error "NN output currently not supported."
 -- reifySNat :: Integer -> SV.SNat a
 -- reifySNat n | n < 0 = reifyNat 0 (unsafeCoerce . SV.snatProxy)
 --             | otherwise = reifyNat n (unsafeCoerce . SV.snatProxy)
-
