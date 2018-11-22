@@ -60,7 +60,7 @@ insert period k v px@(NN netT netW tp config) = checkTrainBatchsize ((k, scaleVa
       | otherwise = updateTargetNet $ NN netT netW tp (cache .~  cache' $ config)
     updateTargetNet px@(NN _ nW _ _) | period `mod` config ^. updateTargetInterval == 0 = NN nW nW tp config
                                      | otherwise = px
-
+    updateTargetNet _ = error "updateTargetNet called on non-neural network proxy"
 
 -- | Retrieve a value.
 lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> Double

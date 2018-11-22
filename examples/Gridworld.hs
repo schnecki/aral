@@ -22,7 +22,7 @@ maxY = 4                        -- [0..maxY]
 type NN = Network  '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 128 (LearningParameters 0.01 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
+nnConfig = NNConfig netInp [] 64 (LearningParameters 0.001 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
@@ -41,21 +41,24 @@ main = do
 
 names = ["random", "up   ", "down ", "left ", "right"]
 
+-- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.2 1.0 1.0 1.0 1.0 0.1 0.5 0.2
+params = Parameters 0.2 0.5 0.5 1.0 1.0 0.1 0.25 0.5
+
+-- | Decay function of parameters.
+decay :: Period -> Parameters -> Parameters
+decay t p@(Parameters alp bet del eps exp rand zeta xi)
+  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | otherwise = p
+
+  where slower = 0.995
+        slow = 0.95
+        faster = 1.0/0.995
+        f = max 0.001
 
 
 initState :: St
 initState = fromIdx (0,0)
-
-decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (f $ slow * alp) (f $ slow * bet) (f $ slow * del) (max 0.1 $ slow * eps) (f $ slow * exp) rand zeta xi -- (1 - slow * (1-frc)) mRho
-  | otherwise = p
-
-  where slow = 0.95
-        faster = 1.0/0.995
-        f = max 0.001
 
 
 -- State
