@@ -34,7 +34,6 @@ dependencies:
   - text
   - singletons
   - hmatrix
-  - reflection
   - vector
   - grenade
 

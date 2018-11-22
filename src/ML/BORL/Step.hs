@@ -1,12 +1,12 @@
-
-
-module ML.BORL.Ops
+module ML.BORL.Step
     ( step
     , stepExecute
     , nextAction
     ) where
 
+import           ML.BORL.Action
 import           ML.BORL.Parameters
+import           ML.BORL.Properties
 import qualified ML.BORL.Proxy       as P
 import           ML.BORL.Type
 
@@ -128,29 +128,35 @@ rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
 rhoValue borl state (a,_) =
   case borl ^. rho of
     Left r  -> r
-    Right m -> P.findWithDefault 0 (state,a) m
+    Right m -> P.findWithDefault (borl ^. t) (state,a) m
+
+reduce :: [Double] -> Double
+reduce = maximum
+-- reduce xs = sum xs / fromIntegral (length xs)
+{-# INLINE reduce #-}
+
 
 rhoStateValue :: (Ord s) => BORL s -> s -> Double
 rhoStateValue borl state = case borl ^. rho of
   Left r  -> r
-  Right _ -> maximum $ map (rhoValue borl state) (actionsIndexed borl state)
+  Right _ -> reduce $ map (rhoValue borl state) (actionsIndexed borl state)
 
 vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-vValue borl state (a,_) = P.findWithDefault 0 (state, a) mv
+vValue borl state (a,_) = P.findWithDefault (borl ^. t) (state, a) mv
   where
     mv = borl ^. v
 
 vStateValue :: (Ord s) => BORL s -> s -> Double
-vStateValue borl state = maximum $ map (vValue borl state) (actionsIndexed borl state)
+vStateValue borl state = reduce $ map (vValue borl state) (actionsIndexed borl state)
 
 
 wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-wValue borl state (a,_) = P.findWithDefault 0 (state, a) mw
+wValue borl state (a,_) = P.findWithDefault (borl ^. t) (state, a) mw
   where
     mw = borl ^. w
 
 wStateValue :: (Ord s) => BORL s -> s -> Double
-wStateValue borl state = maximum $ map (wValue borl state) (actionsIndexed borl state)
+wStateValue borl state = reduce $ map (wValue borl state) (actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -161,7 +167,7 @@ data RSize
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> Double
-rValue borl size state (a, _) = P.findWithDefault 0 (state, a) mr
+rValue borl size state (a, _) = P.findWithDefault (borl ^. t) (state, a) mr
   where
     mr =
       case size of
@@ -169,7 +175,7 @@ rValue borl size state (a, _) = P.findWithDefault 0 (state, a) mr
         RBig   -> borl ^. r1
 
 rStateValue :: (Ord s) => BORL s -> RSize -> s -> Double
-rStateValue borl size state = maximum $ map (rValue borl size state) (actionsIndexed borl state)
+rStateValue borl size state = reduce $ map (rValue borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
 eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
@@ -178,6 +184,6 @@ eValue borl state act = rValue borl RBig state act - rValue borl RSmall state ac
 
 -- | Calculates the difference between the expected discounted values.
 eStateValue :: (Ord s) => BORL s -> s -> Double
-eStateValue borl state = maximum (map (rValue borl RBig state) as) - maximum (map (rValue borl RSmall state) as)
+eStateValue borl state = reduce (map (rValue borl RBig state) as) - reduce (map (rValue borl RSmall state) as)
   where as = actionsIndexed borl state
 

@@ -25,10 +25,17 @@ import           Helper
 
 import           Grenade
 
-type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 4, Relu, FullyConnected 4 1, Trivial] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig (return . fromIntegral . fromEnum) [] 64 (LearningParameters 0.01 0.9 0.0001) ([minBound .. maxBound] :: [St])
+nnConfig = NNConfig netInp [] 32 (LearningParameters 0.05 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2)
+
+netInp :: St -> [Double]
+netInp st = [scaleNegPosOne maxVal (fromIntegral $ fromEnum st)]
+
+maxVal :: Double
+maxVal = fromIntegral $ maximum $ map fromEnum ([minBound..maxBound] :: [St])
+
 
 main :: IO ()
 main = do
@@ -36,7 +43,7 @@ main = do
   nn <- randomNetwork :: IO NN
 
   let rl = mkBORLUnichain initState actions actionFilter params decay nn nnConfig
-  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -48,7 +55,11 @@ initState = A
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.2 0.2 0.2 1.0 1.0 0.01 1.5 0.2
+params = Parameters 0.2 0.2 0.2 1.0 1.0 0.005 1.5 0.2
+
+-- | BORL Parameters when using NN.
+paramsNN :: Parameters
+paramsNN = Parameters 0.2 1.0 1.0 1.0 1.0 0.005 1.5 0.50
 
 
 -- | Decay function of parameters.
