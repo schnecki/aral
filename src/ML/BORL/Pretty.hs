@@ -67,9 +67,13 @@ prettyBORLTables t1 t2 t3 borl =
   text "Exploration" <>
   colon $$
   nest 45 (printFloat $ borl ^. parameters . exploration) $+$
-  text "Learning Random Actions" <>
+  text "Learn From Random Actions until Expl. hits" <>
   colon $$
   nest 45 (printFloat $ borl ^. parameters . learnRandomAbove) $+$
+  nnBatchSize $+$
+  nnReplMemSize $+$
+
+
   text "Gammas" <>
   colon $$
   nest 45 (text (show (printFloat $ borl ^. gammas . _1, printFloat $ borl ^. gammas . _2))) $+$
@@ -116,6 +120,13 @@ prettyBORLTables t1 t2 t3 borl =
                , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+
+    nnBatchSize = case borl ^. v of
+      P.Table {} -> empty
+      P.NN _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+    nnReplMemSize = case borl ^. v of
+      P.Table {} -> empty
+      P.NN _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
 
 mkNNList :: P.Proxy k -> [(k, (Double, Double))]
 mkNNList pr@(P.NN _ _ _ conf) = map (\inp -> (inp, (P.lookupNeuralNetwork P.Target inp pr, P.lookupNeuralNetwork P.Worker inp pr))) (P._prettyPrintElems conf)

@@ -66,7 +66,7 @@ insert period k v px@(NN netT netW tp config) = updateTargetNet $ trainNNConf (r
 lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> Double
 lookupProxy _ _ k (Table m) = M.findWithDefault 0 k m
 lookupProxy period lkTp k px
-  | period < 1000 = 0 -- fromIntegral period / 1000 * (unscaleValue (getMinMaxVal px) $ lookupNeuralNetwork lkTp k px)
+  -- | period < 1000 = 0 -- fromIntegral period / 1000 * (unscaleValue (getMinMaxVal px) $ lookupNeuralNetwork lkTp k px)
   | otherwise = lookupNeuralNetwork lkTp k px
 
 
