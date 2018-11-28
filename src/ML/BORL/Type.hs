@@ -11,21 +11,21 @@ import           ML.BORL.Action
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy
+import           ML.BORL.Types
 
 import           Control.Lens
 import qualified Data.Map.Strict              as M
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
+import qualified Data.Vector.Mutable          as V
 import           GHC.TypeLits
 import           Grenade
+import           System.IO.Unsafe             (unsafePerformIO)
 
 
 -------------------- Types --------------------
 
-type Period = Integer
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
-type ActionIndex = Int
-type InitialState s = s                            -- ^ Initial state
 type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the parameters at time t.
 
 
@@ -177,8 +177,9 @@ checkNN _ nnConfig borl
 
 -- | Converts the neural network state configuration to a state-action configuration.
 mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
-mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp sc c) = NNConfig (toSA inp) [] bs lp (ppSA pp) sc c
+mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ _ sz) bs lp pp sc c) = NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c
   where
+    rm' = ReplayMemory (unsafePerformIO $ V.new sz) 0 sz
     maxVal = fromIntegral (length as)
     toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
     toSA f (state, a) = f state ++ [scaleNegPosOne (0,maxVal) (fromIntegral a)]

@@ -28,7 +28,7 @@ import           Grenade
 type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 32 (LearningParameters 0.001 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2) 3000
+nnConfig = NNConfig netInp (mkReplayMemory 1000) 32 (LearningParameters 0.001 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2) 3000
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]

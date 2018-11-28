@@ -22,7 +22,7 @@ maxY = 4                        -- [0..maxY]
 type NN = Network  '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 64 (LearningParameters 0.001 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
+nnConfig = NNConfig netInp (mkReplayMemory 1000) 64 (LearningParameters 0.001 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]

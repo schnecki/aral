@@ -16,6 +16,7 @@ module ML.BORL.Proxy
 
 
 import           ML.BORL.NeuralNetwork
+import           ML.BORL.Types
 
 import           Control.Arrow
 import           Control.Lens
@@ -23,9 +24,6 @@ import qualified Data.Map.Strict              as M
 import           Data.Singletons.Prelude.List
 import           GHC.TypeLits
 import           Grenade
-
-
-type Period = Integer
 
 
 -- | Type of approximation (needed for scaling of values).
@@ -53,13 +51,15 @@ makeLenses ''Proxy
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
 insert :: (Ord k) => Period -> k -> Double -> Proxy k -> Proxy k
 insert _ k v (Table m)          = Table (M.insert k v m)
-insert period k v px@(NN netT netW tp config) = checkTrainBatchsize ((k, scaleValue (getMinMaxVal px) v) : config ^. cache)
+insert period k v px@(NN netT netW tp config) = updateTargetNet $ trainNNConf (replayMemory %~ addToReplayMemory (k, scaleValue (getMinMaxVal px) v) $ config)
   where
-    checkTrainBatchsize cache'
-      | length cache' >= config ^. trainBatchSize = updateTargetNet $ NN netT (trainNetwork (config ^. learningParams) netW (map (first $ config ^. toNetInp) cache')) tp (cache .~ [] $ config)
-      | otherwise = updateTargetNet $ NN netT netW tp (cache .~  cache' $ config)
-    updateTargetNet px@(NN _ nW _ _) | period `mod` config ^. updateTargetInterval == 0 = NN nW nW tp config
-                                     | otherwise = px
+    trainNNConf config' =
+      let trainingInstances = map (first $ config' ^. toNetInp) $ getRandomReplayMemoryElements period (config' ^. trainBatchSize) (config' ^. replayMemory)
+          netW' = trainNetwork (config' ^. learningParams) netW trainingInstances
+      in NN netT netW' tp config'
+    updateTargetNet px'@(NN _ nW _ _)
+      | period `mod` config ^. updateTargetInterval == 0 = NN nW nW tp config
+      | otherwise = px'
     updateTargetNet _ = error "updateTargetNet called on non-neural network proxy"
 
 -- | Retrieve a value.
