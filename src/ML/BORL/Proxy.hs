@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ExplicitForAll            #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TemplateHaskell           #-}
 
 module ML.BORL.Proxy
@@ -20,6 +22,8 @@ import           ML.BORL.Types
 
 import           Control.Arrow
 import           Control.Lens
+import           Control.Monad
+import           Control.Parallel.Strategies
 import qualified Data.Map.Strict              as M
 import           Data.Singletons.Prelude.List
 import           GHC.TypeLits
@@ -39,7 +43,7 @@ data LookupType = Target | Worker
 data Proxy k = Table
                { _proxyTable :: !(M.Map k Double)
                }
-             | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL) =>
+             | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes)) =>
                 NN
                 { _proxyNNTarget :: !(Network layers shapes)
                 , _proxyNNWorker :: !(Network layers shapes)
@@ -49,14 +53,17 @@ data Proxy k = Table
 makeLenses ''Proxy
 
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
-insert :: (Ord k) => Period -> k -> Double -> Proxy k -> Proxy k
-insert _ k v (Table m)          = Table (M.insert k v m)
-insert period k v px@(NN netT netW tp config) = updateTargetNet $ trainNNConf (replayMemory %~ addToReplayMemory (k, scaleValue (getMinMaxVal px) v) $ config)
+insert :: forall k . (Ord k) => Period -> k -> Double -> Proxy k -> IO (Proxy k)
+insert _ k v (Table m)          = return $ Table (M.insert k v m)
+insert period k v px@(NN netT netW tp config) = do
+  replMem' <- addToReplayMemory (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
+  updateTargetNet <$> trainNNConf (replayMemory .~ replMem' $ config)
   where
-    trainNNConf config' =
-      let trainingInstances = map (first $ config' ^. toNetInp) $ getRandomReplayMemoryElements period (config' ^. trainBatchSize) (config' ^. replayMemory)
+    trainNNConf config' = do
+      rands <- getRandomReplayMemoryElements period (config' ^. trainBatchSize) (config' ^. replayMemory)
+      let trainingInstances = map (first $ config' ^. toNetInp) rands
           netW' = trainNetwork (config' ^. learningParams) netW trainingInstances
-      in NN netT netW' tp config'
+      return $ NN netT netW' tp config'
     updateTargetNet px'@(NN _ nW _ _)
       | period `mod` config ^. updateTargetInterval == 0 = NN nW nW tp config
       | otherwise = px'

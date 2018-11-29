@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
@@ -14,6 +15,7 @@ import           ML.BORL.Proxy
 import           ML.BORL.Types
 
 import           Control.Lens
+import           Control.Parallel.Strategies  (NFData)
 import qualified Data.Map.Strict              as M
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
@@ -83,7 +85,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
 -- Neural network approximations
 
 mkBORLUnichain ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes))
   => InitialState s
   -> [Action s]
   -> (s -> [Bool])
@@ -114,7 +116,7 @@ mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
 
 
 mkBORLMultichain ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes))
   => InitialState s
   -> [Action s]
   -> (s -> [Bool])

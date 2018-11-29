@@ -23,22 +23,20 @@ makeLenses ''ReplayMemory
 mkReplayMemory :: Int -> ReplayMemory k
 mkReplayMemory sz =
   unsafePerformIO $ do
-    vec <- V.new sz -- does not initialize memory
+    vec <- V.unsafeNew sz -- does not initialize memory
     return $ ReplayMemory vec 0 sz
 
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
-addToReplayMemory :: (k,Double) -> ReplayMemory k -> ReplayMemory k
-addToReplayMemory e (ReplayMemory vec idx sz) =
-  unsafePerformIO $ do
+addToReplayMemory :: (k,Double) -> ReplayMemory k -> IO (ReplayMemory k)
+addToReplayMemory e (ReplayMemory vec idx sz) = do
     V.write vec idx e
     return $ ReplayMemory vec ((idx + 1) `mod` sz) sz
 
 -- | Get a list of random input-output tuples from the replay memory.
-getRandomReplayMemoryElements :: Period -> Batchsize -> ReplayMemory k -> [(k, Double)]
-getRandomReplayMemoryElements t bs (ReplayMemory vec _ sz) =
-  unsafePerformIO $ do
+getRandomReplayMemoryElements :: Period -> Batchsize -> ReplayMemory k -> IO [(k, Double)]
+getRandomReplayMemoryElements t bs (ReplayMemory vec _ sz) = do
     let maxIdx = fromIntegral (min t (fromIntegral sz)) - 1 :: Int
     let len = min bs (maxIdx + 1)
     g <- newStdGen

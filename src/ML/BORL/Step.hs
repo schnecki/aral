@@ -18,6 +18,13 @@ import           Data.List           (groupBy, sortBy)
 import qualified Data.Map.Strict     as M
 import           System.Random
 
+expSmthPsi :: Double
+expSmthPsi = 0.03
+
+approxAvg :: Double
+approxAvg = fromIntegral (100 :: Int)
+
+
 step :: (Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl
 
@@ -45,18 +52,18 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
 
 
   let rhoState | isUnichain borl  = reward + vValStateNext - vValState
-               | otherwise = (100 * rhoStateValue borl stateNext + reward) / 101 -- approximation
+               | otherwise = (approxAvg * rhoStateValue borl stateNext + reward) / (approxAvg+1) -- approximation
       -- rhoState = reward
       rhoVal' = (1 - alp) * rhoVal + alp * rhoState
 
       -- multichain use exponential smoothing with g + Pg = 0
-      rhoNew = case borl ^. rho of
-        Left _  -> Left rhoVal'
-        Right m -> Right (P.insert period label rhoVal' m)
-      psiRho = rhoVal' - rhoVal                                         -- should converge to 0
+  rhoNew <- case borl ^. rho of
+        Left _  -> return $ Left rhoVal'
+        Right m -> Right <$> P.insert period label rhoVal' m
+  let psiRho = rhoVal' - rhoVal                                         -- should converge to 0
 
   let vValState'  = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
-      psiV = - reward + rhoVal' + vValState' - vValStateNext             -- should converge to 0
+      psiV = - reward + rhoVal' + vValState' - vValStateNext            -- should converge to 0
 
   let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
       psiW = vValState' + wValState' - wValStateNext                    -- should converge to 0
@@ -66,17 +73,22 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
 
   let (psiValRho,psiValV,psiValW) = borl ^. psis
-      psiValRho' = (1-0.03) * psiValRho + 0.03 * abs psiRho
-      psiValV' = (1-0.03) * psiValV + 0.03 * abs psiV
-      psiValW' = (1-0.03) * psiValW + 0.03 * abs psiW
+      psiValRho' = (1-expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
+      psiValV' = (1-expSmthPsi) * psiValV + expSmthPsi * abs psiV
+      psiValW' = (1-expSmthPsi) * psiValW + expSmthPsi * abs psiW
 
   -- enforce values
   let vValStateNew = vValState' - if randomAction || psiValV' > borl ^. parameters.zeta then 0 else borl ^. parameters.xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
 
+  -- Set new values
+  mv' <- P.insert period label vValStateNew mv
+  mw' <- P.insert period label wValState' mw
+  mr0' <- P.insert period label r0ValState' mr0
+  mr1' <- P.insert period label r1ValState' mr1
+
   let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-            | otherwise = set v (P.insert period label vValStateNew mv) $ set w (P.insert period label wValState' mw) $ set rho rhoNew $
-                          set r0 (P.insert period label r0ValState' mr0) $ set r1 (P.insert period label r1ValState' mr1) borl
+            | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
 
   -- update values
   return $
