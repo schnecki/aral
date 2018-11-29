@@ -70,19 +70,20 @@ insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k v px@(NN netT netW tab tp config) = do
   replMem' <- addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
+  --
+  --   then return $ NN netT netW  tp config'
+  --   else if period == fromIntegral (config ^. replayMemory.replayMemorySize)
+  --   then do
+  --   putStrLn "NetInit"
+    -- return $ NN netInit netInit mempty tp config'
   if period < fromIntegral (config' ^. replayMemory.replayMemorySize)
-    then return $ NN netT netW (M.insert k v tab) tp config'
-    else if period == fromIntegral (config ^. replayMemory.replayMemorySize)
-    then do
-    putStrLn "NetInit"
-    return $ NN netInit netInit mempty tp config'
+    then updateNNTargetNet <$> trainNNConf period (proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px)
     else updateNNTargetNet <$> trainNNConf period (proxyNNConfig .~  config' $ px)
   where
     updateNNTargetNet px'@(NN _ netW' tab' tp' config')
       | period `mod` config' ^. updateTargetInterval == 0 = NN netW' netW' tab' tp' config'
       | otherwise = px'
     updateNNTargetNet _ = error "updateNNTargetNet called on non-neural network proxy"
-    netInit = trainNetwork (config ^. learningParams) netW (map (config ^. toNetInp *** scaleValue (getMinMaxVal px)) (M.toList tab))
 
 trainNNConf :: forall k . (Ord k) => Period -> Proxy k -> IO (Proxy k)
 trainNNConf period (NN netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ NN netT netW tab tp config
