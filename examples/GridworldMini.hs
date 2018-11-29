@@ -1,13 +1,17 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 module Main where
 
 import           ML.BORL
 
 import           Helper
 
-import           Control.Arrow (first, second)
-import           Control.Lens  (set, (^.))
-import           Control.Monad (foldM, unless, when)
+import           Control.Arrow   (first, second)
+import           Control.DeepSeq (NFData)
+import           Control.Lens    (set, (^.))
+import           Control.Monad   (foldM, unless, when)
+import           GHC.Generics
 import           System.IO
 import           System.Random
 
@@ -53,7 +57,7 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
 
 
 -- State
-newtype St = St [[Integer]] deriving (Eq)
+newtype St = St [[Integer]] deriving (Eq,NFData,Generic)
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))

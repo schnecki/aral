@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 -- This is example is a multichain example from Puttermann 1994 (Example 8.2.2). For multichain MDPs the average reward
 -- value may differ between set of recurrent states.
 
@@ -25,10 +27,12 @@ import           ML.BORL
 
 import           Helper
 
-import           Control.Arrow (first, second)
-import           Control.Lens  (set, (^.))
-import           Control.Monad (foldM, unless, when)
-import           Data.List     (foldl')
+import           Control.Arrow   (first, second)
+import           Control.DeepSeq (NFData)
+import           Control.Lens    (set, (^.))
+import           Control.Monad   (foldM, unless, when)
+import           Data.List       (foldl')
+import           GHC.Generics
 import           System.IO
 import           System.Random
 
@@ -60,7 +64,7 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
 
 
 -- State
-newtype St = St Integer deriving (Ord, Eq, Show)
+newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)
 type R = Double
 type P = Double
 

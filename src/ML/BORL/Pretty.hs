@@ -113,7 +113,7 @@ prettyBORLTables t1 t2 t3 borl =
     scalingText =
       case borl ^. v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.NN _ _ _ conf ->
+        P.NN _ _ _ _ conf ->
           text
             (show
                ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
@@ -123,17 +123,17 @@ prettyBORLTables t1 t2 t3 borl =
 
     nnBatchSize = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+      P.NN _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
     nnReplMemSize = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
+      P.NN _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
     nnLearningParams = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
+      P.NN _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
 
 mkNNList :: P.Proxy k -> [(k, (Double, Double))]
-mkNNList pr@(P.NN _ _ _ conf) = map (\inp -> (inp, (P.lookupNeuralNetwork P.Target inp pr, P.lookupNeuralNetwork P.Worker inp pr))) (P._prettyPrintElems conf)
+mkNNList pr@(P.NN _ _ _ _ conf) = map (\inp -> (inp, (P.lookupNeuralNetwork P.Target inp pr, P.lookupNeuralNetwork P.Worker inp pr))) (P._prettyPrintElems conf)
 mkNNList _ = error "mkNNList called on non-neural network"
 
 prettyBORL :: (Ord s, Show s) => BORL s -> Doc

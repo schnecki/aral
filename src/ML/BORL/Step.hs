@@ -5,12 +5,14 @@ module ML.BORL.Step
     ) where
 
 import           ML.BORL.Action
+import           ML.BORL.Fork
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy       as P
 import           ML.BORL.Type
 
 import           Control.Applicative ((<|>))
+import           Control.DeepSeq     (NFData, force)
 import           Control.Lens
 import           Control.Monad
 import           Data.Function       (on)
@@ -25,10 +27,10 @@ approxAvg :: Double
 approxAvg = fromIntegral (100 :: Int)
 
 
-step :: (Ord s) => BORL s -> IO (BORL s)
+step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
 step borl = nextAction borl >>= stepExecute borl
 
-stepExecute :: (Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
+stepExecute :: (NFData s, Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
 stepExecute borl (randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
   (reward, stateNext) <- action state
@@ -48,55 +50,54 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
       wValStateNext = wStateValue borl state
       r0ValState = rValue borl RSmall state act
       r1ValState = rValue borl RBig state act
-  let label = (state,aNr)
-
-
-  let rhoState | isUnichain borl  = reward + vValStateNext - vValState
-               | otherwise = (approxAvg * rhoStateValue borl stateNext + reward) / (approxAvg+1) -- approximation
-      -- rhoState = reward
+  let label = (state, aNr)
+  let rhoState
+        | isUnichain borl = reward + vValStateNext - vValState
+           --  | isUnichain borl = reward                                              -- Alternative to above (estimating it from actual reward)
+        | otherwise = (approxAvg * rhoStateValue borl stateNext + reward) / (approxAvg + 1) -- approximation
       rhoVal' = (1 - alp) * rhoVal + alp * rhoState
-
-      -- multichain use exponential smoothing with g + Pg = 0
-  rhoNew <- case borl ^. rho of
-        Left _  -> return $ Left rhoVal'
-        Right m -> Right <$> P.insert period label rhoVal' m
-  let psiRho = rhoVal' - rhoVal                                         -- should converge to 0
-
-  let vValState'  = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
-      psiV = - reward + rhoVal' + vValState' - vValStateNext            -- should converge to 0
-
+  rhoNew <-
+    case borl ^. rho of
+      Left _  -> return $ Left rhoVal'
+      Right m -> Right . force <$> P.insert period label rhoVal' m
+  let psiRho = rhoVal' - rhoVal                                   -- should converge to 0
+  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
+      psiV = -reward + rhoVal' + vValState' - vValStateNext       -- should converge to 0
   let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
-      psiW = vValState' + wValState' - wValStateNext                    -- should converge to 0
-
-  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rStateValue borl RSmall stateNext)
-      r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rStateValue borl RBig stateNext)
-      params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
-
-  let (psiValRho,psiValV,psiValW) = borl ^. psis
-      psiValRho' = (1-expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
-      psiValV' = (1-expSmthPsi) * psiValV + expSmthPsi * abs psiV
-      psiValW' = (1-expSmthPsi) * psiValW + expSmthPsi * abs psiW
-
+      psiW = vValState' + wValState' - wValStateNext              -- should converge to 0
+  forkMw' <- doFork $ P.insert period label wValState' mw
+  let (psiValRho, psiValV, psiValW) = borl ^. psis                -- Psis (exponentially smoothed)
+      psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
+      psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
+      psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * abs psiW
   -- enforce values
-  let vValStateNew = vValState' - if randomAction || psiValV' > borl ^. parameters.zeta then 0 else borl ^. parameters.xi * psiW
+  let vValStateNew =
+        vValState' -
+        if randomAction || psiValV' > borl ^. parameters . zeta
+          then 0
+          else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
-
-  -- Set new values
-  mv' <- P.insert period label vValStateNew mv
-  mw' <- P.insert period label wValState' mw
-  mr0' <- P.insert period label r0ValState' mr0
-  mr1' <- P.insert period label r1ValState' mr1
-
-  let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-            | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
-
+  forkMv' <- doFork $ P.insert period label vValStateNew mv
+  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rStateValue borl RSmall stateNext)
+  forkMr0' <- doFork $ P.insert period label r0ValState' mr0
+  let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rStateValue borl RBig stateNext)
+  forkMr1' <- doFork $ P.insert period label r1ValState' mr1
+  let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
+  mv' <- collectForkResult forkMv'
+  mw' <- collectForkResult forkMw'
+  mr0' <- collectForkResult forkMr0'
+  mr1' <- collectForkResult forkMr1'
+  let borl'
+        | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
+        | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
   -- update values
-  return $
-    set psis (psiValRho', psiValV', psiValW' ) $
-    set visits (M.alter (\mV -> ((+1) <$> mV) <|> Just 1) state (borl ^. visits)) $
+  return $ force $              -- needed to ensure constant memory consumption
+    set psis (psiValRho', psiValV', psiValW') $
+    set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
     set t (period + 1) $
     set parameters params' borl'
+
 
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (Ord s) => BORL s -> IO (Bool, ActionIndexed s)

@@ -1,6 +1,8 @@
+{-# LANGUAGE BangPatterns #-}
 module ML.BORL.Action where
 
-import qualified Data.Text as T
+import           Control.DeepSeq
+import qualified Data.Text       as T
 
 -- | A reward is a Double.
 type Reward = Double
@@ -10,6 +12,9 @@ data Action s = Action
   { actionFunction :: s -> IO (Reward, s) -- ^ An action which returns a reward r and a new state s'
   , actionName     :: T.Text              -- ^ Name of the action.
   }
+
+instance NFData (Action s) where
+  rnf (Action !_ n) = rnf n
 
 
 instance Eq (Action s) where

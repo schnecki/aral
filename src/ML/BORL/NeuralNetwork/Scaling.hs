@@ -1,8 +1,11 @@
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
 module ML.BORL.NeuralNetwork.Scaling where
 
+import           Control.DeepSeq
 import           Control.Lens
-
+import           GHC.Generics
 
 data ScalingNetOutParameters = ScalingNetOutParameters
   { _scaleMaxVValue  :: Double
@@ -13,7 +16,7 @@ data ScalingNetOutParameters = ScalingNetOutParameters
   , _scaleMinR0Value :: Double
   , _scaleMaxR1Value :: Double
   , _scaleMinR1Value :: Double
-  } deriving (Show)
+  } deriving (Show,NFData,Generic)
 makeLenses ''ScalingNetOutParameters
 
 
