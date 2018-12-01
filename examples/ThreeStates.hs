@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
@@ -19,16 +21,18 @@
 
 module Main where
 
-import           ML.BORL hiding (actionFilter)
+import           ML.BORL         hiding (actionFilter)
 
 import           Helper
 
+import           Control.DeepSeq (NFData)
+import           GHC.Generics
 import           Grenade
 
 type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 32 (LearningParameters 0.001 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2) 3000
+nnConfig = NNConfig netInp (mkReplayMemory 1000) 32 (LearningParameters 0.001 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2) 3000
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
@@ -58,13 +62,13 @@ initState = A
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.2 0.5 0.5 1.0 1.0 0.1 0.25 0.5
+params = Parameters 0.2 0.25 0.25 1.0 1.0 0.1 0.25 0.5
 
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slow * eps) (f $ slow * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
 
   where slower = 0.995
@@ -74,7 +78,7 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
 
 
 -- State
-data St = B | A | C deriving (Ord, Eq, Show, Enum, Bounded)
+data St = B | A | C deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
 type R = Double
 type P = Double
 

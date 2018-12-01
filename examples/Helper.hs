@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Helper
     ( askUser
 
@@ -6,14 +7,18 @@ module Helper
 import           ML.BORL
 
 import           Control.Arrow
-import           Control.Lens  (set, (^.))
-import           Control.Monad (foldM, unless, when)
-import           Data.Function (on)
-import           Data.List     (find, sortBy)
+import           Control.DeepSeq (NFData, force)
+import           Control.Lens    (set, (^.))
+import           Control.Monad   (foldM, unless, when)
+import           Data.Function   (on)
+import           Data.List       (find, sortBy)
+import           Data.Time.Clock
+import           System.CPUTime
 import           System.IO
 import           System.Random
+import           Text.Printf
 
-askUser :: (Ord s, Show s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
+askUser :: (NFData s, Ord s, Show s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
 askUser showHelp addUsage cmds ql = do
   let usage =
         sortBy (compare `on` fst) $
@@ -44,7 +49,7 @@ askUser showHelp addUsage cmds ql = do
       putStr "How many learning rounds should I execute: " >> hFlush stdout
       l <- getLine
       case reads l :: [(Integer, String)] of
-        [(nr, _)] -> foldM (\q _ -> step q) ql [0 .. nr - 1] >>= askUser False addUsage cmds
+        [(nr, _)] -> time (foldM (\q _ -> step q) ql [0 .. nr - 1]) >>= askUser False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser False addUsage cmds ql
@@ -58,3 +63,12 @@ askUser showHelp addUsage cmds ql = do
       case find ((== c) . fst) cmds of
         Nothing -> unless (c == "q") (step ql >>= \x -> print (prettyBORLTables True False True x) >> return x >>= askUser False addUsage cmds)
         Just (_, cmd) -> stepExecute ql (False, cmd) >>= askUser False addUsage cmds
+
+
+time :: NFData t => IO t -> IO t
+time a = do
+    start <- getCurrentTime
+    !val <- force <$> a
+    end   <- getCurrentTime
+    putStrLn ("Computation Time: " ++ show (diffUTCTime end start))
+    return val

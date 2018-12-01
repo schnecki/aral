@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
@@ -11,21 +12,22 @@ import           ML.BORL.Action
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy
+import           ML.BORL.Types
 
+import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Map.Strict              as M
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
+import qualified Data.Vector.Mutable          as V
 import           GHC.TypeLits
 import           Grenade
+import           System.IO.Unsafe             (unsafePerformIO)
 
 
 -------------------- Types --------------------
 
-type Period = Integer
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
-type ActionIndex = Int
-type InitialState s = s                            -- ^ Initial state
 type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the parameters at time t.
 
 
@@ -56,6 +58,10 @@ data BORL s = BORL
   }
 makeLenses ''BORL
 
+instance NFData s => NFData (BORL s) where
+  rnf (BORL as af s t par dec gam rho psis v w r r1 vis) = rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf rho `seq` rnf psis `seq` rnf v `seq` rnf w `seq` rnf r `seq` rnf r1 `seq` rnf s
+
+
 default_gamma0, default_gamma1 :: Double
 default_gamma0 = 0.25
 default_gamma1 = 0.99
@@ -83,7 +89,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
 -- Neural network approximations
 
 mkBORLUnichain ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
   => InitialState s
   -> [Action s]
   -> (s -> [Bool])
@@ -110,11 +116,11 @@ mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = NN net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 mkBORLMultichain ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
   => InitialState s
   -> [Action s]
   -> (s -> [Bool])
@@ -141,7 +147,7 @@ mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net net tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = NN net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 -------------------- Other Constructors --------------------
@@ -177,8 +183,9 @@ checkNN _ nnConfig borl
 
 -- | Converts the neural network state configuration to a state-action configuration.
 mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
-mkNNConfigSA as asFilter (NNConfig inp _ bs lp pp sc c) = NNConfig (toSA inp) [] bs lp (ppSA pp) sc c
+mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c) = NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c
   where
+    rm' = ReplayMemory (unsafePerformIO $ V.new sz) sz
     maxVal = fromIntegral (length as)
     toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
     toSA f (state, a) = f state ++ [scaleNegPosOne (0,maxVal) (fromIntegral a)]

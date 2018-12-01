@@ -1,15 +1,18 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 module Main where
 
 import           ML.BORL
 
 import           Helper
 
-import           Control.Arrow (first, second)
-import           Control.Lens  (set, (^.))
-import           Control.Monad (foldM, unless, when)
-
+import           Control.Arrow   (first, second)
+import           Control.DeepSeq (NFData)
+import           Control.Lens    (set, (^.))
+import           Control.Monad   (foldM, unless, when)
+import           GHC.Generics
 import           Grenade
 import           System.IO
 import           System.Random
@@ -19,10 +22,10 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 3 6, Relu, FullyConnected 6 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 6, 'D1 6, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network  '[ FullyConnected 3 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp [] 64 (LearningParameters 0.001 0.5 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 10000
+nnConfig = NNConfig netInp (mkReplayMemory 10000) 128 (LearningParameters 0.01 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 1000
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
@@ -31,9 +34,9 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 main :: IO ()
 main = do
 
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
-  net <- randomNetworkInitWith HeEtAl :: IO NN
+  net <- randomNetworkInitWith UniformInit :: IO NN
   let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -43,12 +46,21 @@ names = ["random", "up   ", "down ", "left ", "right"]
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.2 0.5 0.5 1.0 1.0 0.1 0.25 0.5
+params = Parameters
+  { _alpha            = 0.2
+  , _beta             = 0.25
+  , _delta            = 0.25
+  , _epsilon          = 1.0
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
+  , _zeta             = 0.25
+  , _xi               = 0.5
+  }
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi
   | otherwise = p
 
   where slower = 0.995
@@ -57,12 +69,24 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
         f = max 0.001
 
 
+-- | Decay function of parameters.
+-- decay :: Period -> Parameters -> Parameters
+-- decay t p@(Parameters alp bet del eps exp rand zeta xi)
+--   | t `mod` 200 == 0 = Parameters (f alp) (f bet) (f del) eps (max 0.1 $ slower * exp) rand zeta (min 1 $ fromIntegral t / 20000 * xi)
+--   | otherwise = p
+
+--   where slower = 0.995
+
+--         slow = 0.95
+--         f x = max 0.001 (slower * x)
+
+
 initState :: St
 initState = fromIdx (0,0)
 
 
 -- State
-newtype St = St [[Integer]] deriving (Eq)
+newtype St = St [[Integer]] deriving (Eq,NFData,Generic)
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
@@ -104,7 +128,7 @@ goalState f st = do
     (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
-  where stepRew = first (+ 1)
+  where stepRew = first (+ 0)
 
 
 moveUp :: St -> IO (Reward,St)

@@ -36,6 +36,9 @@ dependencies:
   - hmatrix
   - vector
   - grenade
+  - parallel
+  - deepseq
+  - time
 
 
 library:
@@ -50,9 +53,9 @@ library:
   when:
     - condition: flag(fast)
       then:
-        ghc-options: -O2
-      else:
         ghc-options: -O0
+      else:
+        ghc-options: -O2
 
 executables:
   gridworld:
