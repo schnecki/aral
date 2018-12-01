@@ -76,10 +76,10 @@ prettyBORLTables t1 t2 t3 borl =
   text "Xi (ratio of W error forcing to V)" <>
   colon $$
   nest 45 (printFloat $ borl ^. parameters . xi) $+$
-  text "Zeta" <>
+  text "Zeta (enables W error forcing)" <>
   colon $$
   nest 45 (printFloat $ borl ^. parameters . zeta) $+$
-  text "Scaling (V,W,R0,R1) by V" <>
+  text "Scaling (V,W,R0,R1) by V Config" <>
   colon $$
   nest 45 scalingText $+$
   text "Psi Rho/Psi V/Psi W" <>
