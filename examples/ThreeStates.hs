@@ -32,7 +32,17 @@ import           Grenade
 type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp (mkReplayMemory 1000) 32 (LearningParameters 0.001 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 2) 3000
+nnConfig = NNConfig
+  { _toNetInp             = netInp
+  , _replayMemory         = mkReplayMemory 1000
+  , _trainBatchSize       = 32
+  , _learningParams       = LearningParameters 0.01 0.9 0.005
+  , _prettyPrintElems     = [minBound .. maxBound] :: [St]
+  , _scaleParameters      = scalingByMaxReward True 2
+  , _updateTargetInterval = 3000
+  , _trainMSEMax          = 0.03
+  }
+
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
@@ -62,7 +72,16 @@ initState = A
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.2 0.25 0.25 1.0 1.0 0.1 0.25 0.5
+params = Parameters
+  { _alpha            = 0.2
+  , _beta             = 0.25
+  , _delta            = 0.25
+  , _epsilon          = 1.0
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
+  , _zeta             = 1.0
+  , _xi               = 0.5
+  }
 
 
 -- | Decay function of parameters.

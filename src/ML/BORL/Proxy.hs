@@ -28,6 +28,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
 import           Control.Parallel.Strategies
+import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
@@ -41,7 +42,7 @@ data ProxyType
   | WTable
   | R0Table
   | R1Table
-  deriving (NFData, Generic)
+  deriving (Show, NFData, Generic)
 
 data LookupType = Target | Worker
 
@@ -72,21 +73,41 @@ insert period k v px@(NN netT netW tab tp config) = do
   let config' = replayMemory .~ replMem' $ config
   --
   --   then return $ NN netT netW  tp config'
-  --   else if period == fromIntegral (config ^. replayMemory.replayMemorySize)
-  --   then do
-  --   putStrLn "NetInit"
-    -- return $ NN netInit netInit mempty tp config'
-  if period < fromIntegral (config' ^. replayMemory.replayMemorySize)
-    then updateNNTargetNet <$> trainNNConf period (proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px)
-    else updateNNTargetNet <$> trainNNConf period (proxyNNConfig .~  config' $ px)
+  --   else
+  if period < fromIntegral (config' ^. replayMemory.replayMemorySize)-1
+    then return $ proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px
+    else if period == fromIntegral (config' ^. replayMemory.replayMemorySize) - 1
+    then do putStrLn "Initializing artifical neural network"
+            updateNNTargetNet True <$> netInit (NN netT netW tab tp config')
+    else updateNNTargetNet False <$> trainNNConf period (proxyNNConfig .~  config' $ px)
   where
-    updateNNTargetNet px'@(NN _ netW' tab' tp' config')
-      | period `mod` config' ^. updateTargetInterval == 0 = NN netW' netW' tab' tp' config'
+    updateNNTargetNet forceReset px'@(NN _ netW' tab' tp' config')
+      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = NN netW' netW' tab' tp' config'
       | otherwise = px'
-    updateNNTargetNet _ = error "updateNNTargetNet called on non-neural network proxy"
+    updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
+    netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
+
+
+trainMSE :: Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> IO (Proxy k)
+trainMSE _ _ _ px@Table{} = return px
+trainMSE mPeriod dataset lp px@(NN _ netW tab tp config)
+  | mse < mseMax = do
+      putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+      return px
+  | otherwise = do
+      when (maybe False ((==0) . (`mod` 10)) mPeriod) $
+        putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+      trainMSE ((+ 1) <$> mPeriod) dataset lp $ NN net' net' tab tp config
+  where
+    mseMax = config ^. trainMSEMax
+    net' = trainNetwork lp netW (zip kScaled vScaled)
+    vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
+    kScaled = map ((config ^. toNetInp) . fst) dataset
+    forwardRun k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - forwardRun k)) (map fst dataset) vScaled)
 
 trainNNConf :: forall k . (Ord k) => Period -> Proxy k -> IO (Proxy k)
-trainNNConf period (NN netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ NN netT netW tab tp config
+-- trainNNConf period (NN netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ NN netT netW tab tp config
 trainNNConf period (NN netT netW tab tp config) = do
   rands <- getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first $ config ^. toNetInp) rands
@@ -113,7 +134,7 @@ lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural netw
 
 -- | Finds the correct value for scaling.
 getMinMaxVal :: Proxy k -> (MinValue,MaxValue)
-getMinMaxVal Table {} = (1,1)
+getMinMaxVal Table{} = error "getMinMaxVal called for Table"
 getMinMaxVal p@NN {}  = case p ^?! proxyType of
   VTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
   WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)

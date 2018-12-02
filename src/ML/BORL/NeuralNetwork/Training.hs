@@ -19,7 +19,7 @@ import           Grenade
 import           Debug.Trace
 
 trainMaxVal :: Double
-trainMaxVal = 0.9
+trainMaxVal = 0.99
 
 trainNetwork ::
      (NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)

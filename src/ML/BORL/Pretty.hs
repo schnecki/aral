@@ -11,6 +11,7 @@ import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Type
+import           ML.BORL.Types
 
 import           Control.Arrow         (first, second)
 import           Control.Lens
@@ -33,23 +34,22 @@ printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 --   (P.Table rm1, P.Table rm0) -> prettyTable id (P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
 --   where subtr (k,v1) (_,v2) = (k,v1-v2)
 
-prettyProxy :: (Ord k', Show k') => (k -> k') -> P.Proxy k -> Doc
+prettyProxy :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> Doc
 prettyProxy = prettyTable
 
-prettyTable :: (Ord k', Show k') => (k -> k') -> P.Proxy k -> Doc
-prettyTable prettyKey p = vcat $ prettyTableRows prettyKey p
+prettyTable :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> Doc
+prettyTable period prettyKey p = vcat $ prettyTableRows (Just period) prettyKey p
 
-prettyTableRows :: (Ord k', Show k') => (k -> k') -> P.Proxy k -> [Doc]
-prettyTableRows prettyAction p = case p of
+prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -> [Doc]
+prettyTableRows mPeriod prettyAction p = case p of
   P.Table m -> map (\(k,val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
-  pr@P.NN{} -> map (\(k,(valT,valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mList)
-    where mList = map (first prettyAction) (mkNNList pr)
+  pr@(P.NN _ _ tab _ config) -> map (\(k,(valT,valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mList)
+    where mList | maybe False (config ^. replayMemory.replayMemorySize >=) (fromIntegral <$> mPeriod) = map (first prettyAction) $
+                  zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd.snd) (mkNNList pr)))
+                | otherwise = map (first prettyAction) (mkNNList pr)
 
--- prettyTablesStateAction :: (Ord k, Ord k1, Show k, Show k1) => P.Proxy k -> P.Proxy k1 -> Doc
--- prettyTablesStateAction m1 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows m1) (prettyTableRows m2)
-
-prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> Doc
-prettyTablesState p1 m1 p2 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows p1 m1) (prettyTableRows p2 m2)
+prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> Doc
+prettyTablesState period p1 m1 p2 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows (Just period) p1 m1) (prettyTableRows (Just period) p2 m2)
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> Doc
@@ -91,14 +91,14 @@ prettyBORLTables t1 t2 t3 borl =
   nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
   (case borl ^. rho of
      Left val -> text "Rho" <> colon $$ nest 45 (printFloat val)
-     Right m  -> text "Rho" $+$ prettyProxy prettyAction m) $$
+     Right m  -> text "Rho" $+$ prettyProxy (borl ^. t) prettyAction m) $$
   prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w) $+$
   prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1) $+$
   (if t3
-     then text "E" $+$ prettyTable prettyAction e
+     then text "E" $+$ prettyTable (borl ^. t) prettyAction e
      else empty) $+$
   text "Visits [%]" $+$
-  prettyTable id (P.Table vis)
+  prettyTable (borl ^. t) id (P.Table vis)
   where
     e =
       case (borl ^. r1, borl ^. r0) of
@@ -107,7 +107,7 @@ prettyBORLTables t1 t2 t3 borl =
         _ -> error "Pretty printing of mixed data structures is not allowed!"
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    prBoolTblsStateAction True h m1 m2 = h $+$ prettyTablesState prettyAction m1 prettyAction m2
+    prBoolTblsStateAction True h m1 m2 = h $+$ prettyTablesState (borl ^. t) prettyAction m1 prettyAction m2
     prBoolTblsStateAction False _ _ _ = empty
     prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     scalingText =

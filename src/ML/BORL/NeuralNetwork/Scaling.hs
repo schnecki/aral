@@ -3,25 +3,23 @@
 {-# LANGUAGE TemplateHaskell #-}
 module ML.BORL.NeuralNetwork.Scaling where
 
+import           ML.BORL.Types
+
 import           Control.DeepSeq
 import           Control.Lens
 import           GHC.Generics
 
 data ScalingNetOutParameters = ScalingNetOutParameters
-  { _scaleMaxVValue  :: Double
-  , _scaleMinVValue  :: Double
-  , _scaleMaxWValue  :: Double
-  , _scaleMinWValue  :: Double
-  , _scaleMaxR0Value :: Double
-  , _scaleMinR0Value :: Double
-  , _scaleMaxR1Value :: Double
-  , _scaleMinR1Value :: Double
+  { _scaleMinVValue  :: MinValue
+  , _scaleMaxVValue  :: MaxValue
+  , _scaleMinWValue  :: MinValue
+  , _scaleMaxWValue  :: MaxValue
+  , _scaleMinR0Value :: MinValue
+  , _scaleMaxR0Value :: MaxValue
+  , _scaleMinR1Value :: MinValue
+  , _scaleMaxR1Value :: MaxValue
   } deriving (Show,NFData,Generic)
 makeLenses ''ScalingNetOutParameters
-
-
-type MaxValue = Double
-type MinValue = Double
 
 
 scaleValue :: (MinValue,MaxValue) -> Double -> Double

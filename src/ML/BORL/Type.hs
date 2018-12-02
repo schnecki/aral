@@ -153,12 +153,12 @@ mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
 -------------------- Other Constructors --------------------
 
 -- | Infer scaling by maximum reward.
-scalingByMaxReward :: Double -> ScalingNetOutParameters
-scalingByMaxReward maxR = ScalingNetOutParameters maxV (-maxV) maxW (-maxW) maxR0 (-maxR0) maxR1 (-maxR1)
-  where maxDiscount g = sum $ take 1000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
+scalingByMaxReward :: Bool -> Double -> ScalingNetOutParameters
+scalingByMaxReward onlyPos maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPos then 0 else -maxR0) maxR0 (if onlyPos then 0 else -maxR1) maxR1
+  where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 0.8 * maxR
-        maxW = 300 * maxR
-        maxR0 = 0.8 * maxDiscount default_gamma0
+        maxW = 50 * maxR
+        maxR0 = 2 * maxDiscount default_gamma0
         maxR1 = 0.8 * maxDiscount default_gamma1
 
 
@@ -183,7 +183,7 @@ checkNN _ nnConfig borl
 
 -- | Converts the neural network state configuration to a state-action configuration.
 mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
-mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c) = NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c
+mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c mse) = NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c mse
   where
     rm' = ReplayMemory (unsafePerformIO $ V.new sz) sz
     maxVal = fromIntegral (length as)

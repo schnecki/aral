@@ -25,7 +25,16 @@ maxY = 4                        -- [0..maxY]
 type NN = Network  '[ FullyConnected 3 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
-nnConfig = NNConfig netInp (mkReplayMemory 10000) 128 (LearningParameters 0.01 0.0 0.0001) ([minBound .. maxBound] :: [St]) (scalingByMaxReward 10) 1000
+nnConfig = NNConfig
+  { _toNetInp             = netInp
+  , _replayMemory         = mkReplayMemory 10000
+  , _trainBatchSize       = 32
+  , _learningParams       = LearningParameters 0.01 0.9 0.0001
+  , _prettyPrintElems     = [minBound .. maxBound] :: [St]
+  , _scaleParameters      = scalingByMaxReward False 8
+  , _updateTargetInterval = 1000
+  , _trainMSEMax          = 0.02
+  }
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
@@ -34,7 +43,7 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 main :: IO ()
 main = do
 
-  net <- randomNetworkInitWith UniformInit :: IO NN
+  net <- randomNetworkInitWith Xavier :: IO NN
   let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
@@ -53,14 +62,14 @@ params = Parameters
   , _epsilon          = 1.0
   , _exploration      = 1.0
   , _learnRandomAbove = 0.1
-  , _zeta             = 0.25
+  , _zeta             = 1.0
   , _xi               = 0.5
   }
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi
+  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slow * eps) (f $ slower * exp) rand zeta xi
   | otherwise = p
 
   where slower = 0.995
