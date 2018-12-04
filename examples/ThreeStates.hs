@@ -29,18 +29,18 @@ import           Control.DeepSeq (NFData)
 import           GHC.Generics
 import           Grenade
 
-type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 4, Relu, FullyConnected 4 1] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 4, 'D1 4, 'D1 1]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
-  , _replayMemory         = mkReplayMemory 1000
+  , _replayMemory         = mkReplayMemory 10000
   , _trainBatchSize       = 32
-  , _learningParams       = LearningParameters 0.01 0.9 0.005
+  , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
-  , _scaleParameters      = scalingByMaxReward True 2
-  , _updateTargetInterval = 3000
-  , _trainMSEMax          = 0.03
+  , _scaleParameters      = scalingByMaxReward False 2
+  , _updateTargetInterval = 5000
+  , _trainMSEMax          = 0.05
   }
 
 
@@ -87,13 +87,22 @@ params = Parameters
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slow * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slow * eps) (f $ slow * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+  | t > 0 && t `mod` 200 == 0 =
+    Parameters
+      (max 0.0001 $ slow * alp)
+      (f $ slower * bet)
+      (f $ slower * del)
+      (max 0.1 $ slow * eps)
+      (f $ slow * exp)
+      rand
+      (fromIntegral t / 20000) --  * zeta)
+      (max 0 $ fromIntegral t / 40000) -- * xi)
   | otherwise = p
-
-  where slower = 0.995
-        slow = 0.95
-        faster = 1.0/0.995
-        f = max 0.001
+  where
+    slower = 0.995
+    slow = 0.95
+    faster = 1.0 / 0.995
+    f = max 0.001
 
 
 -- State
