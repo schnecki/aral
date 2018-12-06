@@ -60,7 +60,7 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   let rl = mkBORLUnichain initState actions actionFilter params decay nn nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

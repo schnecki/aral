@@ -62,7 +62,7 @@ askUser showHelp addUsage cmds ql = do
     _ ->
       case find ((== c) . fst) cmds of
         Nothing -> unless (c == "q") (step ql >>= \x -> print (prettyBORLTables True False True x) >> return x >>= askUser False addUsage cmds)
-        Just (_, cmd) -> stepExecute ql (False, cmd) >>= askUser False addUsage cmds
+        Just (_, cmd) -> stepExecute (ql, False, cmd) >>= askUser False addUsage cmds
 
 
 time :: NFData t => IO t -> IO t
