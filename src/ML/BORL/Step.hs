@@ -33,7 +33,7 @@ step borl = fmap setRefState (nextAction borl) >>= stepExecute
 
 setRefState :: (BORL s, Bool, ActionIndexed s) -> (BORL s, Bool, ActionIndexed s)
 setRefState inp@(borl, b, as@(aNr,_))
-  -- | True = inp
+  | True = inp
   | isJust (borl ^. sRef) = inp
   | otherwise = (sRef .~ Just (borl^.s, aNr) $ borl, b, as)
 
