@@ -1,12 +1,18 @@
-system-ghc: false
-docker:
-  enable: true
-  auto-pull: true
-
 flags: {}
 packages:
 - .
 - grenade
-extra-deps: []
-
-resolver: lts-9.21
+- tensorflow-haskell/tensorflow
+- tensorflow-haskell/tensorflow-core-ops
+- tensorflow-haskell/tensorflow-logging
+- tensorflow-haskell/tensorflow-mnist
+- tensorflow-haskell/tensorflow-mnist-input-data
+- tensorflow-haskell/tensorflow-opgen
+- tensorflow-haskell/tensorflow-ops
+- tensorflow-haskell/tensorflow-proto
+- tensorflow-haskell/tensorflow-records
+- tensorflow-haskell/tensorflow-records-conduit
+- tensorflow-haskell/tensorflow-test
+extra-deps:
+- snappy-framing-0.1.2
+resolver: lts-12.26

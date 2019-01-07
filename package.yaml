@@ -40,6 +40,16 @@ dependencies:
   - deepseq
   - time
   - tensorflow
+  - tensorflow-core-ops
+  # - tensorflow-logging
+  # - tensorflow-mnist-input-data
+  # - tensorflow-mnist
+  # - tensorflow-opgen
+  - tensorflow-ops
+  # - tensorflow-proto
+  # - tensorflow-records-conduit
+  # - tensorflow-records
+  - HUnit
 
 library:
   source-dirs: src
