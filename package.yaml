@@ -112,6 +112,14 @@ executables:
     dependencies:
     - borl
 
+  # tensorflow-test:
+  #   main:                Tensorflow.hs
+  #   source-dirs:         examples
+  #   ghc-options:
+  #   - -threaded
+  #   - -rtsopts
+  #   - -with-rtsopts=-N
+
 
 tests:
   borl-test:

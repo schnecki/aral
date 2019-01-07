@@ -15,4 +15,5 @@ packages:
 - tensorflow-haskell/tensorflow-test
 extra-deps:
 - snappy-framing-0.1.2
+- intero-0.1.30
 resolver: lts-12.26

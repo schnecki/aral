@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module ML.BORL.Test.Tensorflow where
+module Main where
 
 
 import           Control.Monad          (replicateM, replicateM_)
@@ -22,6 +22,9 @@ main = do
     (w, b) <- fit xData yData
     assertBool "w == 3" (abs (3 - w) < 0.001)
     assertBool "b == 8" (abs (8 - b) < 0.001)
+    putStrLn $ "w: " ++ show w
+    putStrLn $ "b: " ++ show b
+
 
 fit :: [Float] -> [Float] -> IO (Float, Float)
 fit xData yData = TF.runSession $ do
