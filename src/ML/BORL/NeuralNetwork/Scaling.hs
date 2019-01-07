@@ -23,10 +23,10 @@ makeLenses ''ScalingNetOutParameters
 
 
 scaleValue :: (MinValue,MaxValue) -> Double -> Double
-scaleValue = scaleNegPosOne
+scaleValue = const id -- scaleNegPosOne
 
 unscaleValue :: (MinValue,MaxValue) -> Double -> Double
-unscaleValue = unscaleNegPosOne
+unscaleValue = const id -- unscaleNegPosOne
 
 scaleZeroOneValue :: (MinValue,MaxValue) -> Double -> Double
 scaleZeroOneValue (mn,mx) val = (val - mn) / (mx-mn)

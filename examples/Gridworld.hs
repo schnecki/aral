@@ -45,7 +45,7 @@ main = do
 
   net <- randomNetworkInitWith UniformInit :: IO NN
   let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -91,7 +91,7 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
 
 
 initState :: St
-initState = fromIdx (0,0)
+initState = fromIdx (2,2)
 
 
 -- State

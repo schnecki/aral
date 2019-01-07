@@ -38,6 +38,7 @@ data BORL s = BORL
   { _actionList    :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
   , _actionFilter  :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
   , _s             :: !s                    -- ^ Current state.
+  , _sRef          :: !(Maybe (s,ActionIndex)) -- ^ Reference state.
   , _t             :: !Integer              -- ^ Current time t.
   , _parameters    :: !Parameters           -- ^ Parameter setup.
   , _decayFunction :: !Decay                -- ^ Decay function at period t.
@@ -59,7 +60,7 @@ data BORL s = BORL
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t par dec gam rho psis v w r r1 vis) = rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf rho `seq` rnf psis `seq` rnf v `seq` rnf w `seq` rnf r `seq` rnf r1 `seq` rnf s
+  rnf (BORL as af s sRef t par dec gam rho psis v w r r1 vis) = rnf as `seq` rnf af `seq` rnf s `seq` rnf sRef `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf rho `seq` rnf psis `seq` rnf v `seq` rnf w `seq` rnf r `seq` rnf r1 `seq` rnf s
 
 
 default_gamma0, default_gamma1 :: Double
@@ -76,13 +77,13 @@ idxStart = 0
 
 mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLUnichainTabular initialState as asFilter params decayFun =
-  BORL (zip [idxStart ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
+  BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
   where
     tabSA = Table mempty
 
 mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLMultichainTabular initialState as asFilter params decayFun =
-  BORL (zip [0 ..] as) asFilter initialState 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
+  BORL (zip [0 ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
   where
     tabSA = Table mempty
 
@@ -104,6 +105,7 @@ mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
     (zip [idxStart ..] as)
     asFilter
     initialState
+    Nothing
     0
     params
     decayFun
@@ -135,6 +137,7 @@ mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
     (zip [0 ..] as)
     asFilter
     initialState
+    Nothing
     0
     params
     decayFun
@@ -152,12 +155,15 @@ mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
 
 -------------------- Other Constructors --------------------
 
+-- noScaling :: ScalingNetOutParameters
+-- noScaling = ScalingNetOutParameters
+
 -- | Infer scaling by maximum reward.
 scalingByMaxReward :: Bool -> Double -> ScalingNetOutParameters
 scalingByMaxReward onlyPos maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPos then 0 else -maxR0) maxR0 (if onlyPos then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 0.8 * maxR
-        maxW = 50 * maxR
+        maxW = 300 * maxR
         maxR0 = 2 * maxDiscount default_gamma0
         maxR1 = 0.8 * maxDiscount default_gamma1
 

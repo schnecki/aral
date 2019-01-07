@@ -17,6 +17,7 @@ module ML.BORL.Proxy
     , insert
     , lookupProxy
     , lookupNeuralNetwork
+    , lookupNeuralNetworkUnscaled
     ) where
 
 
@@ -101,7 +102,7 @@ trainMSE mPeriod dataset lp px@(NN _ netW tab tp config)
       trainMSE ((+ 1) <$> mPeriod) dataset lp $ NN net' net' tab tp config
   where
     mseMax = config ^. trainMSEMax
-    net' = trainNetwork lp netW (zip kScaled vScaled)
+    net' = foldl' (trainNetwork lp) netW (zipWith (curry return) kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     kScaled = map ((config ^. toNetInp) . fst) dataset
     forwardRun k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
@@ -128,9 +129,14 @@ lookupProxy period lkTp k px@(NN _ _ tab _ config)
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
 -- to the original interval before returned.
 lookupNeuralNetwork :: LookupType -> k -> Proxy k -> Double
-lookupNeuralNetwork Worker k px@(NN _ netW _ _ conf) = unscaleValue (getMinMaxVal px) $ head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
-lookupNeuralNetwork Target k px@(NN netT _ _ _ conf) = unscaleValue (getMinMaxVal px) $ head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
+lookupNeuralNetwork tp k px@NN{} = unscaleValue (getMinMaxVal px) $ lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
+
+-- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
+lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> Double
+lookupNeuralNetworkUnscaled Worker k (NN _ netW _ _ conf) = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
+lookupNeuralNetworkUnscaled Target k (NN netT _ _ _ conf) = head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
+lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
 -- | Finds the correct value for scaling.

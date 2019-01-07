@@ -18,6 +18,7 @@ import           Control.Monad
 import           Data.Function       (on)
 import           Data.List           (groupBy, sortBy)
 import qualified Data.Map.Strict     as M
+import           Data.Maybe          (isJust)
 import           System.Random
 
 expSmthPsi :: Double
@@ -28,10 +29,16 @@ approxAvg = fromIntegral (100 :: Int)
 
 
 step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
-step borl = nextAction borl >>= stepExecute borl
+step borl = fmap setRefState (nextAction borl) >>= stepExecute
 
-stepExecute :: (NFData s, Ord s) => BORL s -> (Bool, ActionIndexed s) -> IO (BORL s)
-stepExecute borl (randomAction, act@(aNr, Action action _)) = do
+setRefState :: (BORL s, Bool, ActionIndexed s) -> (BORL s, Bool, ActionIndexed s)
+setRefState inp@(borl, b, as@(aNr,_))
+  | True = inp
+  | isJust (borl ^. sRef) = inp
+  | otherwise = (sRef .~ Just (borl^.s, aNr) $ borl, b, as)
+
+stepExecute :: (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> IO (BORL s)
+stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
   (reward, stateNext) <- action state
   let mv = borl ^. v
@@ -60,22 +67,25 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
     case borl ^. rho of
       Left _  -> return $ Left rhoVal'
       Right m -> Right . force <$> P.insert period label rhoVal' m
-  let psiRho = rhoVal' - rhoVal                                   -- should converge to 0
+  let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
-      psiV = -reward + rhoVal' + vValState' - vValStateNext       -- should converge to 0
-  let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
-      psiW = vValState' + wValState' - wValStateNext              -- should converge to 0
+      psiV = -reward + rhoVal' + vValState' - vValStateNext -- should converge to 0
+  let wValState' | borl ^. sRef == Just (state, aNr) = 0
+                 | otherwise = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
+      psiW = vValState' + wValState' - wValStateNext -- should converge to 0
   forkMw' <- doFork $ P.insert period label wValState' mw
-  let (psiValRho, psiValV, psiValW) = borl ^. psis                -- Psis (exponentially smoothed)
+  let (psiValRho, psiValV, psiValW) = borl ^. psis -- Psis (exponentially smoothed)
       psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * abs psiW
   -- enforce values
-  let vValStateNew =
-        vValState' -
-        if randomAction || psiValV' > borl ^. parameters . zeta
-          then 0
-          else borl ^. parameters . xi * psiW
+  let vValStateNew
+        | borl ^. sRef == Just (state, aNr) = 0
+        | otherwise =
+          vValState' -
+          if randomAction || psiValV' > borl ^. parameters . zeta
+            then 0
+            else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
   forkMv' <- doFork $ P.insert period label vValStateNew mv
   let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rStateValue borl RSmall stateNext)
@@ -91,7 +101,7 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
         | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
         | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
   -- update values
-  return $ force $              -- needed to ensure constant memory consumption
+  return $ force $ -- needed to ensure constant memory consumption
     set psis (psiValRho', psiValV', psiValW') $
     set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
@@ -100,7 +110,7 @@ stepExecute borl (randomAction, act@(aNr, Action action _)) = do
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (Ord s) => BORL s -> IO (Bool, ActionIndexed s)
+nextAction :: (Ord s) => BORL s -> IO (BORL s, Bool, ActionIndexed s)
 nextAction borl = do
   let explore = borl ^. parameters . exploration
   let state = borl ^. s
@@ -110,7 +120,7 @@ nextAction borl = do
   if rand < explore
     then do
       r <- randomRIO (0, length as - 1)
-      return (True,  as !! r)
+      return (borl, True,  as !! r)
     else do
       let bestRho | isUnichain borl = as
                   | otherwise = head $ groupBy (epsCompare (==) `on` rhoValue borl state) $ sortBy (epsCompare compare `on` rhoValue borl state) as
@@ -121,8 +131,8 @@ nextAction borl = do
       if length bestE > 1
         then do
           r <- randomRIO (0, length bestE - 1)
-          return (False, bestE !! r)
-        else return (False, head bestE)
+          return (borl, False, bestE !! r)
+        else return (borl, False, head bestE)
   where
     eps = borl ^. parameters . epsilon
     epsCompare f x y
