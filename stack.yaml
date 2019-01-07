@@ -1,6 +1,12 @@
+system-ghc: false
+docker:
+  enable: true
+  auto-pull: true
+
 flags: {}
 packages:
 - .
 - grenade
 extra-deps: []
+
 resolver: lts-9.21
