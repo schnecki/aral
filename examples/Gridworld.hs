@@ -22,7 +22,7 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 3 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network  '[ FullyConnected 3 10, Relu, FullyConnected 10 8, Relu, FullyConnected 8 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 10, 'D1 10, 'D1 8, 'D1 8, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
@@ -33,7 +33,7 @@ nnConfig = NNConfig
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 8
   , _updateTargetInterval = 1000
-  , _trainMSEMax          = 0.02
+  , _trainMSEMax          = 0.05
   }
 
 netInp :: St -> [Double]
@@ -43,7 +43,7 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 main :: IO ()
 main = do
 
-  net <- randomNetworkInitWith Xavier :: IO NN
+  net <- randomNetworkInitWith UniformInit :: IO NN
   let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho

@@ -39,7 +39,7 @@ dependencies:
   - parallel
   - deepseq
   - time
-
+  - tensorflow
 
 library:
   source-dirs: src

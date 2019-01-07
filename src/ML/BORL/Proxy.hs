@@ -58,6 +58,7 @@ data Proxy k = Table
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !(NNConfig k)
                 }
+            | Tensorflow
 makeLenses ''Proxy
 
 instance (NFData k) => NFData (Proxy k) where

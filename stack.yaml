@@ -2,5 +2,5 @@ flags: {}
 packages:
 - .
 - grenade
-extra-deps:
+extra-deps: []
 resolver: lts-9.21
