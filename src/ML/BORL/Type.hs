@@ -89,7 +89,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
 
 -- Neural network approximations
 
-mkBORLUnichain ::
+mkBORLUnichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
   => InitialState s
   -> [Action s]
@@ -99,7 +99,7 @@ mkBORLUnichain ::
   -> Network layers shapes
   -> NNConfig s
   -> BORL s
-mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
+mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig =
   checkNN net nnConfig $
   BORL
     (zip [idxStart ..] as)
@@ -121,7 +121,7 @@ mkBORLUnichain initialState as asFilter params decayFun net nnConfig =
     nnSA tp = NN net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
-mkBORLMultichain ::
+mkBORLMultichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
   => InitialState s
   -> [Action s]
@@ -131,7 +131,7 @@ mkBORLMultichain ::
   -> Network layers shapes
   -> NNConfig s
   -> BORL s
-mkBORLMultichain initialState as asFilter params decayFun net nnConfig =
+mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig =
   checkNN net nnConfig $
   BORL
     (zip [0 ..] as)

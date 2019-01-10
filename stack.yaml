@@ -16,4 +16,6 @@ packages:
 extra-deps:
 - snappy-framing-0.1.2
 - intero-0.1.30
+- haskell-src-exts-1.20.3
+# allow-newer: true
 resolver: lts-12.26

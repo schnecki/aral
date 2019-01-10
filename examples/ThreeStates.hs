@@ -21,21 +21,29 @@
 
 module Main where
 
-import           ML.BORL         hiding (actionFilter)
+import           ML.BORL             hiding (actionFilter)
 
 import           Helper
 
-import           Control.DeepSeq (NFData)
+import           Control.DeepSeq     (NFData)
 import           GHC.Generics
 import           Grenade
 
-type NN = Network '[ FullyConnected 2 4, Relu, FullyConnected 4 4, Relu, FullyConnected 4 1] '[ 'D1 2, 'D1 4, 'D1 4, 'D1 4, 'D1 4, 'D1 1]
+import           Data.Int            (Int32, Int64)
+import           GHC.Exts            (fromList)
+import qualified TensorFlow.Core     as TF
+import qualified TensorFlow.Minimize as TF
+import qualified TensorFlow.Ops      as TF hiding (initializedVariable,
+                                            zeroInitializedVariable)
+import qualified TensorFlow.Variable as TF
+
+type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemory         = mkReplayMemory 10000
-  , _trainBatchSize       = 32
+  , _trainBatchSize       = 1
   , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 2
@@ -54,13 +62,35 @@ minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 
+tensorflow
+     -- Use -1 batch size to support variable sized batches.
+ = do
+  let batchSize = -1
+      numInputs = 2    :: Int64
+
+    -- Inputs.
+  images <- TF.placeholder (fromList [2])
+    -- Hidden layer.
+  let numUnits = 200
+  hiddenWeights <- TF.initializedVariable =<< randomParam numPixels [numPixels, numUnits]
+  hiddenBiases <- TF.zeroInitializedVariable [numUnits]
+  let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
+  let hidden = TF.relu hiddenZ
+    -- Logits.
+  logitWeights <- TF.initializedVariable =<< randomParam numUnits [numUnits, numInputs]
+  logitBiases <- TF.zeroInitializedVariable [numInputs]
+  let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+  TF.render $ TF.cast $ TF.argMax (TF.softmax logits) (TF.scalar (1 :: Double))
+
+
 main :: IO ()
 main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  let rl = mkBORLUnichain initState actions actionFilter params decay nn nnConfig
-  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+
+  let rl = mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

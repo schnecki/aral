@@ -44,7 +44,7 @@ main :: IO ()
 main = do
 
   net <- randomNetworkInitWith UniformInit :: IO NN
-  let rl = mkBORLUnichain initState actions actFilter params decay net nnConfig
+  let rl = mkBORLUnichainGrenade initState actions actFilter params decay net nnConfig
   let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

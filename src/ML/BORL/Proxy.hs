@@ -35,6 +35,7 @@ import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import qualified TensorFlow.Core              as TF
 
 
 -- | Type of approximation (needed for scaling of values).
@@ -60,6 +61,12 @@ data Proxy k = Table
                 , _proxyNNConfig  :: !(NNConfig k)
                 }
             | Tensorflow
+                { _proxyTFTarget  :: TF.Tensor TF.Value Double
+                , _proxyTFWorker  :: TF.Tensor TF.Value Double
+                , _proxyNNStartup :: !(M.Map k Double)
+                , _proxyType      :: !ProxyType
+                , _proxyNNConfig  :: !(NNConfig k)
+                }
 makeLenses ''Proxy
 
 instance (NFData k) => NFData (Proxy k) where
@@ -88,6 +95,7 @@ insert period k v px@(NN netT netW tab tp config) = do
       | otherwise = px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
+insert period k v px@(Tensorflow{}) = undefined
 
 
 trainMSE :: Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> IO (Proxy k)
@@ -121,21 +129,25 @@ trainNNConf _ _ = error "called trainNNConf on non-neural network proxy (program
 -- | Retrieve a value.
 lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> Double
 lookupProxy _ _ k (Table m) = M.findWithDefault 0 k m
-lookupProxy period lkTp k px@(NN _ _ tab _ config)
+lookupProxy period lkType k px@(NN _ _ tab _ config)
   | period <= fromIntegral (config ^. replayMemory.replayMemorySize) = M.findWithDefault 0 k tab
-  | otherwise = lookupNeuralNetwork lkTp k px
+  | otherwise = lookupNeuralNetwork lkType k px
+lookupProxy period lkType k px@(Tensorflow{}) = undefined
 
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
 -- to the original interval before returned.
 lookupNeuralNetwork :: LookupType -> k -> Proxy k -> Double
 lookupNeuralNetwork tp k px@NN{} = unscaleValue (getMinMaxVal px) $ lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork tp k px@Tensorflow{} = unscaleValue (getMinMaxVal px) $ lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
 lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> Double
 lookupNeuralNetworkUnscaled Worker k (NN _ netW _ _ conf) = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
 lookupNeuralNetworkUnscaled Target k (NN netT _ _ _ conf) = head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
+lookupNeuralNetworkUnscaled Worker k (Tensorflow{}) = undefined
+lookupNeuralNetworkUnscaled Worker k (Tensorflow{}) = undefined
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
