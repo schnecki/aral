@@ -1,7 +1,10 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedLists     #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
 
@@ -21,21 +24,29 @@
 
 module Main where
 
-import           ML.BORL             hiding (actionFilter)
+import           ML.BORL                hiding (actionFilter)
 
 import           Helper
 
-import           Control.DeepSeq     (NFData)
+import           Control.DeepSeq        (NFData)
+import           Control.Monad          (forM_, replicateM, when)
+import           Control.Monad.IO.Class (liftIO)
+import           Data.List              (genericLength)
 import           GHC.Generics
-import           Grenade
+import           Grenade                hiding (train)
+import           System.Random          (randomIO)
 
-import           Data.Int            (Int32, Int64)
-import           GHC.Exts            (fromList)
-import qualified TensorFlow.Core     as TF
-import qualified TensorFlow.Minimize as TF
-import qualified TensorFlow.Ops      as TF hiding (initializedVariable,
-                                            zeroInitializedVariable)
-import qualified TensorFlow.Variable as TF
+import           Data.Int               (Int32, Int64)
+import qualified Data.Vector            as V
+import           GHC.Exts               (fromList)
+import qualified TensorFlow.Core        as TF
+import qualified TensorFlow.GenOps.Core as TF (approximateEqual, lessEqual, square)
+import qualified TensorFlow.Minimize    as TF
+import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
+                                               zeroInitializedVariable)
+import qualified TensorFlow.Variable    as TF
+
+import           Debug.Trace
 
 type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
 
@@ -61,30 +72,114 @@ maxVal = fromIntegral $ fromEnum (maxBound :: St)
 minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
+-- | Create tensor with random values where the stddev depends on the width.
+randomParam :: Int64 -> TF.Shape -> TF.Build (TF.Tensor TF.Build Float)
+randomParam width (TF.Shape shape) = (`TF.mul` stddev) <$> TF.truncatedNormal (TF.vector shape)
+  where
+    stddev = TF.scalar (1 / sqrt (fromIntegral width))
 
-tensorflow
-     -- Use -1 batch size to support variable sized batches.
- = do
-  let batchSize = -1
-      numInputs = 2    :: Int64
+type Output = Float
+type Input = Float
+
+data Model = Model
+  { weights :: [TF.Variable Float]
+  , train :: TF.TensorData Input  -- ^ images
+          -> TF.TensorData Output -- ^ correct values
+          -> TF.Session ()
+  , infer :: TF.TensorData Input          -- ^ images
+          -> TF.Session (V.Vector Output) -- ^ predictions
+  , errorRate :: TF.TensorData Input      -- ^ images
+              -> TF.TensorData Output     -- ^ train values
+              -> TF.Session Float
+  }
+
+tensorflow :: TF.Build Model
+tensorflow = do
+  let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
+      numInputs = 2 :: Int64
 
     -- Inputs.
-  images <- TF.placeholder (fromList [2])
+  images <- TF.placeholder (fromList [batchSize, numInputs])
+
     -- Hidden layer.
-  let numUnits = 200
-  hiddenWeights <- TF.initializedVariable =<< randomParam numPixels [numPixels, numUnits]
-  hiddenBiases <- TF.zeroInitializedVariable [numUnits]
-  let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
-  let hidden = TF.relu hiddenZ
+  let numUnits = 2
+
+  -- (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
+  -- hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
+  -- let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
+  -- let hidden = TF.relu hiddenZ
+
     -- Logits.
-  logitWeights <- TF.initializedVariable =<< randomParam numUnits [numUnits, numInputs]
-  logitBiases <- TF.zeroInitializedVariable [numInputs]
-  let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
-  TF.render $ TF.cast $ TF.argMax (TF.softmax logits) (TF.scalar (1 :: Double))
+  -- logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
+  -- logitBiases <- TF.zeroInitializedVariable (fromList [1])
+  -- let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+
+  logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, 1])
+  logitBiases <- TF.zeroInitializedVariable (fromList [1])
+  let logits = (images `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+  predict <- TF.render $ TF.reduceMean $ TF.relu logits
+
+
+  -- Create training action.
+  labels <- TF.placeholder [batchSize]
+  let -- labelVecs = TF.oneHot labels (fromIntegral numLabels) 1 0
+      -- loss      = reduceMean $ fst $ TF.softmaxCrossEntropyWithLogits logits labelVecs
+      -- params    = [hiddenWeights, hiddenBiases, logitWeights, logitBiases]
+    params    = [logitWeights, logitBiases]
+  -- trainStep <- TF.minimizeWith TF.adam loss params
+
+  let loss = TF.reduceSum $ TF.square (logits `TF.sub` labels)
+
+  -- (x :: TF.Tensor TF.Value Float) <- TF.placeholder [xSize]
+  -- let linear_model = ((TF.readValue w) `TF.mul` x) `TF.add` (TF.readValue b)
+  -- (y :: TF.Tensor TF.Value Float) <- TF.placeholder [ySize]
+  -- trainStep <- TF.minimizeWith (TF.gradientDescent 0.01) loss params
+  trainStep <- TF.minimizeWith TF.adam loss params
+
+  let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
+  errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+
+  return Model
+    { weights = params
+    , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
+    , infer = \imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
+    , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
+    }
 
 
 main :: IO ()
 main = do
+
+
+  TF.runSession $ do
+    model <- TF.build tensorflow
+
+    forM_ ([0..10000] :: [Int]) $ \i -> do
+
+      (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+      let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+
+
+      let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
+          encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
+
+      let images = encodeImageBatch xData
+          labels = encodeLabelBatch yData
+
+      bef <- head . V.toList <$> infer model images
+      train model images labels
+      aft <- head . V.toList <$> infer model images
+
+
+      when (i `mod` 100 == 0) $ do
+        liftIO $ putStrLn $ "Before vs After: " ++ show bef ++ " " ++ show aft ++ " [Actual: " ++ show (head yData) ++ "]"
+        varVals :: [V.Vector Float] <- TF.run (TF.readValue <$> weights model)
+        liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+
+        err <- errorRate model images labels
+        liftIO . putStrLn $ "training error " ++ show (err * 100)
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
