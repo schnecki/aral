@@ -104,43 +104,30 @@ tensorflow = do
     -- Hidden layer.
   let numUnits = 2
 
-  -- (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
-  -- hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
-  -- let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
-  -- let hidden = TF.relu hiddenZ
+  (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
+  hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
+  let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
+  let hidden = TF.relu hiddenZ
 
-    -- Logits.
-  -- logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
-  -- logitBiases <- TF.zeroInitializedVariable (fromList [1])
-  -- let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
-
-  logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, 1])
+  -- Logits.
+  logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
   logitBiases <- TF.zeroInitializedVariable (fromList [1])
-  let logits = (images `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+  let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
   predict <- TF.render $ TF.reduceMean $ TF.relu logits
 
 
   -- Create training action.
+  let wghts    = [hiddenWeights, hiddenBiases, logitWeights, logitBiases]
   labels <- TF.placeholder [batchSize]
-  let -- labelVecs = TF.oneHot labels (fromIntegral numLabels) 1 0
-      -- loss      = reduceMean $ fst $ TF.softmaxCrossEntropyWithLogits logits labelVecs
-      -- params    = [hiddenWeights, hiddenBiases, logitWeights, logitBiases]
-    params    = [logitWeights, logitBiases]
-  -- trainStep <- TF.minimizeWith TF.adam loss params
-
   let loss = TF.reduceSum $ TF.square (logits `TF.sub` labels)
-
-  -- (x :: TF.Tensor TF.Value Float) <- TF.placeholder [xSize]
-  -- let linear_model = ((TF.readValue w) `TF.mul` x) `TF.add` (TF.readValue b)
-  -- (y :: TF.Tensor TF.Value Float) <- TF.placeholder [ySize]
-  -- trainStep <- TF.minimizeWith (TF.gradientDescent 0.01) loss params
-  trainStep <- TF.minimizeWith TF.adam loss params
+      adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
+  trainStep <- TF.minimizeWith (TF.adam' adamConfig) loss wghts
 
   let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
   errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
 
   return Model
-    { weights = params
+    { weights = wghts
     , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
     , infer = \imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
     , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
