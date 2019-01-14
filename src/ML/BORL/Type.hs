@@ -118,7 +118,7 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = Grenade net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 mkBORLMultichainGrenade ::
@@ -150,7 +150,7 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig =
     (nnSA R1Table)
     mempty
   where
-    nnSA tp = NN net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+    nnSA tp = Grenade net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
 
 
 -------------------- Other Constructors --------------------

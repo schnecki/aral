@@ -31,6 +31,7 @@ import           Helper
 import           Control.DeepSeq        (NFData)
 import           Control.Monad          (forM_, replicateM, when)
 import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.Reader
 import           Data.List              (genericLength)
 import           GHC.Generics
 import           Grenade                hiding (train)
@@ -44,6 +45,7 @@ import qualified TensorFlow.GenOps.Core as TF (approximateEqual, lessEqual, squa
 import qualified TensorFlow.Minimize    as TF
 import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
+import qualified TensorFlow.Tensor      as TF (collectAllSummaries, tensorValueFromName)
 import qualified TensorFlow.Variable    as TF
 
 import           Debug.Trace
@@ -91,6 +93,8 @@ data Model = Model
   , errorRate :: TF.TensorData Input      -- ^ images
               -> TF.TensorData Output     -- ^ train values
               -> TF.Session Float
+  , tensorPredict :: TF.Tensor TF.Value Float
+  , tensorTrain :: TF.ControlNode
   }
 
 tensorflow :: TF.Build Model
@@ -131,6 +135,9 @@ tensorflow = do
     , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
     , infer = \imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
     , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
+    , tensorPredict = predict
+    , tensorTrain = trainStep
+
     }
 
 
@@ -138,19 +145,25 @@ main :: IO ()
 main = do
 
 
+  let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
+      encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
+
+  model <- TF.runSession $ do
+    model <- TF.build tensorflow
+    -- TF.readerSerializeState
+    -- TF.collectAllSummaries
+    undefined
+
+
   TF.runSession $ do
     model <- TF.build tensorflow
 
-    forM_ ([0..10000] :: [Int]) $ \i -> do
+    forM_ ([0..1000] :: [Int]) $ \i -> do
 
       (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
       (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
       let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
       let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
-
-
-      let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
-          encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
       let images = encodeImageBatch xData
           labels = encodeLabelBatch yData
@@ -167,6 +180,35 @@ main = do
 
         err <- errorRate model images labels
         liftIO . putStrLn $ "training error " ++ show (err * 100)
+    -- cfg <- readerSerializeState
+    -- return model
+
+
+  -- TF.runSession $ do
+  --     let x1Data = [0,0.5,1]
+  --     let x2Data = [0,0.5,1]
+  --     let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+  --     let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+
+  --     let images = encodeImageBatch xData
+
+  --     bef <- head . V.toList <$> infer model images
+
+  --     liftIO $ putStrLn $ "Vals: " ++ show bef ++ " [Actual: " ++ show (head yData) ++ "]"
+
+  -- TF.runSession $ do
+  --     model <- TF.build tensorflow
+  --     let x1Data = [0,0.5,1]
+  --     let x2Data = [0,0.5,1]
+  --     let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+  --     let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+
+  --     let images = encodeImageBatch xData
+
+  --     bef <- head . V.toList <$> infer model images
+
+  --     liftIO $ putStrLn $ "Vals: " ++ show bef ++ " [Actual: " ++ show (head yData) ++ "]"
+
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 

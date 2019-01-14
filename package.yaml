@@ -39,6 +39,7 @@ dependencies:
   - parallel
   - deepseq
   - time
+  - mtl
   - tensorflow
   - tensorflow-core-ops
   # - tensorflow-logging

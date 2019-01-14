@@ -44,13 +44,14 @@ prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -
 prettyTableRows mPeriod prettyAction p =
   case p of
     P.Table m -> map (\(k, val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
-    pr@(P.NN _ _ tab _ config) ->
+    pr@(P.Grenade _ _ tab _ config) ->
       map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) (mList False)) ++ [text "---"] ++
       map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) (mList True))
       where mList scaled
               | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) =
                 map (first prettyAction) $ zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd . snd) (mkNNList scaled pr)))
               | otherwise = map (first prettyAction) (mkNNList scaled pr)
+    pr@(P.Tensorflow _ _ tab _ config) -> undefined
 
 prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> Doc
 prettyTablesState period p1 m1 p2 m2 = vcat $ zipWith (\x y -> x $$ nest 40 y) (prettyTableRows (Just period) p1 m1) (prettyTableRows (Just period) p2 m2)
@@ -107,7 +108,7 @@ prettyBORLTables t1 t2 t3 borl =
     e =
       case (borl ^. r1, borl ^. r0) of
         (P.Table rm1, P.Table rm0) -> P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
-        (prNN1@P.NN {}, prNN0@P.NN {}) -> P.Table $ M.fromList $ zipWith subtr (map (second fst) $ mkNNList False prNN1) (map (second fst) $ mkNNList False prNN0)
+        (prNN1@P.Grenade {}, prNN0@P.Grenade {}) -> P.Table $ M.fromList $ zipWith subtr (map (second fst) $ mkNNList False prNN1) (map (second fst) $ mkNNList False prNN0)
         _ -> error "Pretty printing of mixed data structures is not allowed!"
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
@@ -117,7 +118,7 @@ prettyBORLTables t1 t2 t3 borl =
     scalingText =
       case borl ^. v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.NN _ _ _ _ conf ->
+        P.Grenade _ _ _ _ conf ->
           text
             (show
                ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
@@ -127,17 +128,17 @@ prettyBORLTables t1 t2 t3 borl =
 
     nnBatchSize = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+      P.Grenade _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
     nnReplMemSize = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
+      P.Grenade _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
     nnLearningParams = case borl ^. v of
       P.Table {} -> empty
-      P.NN _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
+      P.Grenade _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
 
 mkNNList :: Bool -> P.Proxy k -> [(k, (Double, Double))]
-mkNNList unscaled pr@(P.NN _ _ _ _ conf) = map (\inp -> (inp, ( if unscaled then P.lookupNeuralNetwork P.Target inp pr else P.lookupNeuralNetworkUnscaled P.Target inp pr,
+mkNNList unscaled pr@(P.Grenade _ _ _ _ conf) = map (\inp -> (inp, ( if unscaled then P.lookupNeuralNetwork P.Target inp pr else P.lookupNeuralNetworkUnscaled P.Target inp pr,
                                                                if unscaled then P.lookupNeuralNetwork P.Worker inp pr else P.lookupNeuralNetworkUnscaled P.Worker inp pr))) (P._prettyPrintElems conf)
 mkNNList _ _ = error "mkNNList called on non-neural network"
 
