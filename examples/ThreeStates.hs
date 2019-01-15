@@ -37,18 +37,24 @@ import           GHC.Generics
 import           Grenade                hiding (train)
 import           System.Random          (randomIO)
 
+import           Data.ByteString        (ByteString)
 import           Data.Int               (Int32, Int64)
 import qualified Data.Vector            as V
 import           GHC.Exts               (fromList)
 import qualified TensorFlow.Core        as TF
-import qualified TensorFlow.GenOps.Core as TF (approximateEqual, lessEqual, square)
+import qualified TensorFlow.GenOps.Core as TF (approximateEqual, getSessionHandle,
+                                               getSessionTensor, lessEqual,
+                                               readerSerializeState, square)
 import qualified TensorFlow.Minimize    as TF
+import qualified TensorFlow.Nodes       as TF (fetchTensorVector, getFetch, getNodes)
 import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
-import qualified TensorFlow.Tensor      as TF (collectAllSummaries, tensorValueFromName)
+import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
+                                               tensorValueFromName)
 import qualified TensorFlow.Variable    as TF
 
 import           Debug.Trace
+import qualified TensorFlow.ControlFlow as TF (withControlDependencies)
 
 type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
 
@@ -85,15 +91,17 @@ type Input = Float
 
 data Model = Model
   { weights :: [TF.Variable Float]
-  , train :: TF.TensorData Input  -- ^ images
+  , train :: TF.ControlNode       -- ^ node (tensor)
+          -> TF.TensorData Input  -- ^ images
           -> TF.TensorData Output -- ^ correct values
           -> TF.Session ()
-  , infer :: TF.TensorData Input          -- ^ images
+  , infer :: TF.Tensor TF.Value Float     -- ^ tensor
+          -> TF.TensorData Input          -- ^ images
           -> TF.Session (V.Vector Output) -- ^ predictions
-  , errorRate :: TF.TensorData Input      -- ^ images
-              -> TF.TensorData Output     -- ^ train values
-              -> TF.Session Float
-  , tensorPredict :: TF.Tensor TF.Value Float
+  -- , errorRate :: TF.TensorData Input      -- ^ images
+  --             -> TF.TensorData Output     -- ^ train values
+  --             -> TF.Session Float
+  , tensorPredict :: TF.Tensor TF.Value ByteString
   , tensorTrain :: TF.ControlNode
   }
 
@@ -127,15 +135,17 @@ tensorflow = do
       adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
   trainStep <- TF.minimizeWith (TF.adam' adamConfig) loss wghts
 
-  let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
-  errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+  -- let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
+  -- errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+
+  hPredict <- TF.getSessionHandle predict
 
   return Model
     { weights = wghts
-    , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
-    , infer = \imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
-    , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
-    , tensorPredict = predict
+    , train = \trainStep imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
+    , infer = \tensor imFeed -> TF.runWithFeeds [TF.feed images imFeed] tensor
+    -- , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
+    , tensorPredict = hPredict
     , tensorTrain = trainStep
 
     }
@@ -148,15 +158,22 @@ main = do
   let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
       encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
-  model <- TF.runSession $ do
+  model <- TF.build tensorflow
+  handle <- TF.runSession $ do
     model <- TF.build tensorflow
-    -- TF.readerSerializeState
+    -- TF.readerSerializeState (TF.Ref $ tensorPredict model)
     -- TF.collectAllSummaries
-    undefined
+    -- nodesP <- TF.build $ TF.getNodes $ tensorPredict model
+    -- nodesT <- TF.build $ TF.getNodes $ tensorPredict model
+    -- TF.build $ TF.fetchTensorVector (tensorPredict model)
+
+    -- hTrain <- TF.getSessionHandle (tensorTrain model)
+    return model
 
 
   TF.runSession $ do
     model <- TF.build tensorflow
+    predict <- TF.getSessionTensor hPredict
 
     forM_ ([0..1000] :: [Int]) $ \i -> do
 
@@ -168,9 +185,9 @@ main = do
       let images = encodeImageBatch xData
           labels = encodeLabelBatch yData
 
-      bef <- head . V.toList <$> infer model images
+      bef <- head . V.toList <$> infer model predict images
       train model images labels
-      aft <- head . V.toList <$> infer model images
+      aft <- head . V.toList <$> infer model predict images
 
 
       when (i `mod` 100 == 0) $ do
@@ -178,8 +195,10 @@ main = do
         varVals :: [V.Vector Float] <- TF.run (TF.readValue <$> weights model)
         liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
 
-        err <- errorRate model images labels
-        liftIO . putStrLn $ "training error " ++ show (err * 100)
+        -- err <- errorRate model images labels
+        -- liftIO . putStrLn $ "training error " ++ show (err * 100)
+
+
     -- cfg <- readerSerializeState
     -- return model
 
