@@ -24,29 +24,38 @@
 
 module Main where
 
-import           ML.BORL                hiding (actionFilter)
+import           ML.BORL                                        hiding (actionFilter)
 
 import           Helper
 
-import           Control.DeepSeq        (NFData)
-import           Control.Monad          (forM_, replicateM, when)
-import           Control.Monad.IO.Class (liftIO)
+import           Control.DeepSeq                                (NFData)
+import           Control.Lens
+import           Control.Monad                                  (forM_, replicateM, when)
+import           Control.Monad.IO.Class                         (liftIO)
 import           Control.Monad.Reader
-import           Data.List              (genericLength)
+import           Data.List                                      (genericLength)
 import           GHC.Generics
-import           Grenade                hiding (train)
-import           System.Random          (randomIO)
+import           Grenade                                        hiding (train)
+import           System.Random                                  (randomIO)
 
-import           Data.Int               (Int32, Int64)
-import qualified Data.Vector            as V
-import           GHC.Exts               (fromList)
-import qualified TensorFlow.Core        as TF
-import qualified TensorFlow.GenOps.Core as TF (approximateEqual, lessEqual, square)
-import qualified TensorFlow.Minimize    as TF
-import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
-                                               zeroInitializedVariable)
-import qualified TensorFlow.Tensor      as TF (collectAllSummaries, tensorValueFromName)
-import qualified TensorFlow.Variable    as TF
+import qualified Data.ByteString                                as BS
+import           Data.Int                                       (Int32, Int64)
+import qualified Data.Vector                                    as V
+import           GHC.Exts                                       (fromList)
+import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
+import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
+import qualified Proto.Tensorflow.Core.Protobuf.Saver           as TF
+import qualified TensorFlow.Core                                as TF hiding (value)
+import qualified TensorFlow.GenOps.Core                         as TF (approximateEqual,
+                                                                       lessEqual, square)
+import qualified TensorFlow.Minimize                            as TF
+import qualified TensorFlow.Ops                                 as TF hiding
+                                                                       (initializedVariable,
+                                                                       zeroInitializedVariable)
+import qualified TensorFlow.Tensor                              as TF (collectAllSummaries,
+                                                                       tensorValueFromName)
+import           TensorFlow.Variable                            as TF hiding (zeroInitializedVariable')
+import qualified TensorFlow.Variable                            as V
 
 import           Debug.Trace
 
@@ -133,7 +142,7 @@ tensorflow = do
   return Model
     { weights = wghts
     , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
-    , infer = \imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
+    , infer = \predict imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
     , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
     , tensorPredict = predict
     , tensorTrain = trainStep
@@ -148,14 +157,51 @@ main = do
   let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
       encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
-  model <- TF.runSession $ do
-    model <- TF.build tensorflow
-    -- TF.readerSerializeState
-    -- TF.collectAllSummaries
-    undefined
+  let tensor = do
+        let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
+            numInputs = 2 :: Int64
+
+        -- Inputs.
+        images <- TF.placeholder (fromList [batchSize, numInputs])
+
+        -- Hidden layer.
+        let numUnits = 2
+
+        (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
+        hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
+        let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
+        let hidden = TF.relu hiddenZ
+
+        -- Logits.
+        logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
+        logitBiases <- TF.zeroInitializedVariable (fromList [1])
+        let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+        TF.render $ TF.reduceMean $ TF.relu logits
+
+
+        -- TF.render $ TF.scalar (5 :: Float) * 10
+  let graphDef = TF.asGraphDef tensor
+      opName = head (graphDef ^. TF.node)^. TF.name
+      -- value =  head (graphDef ^. TF.node)^. TF.value
+  print $ head (graphDef ^. TF.node)
+  putStrLn $ "OpName: " ++ show opName
+  -- TF.runSession $ do
+  --     TF.addGraphDef graphDef
+  --     (x :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
+  --     liftIO $ print x
+
+  -- model <- TF.runSession $ do
+
+    -- model <- TF.build tensorflow
+    -- -- TF.readerSerializeState
+    -- -- TF.collectAllSummaries
+    -- undefined
 
 
   TF.runSession $ do
+    TF.addGraphDef graphDef
+    (infer :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
+
     model <- TF.build tensorflow
 
     forM_ ([0..1000] :: [Int]) $ \i -> do
@@ -180,8 +226,6 @@ main = do
 
         err <- errorRate model images labels
         liftIO . putStrLn $ "training error " ++ show (err * 100)
-    -- cfg <- readerSerializeState
-    -- return model
 
 
   -- TF.runSession $ do
