@@ -33,31 +33,53 @@ import           Control.Lens
 import           Control.Monad                                  (forM_, replicateM, when)
 import           Control.Monad.IO.Class                         (liftIO)
 import           Control.Monad.Reader
-import           Data.List                                      (genericLength)
-import           GHC.Generics
-import           Grenade                                        hiding (train)
-import           System.Random                                  (randomIO)
-
+import           Data.ByteString                                (ByteString)
 import qualified Data.ByteString                                as BS
 import           Data.Int                                       (Int32, Int64)
+import           Data.Int                                       (Int32, Int64)
+import           Data.List                                      (genericLength)
 import qualified Data.Vector                                    as V
+import qualified Data.Vector                                    as V
+import           Debug.Trace
 import           GHC.Exts                                       (fromList)
+import           GHC.Exts                                       (fromList)
+import           GHC.Generics
+import           Grenade                                        hiding (train)
+import           Grenade                                        hiding (train)
 import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
 import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
 import qualified Proto.Tensorflow.Core.Protobuf.Saver           as TF
+import           System.Random                                  (randomIO)
+import           System.Random                                  (randomIO)
+import qualified TensorFlow.ControlFlow                         as TF (withControlDependencies)
 import qualified TensorFlow.Core                                as TF hiding (value)
+import qualified TensorFlow.Core                                as TF
 import qualified TensorFlow.GenOps.Core                         as TF (approximateEqual,
                                                                        lessEqual, square)
+import qualified TensorFlow.GenOps.Core                         as TF (approximateEqual,
+                                                                       getSessionHandle,
+                                                                       getSessionTensor,
+                                                                       lessEqual,
+                                                                       readerSerializeState,
+                                                                       square)
 import qualified TensorFlow.Minimize                            as TF
+import qualified TensorFlow.Minimize                            as TF
+import qualified TensorFlow.Nodes                               as TF (fetchTensorVector,
+                                                                       getFetch, getNodes)
+import qualified TensorFlow.Ops                                 as TF hiding
+                                                                       (initializedVariable,
+                                                                       zeroInitializedVariable)
 import qualified TensorFlow.Ops                                 as TF hiding
                                                                        (initializedVariable,
                                                                        zeroInitializedVariable)
 import qualified TensorFlow.Tensor                              as TF (collectAllSummaries,
                                                                        tensorValueFromName)
+import qualified TensorFlow.Tensor                              as TF (Ref (..),
+                                                                       collectAllSummaries,
+                                                                       tensorValueFromName)
 import           TensorFlow.Variable                            as TF hiding (zeroInitializedVariable')
 import qualified TensorFlow.Variable                            as V
-
-import           Debug.Trace
+import qualified TensorFlow.Variable                            as TF
 
 type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
 
@@ -94,15 +116,17 @@ type Input = Float
 
 data Model = Model
   { weights :: [TF.Variable Float]
-  , train :: TF.TensorData Input  -- ^ images
+  , train :: TF.ControlNode       -- ^ node (tensor)
+          -> TF.TensorData Input  -- ^ images
           -> TF.TensorData Output -- ^ correct values
           -> TF.Session ()
-  , infer :: TF.TensorData Input          -- ^ images
+  , infer :: TF.Tensor TF.Value Float     -- ^ tensor
+          -> TF.TensorData Input          -- ^ images
           -> TF.Session (V.Vector Output) -- ^ predictions
-  , errorRate :: TF.TensorData Input      -- ^ images
-              -> TF.TensorData Output     -- ^ train values
-              -> TF.Session Float
-  , tensorPredict :: TF.Tensor TF.Value Float
+  -- , errorRate :: TF.TensorData Input      -- ^ images
+  --             -> TF.TensorData Output     -- ^ train values
+  --             -> TF.Session Float
+  , tensorPredict :: TF.Tensor TF.Value ByteString
   , tensorTrain :: TF.ControlNode
   }
 
@@ -136,17 +160,18 @@ tensorflow = do
       adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
   trainStep <- TF.minimizeWith (TF.adam' adamConfig) loss wghts
 
-  let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
-  errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+  -- let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
+  -- errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+
+  hPredict <- TF.getSessionHandle predict
 
   return Model
     { weights = wghts
-    , train = \imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
-    , infer = \predict imFeed -> TF.runWithFeeds [TF.feed images imFeed] predict
-    , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
-    , tensorPredict = predict
+    , train = \trainStep imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
+    , infer = \tensor imFeed -> TF.runWithFeeds [TF.feed images imFeed] tensor
+    -- , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
+    , tensorPredict = hPredict
     , tensorTrain = trainStep
-
     }
 
 
@@ -158,37 +183,38 @@ main = do
       encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
   let tensor = do
-        let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
-            numInputs = 2 :: Int64
+  --       let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
+  --           numInputs = 2 :: Int64
 
-        -- Inputs.
-        images <- TF.placeholder (fromList [batchSize, numInputs])
+  --       -- Inputs.
+  --       images <- TF.placeholder (fromList [batchSize, numInputs])
 
-        -- Hidden layer.
-        let numUnits = 2
+  --       -- Hidden layer.
+  --       let numUnits = 2
 
-        (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
-        hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
-        let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
-        let hidden = TF.relu hiddenZ
+  --       (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
+  --       hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
+  --       let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
+  --       let hidden = TF.relu hiddenZ
 
-        -- Logits.
-        logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
-        logitBiases <- TF.zeroInitializedVariable (fromList [1])
-        let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
-        TF.render $ TF.reduceMean $ TF.relu logits
+  --       -- Logits.
+  --       logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
+  --       logitBiases <- TF.zeroInitializedVariable (fromList [1])
+  --       let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
+  --       TF.render $ TF.reduceMean $ TF.relu logits
+        -- return (wghts, tensor)
 
 
-        -- TF.render $ TF.scalar (5 :: Float) * 10
+        TF.render $ TF.scalar (5 :: Float) * 10
   let graphDef = TF.asGraphDef tensor
       opName = head (graphDef ^. TF.node)^. TF.name
       -- value =  head (graphDef ^. TF.node)^. TF.value
   print $ head (graphDef ^. TF.node)
   putStrLn $ "OpName: " ++ show opName
-  -- TF.runSession $ do
-  --     TF.addGraphDef graphDef
-  --     (x :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
-  --     liftIO $ print x
+  TF.runSession $ do
+      TF.addGraphDef graphDef
+      (x :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
+      liftIO $ print x
 
   -- model <- TF.runSession $ do
 
@@ -198,35 +224,33 @@ main = do
     -- undefined
 
 
-  TF.runSession $ do
-    TF.addGraphDef graphDef
-    (infer :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
+  -- TF.runSession $ do
+  --   TF.addGraphDef graphDef
+  --   let (predictor :: TF.Tensor TF.Value Float) = TF.tensorValueFromName opName
 
-    model <- TF.build tensorflow
+  --   forM_ ([0..1000] :: [Int]) $ \i -> do
+  --     (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+  --     (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+  --     let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+  --     let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
 
-    forM_ ([0..1000] :: [Int]) $ \i -> do
+  --     let images = encodeImageBatch xData
+  --         labels = encodeLabelBatch yData
 
-      (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
-      (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
-      let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
-      let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+  --     bef <- head . V.toList <$> infer model predictor images
 
-      let images = encodeImageBatch xData
-          labels = encodeLabelBatch yData
+  --     -- train model (tensorTrain model) images labels
+  --     -- aft <- head . V.toList <$> infer model predictor images
 
-      bef <- head . V.toList <$> infer model images
-      train model images labels
-      aft <- head . V.toList <$> infer model images
+  --     liftIO $ print bef
 
+      -- when (i `mod` 100 == 0) $ do
+      --   liftIO $ putStrLn $ "Before vs After: " ++ show bef ++ " " ++ show aft ++ " [Actual: " ++ show (head yData) ++ "]"
+      --   varVals :: [V.Vector Float] <- TF.run (TF.readValue <$> weights model)
+      --   liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
 
-      when (i `mod` 100 == 0) $ do
-        liftIO $ putStrLn $ "Before vs After: " ++ show bef ++ " " ++ show aft ++ " [Actual: " ++ show (head yData) ++ "]"
-        varVals :: [V.Vector Float] <- TF.run (TF.readValue <$> weights model)
-        liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
-
-        err <- errorRate model images labels
-        liftIO . putStrLn $ "training error " ++ show (err * 100)
-
+        -- err <- errorRate model images labels
+        -- liftIO . putStrLn $ "training error " ++ show (err * 100)
 
   -- TF.runSession $ do
   --     let x1Data = [0,0.5,1]
