@@ -51,6 +51,10 @@ import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op,
 import qualified Proto.Tensorflow.Core.Protobuf.Saver           as TF
 import           System.Random                                  (randomIO)
 import           System.Random                                  (randomIO)
+import qualified TensorFlow.Build                               as TF (addNewOp,
+                                                                       explicitName, opDef,
+                                                                       opDefWithName,
+                                                                       opType)
 import qualified TensorFlow.ControlFlow                         as TF (withControlDependencies)
 import qualified TensorFlow.Core                                as TF hiding (value)
 import qualified TensorFlow.Core                                as TF
@@ -73,6 +77,7 @@ import qualified TensorFlow.Ops                                 as TF hiding
                                                                        (initializedVariable,
                                                                        zeroInitializedVariable)
 import qualified TensorFlow.Tensor                              as TF (collectAllSummaries,
+                                                                       tensorNodeName,
                                                                        tensorValueFromName)
 import qualified TensorFlow.Tensor                              as TF (Ref (..),
                                                                        collectAllSummaries,
@@ -115,142 +120,155 @@ type Output = Float
 type Input = Float
 
 data Model = Model
-  { weights :: [TF.Variable Float]
-  , train :: TF.ControlNode       -- ^ node (tensor)
-          -> TF.TensorData Input  -- ^ images
-          -> TF.TensorData Output -- ^ correct values
-          -> TF.Session ()
-  , infer :: TF.Tensor TF.Value Float     -- ^ tensor
-          -> TF.TensorData Input          -- ^ images
-          -> TF.Session (V.Vector Output) -- ^ predictions
-  -- , errorRate :: TF.TensorData Input      -- ^ images
-  --             -> TF.TensorData Output     -- ^ train values
-  --             -> TF.Session Float
-  , tensorPredict :: TF.Tensor TF.Value ByteString
-  , tensorTrain :: TF.ControlNode
+  {
+  allWeights      :: [TF.Variable Float]
+  -- , train :: TF.ControlNode       -- ^ node (tensor)
+  --         -> TF.TensorData Input  -- ^ images
+  --         -> TF.TensorData Output -- ^ correct values
+  --         -> TF.Session ()
+  -- , infer :: TF.Tensor TF.Value Float     -- ^ tensor
+  --         -> TF.TensorData Input          -- ^ images
+  --         -> TF.Session (V.Vector Output) -- ^ predictions
+  -- -- , errorRate :: TF.TensorData Input      -- ^ images
+  -- --             -> TF.TensorData Output     -- ^ train values
+  -- --             -> TF.Session Float
+  , tensorPredict :: TF.Tensor TF.Value Float
+  -- , tensorTrain :: TF.ControlNode
   }
 
-tensorflow :: TF.Build Model
-tensorflow = do
-  let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
-      numInputs = 2 :: Int64
+batchSize :: Int64
+batchSize = -1                  -- Use -1 batch size to support variable sized batches.
 
-    -- Inputs.
-  images <- TF.placeholder (fromList [batchSize, numInputs])
+numInputs :: Int64
+numInputs = 2
 
-    -- Hidden layer.
+predictorAndWeights :: TF.Build (TF.Tensor TF.Value Float, [TF.Variable Float])
+predictorAndWeights = do
+  -- input <- TF.placeholder (fromList [batchSize, numInputs])  --
+  -- nodename <- TF.addNewOp $
+  -- let ops = set TF.opName (TF.explicitName "asdf")
+  -- predictor <- do
+  --   let ret = TF.scalar' ops (5 :: Float) * 10
+  --   -- let tp = ret ^. TF.node
+  --   -- let tp = undefined
+  --   -- TF.addNewOp $ TF.opDefWithName (TF.explicitName "asdf") tp
+  --   TF.render ret
+  -- let weights = []
+
+  -- Input layer.
+  images <- TF.placeholder (fromList [batchSize, numInputs])  -- Input layer.
+            -- Hidden layer.
   let numUnits = 2
-
-  (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
+  hiddenWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
   hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
   let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
   let hidden = TF.relu hiddenZ
-
-  -- Logits.
+               -- Logits
   logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
   logitBiases <- TF.zeroInitializedVariable (fromList [1])
   let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
-  predict <- TF.render $ TF.reduceMean $ TF.relu logits
+  let weights = [hiddenWeights, hiddenBiases, logitWeights, logitBiases]
+  predictor <- TF.render $ TF.reduceMean $ TF.relu logits
 
+  return (predictor, weights)
+
+
+modelBuilder :: TF.Build Model
+modelBuilder = do
 
   -- Create training action.
-  let wghts    = [hiddenWeights, hiddenBiases, logitWeights, logitBiases]
-  labels <- TF.placeholder [batchSize]
-  let loss = TF.reduceSum $ TF.square (logits `TF.sub` labels)
-      adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
-  trainStep <- TF.minimizeWith (TF.adam' adamConfig) loss wghts
+
+  -- labels <- TF.placeholder [batchSize]
+  -- let loss = TF.reduceSum $ TF.square (logits `TF.sub` labels)
+  --     adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
+  -- trainStep <- TF.minimizeWith (TF.adam' adamConfig) loss wghts
 
   -- let correctPredictions = TF.abs (predict `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
   -- errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
-
-  hPredict <- TF.getSessionHandle predict
-
+  (predictor, weights) <- TF.build predictorAndWeights
   return Model
-    { weights = wghts
-    , train = \trainStep imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
-    , infer = \tensor imFeed -> TF.runWithFeeds [TF.feed images imFeed] tensor
+    { allWeights = weights
+    -- , train = \trainStep imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
+    -- , infer = \tensor imFeed -> TF.runWithFeeds [TF.feed images imFeed] tensor
     -- , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
-    , tensorPredict = hPredict
-    , tensorTrain = trainStep
+    , tensorPredict = predictor
+    -- , tensorTrain = trainStep
     }
+
+testSaveRestore :: Test
+testSaveRestore = testCase "testSaveRestore" $
+    withSystemTempDirectory "" $ \dirPath -> do
+        let path = B8.pack $ dirPath ++ "/checkpoint"
+            var :: TF.MonadBuild m => m (TF.Tensor TF.Ref Float)
+            var = TF.zeroInitializedVariable' (TF.opName .~ "a")
+                                        (TF.Shape [])
+        TF.runSession $ do
+            v <- var
+            TF.assign v 134 >>= TF.run_
+            TF.save path [v] >>= TF.run_
+        result <- TF.runSession $ do
+            v <- var
+            TF.restore path v >>= TF.run_
+            TF.run v
+        liftIO $ TF.Scalar 134 @=? result
 
 
 main :: IO ()
 main = do
 
-
   let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
       encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
-  let tensor = do
-  --       let batchSize = -1 :: Int64 -- Use -1 batch size to support variable sized batches.
-  --           numInputs = 2 :: Int64
+  let predictorDef = TF.asGraphDef (tensorPredict <$> modelBuilder)
+      outputTensorName = head (predictorDef ^. TF.node)^. TF.name
+      inputTensorName = last (predictorDef ^. TF.node)^. TF.name
+      namesPredictor = predictorDef ^.. TF.node.traversed.TF.name
 
-  --       -- Inputs.
-  --       images <- TF.placeholder (fromList [batchSize, numInputs])
+  print $ head (predictorDef ^. TF.node)
+  putStrLn $ "OpName: " ++ show outputTensorName
 
-  --       -- Hidden layer.
-  --       let numUnits = 2
-
-  --       (hiddenWeights :: TF.Variable Float) <- TF.initializedVariable =<< randomParam numInputs (fromList [numInputs, numUnits])
-  --       hiddenBiases <- TF.zeroInitializedVariable (fromList [numUnits])
-  --       let hiddenZ = (images `TF.matMul` TF.readValue hiddenWeights) `TF.add` TF.readValue hiddenBiases
-  --       let hidden = TF.relu hiddenZ
-
-  --       -- Logits.
-  --       logitWeights <- TF.initializedVariable =<< randomParam numInputs (fromList [numUnits, 1])
-  --       logitBiases <- TF.zeroInitializedVariable (fromList [1])
-  --       let logits = (hidden `TF.matMul` TF.readValue logitWeights) `TF.add` TF.readValue logitBiases
-  --       TF.render $ TF.reduceMean $ TF.relu logits
-        -- return (wghts, tensor)
-
-
-        TF.render $ TF.scalar (5 :: Float) * 10
-  let graphDef = TF.asGraphDef tensor
-      opName = head (graphDef ^. TF.node)^. TF.name
-      -- value =  head (graphDef ^. TF.node)^. TF.value
-  print $ head (graphDef ^. TF.node)
-  putStrLn $ "OpName: " ++ show opName
-  TF.runSession $ do
-      TF.addGraphDef graphDef
-      (x :: V.Vector Float) <- TF.run $ TF.tensorValueFromName opName
-      liftIO $ print x
-
-  -- model <- TF.runSession $ do
-
-    -- model <- TF.build tensorflow
-    -- -- TF.readerSerializeState
-    -- -- TF.collectAllSummaries
-    -- undefined
-
+  putStrLn $ "NamesPredictor: " ++ show namesPredictor
 
   -- TF.runSession $ do
-  --   TF.addGraphDef graphDef
-  --   let (predictor :: TF.Tensor TF.Value Float) = TF.tensorValueFromName opName
+  --     TF.addGraphDef predictorDef
+  --     (x :: V.Vector Float) <- TF.run $ do TF.tensorValueFromName outputTensorName
+  --     liftIO $ print x
 
-  --   forM_ ([0..1000] :: [Int]) $ \i -> do
-  --     (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
-  --     (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
-  --     let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
-  --     let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+  -- TF.runSession $ do
+  --     TF.addGraphDef predictorDef
+  --     (x :: V.Vector Float) <- TF.run $ do TF.tensorValueFromName outputTensorName
+  --     liftIO $ print x
 
-  --     let images = encodeImageBatch xData
-  --         labels = encodeLabelBatch yData
 
-  --     bef <- head . V.toList <$> infer model predictor images
+  TF.runSession $ do
+    TF.addGraphDef predictorDef
 
-  --     -- train model (tensorTrain model) images labels
-  --     -- aft <- head . V.toList <$> infer model predictor images
+    let (inputLayer :: TF.Tensor TF.Value Float) = TF.tensorValueFromName inputTensorName
+    let (predictor :: TF.Tensor TF.Value Float) = TF.tensorValueFromName outputTensorName
 
-  --     liftIO $ print bef
+    forM_ ([0..1000] :: [Int]) $ \i -> do
+      (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+      let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+
+      let images = encodeImageBatch xData
+          labels = encodeLabelBatch yData
+
+      bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inputLayer images] predictor
+      liftIO $ print bef
+
+      -- train model (tensorTrain model) images labels
+      -- aft <- head . V.toList <$> infer model predictor images
+
 
       -- when (i `mod` 100 == 0) $ do
       --   liftIO $ putStrLn $ "Before vs After: " ++ show bef ++ " " ++ show aft ++ " [Actual: " ++ show (head yData) ++ "]"
       --   varVals :: [V.Vector Float] <- TF.run (TF.readValue <$> weights model)
       --   liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
 
-        -- err <- errorRate model images labels
-        -- liftIO . putStrLn $ "training error " ++ show (err * 100)
+      --   err <- errorRate model images labels
+      --   liftIO . putStrLn $ "training error " ++ show (err * 100)
 
   -- TF.runSession $ do
   --     let x1Data = [0,0.5,1]
