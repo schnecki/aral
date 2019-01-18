@@ -41,6 +41,7 @@ dependencies:
   - deepseq
   - time
   - bytestring
+  - temporary
   - mtl
   - tensorflow
   - tensorflow-core-ops
