@@ -142,11 +142,13 @@ type Output = Float
 type Input = Float
 
 data Model = Model
-  { inputLayerName  :: Text
-  , outputLayerName :: Text
-  , labelLayerName  :: Text
-  , allVariables    :: [TF.Tensor TF.Ref Float]
-  , trainingNode    :: TF.ControlNode
+  { inputLayerName         :: Text -- ^ Input layer name for feeding input.
+  , outputLayerName        :: Text -- ^ Output layer name for predictions.
+  , labelLayerName         :: Text -- ^ Labels input layer name for training.
+  , errorRateName          :: Text -- ^ Error rate tensor name.
+  , trainingNode           :: TF.ControlNode -- ^ Training node.
+  , neuralNetworkVariables :: [TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
+  , trainingVariables      :: [TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
   }
 
   -- , tensorTrain :: TF.ControlNode
@@ -203,18 +205,18 @@ modelBuilder = do
       adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
   (trainStep, trainVars) <- TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape [[numInputs, numUnits], [numUnits], [numUnits,1],[1]])
 
-  -- let shapes = map TF.shape weights:: [TF.Tensor TF.Build Int64]
-
-
-  -- let correctPredictions = TF.abs (predictor `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
-  -- errorRateTensor <- TF.render $ 1 - TF.reduceMean (TF.cast correctPredictions)
+  let correctPredictions = TF.abs (predictor `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
+  let errRateName = "error"
+  (_ :: TF.Tensor TF.Value Float) <- TF.render $ TF.identity' (TF.opName .~ TF.explicitName errRateName) $ 1 - TF.reduceMean (TF.cast correctPredictions)
 
   return Model
     { inputLayerName = inpLayerName
     , outputLayerName = outLayerName
     , labelLayerName = labLayerName
+    , errorRateName = errRateName
     , trainingNode = trainStep
-    , allVariables = weights ++ trainVars
+    , neuralNetworkVariables = weights
+    , trainingVariables = trainVars
     }
 
 
@@ -245,7 +247,8 @@ main = do
 
   tempDir <- getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
   print $ "TempDir: " ++ tempDir
-  let path = B8.pack $ tempDir ++ "/model"
+  let pathModel = B8.pack $ tempDir ++ "/model"
+      pathTrain = B8.pack $ tempDir ++ "/train"
   -- testSaveRestore tempDir
   -- testGraphDefExec
 
@@ -298,16 +301,15 @@ main = do
       when (i `mod` 100 == 0) $ do
         bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
         liftIO $ putStrLn $ "Value: " ++ show bef
-        varVals :: [V.Vector Float] <- TF.run (take 4 $ allVariables model)
+        varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
         liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
 
     aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
     liftIO $ putStrLn $ "END SESS 1: " ++ show aft
-    -- TF.save path (allVariables model) >>=
-    TF.save path (take 4 $ allVariables model) >>= TF.run_
-    varVals :: [V.Vector Float] <- return (take 4 $ allVariables model) >>= TF.run
+    TF.save pathModel (neuralNetworkVariables model) >>= TF.run_
+    varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (neuralNetworkVariables model)
     liftIO $ putStrLn $ "SESS 1 Weights: " ++ show (V.toList <$> varVals)
-    TF.save (B8.pack $ tempDir ++ "/adam") (drop 4 $ allVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+    TF.save pathTrain (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
 
   -- SESSION 2
   TF.runSession $ do
@@ -316,16 +318,15 @@ main = do
         outRef = TF.tensorFromName (outputLayerName model) :: TF.Tensor TF.Ref Float
         labRef = TF.tensorFromName (labelLayerName model) :: TF.Tensor TF.Ref Float
 
-    -- Restore Training config
-    mapM (TF.restore (B8.pack $ tempDir ++ "/adam")) (drop 4 $ allVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
-    -- Restore weights
-    mapM (TF.restore path) (take 4 $ allVariables model) >>= TF.run_ -- TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+    -- Restore training config and weights afterwards as the first operations learns/modifies weights
+    mapM (TF.restore pathTrain) (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+    mapM (TF.restore pathModel) (neuralNetworkVariables model) >>= TF.run_
     -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (allVariables model)
-    varVals :: [V.Vector Float] <- return (take 4 $ allVariables model) >>= TF.run
+    varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
     liftIO $ putStrLn $ "SESS 2 Weights: " ++ show (V.toList <$> varVals)
-
     bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
     liftIO $ putStrLn $ "START SESS 2: " ++ show  bef
+
     forM_ ([0..1000] :: [Int]) $ \i -> do
       (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
       (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
@@ -338,8 +339,10 @@ main = do
       when (i `mod` 100 == 0) $ do
         bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
         liftIO $ putStrLn $ "Value: " ++ show bef
-        varVals :: [V.Vector Float] <- TF.run (take 4 $ allVariables model)
+        varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
         liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+        -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (trainingVariables model)
+        -- liftIO $ putStrLn $ "Train Vars: " ++ show (V.toList <$> varVals)
 
     aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
     liftIO $ putStrLn $ "END SESS 2: " ++ show  aft
