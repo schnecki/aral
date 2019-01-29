@@ -133,10 +133,10 @@ trainNNConf _ _ = error "called trainNNConf on non-neural network proxy (program
 
 
 -- | Retrieve a value.
-lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> Double
-lookupProxy _ _ k (Table m) = M.findWithDefault 0 k m
+lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> IO Double
+lookupProxy _ _ k (Table m) = return $ M.findWithDefault 0 k m
 lookupProxy period lkType k px
-  | period <= fromIntegral (config ^. replayMemory.replayMemorySize) = M.findWithDefault 0 k tab
+  | period <= fromIntegral (config ^. replayMemory.replayMemorySize) = return $ M.findWithDefault 0 k tab
   | otherwise = lookupNeuralNetwork lkType k px
   where config = px ^?! proxyNNConfig
         tab = px ^?! proxyNNStartup
@@ -144,15 +144,15 @@ lookupProxy period lkType k px
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
 -- to the original interval before returned.
-lookupNeuralNetwork :: LookupType -> k -> Proxy k -> Double
-lookupNeuralNetwork tp k px@Grenade {} = unscaleValue (getMinMaxVal px) $ lookupNeuralNetworkUnscaled tp k px
-lookupNeuralNetwork tp k px@Tensorflow {} = unscaleValue (getMinMaxVal px) $ lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork :: LookupType -> k -> Proxy k -> IO Double
+lookupNeuralNetwork tp k px@Grenade {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork tp k px@Tensorflow {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
-lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> Double
-lookupNeuralNetworkUnscaled Worker k (Grenade _ netW _ _ conf) = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
-lookupNeuralNetworkUnscaled Target k (Grenade netT _ _ _ conf) = head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
+lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> IO Double
+lookupNeuralNetworkUnscaled Worker k (Grenade _ netW _ _ conf) = return $ head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
+lookupNeuralNetworkUnscaled Target k (Grenade netT _ _ _ conf) = return $ head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
 lookupNeuralNetworkUnscaled Worker k (Tensorflow{}) = error "lookupNeuralNetworkUnscaled W"
 lookupNeuralNetworkUnscaled Target k (Tensorflow{}) = error "lookupNeuralNetworkUnscaled T"
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
