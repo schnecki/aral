@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies     #-}
 
 module ML.BORL.NeuralNetwork.Training
-    ( trainNetwork
+    ( trainGrenade
     ) where
 
 import           ML.BORL.NeuralNetwork.Conversion
@@ -21,13 +21,13 @@ import           Debug.Trace
 trainMaxVal :: Double
 trainMaxVal = 0.99
 
-trainNetwork ::
+trainGrenade ::
      (NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
   => LearningParameters
   -> Network layers shapes
   -> [([Double], Double)]
   -> Network layers shapes
-trainNetwork lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs $ tapesAndActual chs
+trainGrenade lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs $ tapesAndActual chs
   where
     tapesAndActual = parMap rdeepseq runForward
     runForward (inp, _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)

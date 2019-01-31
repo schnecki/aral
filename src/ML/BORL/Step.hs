@@ -50,19 +50,21 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       dlt = borl ^. parameters . delta
       (ga0, ga1) = borl ^. gammas
       period = borl ^. t
-  let vValState = vValue borl state act
-      vValStateNext = vStateValue borl stateNext
-      rhoVal = rhoValue borl state act
-      wValState = wValue borl state act
-      wValStateNext = wStateValue borl state
-      r0ValState = rValue borl RSmall state act
-      r1ValState = rValue borl RBig state act
+  vValState <- vValue borl state act
+  vValStateNext <- vStateValue borl stateNext
+  rhoVal <- rhoValue borl state act
+  wValState <- wValue borl state act
+  wValStateNext <- wStateValue borl state
+  r0ValState <- rValue borl RSmall state act
+  r1ValState <- rValue borl RBig state act
   let label = (state, aNr)
-  let rhoState
-        | isUnichain borl = reward + vValStateNext - vValState
-           --  | isUnichain borl = reward                                              -- Alternative to above (estimating it from actual reward)
-        | otherwise = (approxAvg * rhoStateValue borl stateNext + reward) / (approxAvg + 1) -- approximation
-      rhoVal' = (1 - alp) * rhoVal + alp * rhoState
+  rhoState <- if isUnichain borl
+    then return (reward + vValStateNext - vValState)
+    -- reward                                              -- Alternative to above (estimating it from actual reward)
+    else do
+    rhoStateValNext <- rhoStateValue borl stateNext
+    return $ (approxAvg * rhoStateValNext + reward) / (approxAvg + 1) -- approximation
+  let rhoVal' = (1 - alp) * rhoVal + alp * rhoState
   rhoNew <-
     case borl ^. rho of
       Left _  -> return $ Left rhoVal'
@@ -88,9 +90,11 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
             else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
   forkMv' <- doFork $ P.insert period label vValStateNew mv
-  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rStateValue borl RSmall stateNext)
+  rSmall <- rStateValue borl RSmall stateNext
+  let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rSmall)
   forkMr0' <- doFork $ P.insert period label r0ValState' mr0
-  let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rStateValue borl RBig stateNext)
+  rBig <- rStateValue borl RBig stateNext
+  let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rBig)
   forkMr1' <- doFork $ P.insert period label r1ValState' mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
   mv' <- collectForkResult forkMv'
@@ -156,42 +160,42 @@ reduce = maximum
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
 rhoValue = rhoValueWith Worker
 
-rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
 rhoValueWith lkTp borl state (a,_) =
   case borl ^. rho of
-    Left r  -> r
+    Left r  -> return r
     Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
 
-rhoStateValue :: (Ord s) => BORL s -> s -> Double
+rhoStateValue :: (Ord s) => BORL s -> s -> IO Double
 rhoStateValue borl state = case borl ^. rho of
-  Left r  -> r
-  Right _ -> reduce $ map (rhoValueWith Target borl state) (actionsIndexed borl state)
+  Left r  -> return r
+  Right _ -> reduce <$> mapM (rhoValueWith Target borl state) (actionsIndexed borl state)
 
-vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
 vValue = vValueWith Worker
 
-vValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+vValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
 vValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mv
   where
     mv = borl ^. v
 
-vStateValue :: (Ord s) => BORL s -> s -> Double
-vStateValue borl state = reduce $ map (vValueWith Target borl state) (actionsIndexed borl state)
+vStateValue :: (Ord s) => BORL s -> s -> IO Double
+vStateValue borl state = reduce <$> mapM (vValueWith Target borl state) (actionsIndexed borl state)
 
 
-wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
+wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
 wValue = wValueWith Worker
 
-wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> Double
+wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
 wValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mw
   where
     mw = borl ^. w
 
-wStateValue :: (Ord s) => BORL s -> s -> Double
-wStateValue borl state = reduce $ map (wValueWith Target borl state) (actionsIndexed borl state)
+wStateValue :: (Ord s) => BORL s -> s -> IO Double
+wStateValue borl state = reduce <$> mapM (wValueWith Target borl state) (actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -201,11 +205,11 @@ data RSize
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> Double
+rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> IO Double
 rValue = rValueWith Worker
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> Double
+rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> IO Double
 rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
@@ -213,12 +217,15 @@ rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, 
         RSmall -> borl ^. r0
         RBig   -> borl ^. r1
 
-rStateValue :: (Ord s) => BORL s -> RSize -> s -> Double
-rStateValue borl size state = reduce $ map (rValueWith Target borl size state) (actionsIndexed borl state)
+rStateValue :: (Ord s) => BORL s -> RSize -> s -> IO Double
+rStateValue borl size state = reduce <$> mapM (rValueWith Target borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
-eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> Double
-eValue borl state act = rValueWith Target borl RBig state act - rValueWith Target borl RSmall state act
+eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
+eValue borl state act = do
+  big <- rValueWith Target borl RBig state act
+  small <- rValueWith Target borl RSmall state act
+  return $ big - small
 
 --  | Calculates the difference between the expected discounted values.
 -- eStateValue :: (Ord s) => BORL s -> s -> Double

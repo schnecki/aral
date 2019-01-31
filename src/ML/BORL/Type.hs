@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
@@ -23,6 +24,7 @@ import qualified Data.Vector.Mutable          as V
 import           GHC.TypeLits
 import           Grenade
 import           System.IO.Unsafe             (unsafePerformIO)
+import qualified TensorFlow.Core              as TF
 
 
 -------------------- Types --------------------
@@ -81,6 +83,37 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
+mkBORLUnichainTensorflow :: forall s . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> BORL s
+mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig =
+  BORL
+    (zip [idxStart ..] as)
+    asFilter
+    initialState
+    Nothing
+    0
+    params
+    decayFun
+    (default_gamma0, default_gamma1)
+    (Left 0)
+    (0, 0, 0)
+    (unsafePerformIO $ nnSA VTable)
+    (unsafePerformIO $ nnSA WTable)
+    (unsafePerformIO $ nnSA R0Table)
+    (unsafePerformIO $ nnSA R1Table)
+    mempty
+  where
+    nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
+    nnSA tp = do
+      nnT <- TF.runSession $ TF.withNameScope (name tp) $ TF.withNameScope "target" modelBuilder
+      nnW <- TF.runSession $ TF.withNameScope (name tp) $ TF.withNameScope "worker" modelBuilder
+      return $ Tensorflow nnT nnW mempty tp (mkNNConfigSA as asFilter nnConfig)
+
+    name VTable  = "v"
+    name WTable  = "w"
+    name R0Table = "r0"
+    name R1Table = "r1"
+
+
 mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
 mkBORLMultichainTabular initialState as asFilter params decayFun =
   BORL (zip [0 ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Right tabSA) (0, 0, 0) tabSA tabSA tabSA tabSA mempty
@@ -100,7 +133,7 @@ mkBORLUnichainGrenade ::
   -> NNConfig s
   -> BORL s
 mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig =
-  checkNN net nnConfig $
+  checkGrenade net nnConfig $
   BORL
     (zip [idxStart ..] as)
     asFilter
@@ -132,7 +165,7 @@ mkBORLMultichainGrenade ::
   -> NNConfig s
   -> BORL s
 mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig =
-  checkNN net nnConfig $
+  checkGrenade net nnConfig $
   BORL
     (zip [0 ..] as)
     asFilter
@@ -171,13 +204,13 @@ scalingByMaxReward onlyPos maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) m
 -------------------- Helpers --------------------
 
 -- | Checks the neural network setup and throws an error in case of a faulty number of input or output nodes.
-checkNN ::
+checkGrenade ::
      forall layers shapes nrH nrL s. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
   => Network layers shapes
   -> NNConfig s
   -> BORL s
   -> BORL s
-checkNN _ nnConfig borl
+checkGrenade _ nnConfig borl
   | nnInpNodes /= stInp + 1 = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show (stInp + 1)
   | nnOutNodes /= 1 = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be 1"
   | otherwise = borl
