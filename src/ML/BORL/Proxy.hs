@@ -104,10 +104,10 @@ trainMSE :: Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> IO (P
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
   | mse < mseMax = do
-      putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+      putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
       return px
   | otherwise = do
-      when (maybe False ((==0) . (`mod` 10)) mPeriod) $
+      when (maybe False ((==0) . (`mod` 100)) mPeriod) $
         putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
       trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config
   where
@@ -117,9 +117,25 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     kScaled = map ((config ^. toNetInp) . fst) dataset
     forwardRun k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - forwardRun k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow _ netW tab tp config) = error "trainMSE"
+trainMSE mPeriod dataset lp px@(Tensorflow _ netW tab tp config) =
+  let mseMax = config ^. trainMSEMax
+      kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
+      vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
 
-trainNNConf :: forall k . (Ord k) => Period -> Proxy k -> IO (Proxy k)
+  in do
+    net' <- backwardRun netW kScaled vScaled
+    let forward k = head <$> forwardRun net' [map realToFrac $ (config ^. toNetInp) k]
+    mse <- ((1 / fromIntegral (length dataset) *) . sum) <$> zipWithM (\k vS -> (abs . (vS -)) <$> forward k) (map fst dataset) vScaled
+
+    if realToFrac mse < mseMax
+      then putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
+      else do
+      when (maybe False ((==0) . (`mod` 100)) mPeriod) $
+         putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+      trainMSE ((+ 1) <$> mPeriod) dataset lp $ Tensorflow net' net' tab tp config
+
+
+trainNNConf :: forall k . Period -> Proxy k -> IO (Proxy k)
 -- trainNNConf period (Grenade netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ Grenade netT netW tab tp config
 trainNNConf period (Grenade netT netW tab tp config) = do
   rands <- getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
@@ -127,7 +143,12 @@ trainNNConf period (Grenade netT netW tab tp config) = do
       netW' = trainGrenade (config ^. learningParams) netW trainingInstances
   return $ Grenade netT netW' tab tp config
 trainNNConf period (Tensorflow netT netW tab tp config) = do
-  error "trainNNConf"
+  rands <- getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
+  let trainingInstances = map (first $ config ^. toNetInp) rands
+      inputs = map (map realToFrac . fst) trainingInstances
+      labels = map (realToFrac . snd) trainingInstances
+  netW' <- backwardRun netW inputs labels
+  return $ Tensorflow netT netW' tab tp config
 
 trainNNConf _ _ = error "called trainNNConf on non-neural network proxy (programming error)"
 
@@ -153,8 +174,8 @@ lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural netw
 lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> IO Double
 lookupNeuralNetworkUnscaled Worker k (Grenade _ netW _ _ conf) = return $ head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
 lookupNeuralNetworkUnscaled Target k (Grenade netT _ _ _ conf) = return $ head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
-lookupNeuralNetworkUnscaled Worker k (Tensorflow{}) = error "lookupNeuralNetworkUnscaled W"
-lookupNeuralNetworkUnscaled Target k (Tensorflow{}) = error "lookupNeuralNetworkUnscaled T"
+lookupNeuralNetworkUnscaled Worker k (Tensorflow _ netW _ _ conf) = realToFrac . head <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) k]
+lookupNeuralNetworkUnscaled Target k (Tensorflow netT _ _ _ conf) = realToFrac . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) k]
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 

@@ -109,6 +109,7 @@ prettyBORLTables t1 t2 t3 borl =
       case (borl ^. r1, borl ^. r0) of
         (P.Table rm1, P.Table rm0) -> P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
         (prNN1@P.Grenade {}, prNN0@P.Grenade {}) -> P.Table $ M.fromList $ zipWith subtr (map (second fst) $ mkNNList False prNN1) (map (second fst) $ mkNNList False prNN0)
+        (prNN1@P.Tensorflow{}, prNN0@P.Tensorflow {}) -> P.Table $ M.fromList $ zipWith subtr (map (second fst) $ mkNNList False prNN1) (map (second fst) $ mkNNList False prNN0)
         _ -> error "Pretty printing of mixed data structures is not allowed!"
     vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
@@ -137,9 +138,11 @@ prettyBORLTables t1 t2 t3 borl =
       P.Grenade _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
 
-mkNNList :: Bool -> P.Proxy k -> [(k, (Double, Double))]
+mkNNList :: Bool -> P.Proxy k -> IO [(k, (Double, Double))]
 mkNNList unscaled pr@(P.Grenade _ _ _ _ conf) = map (\inp -> (inp, ( if unscaled then P.lookupNeuralNetwork P.Target inp pr else P.lookupNeuralNetworkUnscaled P.Target inp pr,
                                                                if unscaled then P.lookupNeuralNetwork P.Worker inp pr else P.lookupNeuralNetworkUnscaled P.Worker inp pr))) (P._prettyPrintElems conf)
+
+
 mkNNList _ _ = error "mkNNList called on non-neural network"
 
 prettyBORL :: (Ord s, Show s) => BORL s -> Doc

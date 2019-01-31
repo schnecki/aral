@@ -17,14 +17,18 @@ import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
-import qualified Data.Map.Strict              as M
-import qualified Data.Proxy                   as Type
+import           Control.Monad.IO.Class                         (liftIO)
+import qualified Data.Map.Strict                                as M
+import qualified Data.Proxy                                     as Type
 import           Data.Singletons.Prelude.List
-import qualified Data.Vector.Mutable          as V
+import qualified Data.Text                                      as T
+import qualified Data.Vector.Mutable                            as V
 import           GHC.TypeLits
 import           Grenade
-import           System.IO.Unsafe             (unsafePerformIO)
-import qualified TensorFlow.Core              as TF
+import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
+import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
+import           System.IO.Unsafe                               (unsafePerformIO)
+import qualified TensorFlow.Core                                as TF
 
 
 -------------------- Types --------------------
@@ -83,31 +87,41 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
-mkBORLUnichainTensorflow :: forall s . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> BORL s
-mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig =
-  BORL
-    (zip [idxStart ..] as)
-    asFilter
-    initialState
-    Nothing
-    0
-    params
-    decayFun
-    (default_gamma0, default_gamma1)
-    (Left 0)
-    (0, 0, 0)
-    (unsafePerformIO $ nnSA VTable)
-    (unsafePerformIO $ nnSA WTable)
-    (unsafePerformIO $ nnSA R0Table)
-    (unsafePerformIO $ nnSA R1Table)
-    mempty
+mkBORLUnichainTensorflow :: forall s m . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Build TensorflowModel -> NNConfig s -> IO (BORL s)
+mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig = do
+  nnConfig' <- mkNNConfigSA as asFilter nnConfig
+  let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
+  let nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
+      nnSA tp = do
+        nnT <-
+          TF.runSession $ do
+            model <- prependName (name tp <> "_target") <$> TF.build (TF.withNameScope (name tp <> "_target") modelBuilder)
+            -- liftIO $ putStrLn $ T.unpack  $ "inp\tout\tlab" <> (inputLayerName model) <> "\t" <> (outputLayerName model) <> "\t" <> (labelLayerName model)
+            -- let graphDef = TF.asGraphDef modelBuilder
+            --     names = graphDef ^.. TF.node . traversed . TF.name
+            -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
+            saveModel model [map realToFrac netInpInitState] [0]
+        nnW <-
+          TF.runSession $ do
+            model <- prependName (name tp <> "_worker") <$> TF.build (TF.withNameScope (name tp <> "_worker") modelBuilder)
+            -- let graphDef = TF.asGraphDef modelBuilder
+            --     names = graphDef ^.. TF.node . traversed . TF.name
+            -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
+            saveModel model [map realToFrac netInpInitState] [0]
+        return $ Tensorflow nnT nnW mempty tp nnConfig'
+  v <- nnSA VTable
+  w <- nnSA WTable
+  r0 <- nnSA R0Table
+  r1 <- nnSA R1Table
+  return $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
   where
-    nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
-    nnSA tp = do
-      nnT <- TF.runSession $ TF.withNameScope (name tp) $ TF.withNameScope "target" modelBuilder
-      nnW <- TF.runSession $ TF.withNameScope (name tp) $ TF.withNameScope "worker" modelBuilder
-      return $ Tensorflow nnT nnW mempty tp (mkNNConfigSA as asFilter nnConfig)
-
+    prependName txt model =
+      model
+      { inputLayerName = txt <> "/" <> inputLayerName model
+      , outputLayerName = txt <> "/" <> outputLayerName model
+      , labelLayerName = txt <> "/" <> labelLayerName model
+      , errorRateName = txt <> "/" <> errorRateName model
+      }
     name VTable  = "v"
     name WTable  = "w"
     name R0Table = "r0"
@@ -131,27 +145,28 @@ mkBORLUnichainGrenade ::
   -> Decay
   -> Network layers shapes
   -> NNConfig s
-  -> BORL s
-mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig =
-  checkGrenade net nnConfig $
-  BORL
-    (zip [idxStart ..] as)
-    asFilter
-    initialState
-    Nothing
-    0
-    params
-    decayFun
-    (default_gamma0, default_gamma1)
-    (Left 0)
-    (0, 0, 0)
-    (nnSA VTable)
-    (nnSA WTable)
-    (nnSA R0Table)
-    (nnSA R1Table)
-    mempty
-  where
-    nnSA tp = Grenade net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
+  -> IO (BORL s)
+mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
+  nnConfig' <- mkNNConfigSA as asFilter nnConfig
+  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy (s, ActionIndex)
+  return $
+    checkGrenade net nnConfig $
+    BORL
+      (zip [idxStart ..] as)
+      asFilter
+      initialState
+      Nothing
+      0
+      params
+      decayFun
+      (default_gamma0, default_gamma1)
+      (Left 0)
+      (0, 0, 0)
+      (nnSA VTable)
+      (nnSA WTable)
+      (nnSA R0Table)
+      (nnSA R1Table)
+      mempty
 
 
 mkBORLMultichainGrenade ::
@@ -163,10 +178,11 @@ mkBORLMultichainGrenade ::
   -> Decay
   -> Network layers shapes
   -> NNConfig s
-  -> BORL s
-mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig =
-  checkGrenade net nnConfig $
-  BORL
+  -> IO (BORL s)
+mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = do
+  nnConfig' <- mkNNConfigSA as asFilter nnConfig
+  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy (s, ActionIndex)
+  return $ checkGrenade net nnConfig $ BORL
     (zip [0 ..] as)
     asFilter
     initialState
@@ -182,9 +198,6 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig =
     (nnSA R0Table)
     (nnSA R1Table)
     mempty
-  where
-    nnSA tp = Grenade net net mempty tp (mkNNConfigSA as asFilter nnConfig) :: Proxy (s, ActionIndex)
-
 
 -------------------- Other Constructors --------------------
 
@@ -221,10 +234,12 @@ checkGrenade _ nnConfig borl
 
 
 -- | Converts the neural network state configuration to a state-action configuration.
-mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> NNConfig (s, ActionIndex)
-mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c mse) = NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c mse
+mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> IO (NNConfig (s, ActionIndex))
+mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c mse) = do
+  vec <- V.new sz
+  let rm' = ReplayMemory vec sz
+  return $ NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c mse
   where
-    rm' = ReplayMemory (unsafePerformIO $ V.new sz) sz
     maxVal = fromIntegral (length as)
     toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
     toSA f (state, a) = f state ++ [scaleNegPosOne (0,maxVal) (fromIntegral a)]

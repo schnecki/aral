@@ -131,8 +131,12 @@ nextAction borl = do
       else do
       rhoVals <- mapM (rhoValue borl state) as
       return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
-    bestV <- head $ groupBy (epsCompare (==) `on` vValue borl state) $ sortBy (epsCompare compare `on` vValue borl state) bestRho
-    bestE <- sortBy (epsCompare compare `on` eValue borl state) bestV
+    bestV <- do
+      vVals <- mapM (vValue borl state) bestRho
+      return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
+    bestE <- do
+      eVals <- mapM (eValue borl state) bestV
+      return  $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
     -- bestR <- sortBy (epsCompare compare `on` rValue borl RBig state) bestV
     -- return (False, head bestR)
     if length bestE > 1

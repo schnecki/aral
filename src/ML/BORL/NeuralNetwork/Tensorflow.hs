@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
 import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Char8  as B8
+import           Data.List              (genericLength)
 import           Data.Maybe             (isJust)
 import           Data.Text              (Text)
 import qualified Data.Vector            as V
@@ -16,8 +18,9 @@ import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
 import qualified TensorFlow.Variable    as TF
 
-type Output = TF.TensorData Float
-type Input = TF.TensorData Float
+type Output = [Float]
+type Input = [[Float]]
+type Labels = Output
 
 
 data TensorflowModel = TensorflowModel
@@ -29,10 +32,11 @@ data TensorflowModel = TensorflowModel
   , neuralNetworkVariables :: [TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
   , trainingVariables      :: [TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
   , checkpointBaseFileName :: Maybe FilePath
+  , lastInputOutputTuple   :: Maybe ([Float], Float)
   }
 
 instance NFData TensorflowModel where
-  rnf (TensorflowModel i o l e !_ !_ !_ c) = rnf i `seq` rnf o `seq` rnf l `seq` rnf e `seq` rnf c
+  rnf (TensorflowModel i o l e !_ !_ !_ c m) = rnf i `seq` rnf o `seq` rnf l `seq` rnf e `seq` rnf c `seq` rnf m
 
 
 getRef :: Text -> TF.Tensor TF.Ref Float
@@ -45,6 +49,33 @@ trainName :: String
 trainName = "train"
 
 
+encodeInputBatch :: Input -> TF.TensorData Float
+encodeInputBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
+
+encodeLabelBatch :: Output -> TF.TensorData Float
+encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
+
+forwardRun :: TensorflowModel -> Input -> IO Output
+forwardRun model inp = TF.runSession $ do
+  maybe (error "empty input output in lastInputOutputTuple, cannot restore model") (\(i,o) -> restoreModel model [i] [o]) (lastInputOutputTuple model)
+  let inRef = getRef (inputLayerName model)
+      outRef = getRef (outputLayerName model)
+      inpT = encodeInputBatch inp
+  V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
+
+
+backwardRun :: TensorflowModel -> Input -> Labels -> IO TensorflowModel
+backwardRun model inp lab = TF.runSession $ do
+  let inRef = getRef (inputLayerName model)
+      labRef = getRef (labelLayerName model)
+      inpT = encodeInputBatch inp
+      labT = encodeLabelBatch lab
+      resetLastIO mdl = mdl { lastInputOutputTuple = Just (last inp, last lab)}
+  restoreModel model [head inp] [head lab]
+  TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode model)
+  resetLastIO <$> saveModel model [head inp] [head lab]
+
+
 saveModel :: TensorflowModel -> Input -> Output -> TF.Session TensorflowModel
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
@@ -53,9 +84,11 @@ saveModel model inp lab = do
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName model)
       labRef = getRef (labelLayerName model)
+  let inpT = encodeInputBatch inp
+      labT = encodeLabelBatch lab
 
   TF.save pathModel (neuralNetworkVariables model) >>= TF.run_
-  TF.save pathTrain (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+  TF.save pathTrain (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   return $ if isJust (checkpointBaseFileName model)
     then model
     else model { checkpointBaseFileName = Just basePath }
@@ -67,7 +100,9 @@ restoreModel model inp lab = do
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName model)
       labRef = getRef (labelLayerName model)
-  mapM (TF.restore pathTrain) (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+  let inpT = encodeInputBatch inp
+      labT = encodeLabelBatch lab
+  mapM (TF.restore pathTrain) (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   mapM (TF.restore pathModel) (neuralNetworkVariables model) >>= TF.run_
 
 
