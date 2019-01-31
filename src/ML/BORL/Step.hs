@@ -122,13 +122,16 @@ nextAction borl = do
       r <- randomRIO (0, length as - 1)
       return (borl, True,  as !! r)
     else do
-      let bestRho | isUnichain borl = as
-                  | otherwise = head $ groupBy (epsCompare (==) `on` rhoValue borl state) $ sortBy (epsCompare compare `on` rhoValue borl state) as
-          bestV = head $ groupBy (epsCompare (==) `on` vValue borl state) $ sortBy (epsCompare compare `on` vValue borl state) bestRho
-          bestE = sortBy (epsCompare compare `on` eValue borl state) bestV
-          bestR = sortBy (epsCompare compare `on` rValue borl RBig state) bestV
-      -- return (False, head bestR)
-      if length bestE > 1
+    bestRho <- if isUnichain borl
+      then return as
+      else do
+      rhoVals <- mapM (rhoValue borl state) as
+      return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
+    bestV <- head $ groupBy (epsCompare (==) `on` vValue borl state) $ sortBy (epsCompare compare `on` vValue borl state) bestRho
+    bestE <- sortBy (epsCompare compare `on` eValue borl state) bestV
+    -- bestR <- sortBy (epsCompare compare `on` rValue borl RBig state) bestV
+    -- return (False, head bestR)
+    if length bestE > 1
         then do
           r <- randomRIO (0, length bestE - 1)
           return (borl, False, bestE !! r)
