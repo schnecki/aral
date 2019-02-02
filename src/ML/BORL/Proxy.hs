@@ -18,6 +18,7 @@ module ML.BORL.Proxy
     , lookupProxy
     , lookupNeuralNetwork
     , lookupNeuralNetworkUnscaled
+    , mkNNList
     ) where
 
 
@@ -119,13 +120,20 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     kScaled = map ((config ^. toNetInp) . fst) dataset
     getValue k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow _ netW _ _ _) = TF.runSession $ do
-  error "TODO" -- restoreModel netW
-  trainMSETensorflow mPeriod dataset lp px
+trainMSE mPeriod dataset lp px@(Tensorflow _ netW _ _ _) =
+  TF.runSession $ do
+    maybe (error "empty input output in lastInputOutputTuple, cannot restore model") (\(i, o) -> restoreModel netW [i] [o]) (lastInputOutputTuple netW)
+    px' <- trainMSETensorflow mPeriod dataset lp px
+    netW' <-
+      maybe
+        (error "empty input output in lastInputOutputTuple, cannot restore model")
+        (\(i, o) -> saveModel (px' ^?! proxyTFWorker) [i] [o])
+        (lastInputOutputTuple $ px' ^?! proxyTFWorker)
+    return $ proxyTFWorker .~ netW' $ px'
 
 -- | Train a Tensorflow object in a single session.
 trainMSETensorflow :: Maybe Int -> [(k, Double)] -> t -> Proxy k -> TF.Session (Proxy k)
-trainMSETensorflow mPeriod dataset lp px@(Tensorflow _ netW tab tp config) =
+trainMSETensorflow mPeriod dataset lp px@(Tensorflow netT netW tab tp config) =
   let mseMax = config ^. trainMSEMax
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
@@ -135,8 +143,13 @@ trainMSETensorflow mPeriod dataset lp px@(Tensorflow _ netW tab tp config) =
          if realToFrac mse < mseMax
            then liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
            else do
-             when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow net' net' tab tp config -- TODO check if
+             when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ liftIO $ do
+               list <- mkNNList False px
+               let list' = map (first (config ^. toNetInp)) list
+               mapM_ (\((ks,(_, w)),(ks', v')) -> putStrLn $ show ks ++ ":\t" ++ show w ++ "\t" ++ show ks' ++ ":\t" ++ show v') (zip list' (zip kScaled vScaled))
+
+               putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow netT net' tab tp config -- TODO check if
                                                                                                     -- using same net'
                                                                                                     -- is OK. I don't
                                                                                                     -- think so
@@ -194,3 +207,25 @@ getMinMaxVal p  = case p ^?! proxyType of
   WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
   R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
+
+
+mkNNList :: Bool -> Proxy k -> IO [(k, (Double, Double))]
+mkNNList scaled pr =
+  mapM
+    (\inp -> do
+       t <-
+         if scaled
+           then lookupNeuralNetwork Target inp pr
+           else lookupNeuralNetworkUnscaled Target inp pr
+       w <-
+         if scaled
+           then lookupNeuralNetwork Worker inp pr
+           else lookupNeuralNetworkUnscaled Worker inp pr
+       return (inp, (t, w)))
+    (conf ^. prettyPrintElems)
+  where conf = case pr of
+          Grenade _ _ _ _ conf    -> conf
+          Tensorflow _ _ _ _ conf -> conf
+          _                       -> error "mkNNList called on non-neural network"
+
+

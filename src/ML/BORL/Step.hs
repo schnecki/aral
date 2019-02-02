@@ -75,7 +75,6 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let wValState' | borl ^. sRef == Just (state, aNr) = 0
                  | otherwise = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
       psiW = vValState' + wValState' - wValStateNext -- should converge to 0
-  forkMw' <- doFork $ P.insert period label wValState' mw
   let (psiValRho, psiValV, psiValW) = borl ^. psis -- Psis (exponentially smoothed)
       psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
@@ -89,7 +88,9 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
             then 0
             else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
-  forkMv' <- doFork $ P.insert period label vValStateNew mv
+  -- forkMv' <- doFork $ P.insert period label vValStateNew mv
+  mv' <- P.insert period label vValStateNew mv
+  forkMw' <- doFork $ P.insert period label wValState' mw
   rSmall <- rStateValue borl RSmall stateNext
   let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rSmall)
   forkMr0' <- doFork $ P.insert period label r0ValState' mr0
@@ -97,7 +98,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rBig)
   forkMr1' <- doFork $ P.insert period label r1ValState' mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
-  mv' <- collectForkResult forkMv'
+  -- mv' <- collectForkResult forkMv'
   mw' <- collectForkResult forkMw'
   mr0' <- collectForkResult forkMr0'
   mr1' <- collectForkResult forkMr1'

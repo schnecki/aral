@@ -76,7 +76,7 @@ import qualified TensorFlow.GenOps.Core                         as TF (abs, add,
                                                                        lessEqual, matMul,
                                                                        mul,
                                                                        readerSerializeState,
-                                                                       relu, shape, square,
+                                                                       relu, shape, square, tanh,
                                                                        sub,
                                                                        truncatedNormal)
 import qualified TensorFlow.Minimize                            as TF
@@ -152,7 +152,7 @@ modelBuilder = do
   let inpLayerName = "input"
   input <- TF.placeholder' (TF.opName .~ TF.explicitName inpLayerName) (fromList [batchSize, numInputs])  -- Input layer.
   -- Hidden layer.
-  let numUnits = 2
+  let numUnits = 6
   hiddenWeights <- TF.initializedVariable' (TF.opName .~ "w1") =<< randomParam numInputs [numInputs, numUnits]
   hiddenBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b1") [numUnits]
   let hiddenZ = (input `TF.matMul` hiddenWeights) `TF.add` hiddenBiases
@@ -163,7 +163,7 @@ modelBuilder = do
   let outputs = (hidden `TF.matMul` outputWeights) `TF.add` outputBiases
   -- Output
   let outLayerName = "output"
-  predictor <- TF.render $ TF.identity' (TF.opName .~ TF.explicitName outLayerName) $ TF.reduceMean $ TF.relu outputs
+  predictor <- TF.render $ TF.identity' (TF.opName .~ TF.explicitName outLayerName) $ TF.reduceMean $ TF.tanh outputs
 
   -- Data Collection
   let weights = [hiddenWeights, hiddenBiases, outputWeights, outputBiases] :: [TF.Tensor TF.Ref Float]
@@ -191,15 +191,9 @@ modelBuilder = do
 
 main :: IO ()
 main = do
-  testSave >>= mapM testRun
+  -- testSave >>= mapM testRun
 
   -- nn <- randomNetworkInitWith HeEtAl :: IO NN
-
-  -- let graphDef = TF.asGraphDef $ TF.withNameScope "r1_target" modelBuilder
-  --     names = graphDef ^.. TF.node . traversed . TF.name
-  -- liftIO $ putStrLn $ T.unpack  $ "\ninp\tout\tlab: " <> inputLayerName model <> "\t" <> outputLayerName model <> "\t" <> labelLayerName model <> "\n\n"
-  -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
-
 
   -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
   rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig

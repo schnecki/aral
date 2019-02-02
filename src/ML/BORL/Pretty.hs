@@ -9,6 +9,7 @@ module ML.BORL.Pretty
 import           ML.BORL.Action
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
+import           ML.BORL.Proxy         (mkNNList)
 import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -45,21 +46,27 @@ prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -
 prettyTableRows mPeriod prettyAction p =
   case p of
     P.Table m -> return $ map (\(k, val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
-    pr -> do                    -- Grenade or Tensorflow
+    -- pr | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) -> prettyTableRows mPeriod prettyAction (P.Table tab)
+    --   where (tab, config) = case pr of
+    --           P.Grenade _ _ tab' _ config' -> (tab', config')
+    --           P.Tensorflow _ _ tab' _ config' -> (tab', config')
+    --           _ -> error "missing implementation in mkListFromNeuralNetwork"
+    pr -> do
       mfalse <- mkListFromNeuralNetwork mPeriod prettyAction False pr
       mtrue <- mkListFromNeuralNetwork mPeriod prettyAction True pr
       return $ map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mfalse) ++ [text "---"] ++
         map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mtrue)
 
 
+mkListFromNeuralNetwork :: (Integral a) => Maybe a -> (k -> c) -> Bool -> P.Proxy k -> IO [(c, (Double, Double))]
 mkListFromNeuralNetwork mPeriod prettyAction scaled pr
   | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = do
-                  list <- mkNNList scaled pr
-                  return $ map (first prettyAction) $ zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd . snd) list))
-  | otherwise = mkNNList scaled pr >>= return . map (first prettyAction)
+      list <- mkNNList scaled pr
+      return $ map (first prettyAction) $ zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd . snd) list))
+  | otherwise = map (first prettyAction) <$> mkNNList scaled pr
   where (tab,config) = case pr of
-          P.Grenade _ _ tab _ config -> (tab, config)
-          P.Tensorflow _ _ tab _ config -> (tab, config)
+          P.Grenade _ _ tab' _ config' -> (tab', config')
+          P.Tensorflow _ _ tab' _ config' -> (tab', config')
           _ -> error "missing implementation in mkListFromNeuralNetwork"
 
 prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> IO Doc
@@ -170,24 +177,6 @@ prettyBORLTables t1 t2 t3 borl = do
       P.Tensorflow _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Set in model")
 
-mkNNList :: Bool -> P.Proxy k -> IO [(k, (Double, Double))]
-mkNNList unscaled pr =
-  mapM
-    (\inp -> do
-       t <-
-         if unscaled
-           then P.lookupNeuralNetwork P.Target inp pr
-           else P.lookupNeuralNetworkUnscaled P.Target inp pr
-       w <-
-         if unscaled
-           then P.lookupNeuralNetwork P.Worker inp pr
-           else P.lookupNeuralNetworkUnscaled P.Worker inp pr
-       return (inp, (t, w)))
-    (P._prettyPrintElems conf)
-  where conf = case pr of
-          P.Grenade _ _ _ _ conf    -> conf
-          P.Tensorflow _ _ _ _ conf -> conf
-          _                         -> error "mkNNList called on non-neural network"
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
 prettyBORL = prettyBORLTables True True True
