@@ -27,7 +27,6 @@ import           GHC.TypeLits
 import           Grenade
 import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
 import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
-import           System.IO.Unsafe                               (unsafePerformIO)
 import qualified TensorFlow.Core                                as TF
 
 
@@ -87,27 +86,18 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
-mkBORLUnichainTensorflow :: forall s m . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Build TensorflowModel -> NNConfig s -> IO (BORL s)
+mkBORLUnichainTensorflow :: forall s m . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
   let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
-  let nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
+      nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
       nnSA tp = do
-        nnT <-
-          TF.runSession $ do
-            model <- prependName (name tp <> "_target") <$> TF.build (TF.withNameScope (name tp <> "_target") modelBuilder)
-            -- liftIO $ putStrLn $ T.unpack  $ "inp\tout\tlab" <> (inputLayerName model) <> "\t" <> (outputLayerName model) <> "\t" <> (labelLayerName model)
-            -- let graphDef = TF.asGraphDef modelBuilder
-            --     names = graphDef ^.. TF.node . traversed . TF.name
-            -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
-            saveModel model [map realToFrac netInpInitState] [0]
-        nnW <-
-          TF.runSession $ do
-            model <- prependName (name tp <> "_worker") <$> TF.build (TF.withNameScope (name tp <> "_worker") modelBuilder)
-            -- let graphDef = TF.asGraphDef modelBuilder
-            --     names = graphDef ^.. TF.node . traversed . TF.name
-            -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
-            saveModel model [map realToFrac netInpInitState] [0]
+        nnT <- TF.runSession $ mkModel tp "_target" netInpInitState
+        nnW <- TF.runSession $ mkModel tp "_worker" netInpInitState
+        -- let graphDef = TF.asGraphDef $ TF.withNameScope "r1_target" modelBuilder
+        --     names = graphDef ^.. TF.node . traversed . TF.name
+        -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
+
         return $ Tensorflow nnT nnW mempty tp nnConfig'
   v <- nnSA VTable
   w <- nnSA WTable
@@ -115,13 +105,18 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   r1 <- nnSA R1Table
   return $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
   where
+    mkModel tp scope netInpInitState = do
+      let mBuilder = TF.withNameScope (name tp <> scope) modelBuilder
+      model <- prependName (name tp <> scope) <$> mBuilder
+      saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, 0)) mBuilder) [map realToFrac netInpInitState] [0]
+
     prependName txt model =
       model
       { inputLayerName = txt <> "/" <> inputLayerName model
       , outputLayerName = txt <> "/" <> outputLayerName model
       , labelLayerName = txt <> "/" <> labelLayerName model
-      , errorRateName = txt <> "/" <> errorRateName model
       }
+
     name VTable  = "v"
     name WTable  = "w"
     name R0Table = "r0"

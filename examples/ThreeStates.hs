@@ -40,7 +40,7 @@ import           Data.Int                                       (Int32, Int64)
 import           Data.Int                                       (Int32, Int64)
 import           Data.List                                      (genericLength)
 import           Data.Text                                      as T (Text, isInfixOf,
-                                                                      isPrefixOf)
+                                                                      isPrefixOf, unpack)
 import qualified Data.Vector                                    as V
 import           Debug.Trace
 import           GHC.Exts                                       (fromList)
@@ -49,6 +49,7 @@ import           GHC.Generics
 import           Grenade                                        hiding (train)
 import           Grenade                                        hiding (train)
 import           System.IO.Temp
+import           System.Posix.Unistd                            (usleep)
 import           System.Random                                  (randomIO)
 
 
@@ -138,28 +139,6 @@ randomParam width (TF.Shape shape) = (`TF.mul` stddev) <$> TF.truncatedNormal (T
   where
     stddev = TF.scalar (1 / sqrt (fromIntegral width))
 
-type Output = Float
-type Input = Float
-
-
-  -- , tensorTrain :: TF.ControlNode
-  -- , train :: TF.ControlNode       -- ^ node (tensor)
-  --         -> TF.TensorData Input  -- ^ images
-  --         -> TF.TensorData Output -- ^ correct values
-  --         -> TF.Session ()
-  -- , infer :: TF.Tensor TF.Value Float     -- ^ tensor
-  --         -> TF.TensorData Input          -- ^ images
-  --         -> TF.Session (V.Vector Output) -- ^ predictions
-  -- -- , errorRate :: TF.TensorData Input      -- ^ images
-  -- --             -> TF.TensorData Output     -- ^ train values
-  -- --             -> TF.Session Float
-
-    -- , tensorTrain = trainStep
-    -- , train = \trainStep imFeed lFeed -> TF.runWithFeeds_ [TF.feed images imFeed , TF.feed labels lFeed] trainStep
-    -- , infer = \tensor imFeed -> TF.runWithFeeds [TF.feed images imFeed] tensor
-    -- , errorRate = \imFeed lFeed -> TF.unScalar <$> TF.runWithFeeds [TF.feed images imFeed , TF.feed labels lFeed] errorRateTensor
-
-
 batchSize :: Int64
 batchSize = -1                  -- Use -1 batch size to support variable sized batches.
 
@@ -196,28 +175,33 @@ modelBuilder = do
       adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
   (trainStep, trainVars) <- TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape [[numInputs, numUnits], [numUnits], [numUnits,1],[1]])
 
-  let correctPredictions = TF.abs (predictor `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
-  let errRateName = "error"
-  (_ :: TF.Tensor TF.Value Float) <- TF.render $ TF.identity' (TF.opName .~ TF.explicitName errRateName) $ 1 - TF.reduceMean (TF.cast correctPredictions)
+  -- let correctPredictions = TF.abs (predictor `TF.sub` labels) `TF.lessEqual` TF.scalar 0.01
+  -- let errRateName = "error"
+  -- (_ :: TF.Tensor TF.Value Float) <- TF.render $ TF.identity' (TF.opName .~ TF.explicitName errRateName) $ 1 - TF.reduceMean (TF.cast correctPredictions)
 
   return TensorflowModel
     { inputLayerName = inpLayerName
     , outputLayerName = outLayerName
     , labelLayerName = labLayerName
-    , errorRateName = errRateName
     , trainingNode = trainStep
     , neuralNetworkVariables = weights
     , trainingVariables = trainVars
-    , checkpointBaseFileName = Just "/tmp"
-    , lastInputOutputTuple = Nothing
     }
 
 
 main :: IO ()
 main = do
-  nn <- randomNetworkInitWith HeEtAl :: IO NN
+  testSave >>= mapM testRun
 
-  rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
+  -- nn <- randomNetworkInitWith HeEtAl :: IO NN
+
+  -- let graphDef = TF.asGraphDef $ TF.withNameScope "r1_target" modelBuilder
+  --     names = graphDef ^.. TF.node . traversed . TF.name
+  -- liftIO $ putStrLn $ T.unpack  $ "\ninp\tout\tlab: " <> inputLayerName model <> "\t" <> outputLayerName model <> "\t" <> labelLayerName model <> "\n\n"
+  -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
+
+
+  -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
   rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
@@ -308,116 +292,118 @@ moveRight s =
 -- tensorInt32 :: Text -> Bool
 -- tensorInt32 x = Prelude.or ([T.isInfixOf "Range" x] :: [Bool])
 
+encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
+-- encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
--- test :: IO ()
--- test = do
---   let encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
---       encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
+setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
 
---   tempDir <- getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
---   print $ "TempDir: " ++ tempDir
---   let pathModel = B8.pack $ tempDir ++ "/model"
---       pathTrain = B8.pack $ tempDir ++ "/train"
---   -- testSaveRestore tempDir
---   -- testGraphDefExec
-
---   let graphDef = TF.asGraphDef modelBuilder
---       namesPredictor = graphDef ^.. TF.node.traversed.TF.name
-
---       -- tensorNames ::
-
---   --     allTensorNames = filter tensorNameFilter namesPredictor
---   --     allTensors :: [TF.Tensor TF.Ref Float]
---   --     allTensors = map TF.tensorFromName allTensorNames
---   -- putStrLn $ "allTensorNames: " ++ show allTensorNames
-
---   let outputTensor = head (graphDef ^. TF.node)
---       outputTensorName = outputTensor ^. TF.name
---       inputTensorName = last (graphDef ^. TF.node)^. TF.name
---       -- outRef,inRef :: TF.Tensor TF.Ref Float
---       -- outRef = TF.tensorFromName outputTensorName
---       -- inRef = TF.tensorFromName inputTensorName
-
---   -- putStrLn $ "outputTensorName: " ++ show outputTensorName
---   -- putStrLn (show namesPredictor)
+prependName txt model = model { tensorflowModel = (tensorflowModel model)
+        { inputLayerName = txt <> "/" <> (inputLayerName $ tensorflowModel model)
+        , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
+        , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
+        }}
 
 
---   let inp = [[0.7 :: Float,0.4]]
---       lab = [0.41 :: Float]
---   -- SESSION 1
---   void $ TF.runSession $ do
---     model <- modelBuilder
---     -- TF.addGraphDef graphDef
---     let inRef = TF.tensorFromName (inputLayerName model) :: TF.Tensor TF.Ref Float
---         outRef = TF.tensorFromName (outputLayerName model) :: TF.Tensor TF.Ref Float
---         labRef = TF.tensorFromName (labelLayerName model) :: TF.Tensor TF.Ref Float
+testSave :: IO [TensorflowModel']
+testSave = do
 
---     -- (vars :: [[Float]]) <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inp] (allVariables model)
---     -- liftIO $ print $ "all vars: " ++ show vars
+  let inp = encodeImageBatch [[0.7 :: Float,0.4]]
+      lab = encodeLabelBatch [0.41 :: Float]
+  -- SESSION 1
 
---     bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     liftIO $ putStrLn $ "START SESS 1: " ++ show bef
+  forM (["r1_target", "r1_worker"] :: [Text]) $ \scopeName -> TF.runSession $ do
+    let mkTensorflow' model = TensorflowModel' model Nothing Nothing (TF.withNameScope scopeName modelBuilder)
+    model <- setCheckFile ("/tmp/" <> T.unpack scopeName) . prependName scopeName . mkTensorflow' <$> TF.withNameScope scopeName modelBuilder
+    -- TF.addGraphDef graphDef
+    let inRef = TF.tensorFromName (inputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
+        outRef = TF.tensorFromName (outputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
+        labRef = TF.tensorFromName (labelLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
 
---     forM_ ([0..1000] :: [Int]) $ \i -> do
---       (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
---       (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
---       let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
---       let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
---       let inpTrain = encodeImageBatch xData
---           labTrain = encodeLabelBatch yData
---       TF.runWithFeeds_ [TF.feed inRef inpTrain, TF.feed labRef labTrain] (trainingNode model)
+    -- (vars :: [[Float]]) <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inp] (allVariables model)
+    -- liftIO $ print $ "all vars: " ++ show vars
 
---       when (i `mod` 100 == 0) $ do
---         bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---         liftIO $ putStrLn $ "Value: " ++ show bef
---         varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
---         liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+    -- bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+    -- liftIO $ putStrLn $ "START SESS 1: " ++ show bef
 
---     aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     liftIO $ putStrLn $ "END SESS 1: " ++ show aft
---     -- TF.save pathModel (neuralNetworkVariables model) >>= TF.run_
---     varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (neuralNetworkVariables model)
---     liftIO $ putStrLn $ "SESS 1 Weights: " ++ show (V.toList <$> varVals)
---     -- TF.save pathTrain (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
---     saveModel model inp lab
---   -- SESSION 2
---   TF.runSession $ do
---     model <- modelBuilder
---     let inRef = TF.tensorFromName (inputLayerName model) :: TF.Tensor TF.Ref Float
---         outRef = TF.tensorFromName (outputLayerName model) :: TF.Tensor TF.Ref Float
---         labRef = TF.tensorFromName (labelLayerName model) :: TF.Tensor TF.Ref Float
+    -- forM_ ([0..1000] :: [Int]) $ \i -> do
+    --   (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+    --   (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+    --   let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+    --   let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+    --   let inpTrain = encodeImageBatch xData
+    --       labTrain = encodeLabelBatch yData
+    --   TF.runWithFeeds_ [TF.feed inRef inpTrain, TF.feed labRef labTrain] (trainingNode model)
 
---     -- Restore training config and weights afterwards as the first operations learns/modifies weights
---     -- mapM (TF.restore pathTrain) (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
---     -- mapM (TF.restore pathModel) (neuralNetworkVariables model) >>= TF.run_
---     restoreModel model inp lab
---     -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (allVariables model)
---     varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
---     liftIO $ putStrLn $ "SESS 2 Weights: " ++ show (V.toList <$> varVals)
---     bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     liftIO $ putStrLn $ "START SESS 2: " ++ show  bef
+    --   when (i `mod` 100 == 0) $ do
+    --     bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+    --     liftIO $ putStrLn $ "Value: " ++ show bef
+    --     varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
+    --     liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
 
---     forM_ ([0..1000] :: [Int]) $ \i -> do
---       (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
---       (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
---       let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
---       let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
---       let inpTrain = encodeImageBatch xData
---           labTrain = encodeLabelBatch yData
---       TF.runWithFeeds_ [TF.feed inRef inpTrain, TF.feed labRef labTrain] (trainingNode model)
+    -- aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+    -- liftIO $ putStrLn $ "END SESS 1: " ++ show aft
+    -- TF.save pathModel (neuralNetworkVariables model) >>= TF.run_
+    varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (neuralNetworkVariables $ tensorflowModel model)
+    liftIO $ putStrLn $ "SESS 1 Weights: " ++ show (V.toList <$> varVals)
+    -- TF.save pathTrain (trainingVariables model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+    liftIO $ putStrLn $ "Saving model " <> T.unpack scopeName
+    saveModel model [[0,0]] [0]
+    -- liftIO $ putStrLn "Saving model 2"
+    -- model2 <- setCheckFile "/tmp/r1_worker" . prependName "r1_worker" <$> TF.withNameScope "r1_worker" modelBuilder
+    -- saveModel model2 [[0,0]] [0]
+    liftIO $ putStrLn "Model saved"
+    return model
 
---       when (i `mod` 100 == 0) $ do
---         bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---         liftIO $ putStrLn $ "Value: " ++ show bef
---         varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables model)
---         liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
---         -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (trainingVariables model)
---         -- liftIO $ putStrLn $ "Train Vars: " ++ show (V.toList <$> varVals)
+testRun :: TensorflowModel' -> IO ()
+testRun model = do
+  -- print $ "TempDir: " ++ tempDir
 
---     aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     liftIO $ putStrLn $ "END SESS 2: " ++ show  aft
---     -- err <- errorRate model images labels
---     -- liftIO . putStrLn $ "training error " ++ show (err * 100)
+  let inp = encodeImageBatch [[0.7 :: Float,0.4]]
+      lab = encodeLabelBatch [0.41 :: Float]
+
+  -- forM_ (["r1_target", "r1_worker"] :: [Text]) $ \scopeName ->
+  do
+    TF.runSession $ do
+    -- model <- setCheckFile ("/tmp/" <> T.unpack scopeName) . prependName scopeName . mkTensorflow' <$> TF.withNameScope scopeName modelBuilder
+    let mkTensorflow' model = TensorflowModel' model Nothing Nothing modelBuilder
+
+    restoreModel model [[0,0]] [0]
+    let inRef = TF.tensorFromName (inputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
+        outRef = TF.tensorFromName (outputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
+        labRef = TF.tensorFromName (labelLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
+
+    -- Restore training config and weights afterwards as the first operations learns/modifies weights
+    -- let pathTrain = B8.pack $ "/tmp/" <> T.unpack scopeName <> "/train"
+    -- let pathModel = B8.pack $ "/tmp/" <> T.unpack scopeName <> "/model"
+    -- mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inp, TF.feed labRef lab]
+    -- mapM (TF.restore pathModel) (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
+    -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (allVariables model)
+    varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel model)
+    liftIO $ putStrLn $ "SESS 2 Weights: " ++ show (V.toList <$> varVals)
+    bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+    liftIO $ putStrLn $ "START SESS 2: " ++ show  bef
+
+    forM_ ([0..1000] :: [Int]) $ \i -> do
+      (x1Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      (x2Data :: [Float]) <- liftIO $ replicateM 1 randomIO
+      let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
+      let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5) xData
+      let inpTrain = encodeImageBatch xData
+          labTrain = encodeLabelBatch yData
+      TF.runWithFeeds_ [TF.feed inRef inpTrain, TF.feed labRef labTrain] (trainingNode $ tensorflowModel model)
+
+      when (i `mod` 100 == 0) $ do
+        bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+        liftIO $ putStrLn $ "Value: " ++ show bef
+        varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel model)
+        liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+        -- varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (trainingVariables model)
+        -- liftIO $ putStrLn $ "Train Vars: " ++ show (V.toList <$> varVals)
+
+    aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
+    liftIO $ putStrLn $ "END SESS 2: " ++ show  aft
+    -- err <- errorRate model images labels
+    -- liftIO . putStrLn $ "training error " ++ show (err * 100)
 
 
 -- testSaveRestore :: FilePath -> IO ()

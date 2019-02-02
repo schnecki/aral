@@ -43,6 +43,7 @@ dependencies:
   - bytestring
   - temporary
   - mtl
+  - unix
   - tensorflow
   - tensorflow-core-ops
   # - tensorflow-logging

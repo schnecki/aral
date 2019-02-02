@@ -54,14 +54,14 @@ askUser showHelp addUsage cmds ql = do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser False addUsage cmds ql
     "p" -> do
-      print (prettyBORL ql)
+      prettyBORL ql >>= print
       askUser False addUsage cmds ql
     "v" -> do
-      print (prettyBORLTables True False False ql)
+      prettyBORLTables True False False ql >>= print
       askUser False addUsage cmds ql
     _ ->
       case find ((== c) . fst) cmds of
-        Nothing -> unless (c == "q") (step ql >>= \x -> print (prettyBORLTables True False True x) >> return x >>= askUser False addUsage cmds)
+        Nothing -> unless (c == "q") (step ql >>= \x -> prettyBORLTables True False True x >>= print >> return x >>= askUser False addUsage cmds)
         Just (_, cmd) -> stepExecute (ql, False, cmd) >>= askUser False addUsage cmds
 
 

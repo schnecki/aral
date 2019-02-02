@@ -28,6 +28,7 @@ import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
+import           Control.Monad.IO.Class       (liftIO)
 import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
@@ -35,6 +36,7 @@ import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Core              as TF
 
 
@@ -61,8 +63,8 @@ data Proxy k = Table
                 , _proxyNNConfig  :: !(NNConfig k)
                 }
             | Tensorflow
-                { _proxyTFTarget  :: TensorflowModel
-                , _proxyTFWorker  :: TensorflowModel
+                { _proxyTFTarget  :: TensorflowModel'
+                , _proxyTFWorker  :: TensorflowModel'
                 , _proxyNNStartup :: !(M.Map k Double)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !(NNConfig k)
@@ -115,25 +117,30 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     kScaled = map ((config ^. toNetInp) . fst) dataset
-    forwardRun k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - forwardRun k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow _ netW tab tp config) =
+    getValue k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
+trainMSE mPeriod dataset lp px@(Tensorflow _ netW _ _ _) = TF.runSession $ do
+  error "TODO" -- restoreModel netW
+  trainMSETensorflow mPeriod dataset lp px
+
+-- | Train a Tensorflow object in a single session.
+trainMSETensorflow :: Maybe Int -> [(k, Double)] -> t -> Proxy k -> TF.Session (Proxy k)
+trainMSETensorflow mPeriod dataset lp px@(Tensorflow _ netW tab tp config) =
   let mseMax = config ^. trainMSEMax
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
-
-  in do
-    net' <- backwardRun netW kScaled vScaled
-    let forward k = head <$> forwardRun net' [map realToFrac $ (config ^. toNetInp) k]
-    mse <- ((1 / fromIntegral (length dataset) *) . sum) <$> zipWithM (\k vS -> (abs . (vS -)) <$> forward k) (map fst dataset) vScaled
-
-    if realToFrac mse < mseMax
-      then putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
-      else do
-      when (maybe False ((==0) . (`mod` 100)) mPeriod) $
-         putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-      trainMSE ((+ 1) <$> mPeriod) dataset lp $ Tensorflow net' net' tab tp config
-
+   in do net' <- backwardRunSession netW kScaled vScaled
+         let forward k = head <$> forwardRunSession net' [map realToFrac $ (config ^. toNetInp) k]
+         mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled
+         if realToFrac mse < mseMax
+           then liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
+           else do
+             when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow net' net' tab tp config -- TODO check if
+                                                                                                    -- using same net'
+                                                                                                    -- is OK. I don't
+                                                                                                    -- think so
+trainMSETensorflow  _ _ _ _ = error "called trainMSETensorflow on non-Tensorflow data structure"
 
 trainNNConf :: forall k . Period -> Proxy k -> IO (Proxy k)
 -- trainNNConf period (Grenade netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ Grenade netT netW tab tp config
