@@ -116,20 +116,11 @@ copyValuesFromTo from to = do
   if length fromVars /= length toVars
     then error "cannot copy values to models with different length of neural network variables"
     else void $ TF.runSession $ do
-           let inRef = getRef (inputLayerName $ tensorflowModel from)
            restoreModelWithLastIO to
            restoreModelWithLastIONoBuild from
-           let inpT = encodeLabelBatch (fst $ getLastIO from)
-           liftIO $ putStrLn "Before copying"
            zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
-           liftIO $ putStrLn "After copying"
-           saveModelWithLastIO from
+           void $ saveModelWithLastIO from
            saveModelWithLastIO to
-  where
-    getLastIO model =
-      case lastInputOutputTuple model of
-        Nothing -> error "empty input output in lastInputOutputTuple, cannot restore model"
-        Just (i, o) -> (i, o)
 
 
 saveModelWithLastIO :: TensorflowModel' -> TF.Session TensorflowModel'
