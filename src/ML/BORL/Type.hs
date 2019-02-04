@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -18,6 +18,7 @@ import           ML.BORL.Types
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (zipWithM)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import qualified Data.Map.Strict              as M
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
@@ -25,6 +26,7 @@ import qualified Data.Vector.Mutable          as V
 import           GHC.TypeLits
 import           Grenade
 import qualified TensorFlow.Core              as TF
+import qualified TensorFlow.Session           as TF
 
 
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.

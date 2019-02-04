@@ -29,7 +29,7 @@ import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.IO.Class       (liftIO)
+import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
@@ -39,6 +39,7 @@ import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import qualified TensorFlow.Core              as TF
+import           TensorFlow.Session
 
 
 -- | Type of approximation (needed for scaling of values).
@@ -78,11 +79,11 @@ instance (NFData k) => NFData (Proxy k) where
   rnf (Tensorflow t w tab tp cfg) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg
 
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
-insert :: forall k . (Ord k) => Period -> k -> Double -> Proxy k -> IO (Proxy k)
+insert :: forall m k . (Ord k) => Period -> k -> Double -> Proxy k -> m (Proxy k)
 insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k v px-- @(Grenade netT netW tab tp config)
   = do
-  replMem' <- addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
+  replMem' <- liftIO $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
   --
   --   then return $ Grenade netT netW  tp config'
@@ -90,7 +91,7 @@ insert period k v px-- @(Grenade netT netW tab tp config)
   if period < fromIntegral (config' ^. replayMemory.replayMemorySize)-1
     then return $ proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px
     else if period == fromIntegral (config' ^. replayMemory.replayMemorySize) - 1
-    then do putStrLn "Initializing artifical neural network"
+    then do liftIO $ putStrLn "Initializing artifical neural network"
             netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
     else trainNNConf period (proxyNNConfig .~  config' $ px) >>= updateNNTargetNet False
   where
@@ -104,20 +105,20 @@ insert period k v px-- @(Grenade netT netW tab tp config)
           return $ Tensorflow netT' netW' tab' tp' config'
       | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
-    netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
+    netinit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
 
 
-trainMSE :: Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> IO (Proxy k)
+trainMSE :: (Monad m) => Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> m (Proxy k)
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
   | mse < mseMax = do
-      putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
+      liftIO $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
       return px
   | otherwise = do
       when (maybe False ((==0) . (`mod` 100)) mPeriod) $
-        putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+        liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
       trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config
   where
     mseMax = config ^. trainMSEMax
@@ -126,15 +127,14 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     kScaled = map ((config ^. toNetInp) . fst) dataset
     getValue k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow netT netW _ _ _) =
-  TF.runSession $ do
+trainMSE mPeriod dataset lp px@(Tensorflow netT netW _ _ _) = do
     restoreModelWithLastIO netW
     px' <- trainMSETensorflow mPeriod dataset lp px
     netW' <- saveModelWithLastIO (px' ^?! proxyTFWorker)
-    return $ proxyTFWorker .~ netW' $ px'
+    return $ proxyTFWorker .~ netW $ px'
 
 -- | Train a Tensorflow object in a single session.
-trainMSETensorflow :: Maybe Int -> [(k, Double)] -> t -> Proxy k -> TF.Session (Proxy k)
+trainMSETensorflow :: (MonadIO m) => Maybe Int -> [(k, Double)] -> t -> Proxy k -> m (Proxy k)
 trainMSETensorflow mPeriod dataset lp px@(Tensorflow netT netW tab tp config) =
   let mseMax = config ^. trainMSEMax
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]

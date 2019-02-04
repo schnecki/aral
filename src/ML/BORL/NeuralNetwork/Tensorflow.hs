@@ -27,6 +27,8 @@ import qualified TensorFlow.Ops                                 as TF hiding
                                                                        zeroInitializedVariable)
 import qualified TensorFlow.Variable                            as TF hiding (assign)
 
+import           ML.BORL.Types
+
 type Output = [Float]
 type Input = [[Float]]
 type Labels = Output
@@ -109,18 +111,18 @@ backwardRunSession model inp lab = do
   -- liftIO $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
 
-copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> IO ()
+copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl IO ()
 copyValuesFromTo from to = do
   let fromVars = neuralNetworkVariables $ tensorflowModel from
       toVars = neuralNetworkVariables $ tensorflowModel to
   if length fromVars /= length toVars
     then error "cannot copy values to models with different length of neural network variables"
-    else void $ TF.runSession $ do
-           restoreModelWithLastIO to
-           restoreModelWithLastIONoBuild from
-           zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
-           void $ saveModelWithLastIO from
-           saveModelWithLastIO to
+    else void $ do
+    restoreModelWithLastIO to
+    restoreModelWithLastIONoBuild from
+    Tensorflow $ zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
+    Tensorflow $ void $ saveModelWithLastIO from
+    Tensorflow $ saveModelWithLastIO to
 
 
 saveModelWithLastIO :: TensorflowModel' -> TF.Session TensorflowModel'
@@ -148,26 +150,26 @@ saveModel model inp lab = do
       then resetLastIO model
       else resetLastIO $ model {checkpointBaseFileName = Just basePath}
 
-restoreModelWithLastIO :: TensorflowModel' -> TF.Session ()
+restoreModelWithLastIO :: TensorflowModel' -> MonadBorl IO ()
 restoreModelWithLastIO model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in restoreModelWithLastIO"
     Just (i, o) -> restoreModel model [i] [o]
 
-restoreModelWithLastIONoBuild :: TensorflowModel' -> TF.Session ()
+restoreModelWithLastIONoBuild :: TensorflowModel' -> MonadBorl IO ()
 restoreModelWithLastIONoBuild model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in restoreModelWithLastIO"
     Just (i, o) -> restoreModelNoBuild model [i] [o]
 
 
-restoreModel :: TensorflowModel' -> Input -> Output -> TF.Session ()
+restoreModel :: TensorflowModel' -> Input -> Output -> MonadBorl IO ()
 restoreModel tfModel inp lab = do
-  void $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
+  void $ Tensorflow $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
   restoreModelNoBuild tfModel inp lab
 
-restoreModelNoBuild :: TensorflowModel' -> Input -> Output -> TF.Session ()
-restoreModelNoBuild tfModel inp lab = do
+restoreModelNoBuild :: TensorflowModel' -> Input -> Output -> MonadBorl IO ()
+restoreModelNoBuild tfModel inp lab = Tensorflow $ do
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName

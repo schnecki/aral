@@ -37,6 +37,8 @@ dependencies:
   - vector
   - grenade
   - bytestring
+  - exceptions
+  - transformers
   - parallel
   - deepseq
   - time

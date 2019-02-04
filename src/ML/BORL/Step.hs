@@ -28,6 +28,8 @@ approxAvg :: Double
 approxAvg = fromIntegral (100 :: Int)
 
 
+-- TF.asyncProdNodes TODO
+
 step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
 step borl = fmap setRefState (nextAction borl) >>= stepExecute
 
