@@ -34,10 +34,10 @@ import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Singletons.Prelude.List
+import qualified Data.Vector                  as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
-import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Core              as TF
 
 
@@ -91,12 +91,18 @@ insert period k v px-- @(Grenade netT netW tab tp config)
     then return $ proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px
     else if period == fromIntegral (config' ^. replayMemory.replayMemorySize) - 1
     then do putStrLn "Initializing artifical neural network"
-            updateNNTargetNet True <$> netInit (proxyNNConfig .~ config' $ px)
-    else updateNNTargetNet False <$> trainNNConf period (proxyNNConfig .~  config' $ px)
+            netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
+    else trainNNConf period (proxyNNConfig .~  config' $ px) >>= updateNNTargetNet False
   where
+    updateNNTargetNet :: Bool -> Proxy s -> IO (Proxy s)
     updateNNTargetNet forceReset px'@(Grenade _ netW' tab' tp' config')
-      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = Grenade netW' netW' tab' tp' config'
-      | otherwise = px'
+      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config'
+      | otherwise = return px'
+    updateNNTargetNet forceReset px'@(Tensorflow netT' netW' tab' tp' config')
+      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = do
+          void $ TF.runSession $ copyValuesFromTo netW' netT'
+          return $ Tensorflow netT' netW' tab' tp' config'
+      | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
     config = px ^?! proxyNNConfig
@@ -120,15 +126,11 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     kScaled = map ((config ^. toNetInp) . fst) dataset
     getValue k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow _ netW _ _ _) =
+trainMSE mPeriod dataset lp px@(Tensorflow netT netW _ _ _) =
   TF.runSession $ do
-    maybe (error "empty input output in lastInputOutputTuple, cannot restore model") (\(i, o) -> restoreModel netW [i] [o]) (lastInputOutputTuple netW)
+    restoreModelWithLastIO netW
     px' <- trainMSETensorflow mPeriod dataset lp px
-    netW' <-
-      maybe
-        (error "empty input output in lastInputOutputTuple, cannot restore model")
-        (\(i, o) -> saveModel (px' ^?! proxyTFWorker) [i] [o])
-        (lastInputOutputTuple $ px' ^?! proxyTFWorker)
+    netW' <- saveModelWithLastIO (px' ^?! proxyTFWorker)
     return $ proxyTFWorker .~ netW' $ px'
 
 -- | Train a Tensorflow object in a single session.
@@ -137,19 +139,22 @@ trainMSETensorflow mPeriod dataset lp px@(Tensorflow netT netW tab tp config) =
   let mseMax = config ^. trainMSEMax
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
-   in do net' <- backwardRunSession netW kScaled vScaled
-         let forward k = head <$> forwardRunSession net' [map realToFrac $ (config ^. toNetInp) k]
+   in do zipWithM_ (backwardRunSession netW) (map return kScaled) (map return vScaled)
+         let forward k = head <$> forwardRunSession netW [map realToFrac $ (config ^. toNetInp) k]
          mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled
          if realToFrac mse < mseMax
            then liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
            else do
-             when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ liftIO $ do
-               list <- mkNNList False px
-               let list' = map (first (config ^. toNetInp)) list
-               mapM_ (\((ks,(_, w)),(ks', v')) -> putStrLn $ show ks ++ ":\t" ++ show w ++ "\t" ++ show ks' ++ ":\t" ++ show v') (zip list' (zip kScaled vScaled))
-
-               putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow netT net' tab tp config -- TODO check if
+             when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
+               -- varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel netW)
+               -- liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+               void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
+               liftIO $ do
+                 -- list <- mkNNList False px
+                 -- let list' = map ((config ^. toNetInp) *** snd) list
+                 -- mapM_ (\((ks, w), (ks', v')) -> putStrLn $ show ks ++ ":\t" ++ show w ++ "\t" ++ show ks' ++ ":\t" ++ show v') (zip list' (zip kScaled vScaled))
+                 putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow netT netW tab tp config -- TODO check if
                                                                                                     -- using same net'
                                                                                                     -- is OK. I don't
                                                                                                     -- think so
@@ -209,8 +214,9 @@ getMinMaxVal p  = case p ^?! proxyType of
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
 
 
+-- | This function loads the model from the checkpoint file and finds then retrieves the data.
 mkNNList :: Bool -> Proxy k -> IO [(k, (Double, Double))]
-mkNNList scaled pr =
+mkNNList scaled pr = do
   mapM
     (\inp -> do
        t <-
@@ -223,9 +229,9 @@ mkNNList scaled pr =
            else lookupNeuralNetworkUnscaled Worker inp pr
        return (inp, (t, w)))
     (conf ^. prettyPrintElems)
-  where conf = case pr of
-          Grenade _ _ _ _ conf    -> conf
-          Tensorflow _ _ _ _ conf -> conf
-          _                       -> error "mkNNList called on non-neural network"
-
-
+  where
+    conf =
+      case pr of
+        Grenade _ _ _ _ conf    -> conf
+        Tensorflow _ _ _ _ conf -> conf
+        _                       -> error "mkNNList called on non-neural network"

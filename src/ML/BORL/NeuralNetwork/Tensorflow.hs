@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Strict            #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
@@ -72,7 +73,7 @@ encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 forwardRun :: TensorflowModel' -> Input -> IO Output
 forwardRun model inp =
   TF.runSession $ do
-    maybe (error "empty input output in lastInputOutputTuple, cannot restore model") (\(i, o) -> restoreModel model [i] [o]) (lastInputOutputTuple model)
+    restoreModelWithLastIO model
     forwardRunSession model inp
 
 
@@ -85,21 +86,37 @@ forwardRunSession model inp = do
 
 
 backwardRun :: TensorflowModel' -> Input -> Labels -> IO TensorflowModel'
-backwardRun model inp lab =
-  TF.runSession $ do
-    restoreModel model [head inp] [head lab]
-    backwardRunSession model inp lab
+backwardRun model inp lab
+  | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
+  | otherwise =
+    TF.runSession $ do
+      restoreModel model [head inp] [head lab]
+      backwardRunSession model inp lab
+      saveModel model [head inp] [head lab]
 
-backwardRunSession :: TensorflowModel' -> Input -> Labels -> TF.Session TensorflowModel'
+backwardRunSession :: TensorflowModel' -> Input -> Labels -> TF.Session ()
 backwardRunSession model inp lab = do
   let inRef = getRef (inputLayerName $ tensorflowModel model)
       labRef = getRef (labelLayerName $ tensorflowModel model)
+      outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
-      resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
-  TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
-  resetLastIO <$> saveModel model [head inp] [head lab]
 
+  -- bef <- forwardRunSession model inp
+  TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+  -- aft <- forwardRunSession model inp
+  -- liftIO $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
+
+
+copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> TF.Session ()
+copyValuesFromTo = undefined
+
+
+saveModelWithLastIO :: TensorflowModel' -> TF.Session TensorflowModel'
+saveModelWithLastIO model =
+  case lastInputOutputTuple model of
+    Nothing     -> error "No last IO in saveModelWithLastIO"
+    Just (i, o) -> saveModel model [i] [o]
 
 saveModel :: TensorflowModel' -> Input -> Output -> TF.Session TensorflowModel'
 saveModel model inp lab = do
@@ -111,29 +128,31 @@ saveModel model inp lab = do
       labRef = getRef (labelLayerName $ tensorflowModel model)
   let inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
+  let resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
   unless (null $ neuralNetworkVariables $ tensorflowModel model) $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
   unless (null $ trainingVariables $ tensorflowModel model) $
     TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
-  -- liftIO $ putStrLn $ "Model saved: " ++ basePath
   return $
     if isJust (checkpointBaseFileName model)
-      then model
-      else model {checkpointBaseFileName = Just basePath}
+      then resetLastIO model
+      else resetLastIO $ model {checkpointBaseFileName = Just basePath}
+
+restoreModelWithLastIO :: TensorflowModel' -> TF.Session ()
+restoreModelWithLastIO model =
+  case lastInputOutputTuple model of
+    Nothing     -> error "No last IO in restoreModelWithLastIO"
+    Just (i, o) -> restoreModel model [i] [o]
 
 restoreModel :: TensorflowModel' -> Input -> Output -> TF.Session ()
 restoreModel tfModel inp lab = do
   void $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
-  -- liftIO $ putStrLn "Built model"
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
-  -- let model = tensorflowModel tfModel
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName $ tensorflowModel tfModel)
       labRef = getRef (labelLayerName $ tensorflowModel tfModel)
   let inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
-  -- liftIO $ putStrLn $ "Restoring model: " <> show (checkpointBaseFileName tfModel)
-  unless (null $ trainingVariables $ tensorflowModel tfModel) $ mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel tfModel) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+  unless (null $ trainingVariables $ tensorflowModel tfModel) $
+    mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel tfModel) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   unless (null $ neuralNetworkVariables $ tensorflowModel tfModel) $ mapM (TF.restore pathModel) (neuralNetworkVariables $ tensorflowModel tfModel) >>= TF.run_
-  -- liftIO $ putStrLn "Model restored"
-

@@ -17,20 +17,14 @@ import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad.IO.Class                         (liftIO)
-import qualified Data.Map.Strict                                as M
-import qualified Data.Proxy                                     as Type
+import qualified Data.Map.Strict              as M
+import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
-import qualified Data.Text                                      as T
-import qualified Data.Vector.Mutable                            as V
+import qualified Data.Vector.Mutable          as V
 import           GHC.TypeLits
 import           Grenade
-import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
-import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
-import qualified TensorFlow.Core                                as TF
+import qualified TensorFlow.Core              as TF
 
-
--------------------- Types --------------------
 
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
 type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the parameters at time t.
@@ -86,7 +80,7 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
-mkBORLUnichainTensorflow :: forall s m . (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
+mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
   let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
@@ -103,7 +97,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   w <- nnSA WTable
   r0 <- nnSA R0Table
   r1 <- nnSA R1Table
-  return $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
+  return $ force $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
   where
     mkModel tp scope netInpInitState = do
       let mBuilder = TF.withNameScope (name tp <> scope) modelBuilder
