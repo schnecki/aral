@@ -17,6 +17,7 @@ import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
+import           Control.Monad                (zipWithM)
 import qualified Data.Map.Strict              as M
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
@@ -83,26 +84,29 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
 mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-  let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
-      nnSA :: ProxyType -> IO (Proxy (s, ActionIndex))
-      nnSA tp = do
-        nnT <- TF.runSession $ mkModel tp "_target" netInpInitState
-        nnW <- TF.runSession $ mkModel tp "_worker" netInpInitState
-        -- let graphDef = TF.asGraphDef $ TF.withNameScope "r1_target" modelBuilder
-        --     names = graphDef ^.. TF.node . traversed . TF.name
-        -- liftIO $ putStrLn $ "allTensorNames: " ++ show names
 
+  -- Initialization for all NNs
+  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table]
+      scopes = concat $ replicate 4 ["_target", "_worker"]
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  -- allModels <- TF.runSession fullModelInit
+
+  let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
+      nnSA :: ProxyType -> Int -> IO (Proxy (s, ActionIndex))
+      nnSA tp idx = do
+        nnT <- TF.runSession $ mkModel tp "_target" netInpInitState ((!!idx) <$> fullModelInit)
+        nnW <- TF.runSession $ mkModel tp "_worker" netInpInitState ((!!(idx+1)) <$> fullModelInit)
         return $ Tensorflow nnT nnW mempty tp nnConfig'
-  v <- nnSA VTable
-  w <- nnSA WTable
-  r0 <- nnSA R0Table
-  r1 <- nnSA R1Table
+
+  v <- nnSA VTable 0
+  w <- nnSA WTable 2
+  r0 <- nnSA R0Table 4
+  r1 <- nnSA R1Table 6
   return $ force $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
   where
-    mkModel tp scope netInpInitState = do
-      let mBuilder = TF.withNameScope (name tp <> scope) modelBuilder
-      model <- prependName (name tp <> scope) <$> mBuilder
-      saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, 0)) mBuilder) [map realToFrac netInpInitState] [0]
+    mkModel tp scope netInpInitState modelBuilderFun = do
+      model <- prependName (name tp <> scope) <$> modelBuilderFun
+      saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, 0)) modelBuilderFun) [map realToFrac netInpInitState] [0]
 
     prependName txt model =
       model

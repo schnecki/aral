@@ -1,14 +1,15 @@
-{-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE OverloadedLists   #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Strict            #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE OverloadedLists     #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Strict              #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
-import           Control.Lens
-import           Control.Monad                                  (unless, void)
+import           Control.Monad                                  (unless, void, zipWithM)
 import           Control.Monad.IO.Class                         (liftIO)
 import qualified Data.ByteString.Char8                          as B8
+import           Data.Int                                       (Int32, Int64)
 import           Data.List                                      (genericLength)
 import           Data.Maybe                                     (isJust)
 import           Data.Text                                      (Text)
@@ -24,7 +25,7 @@ import qualified TensorFlow.Minimize                            as TF
 import qualified TensorFlow.Ops                                 as TF hiding
                                                                        (initializedVariable,
                                                                        zeroInitializedVariable)
-import qualified TensorFlow.Variable                            as TF
+import qualified TensorFlow.Variable                            as TF hiding (assign)
 
 type Output = [Float]
 type Input = [[Float]]
@@ -108,8 +109,27 @@ backwardRunSession model inp lab = do
   -- liftIO $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
 
-copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> TF.Session ()
-copyValuesFromTo = undefined
+copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> IO ()
+copyValuesFromTo from to = do
+  let fromVars = neuralNetworkVariables $ tensorflowModel from
+      toVars = neuralNetworkVariables $ tensorflowModel to
+  if length fromVars /= length toVars
+    then error "cannot copy values to models with different length of neural network variables"
+    else void $ TF.runSession $ do
+           let inRef = getRef (inputLayerName $ tensorflowModel from)
+           restoreModelWithLastIO to
+           restoreModelWithLastIONoBuild from
+           let inpT = encodeLabelBatch (fst $ getLastIO from)
+           liftIO $ putStrLn "Before copying"
+           zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
+           liftIO $ putStrLn "After copying"
+           saveModelWithLastIO from
+           saveModelWithLastIO to
+  where
+    getLastIO model =
+      case lastInputOutputTuple model of
+        Nothing -> error "empty input output in lastInputOutputTuple, cannot restore model"
+        Just (i, o) -> (i, o)
 
 
 saveModelWithLastIO :: TensorflowModel' -> TF.Session TensorflowModel'
@@ -143,9 +163,20 @@ restoreModelWithLastIO model =
     Nothing     -> error "No last IO in restoreModelWithLastIO"
     Just (i, o) -> restoreModel model [i] [o]
 
+restoreModelWithLastIONoBuild :: TensorflowModel' -> TF.Session ()
+restoreModelWithLastIONoBuild model =
+  case lastInputOutputTuple model of
+    Nothing     -> error "No last IO in restoreModelWithLastIO"
+    Just (i, o) -> restoreModelNoBuild model [i] [o]
+
+
 restoreModel :: TensorflowModel' -> Input -> Output -> TF.Session ()
 restoreModel tfModel inp lab = do
   void $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
+  restoreModelNoBuild tfModel inp lab
+
+restoreModelNoBuild :: TensorflowModel' -> Input -> Output -> TF.Session ()
+restoreModelNoBuild tfModel inp lab = do
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
@@ -156,3 +187,4 @@ restoreModel tfModel inp lab = do
   unless (null $ trainingVariables $ tensorflowModel tfModel) $
     mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel tfModel) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   unless (null $ neuralNetworkVariables $ tensorflowModel tfModel) $ mapM (TF.restore pathModel) (neuralNetworkVariables $ tensorflowModel tfModel) >>= TF.run_
+

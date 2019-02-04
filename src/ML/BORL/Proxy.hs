@@ -100,7 +100,7 @@ insert period k v px-- @(Grenade netT netW tab tp config)
       | otherwise = return px'
     updateNNTargetNet forceReset px'@(Tensorflow netT' netW' tab' tp' config')
       | forceReset || period `mod` config' ^. updateTargetInterval == 0 = do
-          void $ TF.runSession $ copyValuesFromTo netW' netT'
+          copyValuesFromTo netW' netT'
           return $ Tensorflow netT' netW' tab' tp' config'
       | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"

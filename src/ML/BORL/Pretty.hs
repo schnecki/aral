@@ -175,7 +175,7 @@ prettyBORLTables t1 t2 t3 borl = do
       P.Grenade _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
       P.Tensorflow _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
-                         in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Set in model")
+                         in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
