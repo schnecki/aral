@@ -23,7 +23,7 @@ module ML.BORL.Proxy
 
 
 import           ML.BORL.NeuralNetwork
-import           ML.BORL.Types
+import           ML.BORL.Types                as T
 
 import           Control.Arrow
 import           Control.DeepSeq
@@ -64,7 +64,7 @@ data Proxy k = Table
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !(NNConfig k)
                 }
-            | Tensorflow
+             | TensorflowProxy
                 { _proxyTFTarget  :: TensorflowModel'
                 , _proxyTFWorker  :: TensorflowModel'
                 , _proxyNNStartup :: !(M.Map k Double)
@@ -76,14 +76,14 @@ makeLenses ''Proxy
 instance (NFData k) => NFData (Proxy k) where
   rnf (Table x)           = rnf x
   rnf (Grenade t w tab tp cfg) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg
-  rnf (Tensorflow t w tab tp cfg) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg
+  rnf (TensorflowProxy t w tab tp cfg) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg
 
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
-insert :: forall m k . (Ord k) => Period -> k -> Double -> Proxy k -> m (Proxy k)
+insert :: forall k . (Ord k) => Period -> k -> Double -> Proxy k -> T.MonadBorl (Proxy k)
 insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k v px-- @(Grenade netT netW tab tp config)
   = do
-  replMem' <- liftIO $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
+  replMem' <- Pure $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
   --
   --   then return $ Grenade netT netW  tp config'
@@ -91,34 +91,34 @@ insert period k v px-- @(Grenade netT netW tab tp config)
   if period < fromIntegral (config' ^. replayMemory.replayMemorySize)-1
     then return $ proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~  config' $ px
     else if period == fromIntegral (config' ^. replayMemory.replayMemorySize) - 1
-    then do liftIO $ putStrLn "Initializing artifical neural network"
+    then do Pure $ putStrLn "Initializing artifical neural network"
             netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
     else trainNNConf period (proxyNNConfig .~  config' $ px) >>= updateNNTargetNet False
   where
-    updateNNTargetNet :: Bool -> Proxy s -> IO (Proxy s)
+    updateNNTargetNet :: Bool -> Proxy s -> T.MonadBorl (Proxy s)
     updateNNTargetNet forceReset px'@(Grenade _ netW' tab' tp' config')
       | forceReset || period `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config'
       | otherwise = return px'
-    updateNNTargetNet forceReset px'@(Tensorflow netT' netW' tab' tp' config')
+    updateNNTargetNet forceReset px'@(TensorflowProxy netT' netW' tab' tp' config')
       | forceReset || period `mod` config' ^. updateTargetInterval == 0 = do
           copyValuesFromTo netW' netT'
-          return $ Tensorflow netT' netW' tab' tp' config'
+          return $ TensorflowProxy netT' netW' tab' tp' config'
       | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
-    netinit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
+    netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
 
 
-trainMSE :: (Monad m) => Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> m (Proxy k)
+trainMSE :: Maybe Int -> [(k, Double)] -> LearningParameters -> Proxy k -> T.MonadBorl (Proxy k)
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
   | mse < mseMax = do
-      liftIO $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
+      Pure $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
       return px
   | otherwise = do
       when (maybe False ((==0) . (`mod` 100)) mPeriod) $
-        liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+        Pure $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
       trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config
   where
     mseMax = config ^. trainMSEMax
@@ -127,59 +127,59 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
     kScaled = map ((config ^. toNetInp) . fst) dataset
     getValue k = head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (config ^. toNetInp) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
-trainMSE mPeriod dataset lp px@(Tensorflow netT netW _ _ _) = do
-    restoreModelWithLastIO netW
+trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW _ _ _) = do
+    -- restoreModelWithLastIO netW
     px' <- trainMSETensorflow mPeriod dataset lp px
-    netW' <- saveModelWithLastIO (px' ^?! proxyTFWorker)
+    -- netW' <- saveModelWithLastIO (px' ^?! proxyTFWorker)
     return $ proxyTFWorker .~ netW $ px'
 
 -- | Train a Tensorflow object in a single session.
-trainMSETensorflow :: (MonadIO m) => Maybe Int -> [(k, Double)] -> t -> Proxy k -> m (Proxy k)
-trainMSETensorflow mPeriod dataset lp px@(Tensorflow netT netW tab tp config) =
+trainMSETensorflow :: Maybe Int -> [(k, Double)] -> t -> Proxy k -> T.MonadBorl (Proxy k)
+trainMSETensorflow mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config) =
   let mseMax = config ^. trainMSEMax
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
    in do zipWithM_ (backwardRunSession netW) (map return kScaled) (map return vScaled)
          let forward k = head <$> forwardRunSession netW [map realToFrac $ (config ^. toNetInp) k]
-         mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled
+         mse <- (1 / fromIntegral (length dataset) *) . sum <$> T.Tensorflow (zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled)
          if realToFrac mse < mseMax
-           then liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
+           then Pure $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
            else do
              when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
                -- varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel netW)
-               -- liftIO $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
+               -- Pure $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
                void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
-               liftIO $ do
+               Pure $ do
                  -- list <- mkNNList False px
                  -- let list' = map ((config ^. toNetInp) *** snd) list
                  -- mapM_ (\((ks, w), (ks', v')) -> putStrLn $ show ks ++ ":\t" ++ show w ++ "\t" ++ show ks' ++ ":\t" ++ show v') (zip list' (zip kScaled vScaled))
                  putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ Tensorflow netT netW tab tp config -- TODO check if
+             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ TensorflowProxy netT netW tab tp config -- TODO check if
                                                                                                     -- using same net'
                                                                                                     -- is OK. I don't
                                                                                                     -- think so
 trainMSETensorflow  _ _ _ _ = error "called trainMSETensorflow on non-Tensorflow data structure"
 
-trainNNConf :: forall k . Period -> Proxy k -> IO (Proxy k)
+trainNNConf :: forall k . Period -> Proxy k -> T.MonadBorl (Proxy k)
 -- trainNNConf period (Grenade netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ Grenade netT netW tab tp config
 trainNNConf period (Grenade netT netW tab tp config) = do
-  rands <- getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
+  rands <- Pure $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first $ config ^. toNetInp) rands
       netW' = trainGrenade (config ^. learningParams) netW trainingInstances
   return $ Grenade netT netW' tab tp config
-trainNNConf period (Tensorflow netT netW tab tp config) = do
-  rands <- getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
+trainNNConf period (TensorflowProxy netT netW tab tp config) = do
+  rands <- Pure $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first $ config ^. toNetInp) rands
       inputs = map (map realToFrac . fst) trainingInstances
       labels = map (realToFrac . snd) trainingInstances
-  netW' <- backwardRun netW inputs labels
-  return $ Tensorflow netT netW' tab tp config
+  backwardRun netW inputs labels
+  return $ TensorflowProxy netT netW tab tp config
 
 trainNNConf _ _ = error "called trainNNConf on non-neural network proxy (programming error)"
 
 
 -- | Retrieve a value.
-lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> IO Double
+lookupProxy :: (Ord k) => Period -> LookupType -> k -> Proxy k -> T.MonadBorl Double
 lookupProxy _ _ k (Table m) = return $ M.findWithDefault 0 k m
 lookupProxy period lkType k px
   | period <= fromIntegral (config ^. replayMemory.replayMemorySize) = return $ M.findWithDefault 0 k tab
@@ -190,17 +190,17 @@ lookupProxy period lkType k px
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
 -- to the original interval before returned.
-lookupNeuralNetwork :: LookupType -> k -> Proxy k -> IO Double
+lookupNeuralNetwork :: LookupType -> k -> Proxy k -> T.MonadBorl Double
 lookupNeuralNetwork tp k px@Grenade {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
-lookupNeuralNetwork tp k px@Tensorflow {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork tp k px@TensorflowProxy {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
-lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> IO Double
+lookupNeuralNetworkUnscaled :: LookupType -> k -> Proxy k -> T.MonadBorl Double
 lookupNeuralNetworkUnscaled Worker k (Grenade _ netW _ _ conf) = return $ head $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) k)
 lookupNeuralNetworkUnscaled Target k (Grenade netT _ _ _ conf) = return $ head $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) k)
-lookupNeuralNetworkUnscaled Worker k (Tensorflow _ netW _ _ conf) = realToFrac . head <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) k]
-lookupNeuralNetworkUnscaled Target k (Tensorflow netT _ _ _ conf) = realToFrac . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) k]
+lookupNeuralNetworkUnscaled Worker k (TensorflowProxy _ netW _ _ conf) = realToFrac . head <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) k]
+lookupNeuralNetworkUnscaled Target k (TensorflowProxy netT _ _ _ conf) = realToFrac . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) k]
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
@@ -215,8 +215,8 @@ getMinMaxVal p  = case p ^?! proxyType of
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.
-mkNNList :: Bool -> Proxy k -> IO [(k, (Double, Double))]
-mkNNList scaled pr = do
+mkNNList :: Bool -> Proxy k -> T.MonadBorl [(k, (Double, Double))]
+mkNNList scaled pr =
   mapM
     (\inp -> do
        t <-
@@ -232,6 +232,6 @@ mkNNList scaled pr = do
   where
     conf =
       case pr of
-        Grenade _ _ _ _ conf    -> conf
-        Tensorflow _ _ _ _ conf -> conf
-        _                       -> error "mkNNList called on non-neural network"
+        Grenade _ _ _ _ conf         -> conf
+        TensorflowProxy _ _ _ _ conf -> conf
+        _                            -> error "mkNNList called on non-neural network"

@@ -73,11 +73,8 @@ encodeInputBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mc
 encodeLabelBatch :: Output -> TF.TensorData Float
 encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
-forwardRun :: TensorflowModel' -> Input -> IO Output
-forwardRun model inp =
-  TF.runSession $ do
-    restoreModelWithLastIO model
-    forwardRunSession model inp
+forwardRun :: TensorflowModel' -> Input -> MonadBorl Output
+forwardRun model inp = Tensorflow $ forwardRunSession model inp
 
 
 forwardRunSession :: TensorflowModel' -> Input -> TF.Session Output
@@ -88,53 +85,42 @@ forwardRunSession model inp = do
   V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
 
 
-backwardRun :: TensorflowModel' -> Input -> Labels -> IO TensorflowModel'
+backwardRun :: TensorflowModel' -> Input -> Labels -> MonadBorl ()
 backwardRun model inp lab
   | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
-  | otherwise =
-    TF.runSession $ do
-      restoreModel model [head inp] [head lab]
-      backwardRunSession model inp lab
-      saveModel model [head inp] [head lab]
+  | otherwise = backwardRunSession model inp lab
 
-backwardRunSession :: TensorflowModel' -> Input -> Labels -> TF.Session ()
+backwardRunSession :: TensorflowModel' -> Input -> Labels -> MonadBorl ()
 backwardRunSession model inp lab = do
   let inRef = getRef (inputLayerName $ tensorflowModel model)
       labRef = getRef (labelLayerName $ tensorflowModel model)
-      outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
-
   -- bef <- forwardRunSession model inp
-  TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+  Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
   -- aft <- forwardRunSession model inp
-  -- liftIO $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
+  -- Pure $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
 
-copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl IO ()
+copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl ()
 copyValuesFromTo from to = do
   let fromVars = neuralNetworkVariables $ tensorflowModel from
       toVars = neuralNetworkVariables $ tensorflowModel to
   if length fromVars /= length toVars
     then error "cannot copy values to models with different length of neural network variables"
-    else void $ do
-    restoreModelWithLastIO to
-    restoreModelWithLastIONoBuild from
-    Tensorflow $ zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
-    Tensorflow $ void $ saveModelWithLastIO from
-    Tensorflow $ saveModelWithLastIO to
+    else void $ Tensorflow $ zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
 
 
-saveModelWithLastIO :: TensorflowModel' -> TF.Session TensorflowModel'
+saveModelWithLastIO :: TensorflowModel' -> MonadBorl TensorflowModel'
 saveModelWithLastIO model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in saveModelWithLastIO"
     Just (i, o) -> saveModel model [i] [o]
 
-saveModel :: TensorflowModel' -> Input -> Output -> TF.Session TensorflowModel'
+saveModel :: TensorflowModel' -> Input -> Output -> MonadBorl TensorflowModel'
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-  basePath <- maybe (liftIO tempDir) return (checkpointBaseFileName model)
+  basePath <- maybe (Pure tempDir) return (checkpointBaseFileName model)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName $ tensorflowModel model)
@@ -142,34 +128,27 @@ saveModel model inp lab = do
   let inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
   let resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
-  unless (null $ neuralNetworkVariables $ tensorflowModel model) $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
+  unless (null $ neuralNetworkVariables $ tensorflowModel model) $
+    Tensorflow $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
   unless (null $ trainingVariables $ tensorflowModel model) $
-    TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+    Tensorflow $ TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   return $
     if isJust (checkpointBaseFileName model)
       then resetLastIO model
       else resetLastIO $ model {checkpointBaseFileName = Just basePath}
 
-restoreModelWithLastIO :: TensorflowModel' -> MonadBorl IO ()
+restoreModelWithLastIO :: TensorflowModel' -> MonadBorl ()
 restoreModelWithLastIO model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in restoreModelWithLastIO"
     Just (i, o) -> restoreModel model [i] [o]
 
-restoreModelWithLastIONoBuild :: TensorflowModel' -> MonadBorl IO ()
-restoreModelWithLastIONoBuild model =
-  case lastInputOutputTuple model of
-    Nothing     -> error "No last IO in restoreModelWithLastIO"
-    Just (i, o) -> restoreModelNoBuild model [i] [o]
+buildTensorflowModel :: TensorflowModel' -> MonadBorl ()
+buildTensorflowModel tfModel = void $ Tensorflow $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
 
 
-restoreModel :: TensorflowModel' -> Input -> Output -> MonadBorl IO ()
-restoreModel tfModel inp lab = do
-  void $ Tensorflow $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
-  restoreModelNoBuild tfModel inp lab
-
-restoreModelNoBuild :: TensorflowModel' -> Input -> Output -> MonadBorl IO ()
-restoreModelNoBuild tfModel inp lab = Tensorflow $ do
+restoreModel :: TensorflowModel' -> Input -> Output -> MonadBorl ()
+restoreModel tfModel inp lab = Tensorflow $ do
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName

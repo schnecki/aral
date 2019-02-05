@@ -31,18 +31,10 @@ commas = 4
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
--- prettyE :: (Ord s, Show s) => BORL s -> Doc
--- prettyE borl = case (borl^.r1,borl^.r0) of
---   (P.Table rm1, P.Table rm0) -> prettyTable id (P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
---   where subtr (k,v1) (_,v2) = (k,v1-v2)
-
-prettyProxy :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> IO Doc
-prettyProxy = prettyTable
-
-prettyTable :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> IO Doc
+prettyTable :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> MonadBorl Doc
 prettyTable period prettyKey p = vcat <$> prettyTableRows (Just period) prettyKey p
 
-prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -> IO [Doc]
+prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -> MonadBorl [Doc]
 prettyTableRows mPeriod prettyAction p =
   case p of
     P.Table m -> return $ map (\(k, val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
@@ -58,7 +50,7 @@ prettyTableRows mPeriod prettyAction p =
         map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mtrue)
 
 
-mkListFromNeuralNetwork :: (Integral a) => Maybe a -> (k -> c) -> Bool -> P.Proxy k -> IO [(c, (Double, Double))]
+mkListFromNeuralNetwork :: (Integral a) => Maybe a -> (k -> c) -> Bool -> P.Proxy k -> MonadBorl [(c, (Double, Double))]
 mkListFromNeuralNetwork mPeriod prettyAction scaled pr
   | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = do
       list <- mkNNList scaled pr
@@ -66,36 +58,38 @@ mkListFromNeuralNetwork mPeriod prettyAction scaled pr
   | otherwise = map (first prettyAction) <$> mkNNList scaled pr
   where (tab,config) = case pr of
           P.Grenade _ _ tab' _ config' -> (tab', config')
-          P.Tensorflow _ _ tab' _ config' -> (tab', config')
+          P.TensorflowProxy _ _ tab' _ config' -> (tab', config')
           _ -> error "missing implementation in mkListFromNeuralNetwork"
 
-prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> IO Doc
+prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> MonadBorl Doc
 prettyTablesState period p1 m1 p2 m2 = do
   rows1 <- prettyTableRows (Just period) p1 m1
   rows2 <- prettyTableRows (Just period) p2 m2
   return $ vcat $ zipWith (\x y -> x $$ nest 40 y) rows1 rows2
 
 
-prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> IO Doc
+prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
 prettyBORLTables t1 t2 t3 borl = do
 
-  err <- case (borl ^. r1, borl ^. r0) of
+  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState (borl ^. t) prettyAction m1 prettyAction m2
+      prBoolTblsStateAction False _ _ _ = return empty
+  let mkErr scale = case (borl ^. r1, borl ^. r0) of
            (P.Table rm1, P.Table rm0) -> return $ P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
            (prNN1, prNN0) -> do
-             n1 <- mkNNList False prNN1
-             n0 <- mkNNList False prNN0
+             n1 <- mkNNList scale prNN1
+             n0 <- mkNNList scale prNN0
              return $ P.Table $ M.fromList $ zipWith subtr (map (second fst) n1) (map (second fst) n0)
+  errUnscaled <- mkErr False
+  errScaled <- mkErr True
   prettyErr <- if t3
-               then (text "E" $+$) <$> prettyTable (borl ^. t) prettyAction err
+               then prBoolTblsStateAction t3 "E" errUnscaled errScaled
                else return empty
   prettyRhoVal <- case borl ^. rho of
        Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
        Right m  -> do
-         prAct <- prettyProxy (borl ^. t) prettyAction m
+         prAct <- prettyTable (borl ^. t) prettyAction m
          return $ text "Rho" $+$ prAct
   prettyVisits <- prettyTable (borl ^. t) id (P.Table vis)
-  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState (borl ^. t) prettyAction m1 prettyAction m2
-      prBoolTblsStateAction False _ _ _ = return empty
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1)
   return $
@@ -154,7 +148,7 @@ prettyBORLTables t1 t2 t3 borl = do
                , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
-        P.Tensorflow _ _ _ _ conf ->
+        P.TensorflowProxy _ _ _ _ conf ->
           text
             (show
                ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
@@ -165,22 +159,37 @@ prettyBORLTables t1 t2 t3 borl = do
     nnBatchSize = case borl ^. v of
       P.Table {} -> empty
       P.Grenade _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
-      P.Tensorflow _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+      P.TensorflowProxy _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
     nnReplMemSize = case borl ^. v of
       P.Table {} -> empty
       P.Grenade _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
-      P.Tensorflow _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
+      P.TensorflowProxy _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
     nnLearningParams = case borl ^. v of
       P.Table {} -> empty
       P.Grenade _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
-      P.Tensorflow _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
+      P.TensorflowProxy _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
-prettyBORL = prettyBORLTables True True True
-
+prettyBORL borl = runMonadBorl $ do
+  buildModels
+  reloadNets (borl ^. v)
+  reloadNets (borl ^. w)
+  reloadNets (borl ^. r0)
+  reloadNets (borl ^. r1)
+  prettyBORLTables True True True borl
+    where reloadNets px = case px of
+            P.TensorflowProxy netT netW _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
+            _ -> return ()
+          isTensorflowProxy P.TensorflowProxy{} = True
+          isTensorflowProxy _                   = False
+          buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
+            Just (P.TensorflowProxy netT _ _ _ _) -> buildTensorflowModel netT
+            _                                     -> return ()
 
 instance (Ord s, Show s) => Show (BORL s) where
-  show borl = show $ unsafePerformIO (prettyBORL borl)
+  show borl = show $ unsafePerformIO $ prettyBORL borl
+
+

@@ -49,7 +49,7 @@ askUser showHelp addUsage cmds ql = do
       putStr "How many learning rounds should I execute: " >> hFlush stdout
       l <- getLine
       case reads l :: [(Integer, String)] of
-        [(nr, _)] -> time (foldM (\q _ -> step q) ql [0 .. nr - 1]) >>= askUser False addUsage cmds
+        [(nr, _)] -> time (steps ql nr) >>= askUser False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser False addUsage cmds ql
@@ -57,12 +57,12 @@ askUser showHelp addUsage cmds ql = do
       prettyBORL ql >>= print
       askUser False addUsage cmds ql
     "v" -> do
-      prettyBORLTables True False False ql >>= print
+      runMonadBorl (restoreTensorflowModels ql >> prettyBORLTables True False False ql) >>= print
       askUser False addUsage cmds ql
     _ ->
       case find ((== c) . fst) cmds of
-        Nothing -> unless (c == "q") (step ql >>= \x -> prettyBORLTables True False True x >>= print >> return x >>= askUser False addUsage cmds)
-        Just (_, cmd) -> stepExecute (ql, False, cmd) >>= askUser False addUsage cmds
+        Nothing -> unless (c == "q") (step ql >>= \x -> runMonadBorl(restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
+        Just (_, cmd) -> runMonadBorl (restoreTensorflowModels ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser False addUsage cmds
 
 
 time :: NFData t => IO t -> IO t

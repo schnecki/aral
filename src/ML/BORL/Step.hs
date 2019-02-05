@@ -1,24 +1,32 @@
 module ML.BORL.Step
     ( step
+    , steps
+    , restoreTensorflowModels
+    , saveTensorflowModels
     , stepExecute
     , nextAction
     ) where
 
 import           ML.BORL.Action
 import           ML.BORL.Fork
+import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
+                                                   restoreModelWithLastIO,
+                                                   saveModelWithLastIO)
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
-import           ML.BORL.Proxy       as P
+import           ML.BORL.Proxy                    as P
 import           ML.BORL.Type
+import           ML.BORL.Types
 
-import           Control.Applicative ((<|>))
-import           Control.DeepSeq     (NFData, force)
+import           Control.Applicative              ((<|>))
+import           Control.DeepSeq                  (NFData, force)
 import           Control.Lens
 import           Control.Monad
-import           Data.Function       (on)
-import           Data.List           (groupBy, sortBy)
-import qualified Data.Map.Strict     as M
-import           Data.Maybe          (isJust)
+import           Control.Monad.IO.Class           (MonadIO, liftIO)
+import           Data.Function                    (on)
+import           Data.List                        (find, groupBy, sortBy)
+import qualified Data.Map.Strict                  as M
+import           Data.Maybe                       (isJust)
 import           System.Random
 
 expSmthPsi :: Double
@@ -30,8 +38,49 @@ approxAvg = fromIntegral (100 :: Int)
 
 -- TF.asyncProdNodes TODO
 
+steps :: (NFData s, Ord s) => BORL s -> Integer -> IO (BORL s)
+steps borl nr = runMonadBorl $ do
+  restoreTensorflowModels borl
+  borl' <- foldM (\b _ -> fmap setRefState (nextAction b) >>= stepExecute) borl [0 .. nr - 1]
+  force <$> saveTensorflowModels borl'
+
+
 step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
-step borl = fmap setRefState (nextAction borl) >>= stepExecute
+step borl = runMonadBorl $ do
+  restoreTensorflowModels borl
+  borl' <- fmap setRefState (nextAction borl) >>= stepExecute
+  force <$> saveTensorflowModels borl'
+
+restoreTensorflowModels :: BORL s -> MonadBorl ()
+restoreTensorflowModels borl = do
+  buildModels
+  restoreProxy (borl ^. v)
+  restoreProxy (borl ^. w)
+  restoreProxy (borl ^. r0)
+  restoreProxy (borl ^. r1)
+
+  where restoreProxy px = case px of
+          TensorflowProxy netT netW _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
+          _ -> return ()
+        isTensorflowProxy TensorflowProxy{} = True
+        isTensorflowProxy _                 = False
+        buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
+          Just (TensorflowProxy netT _ _ _ _) -> buildTensorflowModel netT
+          _                                   -> return ()
+
+
+saveTensorflowModels :: BORL s -> MonadBorl (BORL s)
+saveTensorflowModels borl = do
+  saveProxy (borl ^. v)
+  saveProxy (borl ^. w)
+  saveProxy (borl ^. r0)
+  saveProxy (borl ^. r1)
+  return borl
+
+  where saveProxy px = case px of
+          TensorflowProxy netT netW _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
+          _ -> return ()
+
 
 setRefState :: (BORL s, Bool, ActionIndexed s) -> (BORL s, Bool, ActionIndexed s)
 setRefState inp@(borl, b, as@(aNr,_))
@@ -39,10 +88,10 @@ setRefState inp@(borl, b, as@(aNr,_))
   | isJust (borl ^. sRef) = inp
   | otherwise = (sRef .~ Just (borl^.s, aNr) $ borl, b, as)
 
-stepExecute :: (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> IO (BORL s)
+stepExecute :: (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
 stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
-  (reward, stateNext) <- action state
+  (reward, stateNext) <- Pure $ action state
   let mv = borl ^. v
       mw = borl ^. w
       mr0 = borl ^. r0
@@ -90,20 +139,23 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
             then 0
             else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
-  -- forkMv' <- doFork $ P.insert period label vValStateNew mv
+  -- forkMv' <- Pure $ doFork $ P.insert period label vValStateNew mv
   mv' <- P.insert period label vValStateNew mv
-  forkMw' <- doFork $ P.insert period label wValState' mw
+  mw' <- P.insert period label wValState' mw
+  -- forkMw' <- Pure $ doFork $ runMonadBorl $ P.insert period label wValState' mw
   rSmall <- rStateValue borl RSmall stateNext
   let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rSmall)
-  forkMr0' <- doFork $ P.insert period label r0ValState' mr0
+  mr0' <- P.insert period label r0ValState' mr0
+  -- forkMr0' <- Pure $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
   rBig <- rStateValue borl RBig stateNext
   let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rBig)
-  forkMr1' <- doFork $ P.insert period label r1ValState' mr1
+  mr1' <- P.insert period label r1ValState' mr1
+  -- forkMr1' <- Pure $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
-  -- mv' <- collectForkResult forkMv'
-  mw' <- collectForkResult forkMw'
-  mr0' <- collectForkResult forkMr0'
-  mr1' <- collectForkResult forkMr1'
+  -- mv' <- Pure $ collectForkResult forkMv'
+  -- mw' <- Pure $ collectForkResult forkMw'
+  -- mr0' <- Pure $ collectForkResult forkMr0'
+  -- mr1' <- Pure $ collectForkResult forkMr1'
   let borl'
         | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
         | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
@@ -117,16 +169,16 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (Ord s) => BORL s -> IO (BORL s, Bool, ActionIndexed s)
+nextAction :: (Ord s) => BORL s -> MonadBorl (BORL s, Bool, ActionIndexed s)
 nextAction borl = do
   let explore = borl ^. parameters . exploration
   let state = borl ^. s
   let as = actionsIndexed borl state
   when (null as) (error "Empty action list")
-  rand <- randomRIO (0, 1)
+  rand <- Pure $ randomRIO (0, 1)
   if rand < explore
     then do
-      r <- randomRIO (0, length as - 1)
+      r <- Pure $ randomRIO (0, length as - 1)
       return (borl, True,  as !! r)
     else do
     bestRho <- if isUnichain borl
@@ -144,7 +196,7 @@ nextAction borl = do
     -- return (False, head bestR)
     if length bestE > 1
         then do
-          r <- randomRIO (0, length bestE - 1)
+          r <- Pure $ randomRIO (0, length bestE - 1)
           return (borl, False, bestE !! r)
         else return (borl, False, head bestE)
   where
@@ -167,41 +219,41 @@ reduce = maximum
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
+rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 rhoValue = rhoValueWith Worker
 
-rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
+rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
 rhoValueWith lkTp borl state (a,_) =
   case borl ^. rho of
     Left r  -> return r
     Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
 
-rhoStateValue :: (Ord s) => BORL s -> s -> IO Double
+rhoStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 rhoStateValue borl state = case borl ^. rho of
   Left r  -> return r
   Right _ -> reduce <$> mapM (rhoValueWith Target borl state) (actionsIndexed borl state)
 
-vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
+vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 vValue = vValueWith Worker
 
-vValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
+vValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
 vValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mv
   where
     mv = borl ^. v
 
-vStateValue :: (Ord s) => BORL s -> s -> IO Double
+vStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 vStateValue borl state = reduce <$> mapM (vValueWith Target borl state) (actionsIndexed borl state)
 
 
-wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
+wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 wValue = wValueWith Worker
 
-wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> IO Double
+wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
 wValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mw
   where
     mw = borl ^. w
 
-wStateValue :: (Ord s) => BORL s -> s -> IO Double
+wStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 wStateValue borl state = reduce <$> mapM (wValueWith Target borl state) (actionsIndexed borl state)
 
 
@@ -212,11 +264,11 @@ data RSize
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> IO Double
+rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> MonadBorl Double
 rValue = rValueWith Worker
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> IO Double
+rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> MonadBorl Double
 rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
@@ -224,11 +276,11 @@ rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, 
         RSmall -> borl ^. r0
         RBig   -> borl ^. r1
 
-rStateValue :: (Ord s) => BORL s -> RSize -> s -> IO Double
+rStateValue :: (Ord s) => BORL s -> RSize -> s -> MonadBorl Double
 rStateValue borl size state = reduce <$> mapM (rValueWith Target borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
-eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> IO Double
+eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 eValue borl state act = do
   big <- rValueWith Target borl RBig state act
   small <- rValueWith Target borl RSmall state act
@@ -238,4 +290,5 @@ eValue borl state act = do
 -- eStateValue :: (Ord s) => BORL s -> s -> Double
 -- eStateValue borl state = reduce (map (rValueWith Target borl RBig state) as) - reduce (map (rValueWith Target borl RSmall state) as)
 --   where as = actionsIndexed borl state
+
 

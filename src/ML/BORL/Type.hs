@@ -1,7 +1,9 @@
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
@@ -86,20 +88,17 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
 mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-
   -- Initialization for all NNs
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table]
       scopes = concat $ replicate 4 ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
-  -- allModels <- TF.runSession fullModelInit
-
   let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
       nnSA :: ProxyType -> Int -> IO (Proxy (s, ActionIndex))
       nnSA tp idx = do
-        nnT <- TF.runSession $ mkModel tp "_target" netInpInitState ((!!idx) <$> fullModelInit)
-        nnW <- TF.runSession $ mkModel tp "_worker" netInpInitState ((!!(idx+1)) <$> fullModelInit)
-        return $ Tensorflow nnT nnW mempty tp nnConfig'
+        nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
+        nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
 
+        return $ TensorflowProxy nnT nnW mempty tp nnConfig'
   v <- nnSA VTable 0
   w <- nnSA WTable 2
   r0 <- nnSA R0Table 4
@@ -107,16 +106,10 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   return $ force $ BORL (zip [idxStart ..] as) asFilter initialState Nothing 0 params decayFun (default_gamma0, default_gamma1) (Left 0) (0, 0, 0) v w r0 r1 mempty
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
-      model <- prependName (name tp <> scope) <$> modelBuilderFun
+      !model <- prependName (name tp <> scope) <$> Tensorflow modelBuilderFun
       saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, 0)) modelBuilderFun) [map realToFrac netInpInitState] [0]
-
     prependName txt model =
-      model
-      { inputLayerName = txt <> "/" <> inputLayerName model
-      , outputLayerName = txt <> "/" <> outputLayerName model
-      , labelLayerName = txt <> "/" <> labelLayerName model
-      }
-
+      model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
     name VTable  = "v"
     name WTable  = "w"
     name R0Table = "r0"
