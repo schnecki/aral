@@ -195,8 +195,8 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
+  rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
+  -- rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -216,7 +216,7 @@ params = Parameters
   , _delta            = 0.25
   , _epsilon          = 1.0
   , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
+  , _learnRandomAbove = 0.0
   , _zeta             = 1.0
   , _xi               = 0.5
   }
@@ -233,8 +233,8 @@ decay t p@(Parameters alp bet del eps exp rand zeta xi)
       (max 0.1 $ slow * eps)
       (f $ slow * exp)
       rand
-      (fromIntegral t / 20000) --  * zeta)
-      (max 0 $ fromIntegral t / 40000) -- * xi)
+      zeta -- (fromIntegral t / 20000) --  * zeta)
+      xi -- (max 0 $ fromIntegral t / 40000) -- * xi)
   | otherwise = p
   where
     slower = 0.995

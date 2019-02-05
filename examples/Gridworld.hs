@@ -22,7 +22,7 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 3 10, Relu, FullyConnected 10 8, Relu, FullyConnected 8 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 10, 'D1 10, 'D1 8, 'D1 8, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network  '[ FullyConnected 3 20, Relu, FullyConnected 20 8, Relu, FullyConnected 8 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 20, 'D1 20, 'D1 8, 'D1 8, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
@@ -61,7 +61,7 @@ params = Parameters
   , _delta            = 0.25
   , _epsilon          = 1.0
   , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
+  , _learnRandomAbove = 0.0
   , _zeta             = 1.0
   , _xi               = 0.5
   }
@@ -69,13 +69,22 @@ params = Parameters
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
 decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (max 0.0001 $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slow * eps) (f $ slower * exp) rand zeta xi
+  | t `mod` 200 == 0 =
+    Parameters
+      (max 0.0001 $ slower * alp)
+      (f $ slower * bet)
+      (f $ slower * del)
+      (max 0.1 $ slow * eps)
+      (f $ slower * exp)
+      rand
+      zeta -- zeta
+      xi
   | otherwise = p
-
-  where slower = 0.995
-        slow = 0.95
-        faster = 1.0/0.995
-        f = max 0.001
+  where
+    slower = 0.995
+    slow = 0.95
+    faster = 1.0 / 0.995
+    f = max 0.001
 
 
 -- | Decay function of parameters.

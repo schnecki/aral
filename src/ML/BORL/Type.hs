@@ -194,7 +194,7 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = 
 
 -- | Infer scaling by maximum reward.
 scalingByMaxReward :: Bool -> Double -> ScalingNetOutParameters
-scalingByMaxReward onlyPos maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPos then 0 else -maxR0) maxR0 (if onlyPos then 0 else -maxR1) maxR1
+scalingByMaxReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 0.8 * maxR
         maxW = 300 * maxR
