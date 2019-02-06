@@ -91,7 +91,7 @@ setRefState inp@(borl, b, as@(aNr,_))
 stepExecute :: (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
 stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
-  (reward, stateNext) <- Pure $ action state
+  (reward, stateNext) <- Simple $ action state
   let mv = borl ^. v
       mw = borl ^. w
       mr0 = borl ^. r0
@@ -139,23 +139,23 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
             then 0
             else borl ^. parameters . xi * psiW
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
-  -- forkMv' <- Pure $ doFork $ P.insert period label vValStateNew mv
+  -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
   mv' <- P.insert period label vValStateNew mv
   mw' <- P.insert period label wValState' mw
-  -- forkMw' <- Pure $ doFork $ runMonadBorl $ P.insert period label wValState' mw
+  -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
   rSmall <- rStateValue borl RSmall stateNext
   let r0ValState' = (1 - bta) * r0ValState + bta * (reward + ga0 * rSmall)
   mr0' <- P.insert period label r0ValState' mr0
-  -- forkMr0' <- Pure $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
+  -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
   rBig <- rStateValue borl RBig stateNext
   let r1ValState' = (1 - bta) * r1ValState + bta * (reward + ga1 * rBig)
   mr1' <- P.insert period label r1ValState' mr1
-  -- forkMr1' <- Pure $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
+  -- forkMr1' <- Simple $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
-  -- mv' <- Pure $ collectForkResult forkMv'
-  -- mw' <- Pure $ collectForkResult forkMw'
-  -- mr0' <- Pure $ collectForkResult forkMr0'
-  -- mr1' <- Pure $ collectForkResult forkMr1'
+  -- mv' <- Simple $ collectForkResult forkMv'
+  -- mw' <- Simple $ collectForkResult forkMw'
+  -- mr0' <- Simple $ collectForkResult forkMr0'
+  -- mr1' <- Simple $ collectForkResult forkMr1'
   let borl'
         | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
         | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
@@ -175,10 +175,10 @@ nextAction borl = do
   let state = borl ^. s
   let as = actionsIndexed borl state
   when (null as) (error "Empty action list")
-  rand <- Pure $ randomRIO (0, 1)
+  rand <- Simple $ randomRIO (0, 1)
   if rand < explore
     then do
-      r <- Pure $ randomRIO (0, length as - 1)
+      r <- Simple $ randomRIO (0, length as - 1)
       return (borl, True,  as !! r)
     else do
     bestRho <- if isUnichain borl
@@ -196,7 +196,7 @@ nextAction borl = do
     -- return (False, head bestR)
     if length bestE > 1
         then do
-          r <- Pure $ randomRIO (0, length bestE - 1)
+          r <- Simple $ randomRIO (0, length bestE - 1)
           return (borl, False, bestE !! r)
         else return (borl, False, head bestE)
   where

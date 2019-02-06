@@ -82,13 +82,13 @@ instance (NFData k) => NFData (Proxy k) where
 insert :: forall k . (NFData k, Ord k) => Period -> k -> Double -> Proxy k -> T.MonadBorl (Proxy k)
 insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k v px = do
-  replMem' <- Pure $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
+  replMem' <- Simple $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
   if period < fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
     then return $ proxyNNStartup .~ M.insert k v tab $ proxyNNConfig .~ config' $ px
     else if period == fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
            then do
-             Pure $ putStrLn $ "Initializing artifical neural networks: " ++ show (px ^? proxyType)
+             Simple $ putStrLn $ "Initializing artifical neural networks: " ++ show (px ^? proxyType)
              netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
            else trainNNConf period (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet False
   where
@@ -111,11 +111,11 @@ trainMSE :: (NFData k) => Maybe Int -> [(k, Double)] -> LearningParameters -> Pr
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config)
   | mse < mseMax = do
-      Pure $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
+      Simple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
       return px
   | otherwise = do
       when (maybe False ((==0) . (`mod` 100)) mPeriod) $
-        Pure $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+        Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
       fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config
   where
     mseMax = config ^. trainMSEMax
@@ -137,36 +137,28 @@ trainMSETensorflow mPeriod dataset lp px@(TensorflowProxy netT netW tab tp confi
       kScaled = map (map realToFrac . (config ^. toNetInp) . fst) dataset :: [[Float]]
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset :: [Float]
    in do zipWithM_ (backwardRunSession netW) (map return kScaled) (map return vScaled)
+         -- backwardRunSession netW kScaled vScaled
          let forward k = head <$> forwardRunSession netW [map realToFrac $ (config ^. toNetInp) k]
          mse <- (1 / fromIntegral (length dataset) *) . sum <$> T.Tensorflow (zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled)
          if realToFrac mse < mseMax
-           then Pure $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
+           then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
            else do
              when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
-               -- varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel netW)
-               -- Pure $ putStrLn $ "Weights: " ++ show (V.toList <$> varVals)
                void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
-               Pure $ do
-                 -- list <- mkNNList False px
-                 -- let list' = map ((config ^. toNetInp) *** snd) list
-                 -- mapM_ (\((ks, w), (ks', v')) -> putStrLn $ show ks ++ ":\t" ++ show w ++ "\t" ++ show ks' ++ ":\t" ++ show v') (zip list' (zip kScaled vScaled))
-                 putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ TensorflowProxy netT netW tab tp config -- TODO check if
-                                                                                                    -- using same net'
-                                                                                                    -- is OK. I don't
-                                                                                                    -- think so
+               Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+             trainMSETensorflow ((+ 1) <$> mPeriod) dataset lp $ TensorflowProxy netT netW tab tp config
 trainMSETensorflow  _ _ _ _ = error "called trainMSETensorflow on non-Tensorflow data structure"
 
 trainNNConf :: forall k . Period -> Proxy k -> T.MonadBorl (Proxy k)
 -- trainNNConf period (Grenade netT netW tab tp config) | period < fromIntegral (config ^. replayMemory.replayMemorySize) = return $ Grenade netT netW tab tp config
 trainNNConf period (Grenade netT netW tab tp config) = do
-  rands <- Pure $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
+  rands <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first $ config ^. toNetInp) rands
       -- netW' = trainGrenade (config ^. learningParams) netW trainingInstances
       netW' = foldl' (trainGrenade (config ^. learningParams)) netW (map return trainingInstances)
   return $ Grenade netT netW' tab tp config
 trainNNConf period (TensorflowProxy netT netW tab tp config) = do
-  rands <- Pure $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
+  rands <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first $ config ^. toNetInp) rands
       inputs = map (map realToFrac . fst) trainingInstances
       labels = map (realToFrac . snd) trainingInstances

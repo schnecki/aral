@@ -99,7 +99,7 @@ backwardRunSession model inp lab = do
   -- bef <- forwardRunSession model inp
   Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
   -- aft <- forwardRunSession model inp
-  -- Pure $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
+  -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
 
 copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl ()
@@ -120,7 +120,7 @@ saveModelWithLastIO model =
 saveModel :: TensorflowModel' -> Input -> Output -> MonadBorl TensorflowModel'
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-  basePath <- maybe (Pure tempDir) return (checkpointBaseFileName model)
+  basePath <- maybe (Simple tempDir) return (checkpointBaseFileName model)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName $ tensorflowModel model)
