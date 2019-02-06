@@ -30,41 +30,22 @@ import           Helper
 
 import           Control.DeepSeq                                (NFData)
 import           Control.Lens
-import           Control.Monad                                  (forM_, replicateM, when)
-import           Control.Monad.IO.Class                         (liftIO)
-import           Control.Monad.Reader
-import           Data.ByteString                                (ByteString)
-import qualified Data.ByteString                                as BS
-import qualified Data.ByteString.Char8                          as B8
-import           Data.Int                                       (Int32, Int64)
-import           Data.Int                                       (Int32, Int64)
+import           Data.Int                                       (Int64)
 import           Data.List                                      (genericLength)
-import           Data.Text                                      as T (Text, isInfixOf,
-                                                                      isPrefixOf, unpack)
 import qualified Data.Vector                                    as V
-import           Debug.Trace
-import           GHC.Exts                                       (fromList)
+import Data.Text (Text)
 import           GHC.Exts                                       (fromList)
 import           GHC.Generics
 import           Grenade                                        hiding (train)
-import           Grenade                                        hiding (train)
-import           System.IO.Temp
-import           System.Posix.Unistd                            (usleep)
-import           System.Random                                  (randomIO)
 
 
-import qualified Proto.Tensorflow.Core.Framework.Graph          as TF (GraphDef)
-import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
-import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
 import qualified TensorFlow.Build                               as TF (addNewOp,
                                                                        evalBuildT,
                                                                        explicitName, opDef,
                                                                        opDefWithName,
                                                                        opType, runBuildT,
                                                                        summaries)
-import qualified TensorFlow.ControlFlow                         as TF (withControlDependencies)
 import qualified TensorFlow.Core                                as TF hiding (value)
--- import qualified TensorFlow.GenOps.Core                         as TF (square)
 import qualified TensorFlow.GenOps.Core                         as TF (abs, add,
                                                                        approximateEqual,
                                                                        approximateEqual,
@@ -80,13 +61,6 @@ import qualified TensorFlow.GenOps.Core                         as TF (abs, add,
                                                                        sub, tanh, tanh',
                                                                        truncatedNormal)
 import qualified TensorFlow.Minimize                            as TF
-import qualified TensorFlow.Nodes                               as TF (fetchTensorVector,
-                                                                       getFetch, getNodes)
--- import qualified TensorFlow.Ops                                 as TF (abs, add, assign,
---                                                                        cast, identity',
---                                                                        matMul, mul, relu,
---                                                                        sub,
---                                                                        truncatedNormal)
 import qualified TensorFlow.Ops                                 as TF (initializedVariable,
                                                                        initializedVariable',
                                                                        placeholder,
@@ -102,11 +76,6 @@ import qualified TensorFlow.Tensor                              as TF (Ref (..),
                                                                        tensorNodeName,
                                                                        tensorRefFromName,
                                                                        tensorValueFromName)
-import qualified TensorFlow.Variable                            as TF (Variable, readValue)
-import qualified TensorFlow.Variable                            as V (initializedVariable,
-                                                                      initializedVariable',
-                                                                      zeroInitializedVariable,
-                                                                      zeroInitializedVariable')
 
 
 type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
@@ -133,12 +102,6 @@ maxVal = fromIntegral $ fromEnum (maxBound :: St)
 minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
--- | Create tensor with random values where the stddev depends on the width.
-randomParam :: (TF.MonadBuild m) => Int64 -> TF.Shape -> m (TF.Tensor TF.Build Float)
-randomParam width (TF.Shape shape) = (`TF.mul` stddev) <$> TF.truncatedNormal (TF.vector shape)
-  where
-    stddev = TF.scalar (1 / sqrt (fromIntegral width))
-
 batchSize :: Int64
 batchSize = -1                  -- Use -1 batch size to support variable sized batches.
 
@@ -150,15 +113,15 @@ modelBuilder = do
 
   -- Input layer.
   let inpLayerName = "input"
-  input <- TF.placeholder' (TF.opName .~ TF.explicitName inpLayerName) (fromList [batchSize, numInputs])  -- Input layer.
+  input <- TF.placeholder' (TF.opName .~ TF.explicitName inpLayerName) [batchSize, numInputs]  -- Input layer.
   -- Hidden layer.
   let numUnits = 20
-  hiddenWeights <- TF.initializedVariable' (TF.opName .~ "w1") =<< randomParam numInputs [numInputs, numUnits]
+  hiddenWeights <- TF.initializedVariable' (TF.opName .~ "w1") =<< randomParam (numInputs*numUnits) [numInputs, numUnits]
   hiddenBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b1") [numUnits]
   let hiddenZ = (input `TF.matMul` hiddenWeights) `TF.add` hiddenBiases
   let hidden = TF.relu hiddenZ
   -- Logits
-  outputWeights <- TF.initializedVariable' (TF.opName .~ "w2") =<< randomParam numInputs [numUnits, 1]
+  outputWeights <- TF.initializedVariable' (TF.opName .~ "w2") =<< randomParam numUnits [numUnits, 1]
   outputBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b2") [1]
   let outputs = (hidden `TF.matMul` outputWeights) `TF.add` outputBiases
   -- Output
@@ -196,7 +159,7 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  -- rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
+  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -286,11 +249,14 @@ moveRight s =
 -- tensorInt32 :: Text -> Bool
 -- tensorInt32 x = Prelude.or ([T.isInfixOf "Range" x] :: [Bool])
 
+encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a
 encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
 -- encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
+setCheckFile :: FilePath -> TensorflowModel' -> TensorflowModel'
 setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
 
+prependName :: Text -> TensorflowModel' -> TensorflowModel'
 prependName txt model = model { tensorflowModel = (tensorflowModel model)
         { inputLayerName = txt <> "/" <> (inputLayerName $ tensorflowModel model)
         , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)

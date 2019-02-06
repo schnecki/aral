@@ -35,10 +35,10 @@ type Labels = Output
 
 
 data TensorflowModel = TensorflowModel
-  { inputLayerName         :: Text -- ^ Input layer name for feeding input.
-  , outputLayerName        :: Text -- ^ Output layer name for predictions.
-  , labelLayerName         :: Text -- ^ Labels input layer name for training.
-  , trainingNode           :: TF.ControlNode -- ^ Training node.
+  { inputLayerName         :: Text                     -- ^ Input layer name for feeding input.
+  , outputLayerName        :: Text                     -- ^ Output layer name for predictions.
+  , labelLayerName         :: Text                     -- ^ Labels input layer name for training.
+  , trainingNode           :: TF.ControlNode           -- ^ Training node.
   , neuralNetworkVariables :: [TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
   , trainingVariables      :: [TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
   }
@@ -68,7 +68,7 @@ trainName = "train"
 
 
 encodeInputBatch :: Input -> TF.TensorData Float
-encodeInputBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
+encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
 
 encodeLabelBatch :: Output -> TF.TensorData Float
 encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 module Main where
 
@@ -8,14 +9,44 @@ import           ML.BORL
 
 import           Helper
 
-import           Control.Arrow   (first, second)
-import           Control.DeepSeq (NFData)
-import           Control.Lens    (set, (^.))
-import           Control.Monad   (foldM, unless, when)
+import           Control.Arrow          (first, second)
+import           Control.DeepSeq        (NFData)
+import           Control.Lens
+import           Control.Lens           (set, (^.))
+import           Control.Monad          (foldM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
 import           GHC.Generics
+import           GHC.Int                (Int32, Int64)
 import           Grenade
 import           System.IO
 import           System.Random
+
+
+import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
+                                               opDefWithName, opType, runBuildT, summaries)
+import qualified TensorFlow.Core        as TF hiding (value)
+-- import qualified TensorFlow.GenOps.Core                         as TF (square)
+import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
+                                               approximateEqual, assign, cast,
+                                               getSessionHandle, getSessionTensor,
+                                               identity', lessEqual, matMul, mul,
+                                               readerSerializeState, relu, relu', shape,
+                                               square, sub, tanh, tanh', truncatedNormal)
+import qualified TensorFlow.Minimize    as TF
+-- import qualified TensorFlow.Ops                                 as TF (abs, add, assign,
+--                                                                        cast, identity',
+--                                                                        matMul, mul, relu,
+--                                                                        sub,
+--                                                                        truncatedNormal)
+import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
+                                               placeholder, placeholder', reduceMean,
+                                               reduceSum, restore, save, scalar, vector,
+                                               zeroInitializedVariable,
+                                               zeroInitializedVariable')
+import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
+                                               tensorNodeName, tensorRefFromName,
+                                               tensorValueFromName)
+
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -33,19 +64,21 @@ nnConfig = NNConfig
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 8
   , _updateTargetInterval = 1000
-  , _trainMSEMax          = 0.05
+  , _trainMSEMax          = 0.02
   }
 
 netInp :: St -> [Double]
-netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st),
+             scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 
 main :: IO ()
 main = do
 
   net <- randomNetworkInitWith UniformInit :: IO NN
-  let rl = mkBORLUnichainGrenade initState actions actFilter params decay net nnConfig
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  rl <- mkBORLUnichainGrenade initState actions actFilter params decay net nnConfig
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -187,3 +220,48 @@ getCurrentIdx (St st) = second (fst . head . filter ((==1) . snd)) $
   zip [0..] $ map (zip [0..]) st
 
 
+modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
+modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
+
+
+-- do
+  -- let batchSize :: Int64
+  --     batchSize = -1
+  -- let numInputs :: Int64
+  --     numInputs = 3
+
+  -- -- Input layer.
+  -- let inpLayerName = "input"
+  -- input <- TF.placeholder' (TF.opName .~ TF.explicitName inpLayerName) [batchSize, numInputs]  -- Input layer.
+  -- -- Hidden layer.
+  -- let numUnits = 20
+  -- hiddenWeights <- TF.initializedVariable' (TF.opName .~ "w1") =<< randomParam (numInputs * numUnits) [numInputs, numUnits]
+  -- hiddenBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b1") [numUnits]
+  -- let hiddenZ = (input `TF.matMul` hiddenWeights) `TF.add` hiddenBiases
+  -- let hidden = TF.relu hiddenZ
+  -- -- Logits
+  -- outputWeights <- TF.initializedVariable' (TF.opName .~ "w2") =<< randomParam numUnits [numUnits, 1]
+  -- outputBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b2") [1]
+  -- let outputs = (hidden `TF.matMul` outputWeights) `TF.add` outputBiases
+  -- -- Output
+  -- let outLayerName = "output"
+  -- predictor <- TF.render $ TF.tanh' (TF.opName .~ TF.explicitName outLayerName) outputs
+
+  -- -- Data Collection
+  -- let weights = [hiddenWeights, hiddenBiases, outputWeights, outputBiases] :: [TF.Tensor TF.Ref Float]
+
+  -- -- Create training action.
+  -- let labLayerName = "labels"
+  -- labels <- TF.placeholder' (TF.opName .~ TF.explicitName labLayerName) [-1]
+  -- let loss = TF.reduceSum $ TF.square (predictor `TF.sub` labels)
+  --     adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
+  -- (trainStep, trainVars) <- TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape [[numInputs, numUnits], [numUnits], [numUnits, 1],[1]])
+
+  -- return TensorflowModel
+  --   { inputLayerName = inpLayerName
+  --   , outputLayerName = outLayerName
+  --   , labelLayerName = labLayerName
+  --   , trainingNode = trainStep
+  --   , neuralNetworkVariables = weights
+  --   , trainingVariables = trainVars
+  --   }

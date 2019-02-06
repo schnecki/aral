@@ -97,7 +97,6 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       nnSA tp idx = do
         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-
         return $ TensorflowProxy nnT nnW mempty tp nnConfig'
   v <- nnSA VTable 0
   w <- nnSA WTable 2
