@@ -64,12 +64,16 @@ nnConfig = NNConfig
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 8
   , _updateTargetInterval = 1000
-  , _trainMSEMax          = 0.02
+  , _trainMSEMax          = 0.035
   }
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st),
              scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+
+
+modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
+modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 9 TF.relu' >> fullyConnected1D 6 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
 
 
 main :: IO ()
@@ -218,9 +222,5 @@ getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) = second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
   zip [0..] $ map (zip [0..]) st
-
-
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 100 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
 
 

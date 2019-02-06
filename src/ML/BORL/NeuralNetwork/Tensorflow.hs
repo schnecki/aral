@@ -74,34 +74,28 @@ encodeLabelBatch :: Output -> TF.TensorData Float
 encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
 
 forwardRun :: TensorflowModel' -> Input -> MonadBorl Output
-forwardRun model inp = Tensorflow $ forwardRunSession model inp
-
-
-forwardRunSession :: TensorflowModel' -> Input -> TF.Session Output
-forwardRunSession model inp = do
+forwardRun model inp =
+  Tensorflow $
   let inRef = getRef (inputLayerName $ tensorflowModel model)
       outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
-  V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
+  in V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
 
-
+-- | Train tensorflow model with checks.
 backwardRun :: TensorflowModel' -> Input -> Labels -> MonadBorl ()
 backwardRun model inp lab
   | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
-  | otherwise = backwardRunSession model inp lab
+  | otherwise =
+    let inRef = getRef (inputLayerName $ tensorflowModel model)
+        labRef = getRef (labelLayerName $ tensorflowModel model)
+        inpT = encodeInputBatch inp
+        labT = encodeLabelBatch lab
+        -- in do bef <- forwardRunSession model inp
+    in Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+       -- aft <- forwardRunSession model inp
+       -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
-backwardRunSession :: TensorflowModel' -> Input -> Labels -> MonadBorl ()
-backwardRunSession model inp lab = do
-  let inRef = getRef (inputLayerName $ tensorflowModel model)
-      labRef = getRef (labelLayerName $ tensorflowModel model)
-      inpT = encodeInputBatch inp
-      labT = encodeLabelBatch lab
-  -- bef <- forwardRunSession model inp
-  Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
-  -- aft <- forwardRunSession model inp
-  -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
-
-
+-- | Copies values from one model to the other.
 copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl ()
 copyValuesFromTo from to = do
   let fromVars = neuralNetworkVariables $ tensorflowModel from
