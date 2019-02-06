@@ -59,7 +59,7 @@ nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemory         = mkReplayMemory 10000
-  , _trainBatchSize       = 32
+  , _trainBatchSize       = 1
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 8
@@ -221,47 +221,6 @@ getCurrentIdx (St st) = second (fst . head . filter ((==1) . snd)) $
 
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
+modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 100 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
 
 
--- do
-  -- let batchSize :: Int64
-  --     batchSize = -1
-  -- let numInputs :: Int64
-  --     numInputs = 3
-
-  -- -- Input layer.
-  -- let inpLayerName = "input"
-  -- input <- TF.placeholder' (TF.opName .~ TF.explicitName inpLayerName) [batchSize, numInputs]  -- Input layer.
-  -- -- Hidden layer.
-  -- let numUnits = 20
-  -- hiddenWeights <- TF.initializedVariable' (TF.opName .~ "w1") =<< randomParam (numInputs * numUnits) [numInputs, numUnits]
-  -- hiddenBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b1") [numUnits]
-  -- let hiddenZ = (input `TF.matMul` hiddenWeights) `TF.add` hiddenBiases
-  -- let hidden = TF.relu hiddenZ
-  -- -- Logits
-  -- outputWeights <- TF.initializedVariable' (TF.opName .~ "w2") =<< randomParam numUnits [numUnits, 1]
-  -- outputBiases <- TF.zeroInitializedVariable' (TF.opName .~ "b2") [1]
-  -- let outputs = (hidden `TF.matMul` outputWeights) `TF.add` outputBiases
-  -- -- Output
-  -- let outLayerName = "output"
-  -- predictor <- TF.render $ TF.tanh' (TF.opName .~ TF.explicitName outLayerName) outputs
-
-  -- -- Data Collection
-  -- let weights = [hiddenWeights, hiddenBiases, outputWeights, outputBiases] :: [TF.Tensor TF.Ref Float]
-
-  -- -- Create training action.
-  -- let labLayerName = "labels"
-  -- labels <- TF.placeholder' (TF.opName .~ TF.explicitName labLayerName) [-1]
-  -- let loss = TF.reduceSum $ TF.square (predictor `TF.sub` labels)
-  --     adamConfig = TF.AdamConfig { TF.adamLearningRate = 0.01 , TF.adamBeta1 = 0.9 , TF.adamBeta2 = 0.999 , TF.adamEpsilon = 1e-8 }
-  -- (trainStep, trainVars) <- TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape [[numInputs, numUnits], [numUnits], [numUnits, 1],[1]])
-
-  -- return TensorflowModel
-  --   { inputLayerName = inpLayerName
-  --   , outputLayerName = outLayerName
-  --   , labelLayerName = labLayerName
-  --   , trainingNode = trainStep
-  --   , neuralNetworkVariables = weights
-  --   , trainingVariables = trainVars
-  --   }

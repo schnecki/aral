@@ -55,6 +55,8 @@ instance Monad MonadBorl where
                                               Pure x       -> lift x
                                               Tensorflow y -> y
   Pure a >>= action = unsafePerformIO $ fmap action a
+  {-# NOINLINE (>>=) #-}
+
   -- runIdentity <$>
   --   (_ $ a >>= \aval -> case action aval of
   --                                Pure x -> x >>= \xval -> return (Pure xval :: MonadBorl Identity b)
