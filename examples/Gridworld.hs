@@ -53,7 +53,7 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 3 20, Relu, FullyConnected 20 8, Relu, FullyConnected 8 4, Relu, FullyConnected 4 1, Tanh] '[ 'D1 3, 'D1 20, 'D1 20, 'D1 8, 'D1 8, 'D1 4, 'D1 4, 'D1 1, 'D1 1]
+type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
@@ -79,9 +79,9 @@ modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 9 TF.relu' >> ful
 main :: IO ()
 main = do
 
-  net <- randomNetworkInitWith UniformInit :: IO NN
-  rl <- mkBORLUnichainGrenade initState actions actFilter params decay net nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  nn <- randomNetworkInitWith UniformInit :: IO NN
+  rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

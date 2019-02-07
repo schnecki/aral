@@ -11,7 +11,7 @@ import           Grenade
 
 data NNConfig k = NNConfig
   { _toNetInp             :: !(k -> [Double])
-  , _replayMemory         :: !(ReplayMemory k)
+  , _replayMemory         :: !(ReplayMemory (k, ActionIndex))
   , _trainBatchSize       :: !Int
   , _learningParams       :: !LearningParameters
   , _prettyPrintElems     :: ![k]

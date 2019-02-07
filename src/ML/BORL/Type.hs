@@ -51,12 +51,12 @@ data BORL s = BORL
   , _gammas        :: !(Double, Double) -- ^ Two gamma values in ascending order
 
   -- Values:
-  , _rho           :: !(Either Double (Proxy (s,ActionIndex))) -- ^ Either unichain or multichain y_{-1} values.
+  , _rho           :: !(Either Double (Proxy s)) -- ^ Either unichain or multichain y_{-1} values.
   , _psis          :: !(Double, Double, Double)                -- ^ Exponentially smoothed psi values.
-  , _v             :: !(Proxy (s,ActionIndex))                 -- ^ Bias values (y_0).
-  , _w             :: !(Proxy (s,ActionIndex))                 -- ^ y_1 values.
-  , _r0            :: !(Proxy (s,ActionIndex))                 -- ^ Discounted values with first gamma value.
-  , _r1            :: !(Proxy (s,ActionIndex))                 -- ^ Discounted values with second gamma value.
+  , _v             :: !(Proxy s)                 -- ^ Bias values (y_0).
+  , _w             :: !(Proxy s)                 -- ^ y_1 values.
+  , _r0            :: !(Proxy s)                 -- ^ Discounted values with first gamma value.
+  , _r1            :: !(Proxy s)                 -- ^ Discounted values with second gamma value.
 
   -- Stats:
   , _visits        :: !(M.Map s Integer)                       -- ^ Counts the visits of the states
@@ -92,8 +92,8 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table]
       scopes = concat $ replicate 4 ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
-  let netInpInitState = (nnConfig' ^. toNetInp) (initialState, idxStart)
-      nnSA :: ProxyType -> Int -> IO (Proxy (s, ActionIndex))
+  let netInpInitState = (nnConfig' ^. toNetInp) initialState
+      nnSA :: ProxyType -> Int -> IO (Proxy s)
       nnSA tp idx = do
         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
@@ -135,7 +135,7 @@ mkBORLUnichainGrenade ::
   -> IO (BORL s)
 mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy (s, ActionIndex)
+  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy s
   return $
     checkGrenade net nnConfig $
     BORL
@@ -168,7 +168,7 @@ mkBORLMultichainGrenade ::
   -> IO (BORL s)
 mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy (s, ActionIndex)
+  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy s
   return $ checkGrenade net nnConfig $ BORL
     (zip [0 ..] as)
     asFilter
@@ -211,24 +211,23 @@ checkGrenade ::
   -> BORL s
   -> BORL s
 checkGrenade _ nnConfig borl
-  | nnInpNodes /= stInp + 1 = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show (stInp + 1)
-  | nnOutNodes /= 1 = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be 1"
+  | nnInpNodes /= stInp = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show stInp
+  | nnOutNodes /= fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show nrActs
   | otherwise = borl
   where
     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
     stInp = length ((nnConfig ^. toNetInp) (borl ^. s))
+    nrActs = length (borl ^. actionList)
 
 
 -- | Converts the neural network state configuration to a state-action configuration.
-mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> IO (NNConfig (s, ActionIndex))
+mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> IO (NNConfig s)
 mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c mse) = do
   vec <- V.new sz
   let rm' = ReplayMemory vec sz
-  return $ NNConfig (toSA inp) rm' bs lp (ppSA pp) sc c mse
+  return $ NNConfig inp rm' bs lp pp sc c mse
   where
-    maxVal = fromIntegral (length as)
-    toSA :: (s -> [Double]) -> (s, ActionIndex) -> [Double]
-    toSA f (state, a) = f state ++ [scaleNegPosOne (0,maxVal) (fromIntegral a)]
-    ppSA :: [s] -> [(s, ActionIndex)]
-    ppSA = concatMap (\k -> map ((k,) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))
+    -- maxVal = fromIntegral (length as)
+    -- ppSA :: [s] -> [(s, ActionIndex)]
+    -- ppSA = concatMap (\k -> map ((k,) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))

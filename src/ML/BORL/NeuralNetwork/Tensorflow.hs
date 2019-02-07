@@ -29,9 +29,9 @@ import qualified TensorFlow.Variable                            as TF hiding (as
 
 import           ML.BORL.Types
 
-type Output = [Float]
-type Input = [[Float]]
-type Labels = Output
+type Output = [[Float]]
+type Inputs = [[Float]]
+type Labels = [[Float]]
 
 
 data TensorflowModel = TensorflowModel
@@ -49,7 +49,7 @@ instance NFData TensorflowModel where
 data TensorflowModel' = TensorflowModel'
   { tensorflowModel        :: TensorflowModel
   , checkpointBaseFileName :: Maybe FilePath
-  , lastInputOutputTuple   :: Maybe ([Float], Float)
+  , lastInputOutputTuple   :: Maybe ([Float], [Float])
   , tensorflowModelBuilder :: TF.Session TensorflowModel
   }
 
@@ -67,22 +67,30 @@ trainName :: String
 trainName = "train"
 
 
-encodeInputBatch :: Input -> TF.TensorData Float
+encodeInputBatch :: Inputs -> TF.TensorData Float
 encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
 
-encodeLabelBatch :: Output -> TF.TensorData Float
-encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
+encodeLabelBatch :: Labels -> TF.TensorData Float
+encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
 
-forwardRun :: TensorflowModel' -> Input -> MonadBorl Output
+forwardRun :: TensorflowModel' -> Inputs -> MonadBorl Output
 forwardRun model inp =
   Tensorflow $
   let inRef = getRef (inputLayerName $ tensorflowModel model)
       outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
-  in V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
+      nrOuts = length inp
+   in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
+         return $ separate (length res `mod` nrOuts) res []
+  where
+    separate _ [] acc = reverse acc
+    separate len xs acc
+      | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
+      | otherwise = separate len (drop len xs) (take len xs : acc)
+
 
 -- | Train tensorflow model with checks.
-backwardRun :: TensorflowModel' -> Input -> Labels -> MonadBorl ()
+backwardRun :: TensorflowModel' -> Inputs -> Labels -> MonadBorl ()
 backwardRun model inp lab
   | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
   | otherwise =
@@ -91,7 +99,9 @@ backwardRun model inp lab
         inpT = encodeInputBatch inp
         labT = encodeLabelBatch lab
         -- in do bef <- forwardRunSession model inp
-    in Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+    in
+      -- TODO: run forward and then backward
+      Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
        -- aft <- forwardRunSession model inp
        -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
@@ -111,7 +121,7 @@ saveModelWithLastIO model =
     Nothing     -> error "No last IO in saveModelWithLastIO"
     Just (i, o) -> saveModel model [i] [o]
 
-saveModel :: TensorflowModel' -> Input -> Output -> MonadBorl TensorflowModel'
+saveModel :: TensorflowModel' -> Inputs -> Labels -> MonadBorl TensorflowModel'
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
   basePath <- maybe (Simple tempDir) return (checkpointBaseFileName model)
@@ -141,7 +151,7 @@ buildTensorflowModel :: TensorflowModel' -> MonadBorl ()
 buildTensorflowModel tfModel = void $ Tensorflow $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
 
 
-restoreModel :: TensorflowModel' -> Input -> Output -> MonadBorl ()
+restoreModel :: TensorflowModel' -> Inputs -> Labels -> MonadBorl ()
 restoreModel tfModel inp lab = Tensorflow $ do
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName

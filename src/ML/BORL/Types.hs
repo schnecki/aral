@@ -20,6 +20,11 @@ type MSE = Double               -- ^ Mean squared error
 type MaxValue = Double
 type MinValue = Double
 
+
+replace :: Int -> a -> [a] -> [a]
+replace idx val ls = take (idx-1) ls ++ val : drop (idx+1) ls
+
+
 -- ^ Monad that distinguished between Simple (Grenade, Table) methods and Tensorflow sessions.
 data MonadBorl a where
   Tensorflow :: TF.SessionT IO a -> MonadBorl a

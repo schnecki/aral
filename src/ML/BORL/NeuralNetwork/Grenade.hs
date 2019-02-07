@@ -3,11 +3,12 @@
 {-# LANGUAGE GADTs            #-}
 {-# LANGUAGE TypeFamilies     #-}
 
-module ML.BORL.NeuralNetwork.Training
+module ML.BORL.NeuralNetwork.Grenade
     ( trainGrenade
     ) where
 
 import           ML.BORL.NeuralNetwork.Conversion
+import           ML.BORL.Types
 
 
 import           Control.Parallel.Strategies
@@ -25,7 +26,7 @@ trainGrenade ::
      (NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
   => LearningParameters
   -> Network layers shapes
-  -> [([Double], Double)]
+  -> [(([Double], ActionIndex), Double)]
   -> Network layers shapes
 trainGrenade lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs $ tapesAndActual chs
   where
