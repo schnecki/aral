@@ -84,8 +84,8 @@ instance (NFData k) => NFData (Proxy k) where
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
 insert :: forall k . (NFData k, Ord k) => Period -> (k, ActionIndex) -> Double -> Proxy k -> T.MonadBorl (Proxy k)
 insert _ k v (Table m)          = return $ Table (M.insert k v m)
-insert period (st, idx) v px = do
-  replMem' <- Simple $ addToReplayMemory period (st, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
+insert period k@(st, idx) v px = do
+  replMem' <- Simple $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
   if period < fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
     then return $ proxyNNStartup .~ M.insert (st,idx) v tab $ proxyNNConfig .~ config' $ px
@@ -159,11 +159,8 @@ trainNNConf period (Grenade netT netW tab tp config nrActs) = do
   return $ Grenade netT netW' tab tp config nrActs
 trainNNConf period (TensorflowProxy netT netW tab tp config nrActs) = do
   rands <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
-  let trainingInstances = map (first $ config ^. toNetInp) rands
-      inputs = map (map realToFrac . fst) trainingInstances
-      labels = map (realToFrac . snd) trainingInstances
-  -- mapM_ (\(i,l) -> backwardRun netW [i] [l]) (zip inputs labels)
-  backwardRun netW inputs labels
+  let trainingInstances = map (first (first $ config ^. toNetInp)) rands
+  backwardRunRepMemData netW trainingInstances
   return $ TensorflowProxy netT netW tab tp config nrActs
 
 trainNNConf _ _ = error "called trainNNConf on non-neural network proxy (programming error)"
@@ -198,16 +195,16 @@ lookupActionsNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neur
 lookupNeuralNetworkUnscaled :: LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl Double
 lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) st)
 lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) st)
-lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) st]
-lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
+lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . head <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) st]
+lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl [Double]
 lookupActionsNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) st)
 lookupActionsNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT $ (conf ^. toNetInp) st)
-lookupActionsNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = map realToFrac <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) st]
-lookupActionsNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = map realToFrac <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
+lookupActionsNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = map realToFrac . head <$> forwardRun netW [map realToFrac $ (conf^. toNetInp) st]
+lookupActionsNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = map realToFrac . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 

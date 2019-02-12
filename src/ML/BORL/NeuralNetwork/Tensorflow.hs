@@ -29,7 +29,7 @@ import qualified TensorFlow.Variable                            as TF hiding (as
 
 import           ML.BORL.Types
 
-type Output = [[Float]]
+type Outputs = [[Float]]
 type Inputs = [[Float]]
 type Labels = [[Float]]
 
@@ -73,7 +73,7 @@ encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head
 encodeLabelBatch :: Labels -> TF.TensorData Float
 encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
 
-forwardRun :: TensorflowModel' -> Inputs -> MonadBorl Output
+forwardRun :: TensorflowModel' -> Inputs -> MonadBorl Outputs
 forwardRun model inp =
   Tensorflow $
   let inRef = getRef (inputLayerName $ tensorflowModel model)
@@ -81,13 +81,19 @@ forwardRun model inp =
       inpT = encodeInputBatch inp
       nrOuts = length inp
    in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
-         return $ separate (length res `mod` nrOuts) res []
+         return $ separate (length res `div` nrOuts) res []
   where
     separate _ [] acc = reverse acc
     separate len xs acc
       | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
       | otherwise = separate len (drop len xs) (take len xs : acc)
 
+backwardRunRepMemData :: TensorflowModel' -> [(([Double], ActionIndex), Double)] -> MonadBorl ()
+backwardRunRepMemData model values = do
+  let inputs = map (map realToFrac.fst.fst) values
+  outputs <- forwardRun model inputs
+  let labels = zipWith (\((_,idx), val) outp -> replace idx (realToFrac val) outp) values outputs
+  backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.
 backwardRun :: TensorflowModel' -> Inputs -> Labels -> MonadBorl ()
