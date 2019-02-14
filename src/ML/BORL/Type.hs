@@ -97,7 +97,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       nnSA tp idx = do
         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW mempty tp nnConfig'
+        return $ TensorflowProxy nnT nnW mempty tp nnConfig' (length as)
   v <- nnSA VTable 0
   w <- nnSA WTable 2
   r0 <- nnSA R0Table 4
@@ -106,7 +106,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> Tensorflow modelBuilderFun
-      saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, 0)) modelBuilderFun) [map realToFrac netInpInitState] [0]
+      saveModel (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, replicate (length as) 0)) modelBuilderFun) [map realToFrac netInpInitState] [replicate (length as) 0]
     prependName txt model =
       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
     name VTable  = "v"
@@ -135,7 +135,7 @@ mkBORLUnichainGrenade ::
   -> IO (BORL s)
 mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy s
+  let nnSA tp = Grenade net net mempty tp nnConfig' (length as) :: Proxy s
   return $
     checkGrenade net nnConfig $
     BORL
@@ -168,7 +168,7 @@ mkBORLMultichainGrenade ::
   -> IO (BORL s)
 mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = do
   nnConfig' <- mkNNConfigSA as asFilter nnConfig
-  let nnSA tp = Grenade net net mempty tp nnConfig' :: Proxy s
+  let nnSA tp = Grenade net net mempty tp nnConfig' (length as) :: Proxy s
   return $ checkGrenade net nnConfig $ BORL
     (zip [0 ..] as)
     asFilter

@@ -60,13 +60,13 @@ restoreTensorflowModels borl = do
   restoreProxy (borl ^. r1)
 
   where restoreProxy px = case px of
-          TensorflowProxy netT netW _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
+          TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
           _ -> return ()
         isTensorflowProxy TensorflowProxy{} = True
         isTensorflowProxy _                 = False
         buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
-          Just (TensorflowProxy netT _ _ _ _) -> buildTensorflowModel netT
-          _                                   -> return ()
+          Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
+          _                                     -> return ()
 
 
 saveTensorflowModels :: BORL s -> MonadBorl (BORL s)
@@ -78,7 +78,7 @@ saveTensorflowModels borl = do
   return borl
 
   where saveProxy px = case px of
-          TensorflowProxy netT netW _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
+          TensorflowProxy netT netW _ _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
           _ -> return ()
 
 

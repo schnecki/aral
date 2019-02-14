@@ -57,8 +57,8 @@ mkListFromNeuralNetwork mPeriod prettyAction scaled pr
       return $ map (first prettyAction) $ zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd . snd) list))
   | otherwise = map (first prettyAction) <$> mkNNList scaled pr
   where (tab,config) = case pr of
-          P.Grenade _ _ tab' _ config' -> (tab', config')
-          P.TensorflowProxy _ _ tab' _ config' -> (tab', config')
+          P.Grenade _ _ tab' _ config' _ -> (tab', config')
+          P.TensorflowProxy _ _ tab' _ config' _ -> (tab', config')
           _ -> error "missing implementation in mkListFromNeuralNetwork"
 
 prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> MonadBorl Doc
@@ -141,14 +141,14 @@ prettyBORLTables t1 t2 t3 borl = do
     scalingText =
       case borl ^. v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf ->
+        P.Grenade _ _ _ _ conf _ ->
           text
             (show
                ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
                , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
-        P.TensorflowProxy _ _ _ _ conf ->
+        P.TensorflowProxy _ _ _ _ conf _ ->
           text
             (show
                ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
@@ -158,17 +158,17 @@ prettyBORLTables t1 t2 t3 borl = do
 
     nnBatchSize = case borl ^. v of
       P.Table {} -> empty
-      P.Grenade _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
-      P.TensorflowProxy _ _ _ _ conf -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+      P.Grenade _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
     nnReplMemSize = case borl ^. v of
       P.Table {} -> empty
-      P.Grenade _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
-      P.TensorflowProxy _ _ _ _ conf -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
+      P.Grenade _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
+      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
     nnLearningParams = case borl ^. v of
       P.Table {} -> empty
-      P.Grenade _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
+      P.Grenade _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
-      P.TensorflowProxy _ _ _ _ conf -> let LearningParameters l m l2 = conf ^. learningParams
+      P.TensorflowProxy _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 
@@ -181,13 +181,13 @@ prettyBORL borl = runMonadBorl $ do
   reloadNets (borl ^. r1)
   prettyBORLTables True True True borl
     where reloadNets px = case px of
-            P.TensorflowProxy netT netW _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
+            P.TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
             _ -> return ()
           isTensorflowProxy P.TensorflowProxy{} = True
           isTensorflowProxy _                   = False
           buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
-            Just (P.TensorflowProxy netT _ _ _ _) -> buildTensorflowModel netT
-            _                                     -> return ()
+            Just (P.TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
+            _                                       -> return ()
 
 instance (Ord s, Show s) => Show (BORL s) where
   show borl = show $ unsafePerformIO $ prettyBORL borl
