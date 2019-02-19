@@ -120,12 +120,15 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
       fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = config ^. trainMSEMax
-    -- net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
-    net' = trainGrenade lp netW (zip kScaled vScaled)
+    net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
+    -- net' = trainGrenade lp netW (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
+    vUnscaled = map snd dataset
     kScaled = map (first (config ^. toNetInp) . fst) dataset
-    getValue k = (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k vS -> abs (vS - getValue k)) (map fst dataset) vScaled)
+    getValue k =
+      unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
+      (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> abs (v - getValue k)) (map fst dataset) vUnscaled) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) =
   let mseMax = config ^. trainMSEMax
       kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
