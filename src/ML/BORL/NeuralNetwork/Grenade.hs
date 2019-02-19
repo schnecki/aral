@@ -32,9 +32,13 @@ trainGrenade lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs 
   where
     tapesAndActual = parMap rdeepseq runForward
     runForward ((inp, _), _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)
-    mkGradients ((_, idx), target) (tape, output) = fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net (toLabel idx target output)))
-    toLabel idx target output = map (max (-trainMaxVal) . min trainMaxVal) (replace idx target output)
+    mkGradients ((_, idx), target) (tape, output) = fst $ runGradient net tape loss
+      where loss = mkLoss (toLastShapes net output) (toLastShapes net (toLabel idx target output))
+    toLabel idx target output =
       -- trace ("inp/target/output: " ++ show (inp, target, output)) $
+      -- trace ("label repl:" ++ show output)
+      -- trace ("label: " ++ show (replace idx target output))
+      map (max (-trainMaxVal) . min trainMaxVal) (replace idx target output)
 
 
 mkLoss :: (Fractional a) => a -> a -> a

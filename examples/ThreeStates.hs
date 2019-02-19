@@ -78,7 +78,7 @@ import qualified TensorFlow.Tensor                              as TF (Ref (..),
                                                                        tensorValueFromName)
 
 
-type NN = Network '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 1, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 1, 'D1 1]
+type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig St
 nnConfig = NNConfig
@@ -102,12 +102,15 @@ maxVal = fromIntegral $ fromEnum (maxBound :: St)
 minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
+numActions :: Int64
+numActions = genericLength actions
+
 numInputs :: Int64
-numInputs = 2
+numInputs = genericLength (netInp initState)
 
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = buildModel $ inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
+modelBuilder = buildModel $ inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >> trainingByAdam1D
 
 main :: IO ()
 main = do
@@ -115,7 +118,7 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
+  -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
   rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
   -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
@@ -185,7 +188,7 @@ moveLeft s =
   return $
   case s of
     A -> (2, B)
-    B -> (0, A)
+    B -> error "not allowed"
     C -> (2, A)
 
 moveRight :: St -> IO (Reward,St)
@@ -194,17 +197,8 @@ moveRight s =
   case s of
     A -> (0, C)
     B -> (0, A)
-    C -> (2, A)
+    C -> error "not allowed"
 
-
--- tensorNameFilter :: Text -> Bool
--- tensorNameFilter x = not $ Prelude.or ([T.isInfixOf "NoOp" x, T.isInfixOf "Save" x, T.isInfixOf "AssignVariableOp" x] :: [Bool])
-
--- tensorFloat :: Text -> Bool
--- tensorFloat x = not $ Prelude.or ([tensorInt32 x ] :: [Bool])
-
--- tensorInt32 :: Text -> Bool
--- tensorInt32 x = Prelude.or ([T.isInfixOf "Range" x] :: [Bool])
 
 encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a
 encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
@@ -219,74 +213,4 @@ prependName txt model = model { tensorflowModel = (tensorflowModel model)
         , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
         , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
         }}
-
-
--- createModel :: IO [TensorflowModel']
--- createModel = do
-
---   let inp = encodeImageBatch [[0.7 :: Float,0.4]]
---       lab = encodeLabelBatch [0.41 :: Float]
---   -- SESSION 1
-
---   forM (["r1_target", "r1_worker"] :: [Text]) $ \scopeName -> TF.runSession $ do
---     let mkTensorflow' model = TensorflowModel' model Nothing Nothing (TF.withNameScope scopeName modelBuilder)
---     model <- setCheckFile ("/tmp/" <> T.unpack scopeName) . prependName scopeName . mkTensorflow' <$> TF.withNameScope scopeName modelBuilder
---     -- TF.addGraphDef graphDef
---     let inRef = TF.tensorFromName (inputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
---         outRef = TF.tensorFromName (outputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
---         labRef = TF.tensorFromName (labelLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
-
---     varVals :: [V.Vector Float] <- TF.runWithFeeds [TF.feed inRef inp, TF.feed labRef lab] (neuralNetworkVariables $ tensorflowModel model)
---     liftIO $ putStrLn $ "SESS 1 Weights: " ++ show (V.toList <$> varVals)
---     liftIO $ putStrLn $ "Saving model " <> T.unpack scopeName
---     saveModel model [[0,0]] [0]
---     liftIO $ putStrLn "Model saved"
---     return model
-
--- testRun :: TensorflowModel' -> IO ()
--- testRun model = do
---   -- print $ "TempDir: " ++ tempDir
-
---   let inp = encodeImageBatch [[0.7 :: Float,0.4]]
---       lab = encodeLabelBatch [0.41 :: Float]
-
---   let inRef = TF.tensorFromName (inputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
---       outRef = TF.tensorFromName (outputLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
---       labRef = TF.tensorFromName (labelLayerName $ tensorflowModel model) :: TF.Tensor TF.Ref Float
-
---   TF.runSession $ do
-
---     -- Restore training config and weights afterwards as the first operations learns/modifies weights
---     restoreModel model [[0,0]] [0]
---     varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel model)
---     liftIO $ putStrLn $ "SESS 2 Weights: " ++ show (V.toList <$> varVals)
---     bef <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     liftIO $ putStrLn $ "START SESS 2: " ++ show  bef
-
---     forM_ ([0..3000] :: [Int]) $ \i -> do
---       let bs = 1
---       (x1Data :: [Float]) <- liftIO $ replicateM bs randomIO
---       (x2Data :: [Float]) <- liftIO $ replicateM bs randomIO
---       let xData = [[x1,x2] | x1 <- x1Data, x2 <- x2Data ]
---       let yData = map (\(x1:x2:_) -> x1 * 0.3 + x2 * 0.5 + 0.0) xData
---       backwardRunSession model xData yData
-
---       when (i `mod` 100 == 0) $ do
---         res <- forwardRunSession model [[0.7, 0.4]]
---         liftIO $ putStrLn $ "Res/Value: " ++ show  res
---         varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel model)
---         liftIO $ putStrLn $ "Weights 1: " ++ show (V.toList <$> varVals)
---         varVals :: [V.Vector Float] <- TF.run (neuralNetworkVariables $ tensorflowModel model)
---         liftIO $ putStrLn $ "Weights 2: " ++ show (V.toList <$> varVals)
---         res <- forwardRunSession model [[0.7, 0.4]]
---         liftIO $ putStrLn $ "Result: " ++ show res
---     saveModel model [[0.7,0.4]] [0.41]
-
---   -- Restore and read
---   TF.runSession $ do
---     restoreModel model [[0.7,0.4]] [0.41]
---     aft <- head . V.toList <$> TF.runWithFeeds [TF.feed inRef inp] outRef
---     res <- forwardRunSession model [[0.7, 0.4]]
---     liftIO $ putStrLn $ "END SESS 2: " ++ show  (aft, res)
-
 

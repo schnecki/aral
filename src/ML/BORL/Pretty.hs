@@ -9,16 +9,17 @@ module ML.BORL.Pretty
 import           ML.BORL.Action
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
-import           ML.BORL.Proxy         (mkNNList)
 import qualified ML.BORL.Proxy         as P
+import           ML.BORL.Proxy.Ops     (mkNNList)
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Arrow         (first, second)
+import           Control.Arrow         (first, second, (&&&))
 import           Control.Lens
 import           Data.Function         (on)
-import           Data.List             (find, sortBy)
+import           Data.List             (find, sort, sortBy)
 import qualified Data.Map.Strict       as M
+import qualified Data.Text             as T
 import           Grenade
 import           Prelude               hiding ((<>))
 import           System.IO.Unsafe      (unsafePerformIO)
@@ -31,54 +32,58 @@ commas = 4
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
-prettyTable :: (Ord k', Show k') => Period -> (k -> k') -> P.Proxy k -> MonadBorl Doc
-prettyTable period prettyKey p = vcat <$> prettyTableRows (Just period) prettyKey p
+prettyTable :: (Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
+prettyTable borl period prettyKey prettyIdx p = vcat <$> prettyTableRows borl (Just period) prettyKey prettyIdx p
 
-prettyTableRows :: (Ord k', Show k') => Maybe Period -> (k -> k') -> P.Proxy k -> MonadBorl [Doc]
-prettyTableRows mPeriod prettyAction p =
+prettyTableRows :: (Ord k', Show k') => BORL k -> Maybe Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
+prettyTableRows borl mPeriod prettyAction prettyActionIdx p =
   case p of
-    P.Table m -> return $ map (\(k, val) -> text (show k) <> colon <+> printFloat val) (sortBy (compare `on` fst) $ M.toList (M.mapKeys prettyAction m))
+    P.Table m -> return $ map (\((k,idx),val) -> prettyActionEntry id prettyActionIdx k idx <> colon <+> printFloat val) $
+                 sortBy (compare `on` fst) $ M.toList (M.mapKeys (first prettyAction) m)
     -- pr | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) -> prettyTableRows mPeriod prettyAction (P.Table tab)
     --   where (tab, config) = case pr of
     --           P.Grenade _ _ tab' _ config' -> (tab', config')
     --           P.Tensorflow _ _ tab' _ config' -> (tab', config')
     --           _ -> error "missing implementation in mkListFromNeuralNetwork"
     pr -> do
-      mfalse <- mkListFromNeuralNetwork mPeriod prettyAction False pr
-      mtrue <- mkListFromNeuralNetwork mPeriod prettyAction True pr
-      return $ map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mfalse) ++ [text "---"] ++
-        map (\(k, (valT, valW)) -> text (show k) <> colon <+> printFloat valT <+> text "  " <+> printFloat valW) (sortBy (compare `on` fst) mtrue)
+      mfalse <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx False pr
+      mtrue <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx True pr
+      let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
+          unfoldActs list = concatMap (\(f,(ts,ws)) -> zipWith3 (\nr t w -> (f nr, (t, w))) [0..] ts ws) list
+      return $ map printFun (unfoldActs mfalse) ++ [text "---"] ++ map printFun (unfoldActs mtrue)
 
 
-mkListFromNeuralNetwork :: (Integral a) => Maybe a -> (k -> c) -> Bool -> P.Proxy k -> MonadBorl [(c, (Double, Double))]
-mkListFromNeuralNetwork mPeriod prettyAction scaled pr
-  | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = do
-      list <- mkNNList scaled pr
-      return $ map (first prettyAction) $ zip (map fst $ M.toList tab) (zip (map snd $ M.toList tab) (map (snd . snd) list))
-  | otherwise = map (first prettyAction) <$> mkNNList scaled pr
+prettyActionEntry :: (Show k') => (k -> k') -> (ActionIndex -> Doc) -> k -> ActionIndex -> Doc
+prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> pActIdx actIdx
+
+
+mkListFromNeuralNetwork :: (Show k', Integral a) => BORL k -> Maybe a -> (k -> k') -> (ActionIndex -> Doc) -> Bool -> P.Proxy k -> MonadBorl [(ActionIndex -> Doc, ([Double], [Double]))]
+mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx scaled pr
+  | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
+  | otherwise = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
   where (tab,config) = case pr of
           P.Grenade _ _ tab' _ config' _ -> (tab', config')
           P.TensorflowProxy _ _ tab' _ config' _ -> (tab', config')
           _ -> error "missing implementation in mkListFromNeuralNetwork"
 
-prettyTablesState :: (Ord k', Ord k1', Show k', Show k1') => Period -> (k -> k') -> P.Proxy k -> (k1 -> k1') -> P.Proxy k1 -> MonadBorl Doc
-prettyTablesState period p1 m1 p2 m2 = do
-  rows1 <- prettyTableRows (Just period) p1 m1
-  rows2 <- prettyTableRows (Just period) p2 m2
+prettyTablesState :: (Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
+prettyTablesState borl period p1 pIdx m1 p2 m2 = do
+  rows1 <- prettyTableRows borl (Just period) p1 pIdx m1
+  rows2 <- prettyTableRows borl (Just period) p2 pIdx m2
   return $ vcat $ zipWith (\x y -> x $$ nest 40 y) rows1 rows2
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
 prettyBORLTables t1 t2 t3 borl = do
 
-  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState (borl ^. t) prettyAction m1 prettyAction m2
+  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
   let mkErr scale = case (borl ^. r1, borl ^. r0) of
            (P.Table rm1, P.Table rm0) -> return $ P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
            (prNN1, prNN0) -> do
-             n1 <- mkNNList scale prNN1
-             n0 <- mkNNList scale prNN0
-             return $ P.Table $ M.fromList $ zipWith subtr (map (second fst) n1) (map (second fst) n0)
+             n1 <- mkNNList borl scale prNN1
+             n0 <- mkNNList borl scale prNN0
+             return $ P.Table $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith3 (\nr t w -> ((k, nr), t-w)) [0..] ts ws) (map (second fst) n1) (map (second fst) n0)
   errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3
@@ -87,9 +92,9 @@ prettyBORLTables t1 t2 t3 borl = do
   prettyRhoVal <- case borl ^. rho of
        Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
        Right m  -> do
-         prAct <- prettyTable (borl ^. t) prettyAction m
+         prAct <- prettyTable borl (borl ^. t) prettyAction prettyActionIdx m
          return $ text "Rho" $+$ prAct
-  prettyVisits <- prettyTable (borl ^. t) id (P.Table vis)
+  prettyVisits <- prettyTable borl (borl ^. t) id (const empty) (P.Table vis)
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1)
   return $
@@ -135,9 +140,11 @@ prettyBORLTables t1 t2 t3 borl = do
     text "Visits [%]" $+$
     prettyVisits
   where
-    vis = M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
+    vis = M.mapKeys (\x -> (x,0)) $ M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+    -- prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+    prettyAction st = st
+    prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     scalingText =
       case borl ^. v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

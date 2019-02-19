@@ -14,7 +14,7 @@ module ML.BORL.Type where
 import           ML.BORL.Action
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
-import           ML.BORL.Proxy
+import           ML.BORL.Proxy.Type
 import           ML.BORL.Types
 
 import           Control.DeepSeq

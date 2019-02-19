@@ -22,7 +22,7 @@ type MinValue = Double
 
 
 replace :: Int -> a -> [a] -> [a]
-replace idx val ls = take (idx-1) ls ++ val : drop (idx+1) ls
+replace idx val ls = take idx ls ++ val : drop (idx+1) ls
 
 
 -- ^ Monad that distinguished between Simple (Grenade, Table) methods and Tensorflow sessions.

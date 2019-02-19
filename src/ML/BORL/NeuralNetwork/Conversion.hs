@@ -14,6 +14,7 @@ import           Grenade
 import           Numeric.LinearAlgebra.Static
 -- import           Unsafe.Coerce
 
+import           Debug.Trace
 
 -------------------- Conversion --------------------
 
