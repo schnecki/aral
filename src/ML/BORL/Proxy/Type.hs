@@ -20,6 +20,7 @@ module ML.BORL.Proxy.Type
     , lookupNeuralNetworkUnscaled
     , lookupActionsNeuralNetwork
     , lookupActionsNeuralNetworkUnscaled
+    , getMinMaxVal
     ) where
 
 
@@ -119,7 +120,8 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
       fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = config ^. trainMSEMax
-    net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
+    -- net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
+    net' = trainGrenade lp netW (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     kScaled = map (first (config ^. toNetInp) . fst) dataset
     getValue k = (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)

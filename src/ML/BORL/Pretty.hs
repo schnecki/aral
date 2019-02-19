@@ -32,10 +32,10 @@ commas = 4
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
-prettyTable :: (Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
+prettyTable :: (Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
 prettyTable borl period prettyKey prettyIdx p = vcat <$> prettyTableRows borl (Just period) prettyKey prettyIdx p
 
-prettyTableRows :: (Ord k', Show k') => BORL k -> Maybe Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
+prettyTableRows :: (Eq k, Ord k', Show k') => BORL k -> Maybe Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
 prettyTableRows borl mPeriod prettyAction prettyActionIdx p =
   case p of
     P.Table m -> return $ map (\((k,idx),val) -> prettyActionEntry id prettyActionIdx k idx <> colon <+> printFloat val) $
@@ -49,7 +49,7 @@ prettyTableRows borl mPeriod prettyAction prettyActionIdx p =
       mfalse <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx False pr
       mtrue <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx True pr
       let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
-          unfoldActs list = concatMap (\(f,(ts,ws)) -> zipWith3 (\nr t w -> (f nr, (t, w))) [0..] ts ws) list
+          unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
       return $ map printFun (unfoldActs mfalse) ++ [text "---"] ++ map printFun (unfoldActs mtrue)
 
 
@@ -57,7 +57,15 @@ prettyActionEntry :: (Show k') => (k -> k') -> (ActionIndex -> Doc) -> k -> Acti
 prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> pActIdx actIdx
 
 
-mkListFromNeuralNetwork :: (Show k', Integral a) => BORL k -> Maybe a -> (k -> k') -> (ActionIndex -> Doc) -> Bool -> P.Proxy k -> MonadBorl [(ActionIndex -> Doc, ([Double], [Double]))]
+mkListFromNeuralNetwork ::
+     (Eq k, Show k', Integral a)
+  => BORL k
+  -> Maybe a
+  -> (k -> k')
+  -> (ActionIndex -> Doc)
+  -> Bool
+  -> P.Proxy k
+  -> MonadBorl [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx scaled pr
   | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
   | otherwise = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
@@ -66,7 +74,7 @@ mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx scaled pr
           P.TensorflowProxy _ _ tab' _ config' _ -> (tab', config')
           _ -> error "missing implementation in mkListFromNeuralNetwork"
 
-prettyTablesState :: (Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
+prettyTablesState :: (Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
 prettyTablesState borl period p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl (Just period) p1 pIdx m1
   rows2 <- prettyTableRows borl (Just period) p2 pIdx m2
@@ -83,7 +91,7 @@ prettyBORLTables t1 t2 t3 borl = do
            (prNN1, prNN0) -> do
              n1 <- mkNNList borl scale prNN1
              n0 <- mkNNList borl scale prNN0
-             return $ P.Table $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith3 (\nr t w -> ((k, nr), t-w)) [0..] ts ws) (map (second fst) n1) (map (second fst) n0)
+             return $ P.Table $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0)
   errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3

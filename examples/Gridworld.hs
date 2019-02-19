@@ -15,6 +15,7 @@ import           Control.Lens
 import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
+import           Data.List              (genericLength)
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
@@ -59,11 +60,11 @@ nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemory         = mkReplayMemory 10000
-  , _trainBatchSize       = 1
+  , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 8
-  , _updateTargetInterval = 1000
+  , _updateTargetInterval = 10000
   , _trainMSEMax          = 0.035
   }
 
@@ -73,7 +74,10 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = buildModel $ inputLayer1D 3 >> fullyConnected1D 9 TF.relu' >> fullyConnected1D 6 TF.relu' >> fullyConnected1D 1 TF.tanh' >> trainingByAdam1D
+modelBuilder =
+  buildModel $
+  inputLayer1D (genericLength (netInp initState)) >> fullyConnected1D 9 TF.relu' >> fullyConnected1D 6 TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
+  trainingByAdam1D
 
 
 main :: IO ()
