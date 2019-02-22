@@ -83,26 +83,27 @@ insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k@(st, idx) v px = do
   replMem' <- Simple $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
-  if period < fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
-    then return $ proxyNNStartup .~ M.insert (st,idx) v tab $ proxyNNConfig .~ config' $ px
-    else if period == fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
+  if period < fromIntegral (config' ^. replayMemory . replayMemorySize) -- - 1
+    then return $ proxyNNStartup .~ M.insert (st, idx) v tab $ proxyNNConfig .~ config' $ px
+    else if period == fromIntegral (config' ^. replayMemory . replayMemorySize) -- - 1
            then do
-             Simple $ putStrLn $ "Initializing artifical neural networks: " ++ show (px ^? proxyType)
+             Simple $ putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)
              netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
            else trainNNConf period (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet False
   where
+    memSize = px^?!proxyNNConfig.replayMemory.replayMemorySize
     updateNNTargetNet :: Bool -> Proxy s -> T.MonadBorl (Proxy s)
     updateNNTargetNet forceReset px'@(Grenade _ netW' tab' tp' config' nrActs)
-      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config' nrActs
+      | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config' nrActs
       | otherwise = return px'
     updateNNTargetNet forceReset px'@(TensorflowProxy netT' netW' tab' tp' config' nrActs)
-      | forceReset || period `mod` config' ^. updateTargetInterval == 0 = do
+      | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = do
+        Simple $ putStrLn "COPYING VALUES"
         copyValuesFromTo netW' netT'
         return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
       | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
-
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
 
@@ -135,12 +136,13 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) 
       kScaled = map fst kFullScaled
       actIdxs = map snd kFullScaled
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
+      vUnscaled = map (realToFrac . snd) dataset
   in do current <- forwardRun netW kScaled
         zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
          -- backwardRun netW kScaled vScaled
 
         let forward k = realToFrac <$> lookupNeuralNetwork Worker k px
-        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vScaled
+        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vUnscaled
         if realToFrac mse < mseMax
           then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
           else do
@@ -160,6 +162,7 @@ trainNNConf period (Grenade netT netW tab tp config nrActs) = do
 trainNNConf period (TensorflowProxy netT netW tab tp config nrActs) = do
   rands <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
   let trainingInstances = map (first (first $ config ^. toNetInp)) rands
+  -- Simple $ putStrLn $ "Training Data: " ++ show trainingInstances
   backwardRunRepMemData netW trainingInstances
   return $ TensorflowProxy netT netW tab tp config nrActs
 

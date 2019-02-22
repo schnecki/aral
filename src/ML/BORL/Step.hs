@@ -130,6 +130,9 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * abs psiW
+  psiWTblVal <- P.lookupProxy period Target label (borl ^. psiWTbl)
+  let psiWTblVal' = (1-expSmthPsi) * psiWTblVal + expSmthPsi * abs psiW
+  psiWTbl' <- P.insert period label psiWTblVal' (borl ^. psiWTbl)
   -- enforce values
   let vValStateNew
         | borl ^. sRef == Just (state, aNr) = 0
@@ -162,6 +165,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   -- update values
   return $ force $ -- needed to ensure constant memory consumption
     set psis (psiValRho', psiValV', psiValW') $
+    set psiWTbl psiWTbl' $
     set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
     set t (period + 1) $

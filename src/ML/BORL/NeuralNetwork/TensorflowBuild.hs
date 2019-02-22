@@ -124,11 +124,12 @@ trainingByAdam1DWith adamConfig = do
   case lastLayer of
     Nothing -> error "No previous layer found in trainingByAdam. Start with an input layer, followed by at least one further layer."
     Just (previousNumUnit, previousTensor) -> do
-      when (previousNumUnit /= 1) $ error "Output for trainingByAdam1D must be a scalar! That is `numUnits` of last layer must be 1."
+      -- when (previousNumUnit /= 1) $ error "Output for trainingByAdam1D must be a scalar! That is `numUnits` of last layer must be 1."
       weights <- gets (^. nnVars)
       nrUnits <- gets (^. nrUnitsLayer)
       labels <- lift $ TF.placeholder' (TF.opName .~ TF.explicitName labLayerName) [batchSize]
-      let loss = TF.reduceSum $ TF.square (previousTensor `TF.sub` labels)
+      let loss = TF.square (previousTensor `TF.sub` labels)
+            -- TF.reduceSum $ TF.square (previousTensor `TF.sub` labels)
       (trainStep, trVars) <- lift $ TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape nrUnits)
       trainVars .= trVars
       maybeTrainingNode .= Just trainStep

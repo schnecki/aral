@@ -6,7 +6,8 @@
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
-import           Control.Monad                                  (unless, void, zipWithM)
+import           Control.Monad                                  (unless, void, zipWithM,
+                                                                 zipWithM_)
 import           Control.Monad.IO.Class                         (liftIO)
 import qualified Data.ByteString.Char8                          as B8
 import           Data.Int                                       (Int32, Int64)
@@ -57,6 +58,9 @@ instance NFData TensorflowModel' where
   rnf (TensorflowModel' m f l !_) = rnf m `seq` rnf f `seq` rnf l
 
 
+trainMaxVal :: Float
+trainMaxVal = 0.99
+
 getRef :: Text -> TF.Tensor TF.Ref Float
 getRef = TF.tensorFromName
 
@@ -92,7 +96,9 @@ backwardRunRepMemData :: TensorflowModel' -> [(([Double], ActionIndex), Double)]
 backwardRunRepMemData model values = do
   let inputs = map (map realToFrac.fst.fst) values
   outputs <- forwardRun model inputs
-  let labels = zipWith (\((_,idx), val) outp -> replace idx (realToFrac val) outp) values outputs
+  let minmax = max (-trainMaxVal) . min trainMaxVal
+  let labels = zipWith (\((_,idx), val) outp -> replace idx (minmax $ realToFrac val) outp) values outputs
+  -- Simple $ zipWithM_ (\(((_,idx),val), o) (inp,l) -> putStrLn $ show idx ++ ": " ++ show inp ++ " \tout: " ++ show o ++ " l: " ++ show l ++ " val: " ++ show val) (zip values outputs) (zip inputs labels)
   backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.
@@ -104,10 +110,7 @@ backwardRun model inp lab
         labRef = getRef (labelLayerName $ tensorflowModel model)
         inpT = encodeInputBatch inp
         labT = encodeLabelBatch lab
-        -- in do bef <- forwardRunSession model inp
-    in
-      -- TODO: run forward and then backward
-      Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+    in Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
        -- aft <- forwardRunSession model inp
        -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
@@ -118,7 +121,7 @@ copyValuesFromTo from to = do
       toVars = neuralNetworkVariables $ tensorflowModel to
   if length fromVars /= length toVars
     then error "cannot copy values to models with different length of neural network variables"
-    else void $ Tensorflow $ zipWithM TF.assign (neuralNetworkVariables $ tensorflowModel to) (neuralNetworkVariables $ tensorflowModel from) >>= TF.run_
+    else void $ Tensorflow $ zipWithM TF.assign toVars fromVars >>= TF.run_
 
 
 saveModelWithLastIO :: TensorflowModel' -> MonadBorl TensorflowModel'
@@ -142,6 +145,9 @@ saveModel model inp lab = do
     Tensorflow $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
   unless (null $ trainingVariables $ tensorflowModel model) $
     Tensorflow $ TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+  -- res <- map V.toList <$> (Tensorflow $ TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel model))
+  -- Simple $ putStrLn $ "Training variables (saveModel): " <> show res
+
   return $
     if isJust (checkpointBaseFileName model)
       then resetLastIO model
@@ -169,4 +175,8 @@ restoreModel tfModel inp lab = Tensorflow $ do
   unless (null $ trainingVariables $ tensorflowModel tfModel) $
     mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel tfModel) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   unless (null $ neuralNetworkVariables $ tensorflowModel tfModel) $ mapM (TF.restore pathModel) (neuralNetworkVariables $ tensorflowModel tfModel) >>= TF.run_
+
+  -- res <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel tfModel)
+  -- liftIO $ putStrLn $ "Training variables (restoreModel): " <> show res
+
 

@@ -24,58 +24,39 @@
 
 module Main where
 
-import           ML.BORL                                        hiding (actionFilter)
+import           ML.BORL                hiding (actionFilter)
 
 import           Helper
 
-import           Control.DeepSeq                                (NFData)
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
-import           Data.Int                                       (Int64)
-import           Data.List                                      (genericLength)
-import qualified Data.Vector                                    as V
-import Data.Text (Text)
-import           GHC.Exts                                       (fromList)
+import           Data.Int               (Int64)
+import           Data.List              (genericLength)
+import           Data.Text              (Text)
+import qualified Data.Vector            as V
+import           GHC.Exts               (fromList)
 import           GHC.Generics
-import           Grenade                                        hiding (train)
+import           Grenade                hiding (train)
 
 
-import qualified TensorFlow.Build                               as TF (addNewOp,
-                                                                       evalBuildT,
-                                                                       explicitName, opDef,
-                                                                       opDefWithName,
-                                                                       opType, runBuildT,
-                                                                       summaries)
-import qualified TensorFlow.Core                                as TF hiding (value)
-import qualified TensorFlow.GenOps.Core                         as TF (abs, add,
-                                                                       approximateEqual,
-                                                                       approximateEqual,
-                                                                       assign, cast,
-                                                                       getSessionHandle,
-                                                                       getSessionTensor,
-                                                                       identity',
-                                                                       lessEqual,
-                                                                       lessEqual, matMul,
-                                                                       mul,
-                                                                       readerSerializeState,
-                                                                       relu', shape, square,
-                                                                       sub, tanh, tanh',
-                                                                       truncatedNormal)
-import qualified TensorFlow.Minimize                            as TF
-import qualified TensorFlow.Ops                                 as TF (initializedVariable,
-                                                                       initializedVariable',
-                                                                       placeholder,
-                                                                       placeholder',
-                                                                       reduceMean,
-                                                                       reduceSum, restore,
-                                                                       save, scalar,
-                                                                       vector,
-                                                                       zeroInitializedVariable,
-                                                                       zeroInitializedVariable')
-import qualified TensorFlow.Tensor                              as TF (Ref (..),
-                                                                       collectAllSummaries,
-                                                                       tensorNodeName,
-                                                                       tensorRefFromName,
-                                                                       tensorValueFromName)
+import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
+                                               opDefWithName, opType, runBuildT, summaries)
+import qualified TensorFlow.Core        as TF hiding (value)
+import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
+                                               approximateEqual, assign, cast,
+                                               getSessionHandle, getSessionTensor,
+                                               identity', lessEqual, matMul, mul,
+                                               readerSerializeState, relu', shape, square,
+                                               sub, tanh, tanh', truncatedNormal)
+import qualified TensorFlow.Minimize    as TF
+import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
+                                               placeholder, placeholder', reduceMean,
+                                               reduceSum, restore, save, scalar, vector,
+                                               zeroInitializedVariable,
+                                               zeroInitializedVariable')
+import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
+                                               tensorNodeName, tensorRefFromName,
+                                               tensorValueFromName)
 
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
@@ -84,11 +65,11 @@ nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemory         = mkReplayMemory 10000
-  , _trainBatchSize       = 1
+  , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxReward False 2
-  , _updateTargetInterval = 5000
+  , _updateTargetInterval = 15000
   , _trainMSEMax          = 0.015
   }
 
@@ -108,9 +89,11 @@ numActions = genericLength actions
 numInputs :: Int64
 numInputs = genericLength (netInp initState)
 
-
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = buildModel $ inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >> trainingByAdam1D
+modelBuilder =
+  buildModel $
+  inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >>
+  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 main :: IO ()
 main = do
@@ -141,7 +124,7 @@ params = Parameters
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
-  , _xi               = 0.5
+  , _xi               = 0.25
   }
 
 

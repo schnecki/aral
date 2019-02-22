@@ -16,6 +16,7 @@ import           ML.BORL.Types
 
 import           Control.Arrow         (first, second, (&&&))
 import           Control.Lens
+import           Control.Monad         (when)
 import           Data.Function         (on)
 import           Data.List             (find, sort, sortBy)
 import qualified Data.Map.Strict       as M
@@ -32,11 +33,11 @@ commas = 4
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
-prettyTable :: (Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
-prettyTable borl period prettyKey prettyIdx p = vcat <$> prettyTableRows borl (Just period) prettyKey prettyIdx p
+prettyTable :: (Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
+prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx p
 
-prettyTableRows :: (Eq k, Ord k', Show k') => BORL k -> Maybe Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
-prettyTableRows borl mPeriod prettyAction prettyActionIdx p =
+prettyTableRows :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
+prettyTableRows borl prettyAction prettyActionIdx p =
   case p of
     P.Table m -> return $ map (\((k,idx),val) -> prettyActionEntry id prettyActionIdx k idx <> colon <+> printFloat val) $
                  sortBy (compare `on` fst) $ M.toList (M.mapKeys (first prettyAction) m)
@@ -46,8 +47,8 @@ prettyTableRows borl mPeriod prettyAction prettyActionIdx p =
     --           P.Tensorflow _ _ tab' _ config' -> (tab', config')
     --           _ -> error "missing implementation in mkListFromNeuralNetwork"
     pr -> do
-      mfalse <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx False pr
-      mtrue <- mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx True pr
+      mfalse <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx False pr
+      mtrue <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx True pr
       let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
       return $ map printFun (unfoldActs mfalse) ++ [text "---"] ++ map printFun (unfoldActs mtrue)
@@ -58,27 +59,29 @@ prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> 
 
 
 mkListFromNeuralNetwork ::
-     (Eq k, Show k', Integral a)
+     (Show k, Ord k, Eq k, Show k')
   => BORL k
-  -> Maybe a
   -> (k -> k')
   -> (ActionIndex -> Doc)
   -> Bool
   -> P.Proxy k
   -> MonadBorl [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
-mkListFromNeuralNetwork borl mPeriod prettyAction prettyActionIdx scaled pr
-  | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
-  | otherwise = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
-  where (tab,config) = case pr of
-          P.Grenade _ _ tab' _ config' _ -> (tab', config')
-          P.TensorflowProxy _ _ tab' _ config' _ -> (tab', config')
-          _ -> error "missing implementation in mkListFromNeuralNetwork"
+mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
 
-prettyTablesState :: (Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
+prettyTablesState :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
 prettyTablesState borl period p1 pIdx m1 p2 m2 = do
-  rows1 <- prettyTableRows borl (Just period) p1 pIdx m1
-  rows2 <- prettyTableRows borl (Just period) p2 pIdx m2
+  rows1 <- prettyTableRows borl p1 pIdx (if fromTable then tbl m1 else m1)
+  rows2 <- prettyTableRows borl p2 pIdx (if fromTable then tbl m2 else m2)
   return $ vcat $ zipWith (\x y -> x $$ nest 40 y) rows1 rows2
+  where fromTable = period < fromIntegral memSize
+        memSize = case m1 of
+          P.Table{}                       -> -1
+          P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemory.replayMemorySize
+          P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemory.replayMemorySize
+        tbl px = case px of
+          p@P.Table{}                   -> p
+          P.Grenade _ _ p _ _ _         -> P.Table p
+          P.TensorflowProxy _ _ p _ _ _ -> P.Table p
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
@@ -95,14 +98,14 @@ prettyBORLTables t1 t2 t3 borl = do
   errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3
-               then prBoolTblsStateAction t3 "E" errUnscaled errScaled
+               then prBoolTblsStateAction t3 "Error W / Error R1-R0" (borl ^. psiWTbl) errScaled
                else return empty
   prettyRhoVal <- case borl ^. rho of
        Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
        Right m  -> do
-         prAct <- prettyTable borl (borl ^. t) prettyAction prettyActionIdx m
+         prAct <- prettyTable borl prettyAction prettyActionIdx m
          return $ text "Rho" $+$ prAct
-  prettyVisits <- prettyTable borl (borl ^. t) id (const empty) (P.Table vis)
+  prettyVisits <- prettyTable borl id (const empty) (P.Table vis)
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1)
   return $
