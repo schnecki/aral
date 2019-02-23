@@ -50,7 +50,7 @@ mkNNList borl scaled pr =
         _                              -> error "mkNNList called on non-neural network"
     actIdxs = [0 .. _proxyNrActions pr]
     actFilt = borl ^. actionFilter
-    useTable = False && borl ^. t == fromIntegral (_proxyNNConfig pr ^?! replayMemory . replayMemorySize)
+    useTable = borl ^. t == fromIntegral (_proxyNNConfig pr ^?! replayMemory . replayMemorySize)
     lookupTable scale st
       | scale = val -- values are being unscaled, thus let table value be unscaled
       | otherwise = map (scaleValue (getMinMaxVal pr)) val

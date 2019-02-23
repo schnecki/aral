@@ -10,7 +10,8 @@ import           GHC.Generics
 
 -- Parameters
 data Parameters = Parameters
-  { _alpha            :: !Double             -- ^ for rho value
+  { _minRhoValue      :: !Double             -- ^ Minimum average reward
+  , _alpha            :: !Double             -- ^ for rho value
   , _beta             :: !Double             -- ^ for V values
   , _delta            :: !Double             -- ^ for W values
   , _epsilon          :: !Double             -- ^ for comparison between state values

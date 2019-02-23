@@ -83,24 +83,25 @@ insert _ k v (Table m)          = return $ Table (M.insert k v m)
 insert period k@(st, idx) v px = do
   replMem' <- Simple $ addToReplayMemory period (k, scaleValue (getMinMaxVal px) v) (config ^. replayMemory)
   let config' = replayMemory .~ replMem' $ config
-  if period < fromIntegral (config' ^. replayMemory . replayMemorySize) -- - 1
+  if period < fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
     then return $ proxyNNStartup .~ M.insert (st, idx) v tab $ proxyNNConfig .~ config' $ px
-    else if period == fromIntegral (config' ^. replayMemory . replayMemorySize) -- - 1
+    else if period == fromIntegral (config' ^. replayMemory . replayMemorySize) - 1
            then do
              Simple $ putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)
              netInit (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet True
            else trainNNConf period (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet False
   where
-    memSize = px^?!proxyNNConfig.replayMemory.replayMemorySize
+    memSize = px ^?! proxyNNConfig . replayMemory . replayMemorySize
     updateNNTargetNet :: Bool -> Proxy s -> T.MonadBorl (Proxy s)
     updateNNTargetNet forceReset px'@(Grenade _ netW' tab' tp' config' nrActs)
+      | not forceReset && period <= fromIntegral memSize = return px'
       | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config' nrActs
       | otherwise = return px'
     updateNNTargetNet forceReset px'@(TensorflowProxy netT' netW' tab' tp' config' nrActs)
+      | not forceReset && period <= fromIntegral memSize = return px'
       | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = do
-        Simple $ putStrLn "COPYING VALUES"
-        copyValuesFromTo netW' netT'
-        return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
+          copyValuesFromTo netW' netT'
+          return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
       | otherwise = return px'
     updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
@@ -127,9 +128,9 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     vUnscaled = map snd dataset
     kScaled = map (first (config ^. toNetInp) . fst) dataset
     getValue k =
-      unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
+      -- unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
       (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> abs (v - getValue k)) (map fst dataset) vUnscaled) -- scaled or unscaled ones?
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k)**2) (map fst dataset) vScaled) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) =
   let mseMax = config ^. trainMSEMax
       kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
@@ -137,12 +138,12 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) 
       actIdxs = map snd kFullScaled
       vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
       vUnscaled = map (realToFrac . snd) dataset
+      datasetRepMem = map (first (first (map realToFrac . (config^.toNetInp)))) dataset
   in do current <- forwardRun netW kScaled
         zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
-         -- backwardRun netW kScaled vScaled
-
-        let forward k = realToFrac <$> lookupNeuralNetwork Worker k px
-        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> abs . (vS -) <$> forward k) (map fst dataset) vUnscaled
+        -- backwardRunRepMemData netW datasetRepMem
+        let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
+        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (**2) . (vS -) <$> forward k) (map fst dataset) vScaled -- vUnscaled -- scaled or unscaled ones?
         if realToFrac mse < mseMax
           then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
           else do

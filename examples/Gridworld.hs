@@ -63,9 +63,9 @@ nnConfig = NNConfig
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
-  , _scaleParameters      = scalingByMaxReward False 8
+  , _scaleParameters      = scalingByMaxAbsReward False 8
   , _updateTargetInterval = 10000
-  , _trainMSEMax          = 0.035
+  , _trainMSEMax          = 0.005
   }
 
 netInp :: St -> [Double]
@@ -76,17 +76,17 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D (genericLength (netInp initState)) >> fullyConnected1D 9 TF.relu' >> fullyConnected1D 6 TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
-  trainingByAdam1D
+  inputLayer1D (genericLength (netInp initState)) >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 7 TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
+  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 main :: IO ()
 main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
+  -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
   -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -97,7 +97,8 @@ names = ["random", "up   ", "down ", "left ", "right"]
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.2
+  { _minRhoValue      = 0.1
+  , _alpha            = 0.2
   , _beta             = 0.25
   , _delta            = 0.25
   , _epsilon          = 1.0
@@ -109,10 +110,11 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters alp bet del eps exp rand zeta xi)
+decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
   | t `mod` 200 == 0 =
     Parameters
-      (max 0.0001 $ slower * alp)
+      minRho
+      (f $ slower * alp)
       (f $ slower * bet)
       (f $ slower * del)
       (max 0.1 $ slow * eps)

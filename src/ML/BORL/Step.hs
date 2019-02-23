@@ -96,8 +96,9 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       mw = borl ^. w
       mr0 = borl ^. r0
       mr1 = borl ^. r1
-  let bta = borl ^. parameters . beta
+  let rhoMinVal = borl ^. parameters . minRhoValue
       alp = borl ^. parameters . alpha
+      bta = borl ^. parameters . beta
       dlt = borl ^. parameters . delta
       (ga0, ga1) = borl ^. gammas
       period = borl ^. t
@@ -115,7 +116,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
     else do
     rhoStateValNext <- rhoStateValue borl stateNext
     return $ (approxAvg * rhoStateValNext + reward) / (approxAvg + 1) -- approximation
-  let rhoVal' = (1 - alp) * rhoVal + alp * rhoState
+  let rhoVal' = max rhoMinVal $ (1 - alp) * rhoVal + alp * rhoState
   rhoNew <-
     case borl ^. rho of
       Left _  -> return $ Left rhoVal'
@@ -131,17 +132,20 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * abs psiW
   psiWTblVal <- P.lookupProxy period Target label (borl ^. psiWTbl)
-  let psiWTblVal' = (1-expSmthPsi) * psiWTblVal + expSmthPsi * abs psiW
+  let psiWTblVal' = (1-expSmthPsi) * psiWTblVal + expSmthPsi * psiW
   psiWTbl' <- P.insert period label psiWTblVal' (borl ^. psiWTbl)
-  -- enforce values
-  let vValStateNew
+  let vValStateNew              -- enforce bias optimality (correction of V(s,a) values)
         | borl ^. sRef == Just (state, aNr) = 0
-        | otherwise =
-          vValState' -
-          if randomAction || psiValV' > borl ^. parameters . zeta
-            then 0
-            else borl ^. parameters . xi * psiW
+        | otherwise =  vValState' - if randomAction then 0 else clip (0.1*abs vValState') $ (borl ^. parameters.xi) / (1+psiValV')**2 * psiW
+      clip minmax val = max (-minmax) $ min minmax val
+          -- vValState' -
+          -- if randomAction || psiValV' > borl ^. parameters . zeta
+          --   then 0
+          --   else borl ^. parameters . xi * psiW
+
       -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
+
+  let parallel = False
   -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
   mv' <- P.insert period label vValStateNew mv
   mw' <- P.insert period label wValState' mw
@@ -216,12 +220,6 @@ actionsIndexed :: BORL s -> s -> [ActionIndexed s]
 actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
 
 
-reduce :: [Double] -> Double
-reduce = maximum
--- reduce xs = sum xs / fromIntegral (length xs)
-{-# INLINE reduce #-}
-
-
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
 rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 rhoValue = rhoValueWith Worker
@@ -235,7 +233,7 @@ rhoValueWith lkTp borl state (a,_) =
 rhoStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 rhoStateValue borl state = case borl ^. rho of
   Left r  -> return r
-  Right _ -> reduce <$> mapM (rhoValueWith Target borl state) (actionsIndexed borl state)
+  Right _ -> maximum <$> mapM (rhoValueWith Target borl state) (actionsIndexed borl state)
 
 vValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
 vValue = vValueWith Worker
@@ -246,7 +244,7 @@ vValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mv
     mv = borl ^. v
 
 vStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
-vStateValue borl state = reduce <$> mapM (vValueWith Target borl state) (actionsIndexed borl state)
+vStateValue borl state = maximum <$> mapM (vValueWith Target borl state) (actionsIndexed borl state)
 
 
 wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
@@ -258,7 +256,7 @@ wValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) mw
     mw = borl ^. w
 
 wStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
-wStateValue borl state = reduce <$> mapM (wValueWith Target borl state) (actionsIndexed borl state)
+wStateValue borl state = maximum <$> mapM (wValueWith Target borl state) (actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -281,7 +279,7 @@ rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, 
         RBig   -> borl ^. r1
 
 rStateValue :: (Ord s) => BORL s -> RSize -> s -> MonadBorl Double
-rStateValue borl size state = reduce <$> mapM (rValueWith Target borl size state) (actionsIndexed borl state)
+rStateValue borl size state = maximum <$> mapM (rValueWith Target borl size state) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
 eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
@@ -292,7 +290,7 @@ eValue borl state act = do
 
 --  | Calculates the difference between the expected discounted values.
 -- eStateValue :: (Ord s) => BORL s -> s -> Double
--- eStateValue borl state = reduce (map (rValueWith Target borl RBig state) as) - reduce (map (rValueWith Target borl RSmall state) as)
+-- eStateValue borl state = maximum (map (rValueWith Target borl RBig state) as) - reduce (map (rValueWith Target borl RSmall state) as)
 --   where as = actionsIndexed borl state
 
 

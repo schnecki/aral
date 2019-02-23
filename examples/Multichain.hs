@@ -46,15 +46,15 @@ main = do
         usage = []
 
 params :: Parameters
-params = Parameters 0.15 0.05 0.05 1.0 1.0 0.1 0.75 0.2
+params = Parameters 0.1 0.15 0.05 0.05 1.0 1.0 0.1 0.75 0.2
 
 
 initState :: St
 initState = St 5
 
 decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters (f $ slower * alp) (f $ slow * bet) (f $ slow * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
+  | t `mod` 200 == 0 = Parameters minRho (f $ slower * alp) (f $ slow * bet) (f $ slow * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
 
   where slower = 0.995

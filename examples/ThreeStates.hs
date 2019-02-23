@@ -11,13 +11,13 @@
 -- The provided solution is that a) the average reward rho=1 and b) the bias values are
 
 -- when selection action a1 (A->B)
--- V(A) = 0.5
 -- V(B) = -0.5
+-- V(A) = 0.5
 -- V(C) = 1.5
 
 -- when selecting action a2 (A->C)
--- V(A) = -0.5
 -- V(B) = -1.5
+-- V(A) = -0.5
 -- V(C) = 0.5
 
 -- Thus the policy selecting a1 (going Left) is preferable.
@@ -68,7 +68,7 @@ nnConfig = NNConfig
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
-  , _scaleParameters      = scalingByMaxReward False 2
+  , _scaleParameters      = scalingByMaxAbsReward False 2
   , _updateTargetInterval = 15000
   , _trainMSEMax          = 0.015
   }
@@ -117,27 +117,29 @@ initState = A
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.2
+  { _minRhoValue      = 0.1
+  , _alpha            = 0.2
   , _beta             = 0.25
   , _delta            = 0.25
   , _epsilon          = 1.0
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
-  , _zeta             = 1.0
-  , _xi               = 0.25
+  , _zeta             = 3.0
+  , _xi               = 0.05
   }
 
 
 -- | Decay function of parameters.
 decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters alp bet del eps exp rand zeta xi)
+decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
   | t > 0 && t `mod` 200 == 0 =
     Parameters
+      minRho
       (max 0.0001 $ slow * alp)
       (f $ slower * bet)
       (f $ slower * del)
       (max 0.1 $ slow * eps)
-      (f $ slow * exp)
+      (max 0.01 $ f $ slow * exp)
       rand
       zeta -- (fromIntegral t / 20000) --  * zeta)
       xi -- (max 0 $ fromIntegral t / 40000) -- * xi)

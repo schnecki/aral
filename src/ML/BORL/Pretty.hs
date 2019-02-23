@@ -132,9 +132,6 @@ prettyBORLTables t1 t2 t3 borl = do
     text "Gammas" <>
     colon $$
     nest 45 (text (show (printFloat $ borl ^. gammas . _1, printFloat $ borl ^. gammas . _2))) $+$
-    text "Zeta (enables W error forcing)" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . zeta) $+$
     text "Xi (ratio of W error forcing to V)" <>
     colon $$
     nest 45 (printFloat $ borl ^. parameters . xi) $+$

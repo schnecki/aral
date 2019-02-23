@@ -59,7 +59,7 @@ instance NFData TensorflowModel' where
 
 
 trainMaxVal :: Float
-trainMaxVal = 0.99
+trainMaxVal = 0.98
 
 getRef :: Text -> TF.Tensor TF.Ref Float
 getRef = TF.tensorFromName
