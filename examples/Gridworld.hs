@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -99,15 +99,15 @@ params :: Parameters
 params = Parameters
   { _minRhoValue      = 0.1
   , _initRhoValue     = 0
-  , _alpha            = 1.0
-  , _beta             = 0.1
-  , _delta            = 0.03
+  , _alpha            = 0.5
+  , _beta             = 0.30
+  , _delta            = 0.25
   , _gamma            = 0.01
-  , _epsilon          = 0.04
-  , _exploration      = 0.5
+  , _epsilon          = 0.5
+  , _exploration      = 0.01
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
-  , _xi               = 0.25
+  , _xi               = 2
   }
 
 -- | Decay function of parameters.
@@ -117,13 +117,12 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
     Parameters
       minRho
       initRho
-      -- (min 0.03 $ max 0.001 $ psiWNew - psiWOld + alp)
       (max 0.03 $ slower * alp)
-      (min 0.9 $ max 0.03 $ faster * bet)
-      (min 0.9 $ max 0.005 $ faster * del) -- max 0.001 $ slow * del)
+      (max 0.015 $ slower * bet)
+      (max 0.015 $ slower * del)
       ga
-      (max 0.04 $ slow * eps)
-      (max 0.01 $ slow * exp)
+      (max 0.075 $ slow * eps)
+      (max 0.001 $ slow * exp)
       rand
       zeta -- zeta
       xi
@@ -175,11 +174,11 @@ moveRand = moveUp
 
 -- goalState :: Action St -> Action St
 goalState f st = do
-  x <- randomRIO (0, maxX :: Int)
-  y <- randomRIO (0, maxY :: Int)
+  -- x <- randomRIO (0, maxX :: Int)
+  -- y <- randomRIO (0, maxY :: Int)
   case getCurrentIdx st of
     -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
-    (0, 2) -> return (10, fromIdx (x,y))
+    (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
   where stepRew = first (+ 0)

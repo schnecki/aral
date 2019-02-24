@@ -130,7 +130,7 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     getValue k =
       -- unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
       (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k)**2) (map fst dataset) vScaled) -- scaled or unscaled ones?
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k)**2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) =
   let mseMax = config ^. trainMSEMax
       kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
@@ -143,7 +143,7 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) 
         zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
         -- backwardRunRepMemData netW datasetRepMem
         let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
-        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (**2) . (vS -) <$> forward k) (map fst dataset) vScaled -- vUnscaled -- scaled or unscaled ones?
+        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (**2) . (vS -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaled) -- vUnscaled -- scaled or unscaled ones?
         if realToFrac mse < mseMax
           then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
           else do

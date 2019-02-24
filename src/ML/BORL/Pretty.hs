@@ -98,7 +98,7 @@ prettyBORLTables t1 t2 t3 borl = do
   errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3
-               then prBoolTblsStateAction t3 "Psi V / Psi W" (fst $ borl ^. psiVWTbl) (snd $ borl ^. psiVWTbl)
+               then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (fst $ borl ^. psiVWTbl) (snd $ borl ^. psiVWTbl)
                     -- errUnscaled errScaled
                else return empty
   let addPsiV k v = do

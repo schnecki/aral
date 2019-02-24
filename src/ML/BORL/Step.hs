@@ -171,11 +171,9 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
         | borl ^. sRef == Just (state, aNr) = 0
         | otherwise =
           vValState' -
-          -- if randomAction
-          --   then 0
-          --   else
-            (clip (-- min (borl ^. parameters.xi)
-                       (5 * abs (vValState - vValState'))) $ 1 / (1 + psiValV')**2 * psiW)
+          if randomAction || psiValV' > borl ^. parameters.zeta
+            then 0
+            else clip ((borl ^. parameters.xi) * abs (vValState - vValState')) (1 / (1 + psiValW')**2 * psiW)
 
       clip minmax val = max (-minmax) $ min minmax val
           -- vValState' -
