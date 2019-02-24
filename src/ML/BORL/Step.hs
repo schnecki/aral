@@ -113,7 +113,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       avgRew = sum lastRews' / fromIntegral (length lastRews')
   rhoMinimumState <- rhoMinimumValue borl state act
   vValState <- vValue False borl state act
-  vValStateNext <- vStateValue borl stateNext
+  vValStateNext <- vStateValue False borl stateNext
   rhoVal <- rhoValue borl state act
   wValState <- wValue borl state act
   wValStateNext <- wStateValue borl state
@@ -174,7 +174,9 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
           -- if randomAction
           --   then 0
           --   else
-            (clip (min (borl ^. parameters.epsilon) (abs vValState)) $ 1 / (1 + psiValV') ** 2 * psiW) -- (psiW + psiV))
+            (clip (-- min (borl ^. parameters.xi)
+                       (5 * abs (vValState - vValState'))) $ 1 / (1 + psiValV')**2 * psiW)
+
       clip minmax val = max (-minmax) $ min minmax val
           -- vValState' -
           -- if randomAction || psiValV' > borl ^. parameters . zeta
@@ -296,12 +298,12 @@ vValueWith lkTp addPsiV borl state (a, _) = do
   vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. v)
   psiV <-
     if addPsiV
-      then P.lookupProxy (borl ^. t) lkTp (state, a) (snd $ borl ^. psiVWTbl)
+      then P.lookupProxy (borl ^. t) lkTp (state, a) (fst $ borl ^. psiVWTbl)
       else return 0
   return (vVal - psiV)
 
-vStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
-vStateValue borl state = maximum <$> mapM (vValueWith Target False borl state) (actionsIndexed borl state)
+vStateValue :: (Ord s) => Bool -> BORL s -> s -> MonadBorl Double
+vStateValue addPsiV borl state = maximum <$> mapM (vValueWith Target addPsiV borl state) (actionsIndexed borl state)
 
 
 wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double

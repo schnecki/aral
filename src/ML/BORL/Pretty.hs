@@ -152,8 +152,8 @@ prettyBORLTables t1 t2 t3 borl = do
     prVW $+$
     prR0R1 $+$
     prettyErr $+$
-    text "V+PsiV" $+$
-    vcat vMinusPsiV $+$
+    -- text "V+PsiV" $+$
+    -- vcat vMinusPsiV $+$
     text "Visits [%]" $+$
     prettyVisits
   where

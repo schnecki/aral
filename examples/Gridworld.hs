@@ -99,11 +99,11 @@ params :: Parameters
 params = Parameters
   { _minRhoValue      = 0.1
   , _initRhoValue     = 0
-  , _alpha            = 0.05
-  , _beta             = 0.05
-  , _delta            = 0.05
+  , _alpha            = 1.0
+  , _beta             = 0.1
+  , _delta            = 0.03
   , _gamma            = 0.01
-  , _epsilon          = 0.1
+  , _epsilon          = 0.04
   , _exploration      = 0.5
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
@@ -118,11 +118,11 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       minRho
       initRho
       -- (min 0.03 $ max 0.001 $ psiWNew - psiWOld + alp)
-      (max 0.03 $ slow * alp)
-      (max 0.005 $ slower * bet)
-      (max 0.001 $ slow * del)
+      (max 0.03 $ slower * alp)
+      (min 0.9 $ max 0.03 $ faster * bet)
+      (min 0.9 $ max 0.005 $ faster * del) -- max 0.001 $ slow * del)
       ga
-      (max 0.1 $ slow * eps)
+      (max 0.04 $ slow * eps)
       (max 0.01 $ slow * exp)
       rand
       zeta -- zeta
@@ -131,7 +131,7 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
   where
     slower = 0.995
     slow = 0.98
-    faster = 1.0 / 0.995
+    faster = 1.0 / 0.99
     f = max 0.01
 
 
