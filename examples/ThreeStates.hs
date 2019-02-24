@@ -102,8 +102,8 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  --rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
+  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -118,10 +118,12 @@ initState = A
 params :: Parameters
 params = Parameters
   { _minRhoValue      = 0.1
-  , _alpha            = 0.2
-  , _beta             = 0.25
-  , _delta            = 0.25
-  , _epsilon          = 1.0
+  , _initRhoValue     = 0
+  , _alpha            = 0.01
+  , _beta             = 0.01
+  , _delta            = 0.01
+  , _gamma            = 0.01
+  , _epsilon          = 0.1
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 3.0
@@ -130,25 +132,25 @@ params = Parameters
 
 
 -- | Decay function of parameters.
-decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
+decay :: Decay
+decay t _ _ p@(Parameters minRho initRho alp bet del ga eps exp rand zeta xi)
   | t > 0 && t `mod` 200 == 0 =
     Parameters
       minRho
-      (max 0.0001 $ slow * alp)
-      (f $ slower * bet)
-      (f $ slower * del)
+      initRho
+      (max 0.001 $ slow * alp)
+      (max 0.001 $ slower * bet)
+      (max 0.001 $ slower * del)
+      ga
       (max 0.1 $ slow * eps)
-      (max 0.01 $ f $ slow * exp)
+      (max 0.01 $ slow * exp)
       rand
-      zeta -- (fromIntegral t / 20000) --  * zeta)
-      xi -- (max 0 $ fromIntegral t / 40000) -- * xi)
+      zeta
+      xi
   | otherwise = p
   where
     slower = 0.995
-    slow = 0.95
-    faster = 1.0 / 0.995
-    f = max 0.001
+    slow = 0.98
 
 
 -- State

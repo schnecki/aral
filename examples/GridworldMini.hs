@@ -41,13 +41,13 @@ actFilter _  = False : repeat True
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters 0.1 0.2 0.2 0.2 1.0 1.0 0.1 1.5 0.2
+params = Parameters 0.1 3 0.2 0.2 0.2 0.01 1.0 1.0 0.1 1.5 0.2
 
 
 -- | Decay function of parameters.
-decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
-  | t `mod` 200 == 0 = Parameters minRho (f $ slower * alp) (f $ slower * bet) (f $ slower * del) (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
+decay :: Decay
+decay t _ _ p@(Parameters minRho initRho alp bet del ga eps exp rand zeta xi)
+  | t `mod` 200 == 0 = Parameters minRho initRho (f $ slower * alp) (f $ slower * bet) (f $ slower * del) ga (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
 
   where slower = 0.995

@@ -11,9 +11,11 @@ import           GHC.Generics
 -- Parameters
 data Parameters = Parameters
   { _minRhoValue      :: !Double             -- ^ Minimum average reward
+  , _initRhoValue     :: !Double             -- ^ Initial average reward value
   , _alpha            :: !Double             -- ^ for rho value
   , _beta             :: !Double             -- ^ for V values
   , _delta            :: !Double             -- ^ for W values
+  , _gamma            :: !Double             -- ^ Gamma values for R0/R1.
   , _epsilon          :: !Double             -- ^ for comparison between state values
   , _exploration      :: !Double             -- ^ exploration rate
   , _learnRandomAbove :: !Double             -- ^ Value which specifies until when randomized actions are learned. Learning from

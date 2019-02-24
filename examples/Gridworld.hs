@@ -63,7 +63,7 @@ nnConfig = NNConfig
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
-  , _scaleParameters      = scalingByMaxAbsReward False 8
+  , _scaleParameters      = scalingByMaxAbsReward False 4
   , _updateTargetInterval = 10000
   , _trainMSEMax          = 0.005
   }
@@ -98,48 +98,41 @@ names = ["random", "up   ", "down ", "left ", "right"]
 params :: Parameters
 params = Parameters
   { _minRhoValue      = 0.1
-  , _alpha            = 0.2
-  , _beta             = 0.25
-  , _delta            = 0.25
-  , _epsilon          = 1.0
-  , _exploration      = 1.0
+  , _initRhoValue     = 0
+  , _alpha            = 0.05
+  , _beta             = 0.05
+  , _delta            = 0.05
+  , _gamma            = 0.01
+  , _epsilon          = 0.1
+  , _exploration      = 0.5
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
-  , _xi               = 0.5
+  , _xi               = 0.25
   }
 
 -- | Decay function of parameters.
-decay :: Period -> Parameters -> Parameters
-decay t p@(Parameters minRho alp bet del eps exp rand zeta xi)
+decay :: Decay
+decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameters minRho initRho alp bet del ga eps exp rand zeta xi)
   | t `mod` 200 == 0 =
     Parameters
       minRho
-      (f $ slower * alp)
-      (f $ slower * bet)
-      (f $ slower * del)
+      initRho
+      -- (min 0.03 $ max 0.001 $ psiWNew - psiWOld + alp)
+      (max 0.03 $ slow * alp)
+      (max 0.005 $ slower * bet)
+      (max 0.001 $ slow * del)
+      ga
       (max 0.1 $ slow * eps)
-      (f $ slower * exp)
+      (max 0.01 $ slow * exp)
       rand
       zeta -- zeta
       xi
   | otherwise = p
   where
     slower = 0.995
-    slow = 0.95
+    slow = 0.98
     faster = 1.0 / 0.995
-    f = max 0.001
-
-
--- | Decay function of parameters.
--- decay :: Period -> Parameters -> Parameters
--- decay t p@(Parameters alp bet del eps exp rand zeta xi)
---   | t `mod` 200 == 0 = Parameters (f alp) (f bet) (f del) eps (max 0.1 $ slower * exp) rand zeta (min 1 $ fromIntegral t / 20000 * xi)
---   | otherwise = p
-
---   where slower = 0.995
-
---         slow = 0.95
---         f x = max 0.001 (slower * x)
+    f = max 0.01
 
 
 initState :: St

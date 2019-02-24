@@ -38,6 +38,7 @@ dependencies:
   - grenade
   - bytestring
   - exceptions
+  - directory
   - transformers
   - parallel
   - deepseq

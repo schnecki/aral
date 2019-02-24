@@ -34,13 +34,13 @@ printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
 prettyTable :: (Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
-prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx p
+prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
 
-prettyTableRows :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl [Doc]
-prettyTableRows borl prettyAction prettyActionIdx p =
+prettyTableRows :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> ((k,ActionIndex) -> Double -> MonadBorl Double) -> P.Proxy k -> MonadBorl [Doc]
+prettyTableRows borl prettyAction prettyActionIdx modifier p =
   case p of
-    P.Table m -> return $ map (\((k,idx),val) -> prettyActionEntry id prettyActionIdx k idx <> colon <+> printFloat val) $
-                 sortBy (compare `on` fst) $ M.toList (M.mapKeys (first prettyAction) m)
+    P.Table m -> mapM (\(((k,k'),idx),val) -> modifier (k,idx) val >>= \v -> return (prettyActionEntry id prettyActionIdx k' idx <> colon <+> printFloat v)) $
+                 sortBy (compare `on` snd.fst.fst) $ M.toList (M.mapKeys (\(k,aIdx) -> ((k, prettyAction k), aIdx)) m)
     -- pr | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) -> prettyTableRows mPeriod prettyAction (P.Table tab)
     --   where (tab, config) = case pr of
     --           P.Grenade _ _ tab' _ config' -> (tab', config')
@@ -70,8 +70,8 @@ mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = map (first
 
 prettyTablesState :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (k -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (k -> k') -> P.Proxy k -> MonadBorl Doc
 prettyTablesState borl period p1 pIdx m1 p2 m2 = do
-  rows1 <- prettyTableRows borl p1 pIdx (if fromTable then tbl m1 else m1)
-  rows2 <- prettyTableRows borl p2 pIdx (if fromTable then tbl m2 else m2)
+  rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
+  rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
   return $ vcat $ zipWith (\x y -> x $$ nest 40 y) rows1 rows2
   where fromTable = period < fromIntegral memSize
         memSize = case m1 of
@@ -98,8 +98,15 @@ prettyBORLTables t1 t2 t3 borl = do
   errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3
-               then prBoolTblsStateAction t3 "Error W / Error R1-R0" (borl ^. psiWTbl) errScaled
+               then prBoolTblsStateAction t3 "Psi V / Psi W" (fst $ borl ^. psiVWTbl) (snd $ borl ^. psiVWTbl)
+                    -- errUnscaled errScaled
                else return empty
+  let addPsiV k v = do
+        vPsi <- P.lookupProxy (borl ^. t) P.Worker k (fst $ borl ^. psiVWTbl)
+        return (v - vPsi)
+
+  vMinusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. v)
+
   prettyRhoVal <- case borl ^. rho of
        Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
        Right m  -> do
@@ -145,6 +152,8 @@ prettyBORLTables t1 t2 t3 borl = do
     prVW $+$
     prR0R1 $+$
     prettyErr $+$
+    text "V+PsiV" $+$
+    vcat vMinusPsiV $+$
     text "Visits [%]" $+$
     prettyVisits
   where
