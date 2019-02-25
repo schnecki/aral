@@ -95,17 +95,18 @@ prettyBORLTables t1 t2 t3 borl = do
              n1 <- mkNNList borl scale prNN1
              n0 <- mkNNList borl scale prNN0
              return $ P.Table $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0)
-  errUnscaled <- mkErr False
   errScaled <- mkErr True
   prettyErr <- if t3
+               then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
+               else return empty
+  prettyVWPsi <- if t3
                then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (fst $ borl ^. psiVWTbl) (snd $ borl ^. psiVWTbl)
-                    -- errUnscaled errScaled
                else return empty
   let addPsiV k v = do
         vPsi <- P.lookupProxy (borl ^. t) P.Worker k (fst $ borl ^. psiVWTbl)
-        return (v - vPsi)
+        return (v + vPsi)
 
-  vMinusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. v)
+  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. v)
 
   prettyRhoVal <- case borl ^. rho of
        Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
@@ -150,10 +151,11 @@ prettyBORLTables t1 t2 t3 borl = do
     nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
     prettyRhoVal $$
     prVW $+$
+    prettyVWPsi $+$
     prR0R1 $+$
-    prettyErr $+$
-    -- text "V+PsiV" $+$
-    -- vcat vMinusPsiV $+$
+    -- prettyErr $+$
+    text "V+PsiV" $+$
+    vcat vPlusPsiV $+$
     text "Visits [%]" $+$
     prettyVisits
   where
@@ -215,5 +217,3 @@ prettyBORL borl = runMonadBorl $ do
 
 instance (Ord s, Show s) => Show (BORL s) where
   show borl = show $ unsafePerformIO $ prettyBORL borl
-
-

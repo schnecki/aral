@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -102,12 +102,12 @@ params = Parameters
   , _alpha            = 0.5
   , _beta             = 0.30
   , _delta            = 0.25
-  , _gamma            = 0.01
-  , _epsilon          = 0.5
-  , _exploration      = 0.01
+  , _gamma            = 0.30
+  , _epsilon          = 0.075
+  , _exploration      = 0.3
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
-  , _xi               = 2
+  , _xi               = 0.15
   }
 
 -- | Decay function of parameters.
@@ -120,7 +120,7 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       (max 0.03 $ slower * alp)
       (max 0.015 $ slower * bet)
       (max 0.015 $ slower * del)
-      ga
+      (max 0.01 $ slower * ga)
       (max 0.075 $ slow * eps)
       (max 0.001 $ slow * exp)
       rand
@@ -174,11 +174,12 @@ moveRand = moveUp
 
 -- goalState :: Action St -> Action St
 goalState f st = do
-  -- x <- randomRIO (0, maxX :: Int)
-  -- y <- randomRIO (0, maxY :: Int)
+  x <- randomRIO (0, maxX :: Int)
+  y <- randomRIO (0, maxY :: Int)
   case getCurrentIdx st of
     -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
-    (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
+    -- (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
+    (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
   where stepRew = first (+ 0)

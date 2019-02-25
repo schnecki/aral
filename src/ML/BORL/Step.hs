@@ -146,7 +146,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
 
   let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
-      psiV = -reward + rhoVal' + vValState' - vValStateNext -- should converge to 0
+      psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
       lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
 
   -- File IO Operations
@@ -157,31 +157,29 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let wValState'
         | borl ^. sRef == Just (state, aNr) = 0
         | otherwise = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
-      psiW = vValState' + wValState' - wValStateNext -- should converge to 0
-  let psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * abs psiRho
-      psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * abs psiV
-      psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * abs psiW
-  psiVTblVal <- P.lookupProxy period Target label (fst $ borl ^. psiVWTbl)
-  let psiWTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
-  psiVTbl' <- P.insert period label psiWTblVal' (fst $ borl ^. psiVWTbl)
-  psiWTblVal <- P.lookupProxy period Target label (snd $ borl ^. psiVWTbl)
+  let psiW = wValStateNext - vValState' - wValState' -- should converge towards 0
+
+  let psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * (if randomAction then 0 else abs psiRho)
+      psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * (if randomAction then 0 else abs psiV)
+      psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * (if randomAction then 0 else abs psiW)
+  psiVTblVal <- P.lookupProxy period Worker label (fst $ borl ^. psiVWTbl)
+  let psiVTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
+  psiVTbl' <- P.insert period label psiVTblVal' (fst $ borl ^. psiVWTbl)
+  psiWTblVal <- P.lookupProxy period Worker label (snd $ borl ^. psiVWTbl)
   let psiWTblVal' = (1 - expSmthPsi) * psiWTblVal + expSmthPsi * psiW
   psiWTbl' <- P.insert period label psiWTblVal' (snd $ borl ^. psiVWTbl)
+  let xiVal = borl ^. parameters.xi
+      -- eps = borl ^. parameters.epsilon
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
         | borl ^. sRef == Just (state, aNr) = 0
-        | otherwise =
-          vValState' -
-          if randomAction || psiValV' > borl ^. parameters.zeta
-            then 0
-            else clip ((borl ^. parameters.xi) * abs (vValState - vValState')) (1 / (1 + psiValW')**2 * psiW)
-
+        -- | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
+        | randomAction = vValState' -- psiW and psiV should not be 0!
+        | abs psiV < abs psiW = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiW)
+        | otherwise = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiV)
       clip minmax val = max (-minmax) $ min minmax val
-          -- vValState' -
-          -- if randomAction || psiValV' > borl ^. parameters . zeta
-          --   then 0
-          --   else borl ^. parameters . xi * psiW
-      -- wValStateNew = wValState' - if randomAction then 0 else (1-borl ^. parameters.xi) * psiW
-  let parallel = False
+
+
+  -- let parallel = False
   -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
   mv' <- P.insert period label vValStateNew mv
   mw' <- P.insert period label wValState' mw
@@ -234,7 +232,7 @@ nextAction borl
               rhoVals <- mapM (rhoValue borl state) as
               return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
         bestV <-
-          do vVals <- mapM (vValue False borl state) bestRho
+          do vVals <- mapM (vValue True borl state) bestRho
              return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
         bestE <-
           do eVals <- mapM (eValue borl state) bestV

@@ -102,8 +102,8 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  -- rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
+  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -126,8 +126,8 @@ params = Parameters
   , _epsilon          = 0.1
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
-  , _zeta             = 3.0
-  , _xi               = 5.0
+  , _zeta             = 0.5
+  , _xi               = 0.25
   }
 
 
