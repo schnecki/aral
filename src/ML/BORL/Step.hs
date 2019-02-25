@@ -137,7 +137,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       Left _  -> return $ Left rhoVal'
       Right m -> Right . force <$> P.insert period label rhoVal' m
   let rhoMinimumVal' | avgRew < rhoMinimumState = rhoMinimumState
-                     | otherwise = (1-expSmthPsi/100) * rhoMinimumState + expSmthPsi/100 * avgRew
+                     | otherwise = (1-expSmthPsi/200) * rhoMinimumState + expSmthPsi/200 * avgRew
   rhoMinimumNew <-
     case borl ^. rhoMinimum of
       Left _  -> return $ Left rhoMinimumVal'

@@ -20,3 +20,4 @@ TAGS
 *.tags
 *.cabal
 /rhoValues
+/examples/rhoValues
