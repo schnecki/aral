@@ -104,7 +104,7 @@ params = Parameters
   , _delta            = 0.25
   , _gamma            = 0.30
   , _epsilon          = 0.075
-  , _exploration      = 0.3
+  , _exploration      = 0.8
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
   , _xi               = 0.15
@@ -125,7 +125,7 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       (max 0.001 $ slow * exp)
       rand
       zeta -- zeta
-      (max 0.03 $ slower * xi)
+      (max 0.075 $ slower * xi)
   | otherwise = p
   where
     slower = 0.995
@@ -182,7 +182,7 @@ goalState f st = do
     (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
-  where stepRew = first (+ 1.0)
+  where stepRew = first (+ 8.0)
 
 
 moveUp :: St -> IO (Reward,St)
