@@ -125,7 +125,7 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       (max 0.001 $ slow * exp)
       rand
       zeta -- zeta
-      (max 0.0015 $ slower * xi)
+      (max 0.03 $ slower * xi)
   | otherwise = p
   where
     slower = 0.995
@@ -172,7 +172,7 @@ moveRand :: St -> IO (Reward, St)
 moveRand = moveUp
 
 
-goalState :: Num a => (St -> IO (a, St)) -> St -> IO (a, St)
+goalState :: (St -> IO (Reward, St)) -> St -> IO (Reward, St)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
@@ -182,7 +182,7 @@ goalState f st = do
     (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
-  where stepRew = first (+ 0)
+  where stepRew = first (+ 1.0)
 
 
 moveUp :: St -> IO (Reward,St)

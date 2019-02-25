@@ -137,7 +137,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
       Left _  -> return $ Left rhoVal'
       Right m -> Right .  force <$> P.insert period label rhoVal' m
   let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
-                     | otherwise = (1-expSmthPsi/200) * rhoMinimumState + expSmthPsi/200 * rhoState
+                     | otherwise = (1-expSmthPsi/50) * rhoMinimumState + expSmthPsi/50 * rhoState
   rhoMinimumNew <-
     case borl ^. rhoMinimum of
       Left _  -> return $ Left rhoMinimumVal'
@@ -168,14 +168,14 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   psiWTblVal <- P.lookupProxy period Worker label (snd $ borl ^. psiVWTbl)
   let psiWTblVal' = (1 - expSmthPsi) * psiWTblVal + expSmthPsi * psiW
   psiWTbl' <- P.insert period label psiWTblVal' (snd $ borl ^. psiVWTbl)
-  -- let xiVal = borl ^. parameters.xi
+  let xiVal = borl ^. parameters.xi
       -- eps = borl ^. parameters.epsilon
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
         | borl ^. sRef == Just (state, aNr) = 0
         -- | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
         | randomAction = vValState' -- psiW and psiV should not be 0!
-        | abs psiV < abs psiW = (1 - bta) * vValState' + bta * (vValState' + clip (abs vValState') psiW)
-        | otherwise = (1 - bta) * vValState' + bta * (vValState' + clip (abs vValState') psiV)
+        | abs psiV < abs psiW = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiW)
+        | otherwise = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiV)
       clip minmax val = max (-minmax) $ min minmax val
 
 
