@@ -45,6 +45,8 @@ data ProxyType
   | WTable
   | R0Table
   | R1Table
+  | PsiVTable
+  | PsiWTable
   deriving (Show, NFData, Generic)
 
 data LookupType = Target | Worker
@@ -220,4 +222,6 @@ getMinMaxVal p  = case p ^?! proxyType of
   WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
   R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
+  PsiVTable -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiWTable -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
 

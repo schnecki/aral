@@ -116,8 +116,8 @@ mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> 
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig
   -- Initialization for all NNs
  = do
-  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table]
-      scopes = concat $ replicate 4 ["_target", "_worker"]
+  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
+      scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
   let netInpInitState = (nnConfig ^. toNetInp) initialState
       nnSA :: ProxyType -> Int -> IO (Proxy s)
@@ -130,6 +130,8 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   w <- nnSA WTable 2
   r0 <- nnSA R0Table 4
   r1 <- nnSA R1Table 6
+  psiV <- nnSA PsiVTable 8
+  psiW <- nnSA PsiWTable 10
   return $
     force $
     BORL
@@ -145,7 +147,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       mempty
       (Left $ params ^. initRhoValue)
       (Left $ params ^. initRhoValue)
-      (Table mempty, Table mempty)
+      (psiV, psiW)
       (0, 0, 0)
       v
       w
@@ -161,10 +163,12 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
         [replicate (length as) 0]
     prependName txt model =
       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
-    name VTable  = "v"
-    name WTable  = "w"
-    name R0Table = "r0"
-    name R1Table = "r1"
+    name VTable    = "v"
+    name WTable    = "w"
+    name R0Table   = "r0"
+    name R1Table   = "r1"
+    name PsiVTable = "psiV"
+    name PsiWTable = "psiW"
 
 
 mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s

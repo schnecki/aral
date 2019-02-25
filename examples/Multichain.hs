@@ -2,7 +2,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 -- This is example is a multichain example from Puttermann 1994 (Example 8.2.2). For multichain MDPs the average reward
--- value may differ between set of recurrent states.
+-- value may differ between set of recurrent states. There are no decisions, moves are by probability.
+
+-- NOTE: Multichain MDP support is highly experimental!
 
 -- Solution as presented in Puttermann's book (pages 345/346):
 
@@ -70,11 +72,16 @@ type P = Double
 
 -- Actions
 actions :: [Action St]
-actions = Action reset "reset" : replicate 300 (Action move "move")
+actions =  [Action (addReset move) "move"]
 
-reset :: St -> IO (Reward,St)
-reset s = do x <- randomRIO (4,5)
-             return (0, St x)
+addReset :: Num a => (St -> IO (a, St)) -> St -> IO (a, St)
+addReset f st = do
+  r <- randomRIO (0,1)
+  if r < (0.003 :: Double)
+    then do
+    x <- randomRIO (4,5)
+    return (0, St x)
+    else f st
 
 move :: St -> IO (Reward,St)
 move s = do

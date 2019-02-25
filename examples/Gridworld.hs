@@ -63,7 +63,7 @@ nnConfig = NNConfig
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
-  , _scaleParameters      = scalingByMaxAbsReward False 4
+  , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 10000
   , _trainMSEMax          = 0.005
   }
@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -125,7 +125,7 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       (max 0.001 $ slow * exp)
       rand
       zeta -- zeta
-      xi
+      (max 0.0015 $ slower * xi)
   | otherwise = p
   where
     slower = 0.995
@@ -172,7 +172,7 @@ moveRand :: St -> IO (Reward, St)
 moveRand = moveUp
 
 
--- goalState :: Action St -> Action St
+goalState :: Num a => (St -> IO (a, St)) -> St -> IO (a, St)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
