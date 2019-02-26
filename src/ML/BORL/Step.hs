@@ -173,7 +173,7 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
         | borl ^. sRef == Just (state, aNr) = 0
         -- | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
-        | randomAction = vValState' -- psiW and psiV should not be 0!
+        -- | randomAction = vValState' -- psiW and psiV should not be 0!
         | abs psiV < abs psiW = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiW)
         | otherwise = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiV)
       clip minmax val = max (-minmax) $ min minmax val
