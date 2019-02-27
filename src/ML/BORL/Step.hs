@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 module ML.BORL.Step
     ( step
     , steps
@@ -93,33 +94,46 @@ setRefState inp@(borl, b, as@(aNr,_))
   | isJust (borl ^. sRef) = inp
   | otherwise = (sRef .~ Just (borl^.s, aNr) $ borl, b, as)
 
-stepExecute :: (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
-stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
-  let state = borl ^. s
-  (reward, stateNext) <- Simple $ action state
-  let mv = borl ^. v
-      mw = borl ^. w
-      mr0 = borl ^. r0
-      mr1 = borl ^. r1
-  let rhoMinVal = borl ^. parameters . minRhoValue
-      alp = borl ^. parameters . alpha
+
+data Calculation = Calculation
+  { getRhoVal'        :: Double
+  , getRhoMinimumVal' :: Double
+  , getPsiVTblVal'    :: Double
+  , getPsiWTblVal'    :: Double
+  , getVValStateNew   :: Double
+  , getWValState'     :: Double
+  , getR0ValState'    :: Double
+  , getR1ValState'    :: Double
+  , getPsiValRho'     :: Double
+  , getPsiValV'       :: Double
+  , getPsiValW'       :: Double
+  , getLastVs'        :: [Double]
+  , getLastRews'      :: [Reward]
+  }
+
+mkCalculation :: (Ord s) => BORL s -> s -> ActionIndex -> Bool -> Reward -> s -> MonadBorl Calculation
+mkCalculation borl state aNr randomAction reward stateNext = do
+  let alp = borl ^. parameters . alpha
       bta = borl ^. parameters . beta
       dlt = borl ^. parameters . delta
       gam = borl ^. parameters . gamma
       (ga0, ga1) = borl ^. gammas
       period = borl ^. t
-      (psiValRho, psiValV, psiValW) = borl ^. psis -- Psis (exponentially smoothed)
-      lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
+      (psiValRho, psiValV, psiValW) = borl ^. psis -- exponentially smoothed Psis
+  let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
       avgRew = sum lastRews' / fromIntegral (length lastRews')
-  rhoMinimumState <- rhoMinimumValue borl state act
-  vValState <- vValue False borl state act
-  vValStateNext <- vStateValue False borl stateNext
-  rhoVal <- rhoValue borl state act
-  wValState <- wValue borl state act
-  wValStateNext <- wStateValue borl state
-  r0ValState <- rValue borl RSmall state act
-  r1ValState <- rValue borl RBig state act
   let label = (state, aNr)
+  rhoMinimumState <- rhoMinimumValue borl state aNr
+  vValState <- vValue False borl state aNr
+  vValStateNext <- vStateValue False borl stateNext
+  rhoVal <- rhoValue borl state aNr
+  wValState <- wValue borl state aNr
+  wValStateNext <- wStateValue borl state
+  r0ValState <- rValue borl RSmall state aNr
+  r1ValState <- rValue borl RBig state aNr
+  psiVTblVal <- P.lookupProxy period Worker label (fst $ borl ^. psiVWTbl)
+  psiWTblVal <- P.lookupProxy period Worker label (snd $ borl ^. psiVWTbl)
+
   rhoState <-
     if isUnichain borl
       then -- return (reward + vValStateNext - vValState)
@@ -132,26 +146,14 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
 
   let rhoVal' = max rhoMinimumState $ (1 - alp) * rhoVal + alp * rhoState
         -- | otherwise = max rhoMinimumState $ (1 - alp / inEquality) * rhoVal + alp / inEquality * rhoState
-  rhoNew <-
-    case borl ^. rho of
-      Left _  -> return $ Left rhoVal'
-      Right m -> Right .  force <$> P.insert period label rhoVal' m
   let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
                      | otherwise = (1-expSmthPsi/50) * rhoMinimumState + expSmthPsi/50 * rhoState
-  rhoMinimumNew <-
-    case borl ^. rhoMinimum of
-      Left _  -> return $ Left rhoMinimumVal'
-      Right m -> Right . force <$> P.insert period label rhoMinimumVal' m
 
 
   let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
       lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
-
-  -- File IO Operations
-  Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
-  Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show rhoVal' ++ "\t" ++ show rhoMinimumVal' ++ "\t" ++ show (sum lastVs' / fromIntegral (length lastVs')) ++ "\n")
 
 
   let wValState'
@@ -162,36 +164,66 @@ stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * (if randomAction then 0 else abs psiRho)
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * (if randomAction then 0 else abs psiV)
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * (if randomAction then 0 else abs psiW)
-  psiVTblVal <- P.lookupProxy period Worker label (fst $ borl ^. psiVWTbl)
   let psiVTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
-  psiVTbl' <- P.insert period label psiVTblVal' (fst $ borl ^. psiVWTbl)
-  psiWTblVal <- P.lookupProxy period Worker label (snd $ borl ^. psiVWTbl)
   let psiWTblVal' = (1 - expSmthPsi) * psiWTblVal + expSmthPsi * psiW
-  psiWTbl' <- P.insert period label psiWTblVal' (snd $ borl ^. psiVWTbl)
   let xiVal = borl ^. parameters.xi
       -- eps = borl ^. parameters.epsilon
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
         | borl ^. sRef == Just (state, aNr) = 0
-        -- | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
-        -- | randomAction = vValState' -- psiW and psiV should not be 0!
+        --  | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
+        --  | randomAction = vValState' -- psiW and psiV should not be 0!
         | abs psiV < abs psiW = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiW)
         | otherwise = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiV)
       clip minmax val = max (-minmax) $ min minmax val
 
-
-  -- let parallel = False
-  -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
-  mv' <- P.insert period label vValStateNew mv
-  mw' <- P.insert period label wValState' mw
-  -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
+  -- R0/R1
   rSmall <- rStateValue borl RSmall stateNext
-  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
-  mr0' <- P.insert period label r0ValState' mr0
-  -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
   rBig <- rStateValue borl RBig stateNext
+  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + ga1 * rBig)
-  mr1' <- P.insert period label r1ValState' mr1
+
+  return $ Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValStateNew wValState'
+    r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
+
+
+stepExecute :: forall s . (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
+stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
+  let state = borl ^. s
+      period = borl ^. t
+      label = (state, aNr)
+  let mv = borl ^. v
+      mw = borl ^. w
+      mr0 = borl ^. r0
+      mr1 = borl ^. r1
+  (reward, stateNext) <- Simple $ action state
+  Calculation rhoVal' rhoMinimumVal' _ _ _ _ _ _ psiValRho' psiValV' psiValW' lastVs' lastRews' <-
+    mkCalculation borl state aNr randomAction reward stateNext
+
+  -- File IO Operations
+  Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
+  Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show rhoVal' ++ "\t" ++ show rhoMinimumVal' ++ "\t" ++ show (sum lastVs' / fromIntegral (length lastVs')) ++ "\n")
+
+  let calc :: (Calculation -> Double) -> ReplMemFun s
+      calc acc s a r rew s' = fmap acc (mkCalculation borl s a r rew s')
+  rhoNew <-
+    case borl ^. rho of
+      Left _  -> return $ Left rhoVal'
+      Right m -> Right .  force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoVal') m
+
+  rhoMinimumNew <-
+    case borl ^. rhoMinimum of
+      Left _  -> return $ Left rhoMinimumVal'
+      Right m -> Right . force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoMinimumVal') m
+  psiVTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiVTblVal') (fst $ borl ^. psiVWTbl)
+  psiWTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiWTblVal') (snd $ borl ^. psiVWTbl)
+  -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
+  -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
+  -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
   -- forkMr1' <- Simple $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
+  mv' <-  P.insert period state aNr randomAction reward stateNext  (calc getVValStateNew) mv
+  mw' <-  P.insert period state aNr randomAction reward stateNext  (calc getWValState') mw
+  mr0' <- P.insert period state aNr randomAction reward stateNext (calc getR0ValState') mr0
+  mr1' <- P.insert period state aNr randomAction reward stateNext (calc getR1ValState') mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. psis) (psiValRho', psiValV', psiValW') (borl ^. parameters)
   -- mv' <- Simple $ collectForkResult forkMv'
   -- mw' <- Simple $ collectForkResult forkMw'
@@ -229,13 +261,13 @@ nextAction borl
           if isUnichain borl
             then return as
             else do
-              rhoVals <- mapM (rhoValue borl state) as
+              rhoVals <- mapM (rhoValue borl state) (map fst as)
               return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
         bestV <-
-          do vVals <- mapM (vValue True borl state) bestRho
+          do vVals <- mapM (vValue True borl state) (map fst bestRho)
              return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
         bestE <-
-          do eVals <- mapM (eValue borl state) bestV
+          do eVals <- mapM (eValue borl state) (map fst bestV)
              return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
     -- bestR <- sortBy (epsCompare compare `on` rValue borl RBig state) bestV
     -- return (False, head bestR)
@@ -253,30 +285,28 @@ nextAction borl
     state = borl ^. s
     as = actionsIndexed borl state
 
--- actions :: BORL s -> s -> [Action s]
--- actions borl state = map snd (actionsIndexed borl state)
 
 actionsIndexed :: BORL s -> s -> [ActionIndexed s]
 actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoMinimumValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
+rhoMinimumValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 rhoMinimumValue = rhoMinimumValueWith Worker
 
-rhoMinimumValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
-rhoMinimumValueWith lkTp borl state (a,_) =
+rhoMinimumValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
+rhoMinimumValueWith lkTp borl state a =
   case borl ^. rhoMinimum of
     Left r  -> return r
     Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
+rhoValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 rhoValue = rhoValueWith Worker
 
-rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
-rhoValueWith lkTp borl state (a,_) =
+rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
+rhoValueWith lkTp borl state a =
   case borl ^. rho of
     Left r  -> return r
     Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
@@ -284,13 +314,13 @@ rhoValueWith lkTp borl state (a,_) =
 rhoStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 rhoStateValue borl state = case borl ^. rho of
   Left r  -> return r
-  Right _ -> maximum <$> mapM (rhoValueWith Target borl state) (actionsIndexed borl state)
+  Right _ -> maximum <$> mapM (rhoValueWith Target borl state) (map fst $ actionsIndexed borl state)
 
-vValue :: (Ord s) => Bool -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
+vValue :: (Ord s) => Bool -> BORL s -> s -> ActionIndex -> MonadBorl Double
 vValue = vValueWith Worker
 
-vValueWith :: (Ord s) => LookupType -> Bool -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
-vValueWith lkTp addPsiV borl state (a, _) = do
+vValueWith :: (Ord s) => LookupType -> Bool -> BORL s -> s -> ActionIndex -> MonadBorl Double
+vValueWith lkTp addPsiV borl state a = do
   vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. v)
   psiV <-
     if addPsiV
@@ -299,17 +329,17 @@ vValueWith lkTp addPsiV borl state (a, _) = do
   return (vVal + psiV)
 
 vStateValue :: (Ord s) => Bool -> BORL s -> s -> MonadBorl Double
-vStateValue addPsiV borl state = maximum <$> mapM (vValueWith Target addPsiV borl state) (actionsIndexed borl state)
+vStateValue addPsiV borl state = maximum <$> mapM (vValueWith Target addPsiV borl state) (map fst $ actionsIndexed borl state)
 
 
-wValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
+wValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 wValue = wValueWith Worker
 
-wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndexed s -> MonadBorl Double
-wValueWith lkTp borl state (a,_) = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. w)
+wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
+wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. w)
 
 wStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
-wStateValue borl state = maximum <$> mapM (wValueWith Target borl state) (actionsIndexed borl state)
+wStateValue borl state = maximum <$> mapM (wValueWith Target borl state) (map fst $ actionsIndexed borl state)
 
 
 -- | Used to select a discount factor.
@@ -319,12 +349,12 @@ data RSize
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndexed s -> MonadBorl Double
+rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndex -> MonadBorl Double
 rValue = rValueWith Worker
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndexed s -> MonadBorl Double
-rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, a) mr
+rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndex -> MonadBorl Double
+rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
       case size of
@@ -332,10 +362,10 @@ rValueWith lkTp borl size state (a, _) = P.lookupProxy (borl ^. t) lkTp (state, 
         RBig   -> borl ^. r1
 
 rStateValue :: (Ord s) => BORL s -> RSize -> s -> MonadBorl Double
-rStateValue borl size state = maximum <$> mapM (rValueWith Target borl size state) (actionsIndexed borl state)
+rStateValue borl size state = maximum <$> mapM (rValueWith Target borl size state) (map fst $ actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
-eValue :: (Ord s) => BORL s -> s -> ActionIndexed s -> MonadBorl Double
+eValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 eValue borl state act = do
   big <- rValueWith Target borl RBig state act
   small <- rValueWith Target borl RSmall state act

@@ -4,8 +4,8 @@ module ML.BORL.Action where
 import           Control.DeepSeq
 import qualified Data.Text       as T
 
--- | A reward is a Double.
-type Reward = Double
+import           ML.BORL.Types
+
 
 -- | An action is a function returning a reward and a new state, and has a name for pretty printing.
 data Action s = Action

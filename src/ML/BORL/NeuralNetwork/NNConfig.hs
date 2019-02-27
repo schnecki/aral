@@ -9,12 +9,12 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Grenade
 
-data NNConfig k = NNConfig
-  { _toNetInp             :: !(k -> [Double])
-  , _replayMemory         :: !(ReplayMemory (k, ActionIndex))
+data NNConfig s = NNConfig
+  { _toNetInp             :: !(s -> [Double])
+  , _replayMemory         :: !(ReplayMemory s)
   , _trainBatchSize       :: !Int
   , _learningParams       :: !LearningParameters
-  , _prettyPrintElems     :: ![k]
+  , _prettyPrintElems     :: ![s]
   , _scaleParameters      :: !ScalingNetOutParameters
   , _updateTargetInterval :: !Integer
   , _trainMSEMax          :: !MSE -- ^ Mean squared error to train for.

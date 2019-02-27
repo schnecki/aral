@@ -14,6 +14,8 @@ type Period = Integer
 type ActionIndex = Int
 type InitialState s = s         -- ^ Initial state
 type Batchsize = Int
+type Reward = Double
+type ReplMemFun s = s -> ActionIndex -> Bool -> Reward -> s -> MonadBorl Double
 
 
 type MSE = Double               -- ^ Mean squared error
