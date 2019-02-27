@@ -11,6 +11,7 @@ import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Proxy.Ops     (mkNNList)
+import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
 
@@ -76,8 +77,8 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
   where fromTable = period < fromIntegral memSize
         memSize = case m1 of
           P.Table{}                       -> -1
-          P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemory.replayMemorySize
-          P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemory.replayMemorySize
+          P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
+          P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
         tbl px = case px of
           p@P.Table{}                   -> p
           P.Grenade _ _ p _ _ _         -> P.Table p
@@ -89,7 +90,7 @@ prettyBORLTables t1 t2 t3 borl = do
 
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
-  let mkErr scale = case (borl ^. r1, borl ^. r0) of
+  let mkErr scale = case (borl ^. proxies.r1, borl ^. proxies.r0) of
            (P.Table rm1, P.Table rm0) -> return $ P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
            (prNN1, prNN0) -> do
              n1 <- mkNNList borl scale prNN1
@@ -100,22 +101,22 @@ prettyBORLTables t1 t2 t3 borl = do
                then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
                else return empty
   prettyVWPsi <- if t3
-               then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (fst $ borl ^. psiVWTbl) (snd $ borl ^. psiVWTbl)
+               then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. proxies.psiV) (borl ^. proxies.psiW)
                else return empty
   let addPsiV k v = do
-        vPsi <- P.lookupProxy (borl ^. t) P.Worker k (fst $ borl ^. psiVWTbl)
+        vPsi <- P.lookupProxy (borl ^. t) P.Worker k (borl ^. proxies.psiV)
         return (v + vPsi)
 
-  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. v)
+  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies.v)
 
-  prettyRhoVal <- case borl ^. rho of
-       Left val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
-       Right m  -> do
+  prettyRhoVal <- case borl ^. proxies.rho of
+       Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
+       m  -> do
          prAct <- prettyTable borl prettyAction prettyActionIdx m
          return $ text "Rho" $+$ prAct
   prettyVisits <- prettyTable borl id (const empty) (P.Table vis)
-  prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. v) (borl ^. w)
-  prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. r0) (borl ^. r1)
+  prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies.v) (borl ^. proxies.w)
+  prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies.r0) (borl ^. proxies.r1)
   return $
     text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$ text "Alpha" <> colon $$
     nest 45 (printFloat $ borl ^. parameters . alpha) $+$
@@ -165,7 +166,7 @@ prettyBORLTables t1 t2 t3 borl = do
     prettyAction st = st
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     scalingText =
-      case borl ^. v of
+      case borl ^. proxies.v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         P.Grenade _ _ _ _ conf _ ->
           text
@@ -182,15 +183,15 @@ prettyBORLTables t1 t2 t3 borl = do
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
 
-    nnBatchSize = case borl ^. v of
+    nnBatchSize = case borl ^. proxies.v of
       P.Table {} -> empty
       P.Grenade _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
       P.TensorflowProxy _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
-    nnReplMemSize = case borl ^. v of
+    nnReplMemSize = case borl ^. proxies.v of
       P.Table {} -> empty
-      P.Grenade _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
-      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemory.replayMemorySize)
-    nnLearningParams = case borl ^. v of
+      P.Grenade _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
+      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
+    nnLearningParams = case borl ^. proxies.v of
       P.Table {} -> empty
       P.Grenade _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. learningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
@@ -201,17 +202,17 @@ prettyBORLTables t1 t2 t3 borl = do
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
 prettyBORL borl = runMonadBorl $ do
   buildModels
-  reloadNets (borl ^. v)
-  reloadNets (borl ^. w)
-  reloadNets (borl ^. r0)
-  reloadNets (borl ^. r1)
+  reloadNets (borl ^. proxies.v)
+  reloadNets (borl ^. proxies.w)
+  reloadNets (borl ^. proxies.r0)
+  reloadNets (borl ^. proxies.r1)
   prettyBORLTables True True True borl
     where reloadNets px = case px of
             P.TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
             _ -> return ()
           isTensorflowProxy P.TensorflowProxy{} = True
           isTensorflowProxy _                   = False
-          buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
+          buildModels = case find isTensorflowProxy (allProxies $ borl ^. proxies) of
             Just (P.TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
             _                                       -> return ()
 

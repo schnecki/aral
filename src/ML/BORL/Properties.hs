@@ -3,18 +3,19 @@ module ML.BORL.Properties
     , isMultichain
     ) where
 
+import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 
-import           Control.Lens ((^.))
+import           Control.Lens       ((^.))
 
 -------------------- Properties --------------------
 
 
 isMultichain :: BORL s -> Bool
 isMultichain borl =
-  case borl ^. rho of
-    Left {}  -> False
-    Right {} -> True
+  case borl ^. proxies.rho of
+    Scalar {} -> False
+    _         -> True
 
 
 isUnichain :: BORL s -> Bool

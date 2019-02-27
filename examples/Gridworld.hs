@@ -59,7 +59,7 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
-  , _replayMemory         = mkReplayMemory 10000
+  , _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)

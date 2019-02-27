@@ -22,15 +22,6 @@ makeLenses ''ReplayMemory
 instance NFData (ReplayMemory s) where
   rnf (ReplayMemory !_ s) = rnf s
 
-
--- | Function to create a new replay memory.
-mkReplayMemory :: Int -> ReplayMemory s
-mkReplayMemory sz =
-  unsafePerformIO $ do
-    vec <- V.unsafeNew sz       -- does not initialize memory
-    return $ ReplayMemory vec sz
-
-
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
 addToReplayMemory :: Period -> (s, ActionIndex, Bool, Double, s) -> ReplayMemory s -> IO (ReplayMemory s)

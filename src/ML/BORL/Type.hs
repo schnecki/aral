@@ -44,7 +44,6 @@ data BORL s = BORL
   { _actionList    :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
   , _actionFilter  :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
   , _s             :: !s                    -- ^ Current state.
-  , _sRef          :: !(Maybe (s,ActionIndex)) -- ^ Reference state.
   , _t             :: !Integer              -- ^ Current time t.
   , _parameters    :: !Parameters           -- ^ Parameter setup.
   , _decayFunction :: !Decay                -- ^ Decay function at period t.
@@ -55,24 +54,17 @@ data BORL s = BORL
   -- Values:
   , _lastVValues   :: ![Double] -- ^ List of X last V values
   , _lastRewards   :: ![Double] -- ^ List of X last rewards
-  , _rhoMinimum    :: !(Either Double (Proxy s))
-  , _rho           :: !(Either Double (Proxy s)) -- ^ Either unichain or multichain y_{-1} values.
-  , _psiVWTbl      :: !(Proxy s, Proxy s)
   , _psis          :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
-  , _v             :: !(Proxy s)                 -- ^ Bias values (y_0).
-  , _w             :: !(Proxy s)                 -- ^ y_1 values.
-  , _r0            :: !(Proxy s)                 -- ^ Discounted values with first gamma value.
-  , _r1            :: !(Proxy s)                 -- ^ Discounted values with second gamma value.
+  , _proxies       :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
 
   -- Stats:
-  , _visits        :: !(M.Map s Integer)                       -- ^ Counts the visits of the states
+  , _visits        :: !(M.Map s Integer) -- ^ Counts the visits of the states
   }
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s sRef t par dec gam lastVs lastRews rhoMin rho psiTbl psis v w r r1 vis) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf sRef `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq`
-    rnf lastVs `seq` rnf lastRews `seq` rnf rhoMin `seq` rnf rho `seq` rnf psiTbl `seq` rnf psis `seq` rnf v `seq` rnf w `seq` rnf r `seq` rnf r1 `seq` rnf s
+  rnf (BORL as af s t par dec gam lastVs lastRews psis proxies vis) =
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 
 
 default_gamma0, default_gamma1 :: Double
@@ -93,21 +85,14 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
     (zip [idxStart ..] as)
     asFilter
     initialState
-    Nothing
     0
     params
     decayFun
     (default_gamma0, default_gamma1)
     mempty
     mempty
-    (Left $ params ^. initRhoValue)
-    (Left $ params ^. initRhoValue)
-    (Table mempty, Table mempty)
     (0, 0, 0)
-    tabSA
-    tabSA
-    tabSA
-    tabSA
+    (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
     mempty
   where
     tabSA = Table mempty
@@ -122,37 +107,30 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   let netInpInitState = (nnConfig ^. toNetInp) initialState
       nnSA :: ProxyType -> Int -> IO (Proxy s)
       nnSA tp idx = do
-        nnConfig' <- mkNNConfigSA as asFilter nnConfig
         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW mempty tp nnConfig' (length as)
+        return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <- nnSA VTable 0
   w <- nnSA WTable 2
   r0 <- nnSA R0Table 4
   r1 <- nnSA R1Table 6
   psiV <- nnSA PsiVTable 8
   psiW <- nnSA PsiWTable 10
+  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     force $
     BORL
       (zip [idxStart ..] as)
       asFilter
       initialState
-      Nothing
       0
       params
       decayFun
       (default_gamma0, default_gamma1)
       mempty
       mempty
-      (Left $ params ^. initRhoValue)
-      (Left $ params ^. initRhoValue)
-      (psiV, psiW)
       (0, 0, 0)
-      v
-      w
-      r0
-      r1
+      (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) psiV psiW v w r0 r1 (Just repMem))
       mempty
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
@@ -177,21 +155,14 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
     (zip [0 ..] as)
     asFilter
     initialState
-    Nothing
     0
     params
     decayFun
     (default_gamma0, default_gamma1)
     mempty
     mempty
-    (Right tabSA)
-    (Right tabSA)
-    (Table mempty, Table mempty)
     (0, 0, 0)
-    tabSA
-    tabSA
-    tabSA
-    tabSA
+    (Proxies tabSA tabSA tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
     mempty
   where
     tabSA = Table mempty
@@ -209,34 +180,28 @@ mkBORLUnichainGrenade ::
   -> NNConfig s
   -> IO (BORL s)
 mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
-  let nnSA tp = do
-        nnConfig' <- mkNNConfigSA as asFilter nnConfig
-        return $ Grenade net net mempty tp nnConfig' (length as) :: IO (Proxy s)
-  nnSAVTable <- nnSA VTable
-  nnSAWTable <- nnSA WTable
-  nnSAR0Table <- nnSA R0Table
-  nnSAR1Table <- nnSA R1Table
+  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nnSAVTable = nnSA VTable
+  let nnSAWTable = nnSA WTable
+  let nnSAR0Table = nnSA R0Table
+  let nnSAR1Table = nnSA R1Table
+  let nnPsiV = nnSA PsiVTable
+  let nnPsiW = nnSA PsiWTable
+  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
     BORL
       (zip [idxStart ..] as)
       asFilter
       initialState
-      Nothing
       0
       params
       decayFun
       (default_gamma0, default_gamma1)
       mempty
       mempty
-      (Left $ params ^. initRhoValue)
-      (Left $ params ^. initRhoValue)
-      (Table mempty, Table mempty)
       (0, 0, 0)
-      nnSAVTable
-      nnSAWTable
-      nnSAR0Table
-      nnSAR1Table
+      (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
       mempty
 
 
@@ -251,37 +216,38 @@ mkBORLMultichainGrenade ::
   -> NNConfig s
   -> IO (BORL s)
 mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = do
-  let nnSA tp = do
-        nnConfig' <- mkNNConfigSA as asFilter nnConfig
-        return $ Grenade net net mempty tp nnConfig' (length as) :: IO (Proxy s)
-  nnSAMinRhoTable <- nnSA VTable
-  nnSARhoTable <- nnSA VTable
-  nnSAVTable <- nnSA VTable
-  nnSAWTable <- nnSA WTable
-  nnSAR0Table <- nnSA R0Table
-  nnSAR1Table <- nnSA R1Table
+  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nnSAMinRhoTable = nnSA VTable
+  let nnSARhoTable = nnSA VTable
+  let nnSAVTable = nnSA VTable
+  let nnSAWTable = nnSA WTable
+  let nnSAR0Table = nnSA R0Table
+  let nnSAR1Table = nnSA R1Table
+  let nnPsiV = nnSA PsiVTable
+  let nnPsiW = nnSA PsiWTable
+  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
     BORL
       (zip [0 ..] as)
       asFilter
       initialState
-      Nothing
       0
       params
       decayFun
       (default_gamma0, default_gamma1)
       mempty
       mempty
-      (Right nnSAMinRhoTable)
-      (Right nnSARhoTable)
-      (Table mempty, Table mempty)
       (0, 0, 0)
-      nnSAVTable
-      nnSAWTable
-      nnSAR0Table
-      nnSAR1Table
+      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
       mempty
+
+
+mkReplayMemory :: Int -> IO (ReplayMemory s)
+mkReplayMemory sz = do
+  vec <- V.new sz
+  return $ ReplayMemory vec sz
+
 
 -------------------- Other Constructors --------------------
 
@@ -317,14 +283,3 @@ checkGrenade _ nnConfig borl
     stInp = length ((nnConfig ^. toNetInp) (borl ^. s))
     nrActs = length (borl ^. actionList)
 
-
--- | Converts the neural network state configuration to a state-action configuration.
-mkNNConfigSA :: forall s . [Action s] -> (s -> [Bool]) -> NNConfig s -> IO (NNConfig s)
-mkNNConfigSA as asFilter (NNConfig inp (ReplayMemory _ sz) bs lp pp sc c mse) = do
-  vec <- V.new sz
-  let rm' = ReplayMemory vec sz
-  return $ NNConfig inp rm' bs lp pp sc c mse
-  -- where
-    -- maxVal = fromIntegral (length as)
-    -- ppSA :: [s] -> [(s, ActionIndex)]
-    -- ppSA = concatMap (\k -> map ((k,) . snd) (filter fst $ zip (asFilter k) [idxStart .. idxStart + length as - 1]))

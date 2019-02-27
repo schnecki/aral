@@ -64,7 +64,7 @@ type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, Full
 nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
-  , _replayMemory         = mkReplayMemory 10000
+  , _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
   , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]

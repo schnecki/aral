@@ -9,6 +9,7 @@ module ML.BORL.Step
     ) where
 
 import           ML.BORL.Action
+import           ML.BORL.Calculation
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
                                                    restoreModelWithLastIO,
@@ -47,69 +48,43 @@ approxAvg = fromIntegral (100 :: Int)
 steps :: (NFData s, Ord s) => BORL s -> Integer -> IO (BORL s)
 steps borl nr = runMonadBorl $ do
   restoreTensorflowModels borl
-  borl' <- foldM (\b _ -> fmap setRefState (nextAction b) >>= stepExecute) borl [0 .. nr - 1]
+  borl' <- foldM (\b _ -> nextAction b >>= stepExecute) borl [0 .. nr - 1]
   force <$> saveTensorflowModels borl'
 
 
 step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
 step borl = runMonadBorl $ do
   restoreTensorflowModels borl
-  borl' <- fmap setRefState (nextAction borl) >>= stepExecute
+  borl' <- nextAction borl >>= stepExecute
   force <$> saveTensorflowModels borl'
 
 restoreTensorflowModels :: BORL s -> MonadBorl ()
 restoreTensorflowModels borl = do
   buildModels
-  restoreProxy (borl ^. v)
-  restoreProxy (borl ^. w)
-  restoreProxy (borl ^. r0)
-  restoreProxy (borl ^. r1)
-
-  where restoreProxy px = case px of
-          TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
-          _ -> return ()
-        isTensorflowProxy TensorflowProxy{} = True
-        isTensorflowProxy _                 = False
-        buildModels = case find isTensorflowProxy [borl^.v, borl^.w, borl^.r0, borl^.r1] of
-          Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
-          _                                     -> return ()
+  mapM_ restoreProxy (allProxies $ borl ^. proxies)
+  where
+    restoreProxy px =
+      case px of
+        TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
+        _ -> return ()
+    isTensorflowProxy TensorflowProxy {} = True
+    isTensorflowProxy _                  = False
+    buildModels =
+      case find isTensorflowProxy (allProxies $ borl ^. proxies) of
+        Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
+        _                                     -> return ()
 
 
 saveTensorflowModels :: BORL s -> MonadBorl (BORL s)
 saveTensorflowModels borl = do
-  saveProxy (borl ^. v)
-  saveProxy (borl ^. w)
-  saveProxy (borl ^. r0)
-  saveProxy (borl ^. r1)
+  mapM_ saveProxy (allProxies $ borl ^. proxies)
   return borl
+  where
+    saveProxy px =
+      case px of
+        TensorflowProxy netT netW _ _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
+        _ -> return ()
 
-  where saveProxy px = case px of
-          TensorflowProxy netT netW _ _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
-          _ -> return ()
-
-
-setRefState :: (BORL s, Bool, ActionIndexed s) -> (BORL s, Bool, ActionIndexed s)
-setRefState inp@(borl, b, as@(aNr,_))
-  | True = inp
-  | isJust (borl ^. sRef) = inp
-  | otherwise = (sRef .~ Just (borl^.s, aNr) $ borl, b, as)
-
-
-data Calculation = Calculation
-  { getRhoVal'        :: Double
-  , getRhoMinimumVal' :: Double
-  , getPsiVTblVal'    :: Double
-  , getPsiWTblVal'    :: Double
-  , getVValStateNew   :: Double
-  , getWValState'     :: Double
-  , getR0ValState'    :: Double
-  , getR1ValState'    :: Double
-  , getPsiValRho'     :: Double
-  , getPsiValV'       :: Double
-  , getPsiValW'       :: Double
-  , getLastVs'        :: [Double]
-  , getLastRews'      :: [Reward]
-  }
 
 mkCalculation :: (Ord s) => BORL s -> s -> ActionIndex -> Bool -> Reward -> s -> MonadBorl Calculation
 mkCalculation borl state aNr randomAction reward stateNext = do
@@ -131,118 +106,103 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   wValStateNext <- wStateValue borl state
   r0ValState <- rValue borl RSmall state aNr
   r1ValState <- rValue borl RBig state aNr
-  psiVTblVal <- P.lookupProxy period Worker label (fst $ borl ^. psiVWTbl)
-  psiWTblVal <- P.lookupProxy period Worker label (snd $ borl ^. psiVWTbl)
-
+  psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV)
+  psiWTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiW)
   rhoState <-
     if isUnichain borl
-      then -- return (reward + vValStateNext - vValState)
+           -- return (reward + vValStateNext - vValState)
           -- return reward                                              -- Alternative to above (estimating it from actual reward)
-          return avgRew
+      then return avgRew
       else do
         rhoStateValNext <- rhoStateValue borl stateNext
         return $ (approxAvg * rhoStateValNext + reward) / (approxAvg + 1) -- approximation
-  -- let inEquality = 1 / (1 + psiValV)
-
   let rhoVal' = max rhoMinimumState $ (1 - alp) * rhoVal + alp * rhoState
-        -- | otherwise = max rhoMinimumState $ (1 - alp / inEquality) * rhoVal + alp / inEquality * rhoState
-  let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
-                     | otherwise = (1-expSmthPsi/50) * rhoMinimumState + expSmthPsi/50 * rhoState
-
-
+  let rhoMinimumVal'
+        | rhoState < rhoMinimumState = rhoMinimumState
+        | otherwise = (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoState
   let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
       lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
-
-
-  let wValState'
-        | borl ^. sRef == Just (state, aNr) = 0
-        | otherwise = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
+  let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
   let psiW = wValStateNext - vValState' - wValState' -- should converge towards 0
-
   let psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * (if randomAction then 0 else abs psiRho)
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * (if randomAction then 0 else abs psiV)
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * (if randomAction then 0 else abs psiW)
   let psiVTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
   let psiWTblVal' = (1 - expSmthPsi) * psiWTblVal + expSmthPsi * psiW
-  let xiVal = borl ^. parameters.xi
-      -- eps = borl ^. parameters.epsilon
+  let xiVal = borl ^. parameters . xi
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
-        | borl ^. sRef == Just (state, aNr) = 0
         --  | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
         --  | randomAction = vValState' -- psiW and psiV should not be 0!
         | abs psiV < abs psiW = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiW)
         | otherwise = (1 - xiVal) * vValState' + xiVal * (vValState' + clip (abs vValState') psiV)
       clip minmax val = max (-minmax) $ min minmax val
-
   -- R0/R1
   rSmall <- rStateValue borl RSmall stateNext
   rBig <- rStateValue borl RBig stateNext
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + ga1 * rBig)
-
-  return $ Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValStateNew wValState'
-    r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
-
+  return $ Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
 
 stepExecute :: forall s . (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
 stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
       label = (state, aNr)
-  let mv = borl ^. v
-      mw = borl ^. w
-      mr0 = borl ^. r0
-      mr1 = borl ^. r1
+  let mv = borl ^. proxies.v
+      mw = borl ^. proxies.w
+      mr0 = borl ^. proxies.r0
+      mr1 = borl ^. proxies.r1
   (reward, stateNext) <- Simple $ action state
-  Calculation rhoVal' rhoMinimumVal' _ _ _ _ _ _ psiValRho' psiValV' psiValW' lastVs' lastRews' <-
-    mkCalculation borl state aNr randomAction reward stateNext
+  -- Calculation rhoVal' rhoMinimumVal' _ _ _ _ _ _ psiValRho' psiValV' psiValW' lastVs' lastRews' <-
+  --   mkCalculation borl state aNr randomAction reward stateNext
+
+
+  (proxies', calc) <- P.insert period state aNr randomAction reward stateNext (mkCalculation borl) (borl ^. proxies)
 
   -- File IO Operations
   Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
-  Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show rhoVal' ++ "\t" ++ show rhoMinimumVal' ++ "\t" ++ show (sum lastVs' / fromIntegral (length lastVs')) ++ "\n")
+  Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show (getRhoVal' calc) ++ "\t" ++ show (getRhoMinimumVal' calc) ++ "\t" ++ show (sum (getLastVs' calc) / fromIntegral (length (getLastVs' calc))) ++ "\n")
 
-  let calc :: (Calculation -> Double) -> ReplMemFun s
-      calc acc s a r rew s' = fmap acc (mkCalculation borl s a r rew s')
-  rhoNew <-
-    case borl ^. rho of
-      Left _  -> return $ Left rhoVal'
-      Right m -> Right .  force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoVal') m
+  -- rhoNew <-
+  --   case borl ^. rho of
+  --     Left _  -> return $ Left rhoVal'
+  --     Right m -> Right .  force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoVal') m
 
-  rhoMinimumNew <-
-    case borl ^. rhoMinimum of
-      Left _  -> return $ Left rhoMinimumVal'
-      Right m -> Right . force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoMinimumVal') m
-  psiVTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiVTblVal') (fst $ borl ^. psiVWTbl)
-  psiWTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiWTblVal') (snd $ borl ^. psiVWTbl)
-  -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
-  -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
-  -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
-  -- forkMr1' <- Simple $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
-  mv' <-  P.insert period state aNr randomAction reward stateNext  (calc getVValStateNew) mv
-  mw' <-  P.insert period state aNr randomAction reward stateNext  (calc getWValState') mw
-  mr0' <- P.insert period state aNr randomAction reward stateNext (calc getR0ValState') mr0
-  mr1' <- P.insert period state aNr randomAction reward stateNext (calc getR1ValState') mr1
-  let params' = (borl ^. decayFunction) (period + 1) (borl ^. psis) (psiValRho', psiValV', psiValW') (borl ^. parameters)
-  -- mv' <- Simple $ collectForkResult forkMv'
-  -- mw' <- Simple $ collectForkResult forkMw'
-  -- mr0' <- Simple $ collectForkResult forkMr0'
-  -- mr1' <- Simple $ collectForkResult forkMr1'
-  let borl'
-        | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
-        | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
+  -- rhoMinimumNew <-
+  --   case borl ^. rhoMinimum of
+  --     Left _  -> return $ Left rhoMinimumVal'
+  --     Right m -> Right . force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoMinimumVal') m
+  -- psiVTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiVTblVal') (fst $ borl ^. psiVWTbl)
+  -- psiWTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiWTblVal') (snd $ borl ^. psiVWTbl)
+  -- -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
+  -- -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
+  -- -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
+  -- -- forkMr1' <- Simple $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
+  -- mv' <-  P.insert period state aNr randomAction reward stateNext  (calc getVValStateNew) mv
+  -- mw' <-  P.insert period state aNr randomAction reward stateNext  (calc getWValState') mw
+  -- mr0' <- P.insert period state aNr randomAction reward stateNext (calc getR0ValState') mr0
+  -- mr1' <- P.insert period state aNr randomAction reward stateNext (calc getR1ValState') mr1
+  let params' = (borl ^. decayFunction) (period + 1) (borl ^. psis) (getPsiValRho' calc, getPsiValV' calc, getPsiValW' calc) (borl ^. parameters)
+  -- -- mv' <- Simple $ collectForkResult forkMv'
+  -- -- mw' <- Simple $ collectForkResult forkMw'
+  -- -- mr0' <- Simple $ collectForkResult forkMr0'
+  -- -- mr1' <- Simple $ collectForkResult forkMr1'
+
+  -- let borl'
+  --       | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
+  --       | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
   -- update values
   return $ force $ -- needed to ensure constant memory consumption
-    set psis (psiValRho', psiValV', psiValW') $
-    set lastVValues lastVs' $
-    set lastRewards lastRews' $
-    set rhoMinimum rhoMinimumNew $
-    set psiVWTbl (psiVTbl', psiWTbl') $
+    set psis (getPsiValRho' calc, getPsiValV' calc, getPsiValW' calc) $
+    set lastVValues (getLastVs' calc) $
+    set lastRewards (getLastRews' calc) $
+    set proxies proxies' $
     set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
     set t (period + 1) $
-    set parameters params' borl'
+    set parameters params' borl
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
@@ -295,10 +255,7 @@ rhoMinimumValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 rhoMinimumValue = rhoMinimumValueWith Worker
 
 rhoMinimumValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
-rhoMinimumValueWith lkTp borl state a =
-  case borl ^. rhoMinimum of
-    Left r  -> return r
-    Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
+rhoMinimumValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rhoMinimum)
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
@@ -306,25 +263,23 @@ rhoValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 rhoValue = rhoValueWith Worker
 
 rhoValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
-rhoValueWith lkTp borl state a =
-  case borl ^. rho of
-    Left r  -> return r
-    Right m -> P.lookupProxy (borl ^. t) lkTp (state,a) m
+rhoValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rho)
+
 
 rhoStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
-rhoStateValue borl state = case borl ^. rho of
-  Left r  -> return r
-  Right _ -> maximum <$> mapM (rhoValueWith Target borl state) (map fst $ actionsIndexed borl state)
+rhoStateValue borl state = case borl ^. proxies.rho of
+  Scalar r  -> return r
+  _ -> maximum <$> mapM (rhoValueWith Target borl state) (map fst $ actionsIndexed borl state)
 
 vValue :: (Ord s) => Bool -> BORL s -> s -> ActionIndex -> MonadBorl Double
 vValue = vValueWith Worker
 
 vValueWith :: (Ord s) => LookupType -> Bool -> BORL s -> s -> ActionIndex -> MonadBorl Double
 vValueWith lkTp addPsiV borl state a = do
-  vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. v)
+  vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies.v)
   psiV <-
     if addPsiV
-      then P.lookupProxy (borl ^. t) lkTp (state, a) (fst $ borl ^. psiVWTbl)
+      then P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies.psiV)
       else return 0
   return (vVal + psiV)
 
@@ -336,7 +291,7 @@ wValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
 wValue = wValueWith Worker
 
 wValueWith :: (Ord s) => LookupType -> BORL s -> s -> ActionIndex -> MonadBorl Double
-wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. w)
+wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies.w)
 
 wStateValue :: (Ord s) => BORL s -> s -> MonadBorl Double
 wStateValue borl state = maximum <$> mapM (wValueWith Target borl state) (map fst $ actionsIndexed borl state)
@@ -358,11 +313,11 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
       case size of
-        RSmall -> borl ^. r0
-        RBig   -> borl ^. r1
+        RSmall -> borl ^. proxies.r0
+        RBig   -> borl ^. proxies.r1
 
 rStateValue :: (Ord s) => BORL s -> RSize -> s -> MonadBorl Double
-rStateValue borl size state = maximum <$> mapM (rValueWith Target borl size state) (map fst $ actionsIndexed borl state)
+rStateValue borl size state = maximum <$> mapM (rValueWith Target borl size state . fst) (actionsIndexed borl state)
 
 -- | Calculates the difference between the expected discounted values.
 eValue :: (Ord s) => BORL s -> s -> ActionIndex -> MonadBorl Double
