@@ -53,14 +53,14 @@ type IsRandomAction = Bool
 -- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
 insert :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> IsRandomAction -> Reward -> StateNext s -> ReplMemFun s -> Proxies s -> T.MonadBorl (Proxies s, Calculation)
 insert period s aNr randAct rew s' getCalc (Proxies pRhoMin pRho pPsiV pPsiW pV pW pR0 pR1 Nothing) = do
-  calc@(Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiVVal' psiWVal' lastVs' lastRews') <-
+  calc@(Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValState' wValState' r0ValState' r1ValState' psiValRho' psiVVal' psiWVal' lastVs' lastRews') <-
     getCalc s aNr randAct rew s'
   pRhoMin' <- insertProxy period s aNr rhoVal' pRhoMin
   pRho' <- insertProxy period s aNr rhoMinimumVal' pRho
   pPsiV' <- insertProxy period s aNr psiVTblVal' pPsiV
   pPsiW' <- insertProxy period s aNr psiWTblVal' pPsiW
-  pV' <- insertProxy period s aNr psiVVal' pV
-  pW' <- insertProxy period s aNr psiWVal' pW
+  pV' <- insertProxy period s aNr vValState' pV
+  pW' <- insertProxy period s aNr wValState' pW
   pR0' <- insertProxy period s aNr r0ValState' pR0
   pR1' <- insertProxy period s aNr r1ValState' pR1
   return (Proxies pRhoMin' pRho' pPsiV' pPsiW' pV' pW' pR0' pR1' Nothing, calc)
