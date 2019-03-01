@@ -92,7 +92,7 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies (Scalar 0) (Scalar 0) tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
     mempty
   where
     tabSA = Table mempty
@@ -130,7 +130,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) psiV psiW v w r0 r1 (Just repMem))
+      (Proxies (Scalar 0) (Scalar 0) psiV psiW v w r0 r1 (Just repMem))
       mempty
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
@@ -201,7 +201,7 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar $ params ^. initRhoValue) (Scalar $ params ^. initRhoValue) nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies (Scalar 0) (Scalar 0) nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
       mempty
 
 

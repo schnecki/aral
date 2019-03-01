@@ -69,7 +69,7 @@ nnConfig = NNConfig
   , _learningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxAbsReward False 2
-  , _updateTargetInterval = 15000
+  , _updateTargetInterval = 100
   , _trainMSEMax          = 0.015
   }
 
@@ -102,8 +102,8 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  -- rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
-  let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -117,9 +117,7 @@ initState = A
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _minRhoValue      = 0.1
-  , _initRhoValue     = 0
-  , _alpha            = 0.05
+  { _alpha            = 0.05
   , _beta             = 0.05
   , _delta            = 0.05
   , _gamma            = 0.01
@@ -133,11 +131,9 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t _ _ p@(Parameters minRho initRho alp bet del ga eps exp rand zeta xi)
+decay t _ _ p@(Parameters alp bet del ga eps exp rand zeta xi)
   | t > 0 && t `mod` 200 == 0 =
     Parameters
-      minRho
-      initRho
       (max 0.015 $ slow * alp)
       (max 0.015 $ slower * bet)
       (max 0.015 $ slower * del)

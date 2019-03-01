@@ -15,6 +15,9 @@ type ActionIndex = Int
 type InitialState s = s         -- ^ Initial state
 type Batchsize = Int
 type Reward = Double
+type StateNext s = s
+type State s = s
+type IsRandomAction = Bool
 
 
 type MSE = Double               -- ^ Mean squared error

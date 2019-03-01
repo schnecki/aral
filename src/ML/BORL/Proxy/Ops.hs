@@ -22,17 +22,18 @@ module ML.BORL.Proxy.Ops
 
 
 import           ML.BORL.Calculation
-import           ML.BORL.NeuralNetwork
+import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types                as T
-import           ML.BORL.Types                as T
+import           ML.BORL.Types
 
 import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
+import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Singletons.Prelude.List
@@ -45,66 +46,110 @@ import           Control.Lens
 import qualified Data.Map.Strict              as M
 
 
-type StateNext s = s
-type State s = s
-type IsRandomAction = Bool
-
-
--- | Insert (or update) a value. The provided value will may be down-scaled to the interval [-1,1].
+-- | Insert (or update) a value.
 insert :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> IsRandomAction -> Reward -> StateNext s -> ReplMemFun s -> Proxies s -> T.MonadBorl (Proxies s, Calculation)
 insert period s aNr randAct rew s' getCalc (Proxies pRhoMin pRho pPsiV pPsiW pV pW pR0 pR1 Nothing) = do
-  calc@(Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValState' wValState' r0ValState' r1ValState' psiValRho' psiVVal' psiWVal' lastVs' lastRews') <-
-    getCalc s aNr randAct rew s'
-  pRhoMin' <- insertProxy period s aNr rhoVal' pRhoMin
-  pRho' <- insertProxy period s aNr rhoMinimumVal' pRho
-  pPsiV' <- insertProxy period s aNr psiVTblVal' pPsiV
-  pPsiW' <- insertProxy period s aNr psiWTblVal' pPsiW
-  pV' <- insertProxy period s aNr vValState' pV
-  pW' <- insertProxy period s aNr wValState' pW
-  pR0' <- insertProxy period s aNr r0ValState' pR0
-  pR1' <- insertProxy period s aNr r1ValState' pR1
+  calc <- getCalc s aNr randAct rew s'
+  -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
+  -- mv' <- Simple $ collectForkResult forkMv'
+
+  pRhoMin' <- insertProxy period s aNr (getRhoMinimumVal' calc) pRhoMin `using` rpar
+  pRho'    <- insertProxy period s aNr (getRhoVal' calc) pRho           `using` rpar
+  pV'      <- insertProxy period s aNr (getVValState' calc) pV          `using` rpar
+  pW'      <- insertProxy period s aNr (getWValState' calc) pW          `using` rpar
+  pPsiV'   <- insertProxy period s aNr (getPsiVVal' calc) pPsiV         `using` rpar
+  pPsiW'   <- insertProxy period s aNr (getPsiWVal' calc) pPsiW         `using` rpar
+  pR0'     <- insertProxy period s aNr (getR0ValState' calc) pR0        `using` rpar
+  pR1'     <- insertProxy period s aNr (getR1ValState' calc) pR1        `using` rpar
   return (Proxies pRhoMin' pRho' pPsiV' pPsiW' pV' pW' pR0' pR1' Nothing, calc)
-insert period s aNr randAct rew s' getCalc (Proxies pRhoMin pRho pPsiV pPsiW pV pW pR0 pR1 (Just repMem)) = do
-  replMem' <- Simple $ addToReplayMemory period (s, aNr, randAct, rew, s') repMem
-  -- let config' = replayMemory .~ replMem' $ config
+insert period s aNr randAct rew s' getCalc pxs@(Proxies pRhoMin pRho pPsiV pPsiW pV pW pR0 pR1 (Just replMem))
+  | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
+    replMem' <- Simple $ addToReplayMemory period (s, aNr, randAct, rew, s') replMem
+    (pxs', calc) <- insert period s aNr randAct rew s' getCalc (replayMemory .~ Nothing $ pxs)
+    return (replayMemory ?~ replMem' $ pxs', calc)
+  | pPsiV ^?! proxyNNConfig . trainBatchSize == 1 = do
+    replMem' <- Simple $ addToReplayMemory period (s, aNr, randAct, rew, s') replMem
+    calc <- getCalc s aNr randAct rew s'
+    pRho'    <- insertProxy period s aNr (getRhoVal' calc) pRho >>= if isNeuralNetwork pRho then updateNNTargetNet False period else return              `using` rpar
+    pRhoMin' <- insertProxy period s aNr (getRhoMinimumVal' calc) pRhoMin >>= if isNeuralNetwork pRhoMin then updateNNTargetNet False period else return `using` rpar
+    pV'      <- insertProxy period s aNr (getVValState' calc) pV >>= updateNNTargetNet False period                                                      `using` rpar
+    pW'      <- insertProxy period s aNr (getWValState' calc) pW >>= updateNNTargetNet False period                                                      `using` rpar
+    pPsiV'   <- insertProxy period s aNr (getPsiVVal' calc) pPsiV >>= updateNNTargetNet False period                                                     `using` rpar
+    pPsiW'   <- insertProxy period s aNr (getPsiWVal' calc) pPsiW >>= updateNNTargetNet False period                                                     `using` rpar
+    pR0'     <- insertProxy period s aNr (getR0ValState' calc) pR0 >>= updateNNTargetNet False period                                                    `using` rpar
+    pR1'     <- insertProxy period s aNr (getR1ValState' calc) pR1 >>= updateNNTargetNet False period                                                    `using` rpar
+    return (Proxies pRhoMin' pRho' pPsiV' pPsiW' pV' pW' pR0' pR1' (Just replMem'), calc) -- avgCalculation (map snd calcs))
+  | otherwise = do
+    replMem' <- Simple $ addToReplayMemory period (s, aNr, randAct, rew, s') replMem
+    calc <- getCalc s aNr randAct rew s'
+    let config = pPsiV ^?! proxyNNConfig
+    mems <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) replMem'
+    let mkCalc (s, idx, rand, rew, s') = getCalc s idx rand rew s'
+    calcs <- parMap rdeepseq force <$> mapM (\m@(s, idx, _, _, _) -> mkCalc m >>= \v -> return ((config ^. toNetInp $ s, idx), v)) mems
 
-  -- let fromReplMem (s,idx, rand, rew, s') = getVal s idx rand rew s' >>= \v -> return ((s,idx), scaleValue (getMinMaxVal px) (head v))
-  -- mems <- Simple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) (config ^. replayMemory)
-  -- rands <- mapM fromReplMem mems
-  -- let trainingInstances = map (first (first $ config ^. toNetInp)) rands
+    -- let avgCalc = avgCalculation (map snd calcs)
+    pRhoMin' <- if isNeuralNetwork pRhoMin then trainBatch (map (second getRhoMinimumVal') calcs) pRhoMin >>= updateNNTargetNet False period `using` rpar
+      else insertProxy period s aNr (getRhoMinimumVal' calc) -- avgCalc)
+      pRhoMin `using` rpar
+    pRho' <- if isNeuralNetwork pRho then trainBatch (map (second getRhoVal') calcs) pRho >>= updateNNTargetNet False period  `using` rpar
+      else insertProxy period s aNr (getRhoVal' calc) -- avgCalc)
+      pRho `using` rpar
+    pV'    <- trainBatch (map (second getVValState') calcs) pV >>= updateNNTargetNet False period   `using` rpar
+    pW'    <- trainBatch (map (second getWValState') calcs) pW >>= updateNNTargetNet False period   `using` rpar
+    pPsiV' <- trainBatch (map (second getPsiVVal') calcs) pPsiV >>= updateNNTargetNet False period  `using` rpar
+    pPsiW' <- trainBatch (map (second getPsiWVal') calcs) pPsiW >>= updateNNTargetNet False period  `using` rpar
+    pR0'   <- trainBatch (map (second getR0ValState') calcs) pR0 >>= updateNNTargetNet False period `using` rpar
+    pR1'   <- trainBatch (map (second getR1ValState') calcs) pR1 >>= updateNNTargetNet False period `using` rpar
+    return (Proxies pRhoMin' pRho' pPsiV' pPsiW' pV' pW' pR0' pR1' (Just replMem'), calc)
+            -- avgCalculation (map snd calcs))
 
 
-  undefined
-
+-- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
+-- `trainBatch` to train the neural networks.
 insertProxy :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> Double -> Proxy s -> T.MonadBorl (Proxy s)
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
 insertProxy _ s aNr v (Table m) = return $ Table (M.insert (s,aNr) v m)
-insertProxy period st idx v px = do
-  let k = (st, idx)
-  if period < fromIntegral (px ^?! proxyNNConfig.replayMemoryMaxSize) - 1
-    then return $ proxyNNStartup .~ M.insert (st, idx) v tab $ px
-    else if period == fromIntegral (px ^?! proxyNNConfig.replayMemoryMaxSize) - 1
-           then do
-             Simple $ putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)
-             netInit px >>= updateNNTargetNet True
-           else undefined -- trainNNConf period getV (proxyNNConfig .~ config' $ px) >>= updateNNTargetNet False
+insertProxy period st idx v px
+  | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = return $ proxyNNStartup .~ M.insert (st, idx) v tab $ px
+  | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = Simple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> netInit px >>= updateNNTargetNet True period
+  | otherwise = trainBatch [((config ^.  toNetInp $ st, idx), v)] px
+
   where
-    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
-    updateNNTargetNet :: Bool -> Proxy s -> T.MonadBorl (Proxy s)
-    updateNNTargetNet forceReset px'@(Grenade _ netW' tab' tp' config' nrActs)
-      | not forceReset && period <= fromIntegral memSize = return px'
-      | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config' nrActs
-      | otherwise = return px'
-    updateNNTargetNet forceReset px'@(TensorflowProxy netT' netW' tab' tp' config' nrActs)
-      | not forceReset && period <= fromIntegral memSize = return px'
-      | forceReset || (period - fromIntegral memSize) `mod` config' ^. updateTargetInterval == 0 = do
-        copyValuesFromTo netW' netT'
-        return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
-      | otherwise = return px'
-    updateNNTargetNet _ _ = error "updateNNTargetNet called on non-neural network proxy"
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
+
+-- | Copy the worker net to the target.
+updateNNTargetNet :: Bool -> Period -> Proxy s -> T.MonadBorl (Proxy s)
+updateNNTargetNet forceReset period px@(Grenade _ netW' tab' tp' config' nrActs)
+  | not forceReset && period <= fromIntegral memSize = return px
+  | forceReset || (period - fromIntegral memSize - 1) `mod` config' ^. updateTargetInterval == 0 = return $ Grenade netW' netW' tab' tp' config' nrActs
+  | otherwise = return px
+  where
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
+updateNNTargetNet forceReset period px@(TensorflowProxy netT' netW' tab' tp' config' nrActs)
+  | not forceReset && period <= fromIntegral memSize = return px
+  | forceReset || (period - fromIntegral memSize - 1) `mod` config' ^. updateTargetInterval == 0 = do
+    copyValuesFromTo netW' netT'
+    return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
+  | otherwise = return px
+  where
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
+updateNNTargetNet _ _ _ = error "updateNNTargetNet called on non-neural network proxy"
+
+
+-- | Train the neural network from a given batch. The training instances are Unscaled.
+trainBatch :: forall s . [(([Double], ActionIndex), Double)] -> Proxy s -> T.MonadBorl (Proxy s)
+trainBatch trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
+  let netW' = foldl' (trainGrenade (config ^. learningParams)) netW (map return trainingInstances')
+  return $ Grenade netT netW' tab tp config nrActs
+  where trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+trainBatch trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
+  backwardRunRepMemData netW trainingInstances'
+  return $ TensorflowProxy netT netW tab tp config nrActs
+  where trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+
+trainBatch _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
 -- | Train until MSE hits the value given in NNConfig.
@@ -150,20 +195,6 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) 
               Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
             trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
-
-trainNNConf :: forall s . Period -> [(([Double], ActionIndex), Double)] -> Proxy s -> T.MonadBorl (Proxy s)
-trainNNConf period trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
-  -- let trainingInstances = map (first (first $ config ^. toNetInp)) rands
-      -- netW' = trainGrenade (config ^. learningParams) netW trainingInstances
-  let netW' = foldl' (trainGrenade (config ^. learningParams)) netW (map return trainingInstances)
-  return $ Grenade netT netW' tab tp config nrActs
-trainNNConf period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
-  -- let trainingInstances = map (first (first $ config ^. toNetInp)) rands
-  -- Simple $ putStrLn $ "Training Data: " ++ show trainingInstances
-  backwardRunRepMemData netW trainingInstances
-  return $ TensorflowProxy netT netW tab tp config nrActs
-
-trainNNConf _ _ _ = error "called trainNNConf on non-neural network proxy (programming error)"
 
 
 -- | Retrieve a value.

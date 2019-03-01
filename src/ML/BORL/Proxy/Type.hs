@@ -66,6 +66,12 @@ instance (NFData s) => NFData (Proxy s) where
   rnf (Scalar x) = rnf x
 
 
+isNeuralNetwork :: Proxy s -> Bool
+isNeuralNetwork Grenade{}         = True
+isNeuralNetwork TensorflowProxy{} = True
+isNeuralNetwork _                 = False
+
+
 data Proxies s = Proxies        -- ^ This data type holds all data for BORL.
   { _rhoMinimum   :: !(Proxy s)
   , _rho          :: !(Proxy s)

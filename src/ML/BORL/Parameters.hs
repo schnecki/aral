@@ -10,9 +10,7 @@ import           GHC.Generics
 
 -- Parameters
 data Parameters = Parameters
-  { _minRhoValue      :: !Double             -- ^ Minimum average reward
-  , _initRhoValue     :: !Double             -- ^ Initial average reward value
-  , _alpha            :: !Double             -- ^ for rho value
+  { _alpha            :: !Double             -- ^ for rho value
   , _beta             :: !Double             -- ^ for V values
   , _delta            :: !Double             -- ^ for W values
   , _gamma            :: !Double             -- ^ Gamma values for R0/R1.

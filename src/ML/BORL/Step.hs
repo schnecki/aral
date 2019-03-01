@@ -110,16 +110,16 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   psiWTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiW)
   rhoState <-
     if isUnichain borl
-           -- return (reward + vValStateNext - vValState)
-          -- return reward                                              -- Alternative to above (estimating it from actual reward)
-      then return avgRew
+           then -- return (reward + vValStateNext - vValState)
+                -- return reward                                              -- Alternative to above (estimating it from actual reward)
+                return avgRew
       else do
         rhoStateValNext <- rhoStateValue borl stateNext
         return $ (approxAvg * rhoStateValNext + reward) / (approxAvg + 1) -- approximation
-  let rhoVal' = max rhoMinimumState $ (1 - alp) * rhoVal + alp * rhoState
-  let rhoMinimumVal'
-        | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoState
+  let rhoVal' = max rhoMinimumState rhoState
+                -- ((1 - alp) * rhoVal + alp * rhoState)
+  let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
+                     | otherwise = (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoState
   let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
@@ -143,47 +143,23 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   rBig <- rStateValue borl RBig stateNext
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + ga1 * rBig)
-  return $ Calculation rhoVal' rhoMinimumVal' psiVTblVal' psiWTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
+  return $ Calculation rhoMinimumVal' rhoVal' psiVTblVal' psiWTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
 
 stepExecute :: forall s . (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
-stepExecute (borl, randomAction, act@(aNr, Action action _)) = do
+stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
-      label = (state, aNr)
-  let mv = borl ^. proxies.v
-      mw = borl ^. proxies.w
-      mr0 = borl ^. proxies.r0
-      mr1 = borl ^. proxies.r1
   (reward, stateNext) <- Simple $ action state
-  -- Calculation rhoVal' rhoMinimumVal' _ _ _ _ _ _ psiValRho' psiValV' psiValW' lastVs' lastRews' <-
-  --   mkCalculation borl state aNr randomAction reward stateNext
-
-
   (proxies', calc) <- P.insert period state aNr randomAction reward stateNext (mkCalculation borl) (borl ^. proxies)
 
   -- File IO Operations
   Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
   Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show (getRhoVal' calc) ++ "\t" ++ show (getRhoMinimumVal' calc) ++ "\t" ++ show (sum (getLastVs' calc) / fromIntegral (length (getLastVs' calc))) ++ "\n")
 
-  -- rhoNew <-
-  --   case borl ^. rho of
-  --     Left _  -> return $ Left rhoVal'
-  --     Right m -> Right .  force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoVal') m
-
-  -- rhoMinimumNew <-
-  --   case borl ^. rhoMinimum of
-  --     Left _  -> return $ Left rhoMinimumVal'
-  --     Right m -> Right . force <$> P.insert period state aNr randomAction reward stateNext (calc getRhoMinimumVal') m
-  -- psiVTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiVTblVal') (fst $ borl ^. psiVWTbl)
-  -- psiWTbl' <- P.insert period state aNr randomAction reward stateNext (calc getPsiWTblVal') (snd $ borl ^. psiVWTbl)
   -- -- forkMv' <- Simple $ doFork $ P.insert period label vValStateNew mv
   -- -- forkMw' <- Simple $ doFork $ runMonadBorl $ P.insert period label wValState' mw
   -- -- forkMr0' <- Simple $ doFork $ runMonadBorl $ P.insert period label r0ValState' mr0
   -- -- forkMr1' <- Simple $ doFork $ runMonadBorl $ P.insert period label r1ValState' mr1
-  -- mv' <-  P.insert period state aNr randomAction reward stateNext  (calc getVValStateNew) mv
-  -- mw' <-  P.insert period state aNr randomAction reward stateNext  (calc getWValState') mw
-  -- mr0' <- P.insert period state aNr randomAction reward stateNext (calc getR0ValState') mr0
-  -- mr1' <- P.insert period state aNr randomAction reward stateNext (calc getR1ValState') mr1
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. psis) (getPsiValRho' calc, getPsiValV' calc, getPsiValW' calc) (borl ^. parameters)
   -- -- mv' <- Simple $ collectForkResult forkMv'
   -- -- mw' <- Simple $ collectForkResult forkMw'

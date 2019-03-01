@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -97,9 +97,7 @@ names = ["random", "up   ", "down ", "left ", "right"]
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _minRhoValue      = 0.1
-  , _initRhoValue     = 0
-  , _alpha            = 0.5
+  { _alpha            = 0.5
   , _beta             = 0.30
   , _delta            = 0.25
   , _gamma            = 0.30
@@ -112,11 +110,9 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameters minRho initRho alp bet del ga eps exp rand zeta xi)
+decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameters alp bet del ga eps exp rand zeta xi)
   | t `mod` 200 == 0 =
     Parameters
-      minRho
-      initRho
       (max 0.03 $ slower * alp)
       (max 0.015 $ slower * bet)
       (max 0.015 $ slower * del)
@@ -183,7 +179,7 @@ goalState f st = do
     (0, 2) -> return (10, fromIdx (x,y))
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
-  where stepRew = first (+ 8.0)
+  where stepRew = first (+ 0.0)
 
 
 moveUp :: St -> IO (Reward,St)
