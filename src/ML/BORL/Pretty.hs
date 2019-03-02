@@ -100,9 +100,9 @@ prettyBORLTables t1 t2 t3 borl = do
   prettyErr <- if t3
                then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
                else return empty
-  prettyVWPsi <- if t3
-               then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. proxies.psiV) (borl ^. proxies.psiW)
-               else return empty
+  -- prettyVWPsi <- if t3
+  --              then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. proxies.psiV) (borl ^. proxies.psiW)
+  --              else return empty
   let addPsiV k v = do
         vPsi <- P.lookupProxy (borl ^. t) P.Worker k (borl ^. proxies.psiV)
         return (v + vPsi)
@@ -152,7 +152,7 @@ prettyBORLTables t1 t2 t3 borl = do
     nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
     prettyRhoVal $$
     prVW $+$
-    prettyVWPsi $+$
+    -- prettyVWPsi $+$
     prR0R1 $+$
     -- prettyErr $+$
     text "V+PsiV" $+$

@@ -87,8 +87,8 @@ executables:
     dependencies:
     - borl
 
-  gridworld-mini:
-    main:                GridworldMini.hs
+  gridworld-hard:
+    main:                GridworldHard.hs
     other-modules:       Helper
     source-dirs:         examples
     ghc-options:
@@ -97,6 +97,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - borl
+    - random-fu
 
   multichain:
     main:                Multichain.hs

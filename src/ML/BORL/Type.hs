@@ -92,7 +92,7 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar 0) (Scalar 0) tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies (Scalar 0) (Scalar 0) tabSA tabSA tabSA tabSA tabSA Nothing)
     mempty
   where
     tabSA = Table mempty
@@ -101,7 +101,7 @@ mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> 
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig
   -- Initialization for all NNs
  = do
-  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
+  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
   let netInpInitState = (nnConfig ^. toNetInp) initialState
@@ -115,7 +115,6 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
   r0 <- nnSA R0Table 4
   r1 <- nnSA R1Table 6
   psiV <- nnSA PsiVTable 8
-  psiW <- nnSA PsiWTable 10
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     force $
@@ -130,7 +129,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar 0) psiV psiW v w r0 r1 (Just repMem))
+      (Proxies (Scalar 0) (Scalar 0) psiV v w r0 r1 (Just repMem))
       mempty
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
@@ -146,7 +145,6 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
     name R0Table   = "r0"
     name R1Table   = "r1"
     name PsiVTable = "psiV"
-    name PsiWTable = "psiW"
 
 
 mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
@@ -162,7 +160,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies tabSA tabSA tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies tabSA tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
     mempty
   where
     tabSA = Table mempty
@@ -186,7 +184,6 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
-  let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
@@ -201,7 +198,7 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar 0) nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies (Scalar 0) (Scalar 0) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
       mempty
 
 
@@ -224,7 +221,6 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = 
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
-  let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
@@ -239,7 +235,7 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = 
       mempty
       mempty
       (0, 0, 0)
-      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnPsiW nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
       mempty
 
 

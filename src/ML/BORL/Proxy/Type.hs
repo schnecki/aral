@@ -28,7 +28,6 @@ data ProxyType
   | R0Table
   | R1Table
   | PsiVTable
-  | PsiWTable
   deriving (Show, NFData, Generic)
 
 data LookupType = Target | Worker
@@ -76,7 +75,6 @@ data Proxies s = Proxies        -- ^ This data type holds all data for BORL.
   { _rhoMinimum   :: !(Proxy s)
   , _rho          :: !(Proxy s)
   , _psiV         :: !(Proxy s)
-  , _psiW         :: !(Proxy s)
   , _v            :: !(Proxy s)
   , _w            :: !(Proxy s)
   , _r0           :: !(Proxy s)
@@ -86,8 +84,9 @@ data Proxies s = Proxies        -- ^ This data type holds all data for BORL.
 makeLenses ''Proxies
 
 instance NFData s => NFData (Proxies s) where
-  rnf (Proxies rhoMin rho psiV psiW v w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf psiW `seq` rnf v `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
+  rnf (Proxies rhoMin rho psiV v w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV
+    `seq` rnf v `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
 
 
 allProxies :: Proxies s -> [Proxy s]
-allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. psiW, pxs ^. v, pxs ^. w, pxs ^. r0, pxs ^. r1]
+allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. w, pxs ^. r0, pxs ^. r1]

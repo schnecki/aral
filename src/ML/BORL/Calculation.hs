@@ -14,7 +14,7 @@ data Calculation = Calculation
   { getRhoMinimumVal' :: Double
   , getRhoVal'        :: Double
   , getPsiVVal'       :: Double
-  , getPsiWVal'       :: Double
+  -- , getPsiWVal'       :: Double
   , getVValState'     :: Double
   , getWValState'     :: Double
   , getR0ValState'    :: Double
@@ -34,7 +34,7 @@ avgCalculation xs =
     (avg $ map getRhoMinimumVal' xs)
     (avg $ map getRhoVal' xs)
     (avg $ map getPsiVVal' xs)
-    (avg $ map getPsiWVal' xs)
+    -- (avg $ map getPsiWVal' xs)
     (avg $ map getVValState' xs)
     (avg $ map getWValState' xs)
     (avg $ map getR0ValState' xs)

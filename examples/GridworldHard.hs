@@ -9,44 +9,54 @@ import           ML.BORL
 
 import           Helper
 
-import           Control.Arrow          (first, second)
-import           Control.DeepSeq        (NFData)
+import           Control.Arrow                        (first, second)
+import           Control.DeepSeq                      (NFData)
 import           Control.Lens
-import           Control.Lens           (set, (^.))
-import           Control.Monad          (foldM, unless, when)
-import           Control.Monad.IO.Class (liftIO)
-import           Data.List              (genericLength)
+import           Control.Lens                         (set, (^.))
+import           Control.Monad                        (foldM, unless, when)
+import           Control.Monad.IO.Class               (liftIO)
+import           Data.List                            (genericLength)
 import           GHC.Generics
-import           GHC.Int                (Int32, Int64)
+import           GHC.Int                              (Int32, Int64)
 import           Grenade
 import           System.IO
 import           System.Random
 
+import           Data.Random                          (StdRandom, runRVar, sample)
+import           Data.Random.Distribution.Exponential (exponential)
 
-import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
-                                               opDefWithName, opType, runBuildT, summaries)
-import qualified TensorFlow.Core        as TF hiding (value)
+
+import qualified TensorFlow.Build                     as TF (addNewOp, evalBuildT,
+                                                             explicitName, opDef,
+                                                             opDefWithName, opType,
+                                                             runBuildT, summaries)
+import qualified TensorFlow.Core                      as TF hiding (value)
 -- import qualified TensorFlow.GenOps.Core                         as TF (square)
-import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
-                                               approximateEqual, assign, cast,
-                                               getSessionHandle, getSessionTensor,
-                                               identity', lessEqual, matMul, mul,
-                                               readerSerializeState, relu, relu', shape,
-                                               square, sub, tanh, tanh', truncatedNormal)
-import qualified TensorFlow.Minimize    as TF
+import qualified TensorFlow.GenOps.Core               as TF (abs, add, approximateEqual,
+                                                             approximateEqual, assign,
+                                                             cast, getSessionHandle,
+                                                             getSessionTensor, identity',
+                                                             lessEqual, matMul, mul,
+                                                             readerSerializeState, relu,
+                                                             relu', shape, square, sub,
+                                                             tanh, tanh', truncatedNormal)
+import qualified TensorFlow.Minimize                  as TF
 -- import qualified TensorFlow.Ops                                 as TF (abs, add, assign,
 --                                                                        cast, identity',
 --                                                                        matMul, mul, relu,
 --                                                                        sub,
 --                                                                        truncatedNormal)
-import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
-                                               placeholder, placeholder', reduceMean,
-                                               reduceSum, restore, save, scalar, vector,
-                                               zeroInitializedVariable,
-                                               zeroInitializedVariable')
-import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
-                                               tensorNodeName, tensorRefFromName,
-                                               tensorValueFromName)
+import qualified TensorFlow.Ops                       as TF (initializedVariable,
+                                                             initializedVariable',
+                                                             placeholder, placeholder',
+                                                             reduceMean, reduceSum,
+                                                             restore, save, scalar, vector,
+                                                             zeroInitializedVariable,
+                                                             zeroInitializedVariable')
+import qualified TensorFlow.Tensor                    as TF (Ref (..), collectAllSummaries,
+                                                             tensorNodeName,
+                                                             tensorRefFromName,
+                                                             tensorValueFromName)
 
 
 maxX,maxY :: Int
@@ -85,8 +95,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
@@ -156,12 +166,11 @@ instance Bounded St where
 
 -- Actions
 actions :: [Action St]
-actions = zipWith Action
-  (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
-  names
+actions = zipWith Action [goalState moveRand, moveUp, moveDown, moveLeft, moveRight] names
 
 actFilter :: St -> [Bool]
-actFilter st | st == fromIdx (0,2) = True : repeat False
+actFilter st | fromEnum st `elem` goalStates  = repeat True
+  where goalStates = map fromEnum [fromIdx (0,0), fromIdx (0,4),fromIdx (4,0),fromIdx (4,4)]
 actFilter _  = False : repeat True
 
 
@@ -173,38 +182,35 @@ goalState :: (St -> IO (Reward, St)) -> St -> IO (Reward, St)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
+  xG <- randomRIO (0, 1 :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew = first (+ r)
+  let stepRew = first (subtract r)
   case getCurrentIdx st of
-    -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
-    -- (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
-    (0, 2) -> return (10, fromIdx (x,y))
-    -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
-    _      -> stepRew <$> f st
+    (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y))
+    (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y))
+    _                        -> stepRew <$> f st
+
+
+stepWidth :: IO Int
+stepWidth = do
+  x <- sample (exponential 1)
+  return $ ceiling (x :: Float)
 
 
 moveUp :: St -> IO (Reward,St)
-moveUp st
-    | m == 0 = return (-1, st)
-    | otherwise = return (0, fromIdx (m-1,n))
+moveUp st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (m-w), fromIdx (max 0 (m-w),n))
   where (m,n) = getCurrentIdx st
 
 moveDown :: St -> IO (Reward,St)
-moveDown st
-    | m == maxX = return (-1, st)
-    | otherwise = return (0, fromIdx (m+1,n))
+moveDown st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (-(m+w-4)), fromIdx (min 4 (m+w),n))
   where (m,n) = getCurrentIdx st
 
 moveLeft :: St -> IO (Reward,St)
-moveLeft st
-    | n == 0 = return (-1, st)
-    | otherwise = return (0, fromIdx (m,n-1))
+moveLeft st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (n-w), fromIdx (m,max 0 (n-w)))
   where (m,n) = getCurrentIdx st
 
 moveRight :: St -> IO (Reward,St)
-moveRight st
-    | n == maxY = return (-1, st)
-    | otherwise = return (0, fromIdx (m,n+1))
+moveRight st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (-(n+w-4)), fromIdx (m,min 4 (n+w)))
   where (m,n) = getCurrentIdx st
 
 

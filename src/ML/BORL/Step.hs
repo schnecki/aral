@@ -107,7 +107,6 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   r0ValState <- rValue borl RSmall state aNr
   r1ValState <- rValue borl RBig state aNr
   psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV)
-  psiWTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiW)
   rhoState <-
     if isUnichain borl
            then -- return (reward + vValStateNext - vValState)
@@ -119,7 +118,7 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   let rhoVal' = max rhoMinimumState rhoState
                 -- ((1 - alp) * rhoVal + alp * rhoState)
   let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
-                     | otherwise = (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoState
+                     | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
   let psiRho = rhoVal' - rhoVal -- should converge to 0
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
@@ -130,7 +129,6 @@ mkCalculation borl state aNr randomAction reward stateNext = do
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * (if randomAction then 0 else abs psiV)
       psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * (if randomAction then 0 else abs psiW)
   let psiVTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
-  let psiWTblVal' = (1 - expSmthPsi) * psiWTblVal + expSmthPsi * psiW
   let xiVal = borl ^. parameters . xi
   let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
         --  | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
@@ -143,7 +141,8 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   rBig <- rStateValue borl RBig stateNext
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + ga1 * rBig)
-  return $ Calculation rhoMinimumVal' rhoVal' psiVTblVal' psiWTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
+  return $ Calculation rhoMinimumVal' rhoVal' psiVTblVal'
+    vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
 
 stepExecute :: forall s . (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
@@ -252,10 +251,10 @@ vValue = vValueWith Worker
 
 vValueWith :: (Ord s) => LookupType -> Bool -> BORL s -> s -> ActionIndex -> MonadBorl Double
 vValueWith lkTp addPsiV borl state a = do
-  vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies.v)
+  vVal <- P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
   psiV <-
     if addPsiV
-      then P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies.psiV)
+      then P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . psiV)
       else return 0
   return (vVal + psiV)
 
