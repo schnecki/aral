@@ -99,6 +99,18 @@ executables:
     - borl
     - random-fu
 
+  gym:
+    main:                GymOpenAI.hs
+    other-modules:       Helper
+    source-dirs:         examples
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - cpython
+
   multichain:
     main:                Multichain.hs
     other-modules:       Helper
