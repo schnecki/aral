@@ -2,6 +2,7 @@ flags: {}
 packages:
 - .
 - grenade
+- gym-haskell
 - tensorflow-haskell/tensorflow
 - tensorflow-haskell/tensorflow-core-ops
 - tensorflow-haskell/tensorflow-logging

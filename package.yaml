@@ -109,7 +109,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - borl
-    - cpython
+    - gym-haskell
 
   multichain:
     main:                Multichain.hs
