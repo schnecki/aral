@@ -36,6 +36,7 @@ import           Control.Monad
 import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
+import           Data.Maybe                   (fromJust, isNothing)
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
@@ -107,12 +108,13 @@ insertProxy :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex 
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
 insertProxy _ s aNr v (Table m) = return $ Table (M.insert (s,aNr) v m)
 insertProxy period st idx v px
+  | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && isNothing (px ^?! proxyNNConfig.trainMSEMax) = return px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = return $ proxyNNStartup .~ M.insert (st, idx) v tab $ px
   | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = Simple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> netInit px >>= updateNNTargetNet True period
   | otherwise = trainBatch [((config ^.  toNetInp $ st, idx), v)] px
 
   where
-    netInit = trainMSE (Just 0) (M.toList tab) (config ^. learningParams)
+    netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams)
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
 
@@ -138,7 +140,7 @@ updateNNTargetNet _ _ _ = error "updateNNTargetNet called on non-neural network 
 -- | Train the neural network from a given batch. The training instances are Unscaled.
 trainBatch :: forall s . [(([Double], ActionIndex), Double)] -> Proxy s -> T.MonadBorl (Proxy s)
 trainBatch trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
-  let netW' = foldl' (trainGrenade (config ^. learningParams)) netW (map return trainingInstances')
+  let netW' = foldl' (trainGrenade (config ^. grenadeLearningParams)) netW (map return trainingInstances')
   return $ Grenade netT netW' tab tp config nrActs
   where trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
 trainBatch trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
@@ -153,44 +155,46 @@ trainBatch _ _ = error "called trainBatch on non-neural network proxy (programmi
 trainMSE :: (NFData k) => Maybe Int -> [((k, ActionIndex), Double)] -> LearningParameters -> Proxy k -> T.MonadBorl (Proxy k)
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
+  | isNothing (config ^. trainMSEMax) = return px
   | mse < mseMax = do
-      Simple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
-      return px
+    Simple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
+    return px
   | otherwise = do
-      when (maybe False ((==0) . (`mod` 100)) mPeriod) $
-        Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-      fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
+    when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+    fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
-    mseMax = config ^. trainMSEMax
+    mseMax = fromJust (config ^. trainMSEMax)
     net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
     -- net' = trainGrenade lp netW (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     vUnscaled = map snd dataset
     kScaled = map (first (config ^. toNetInp) . fst) dataset
-    getValue k =
+    getValue k
       -- unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
-      (!!snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k)**2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
-trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs) =
-  let mseMax = config ^. trainMSEMax
-      kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
-      kScaled = map fst kFullScaled
-      actIdxs = map snd kFullScaled
-      vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
-      vUnscaled = map (realToFrac . snd) dataset
-      datasetRepMem = map (first (first (map realToFrac . (config^.toNetInp)))) dataset
-  in do current <- forwardRun netW kScaled
-        zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
+     = (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
+trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
+  | isNothing (config ^. trainMSEMax) = return px
+  | otherwise =
+    let mseMax = fromJust (config ^. trainMSEMax)
+        kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
+        kScaled = map fst kFullScaled
+        actIdxs = map snd kFullScaled
+        vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
+        vUnscaled = map (realToFrac . snd) dataset
+        datasetRepMem = map (first (first (map realToFrac . (config ^. toNetInp)))) dataset
+    in do current <- forwardRun netW kScaled
+          zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
         -- backwardRunRepMemData netW datasetRepMem
-        let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
-        mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (**2) . (vS -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaled) -- vUnscaled -- scaled or unscaled ones?
-        if realToFrac mse < mseMax
-          then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
-          else do
-            when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
-              void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
-              Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-            trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
+          let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
+          mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (** 2) . (vS -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaled) -- vUnscaled -- scaled or unscaled ones?
+          if realToFrac mse < mseMax
+            then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
+            else do
+              when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
+                void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
+                Simple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+              trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
 
 

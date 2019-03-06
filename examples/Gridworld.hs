@@ -61,11 +61,11 @@ nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
-  , _learningParams       = LearningParameters 0.01 0.9 0.0001
+  , _grenadeLearningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 10000
-  , _trainMSEMax          = 0.00125
+  , _trainMSEMax          = Just 0.00125
   }
 
 netInp :: St -> [Double]
@@ -85,7 +85,7 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig Nothing
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

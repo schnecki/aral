@@ -22,6 +22,7 @@ import           Control.Lens
 import           Control.Monad                (zipWithM)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import qualified Data.Map.Strict              as M
+import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Mutable          as V
@@ -97,8 +98,8 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
   where
     tabSA = Table mempty
 
-mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> IO (BORL s)
-mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig
+mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
+mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
   -- Initialization for all NNs
  = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
@@ -129,7 +130,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar 0) psiV v w r0 r1 (Just repMem))
+      (Proxies (Scalar $ fromMaybe 0 mInitRho) (Scalar $ fromMaybe 0 mInitRho) psiV v w r0 r1 (Just repMem))
       mempty
   where
     mkModel tp scope netInpInitState modelBuilderFun = do

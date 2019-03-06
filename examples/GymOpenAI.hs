@@ -40,6 +40,7 @@ import qualified Data.Text              as T
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
+import           System.Environment     (getArgs)
 import           System.Exit
 import           System.IO
 import           System.Random
@@ -71,16 +72,16 @@ maxY = 4                        -- [0..maxY]
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
-nnConfig :: Gym -> NNConfig St
-nnConfig gym = NNConfig
-  { _toNetInp             = netInp gym
-  , _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
-  , _learningParams       = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems     = ppSts
-  , _scaleParameters      = scalingByMaxAbsReward False 1
-  , _updateTargetInterval = 10000
-  , _trainMSEMax          = 0.00125
+nnConfig :: Gym -> Double -> NNConfig St
+nnConfig gym maxRew = NNConfig
+  { _toNetInp              = netInp gym
+  , _replayMemoryMaxSize   = 10000
+  , _trainBatchSize        = 32
+  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+  , _prettyPrintElems      = ppSts
+  , _scaleParameters       = scalingByMaxAbsReward False maxRew
+  , _updateTargetInterval  = 1000
+  , _trainMSEMax           = Nothing
   }
 
   where range = getGymRangeFromSpace $ observationSpace gym
@@ -118,12 +119,19 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   obs <- if episodeDone res
          then resetGym gym
          else return $ observation res
+  -- putStrLn $ "rew: " ++ show (reward res)
   return (reward res, gymObservationToDoubleList obs)
 
 
 main :: IO ()
 main = do
-  (obs, gym) <- initGym "CartPole-v0"
+
+  args <- getArgs
+  let name | length args >= 1 = args!!0
+           | otherwise = "CartPole-v0"
+  let maxReward | length args >= 2  = read (args!!1)
+                | otherwise = 1
+  (obs, gym) <- initGym (T.pack name)
   let inputNodes = dimension (observationSpace gym)
       actionNodes = dimension (actionSpace gym)
       initState = gymObservationToDoubleList obs
@@ -131,8 +139,8 @@ main = do
 
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym)
+  -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just (-1))
   -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

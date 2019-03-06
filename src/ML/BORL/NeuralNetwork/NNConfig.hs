@@ -10,14 +10,14 @@ import           Control.Lens
 import           Grenade
 
 data NNConfig s = NNConfig
-  { _toNetInp             :: !(s -> [Double])
-  , _replayMemoryMaxSize  :: !Int
-  , _trainBatchSize       :: !Int
-  , _learningParams       :: !LearningParameters
-  , _prettyPrintElems     :: ![s]
-  , _scaleParameters      :: !ScalingNetOutParameters
-  , _updateTargetInterval :: !Integer
-  , _trainMSEMax          :: !MSE -- ^ Mean squared error to train for.
+  { _toNetInp              :: !(s -> [Double])
+  , _replayMemoryMaxSize   :: !Int
+  , _trainBatchSize        :: !Int
+  , _grenadeLearningParams :: !LearningParameters
+  , _prettyPrintElems      :: ![s]
+  , _scaleParameters       :: !ScalingNetOutParameters
+  , _updateTargetInterval  :: !Integer
+  , _trainMSEMax           :: !(Maybe MSE) -- ^ Mean squared error to train for.
   }
 makeLenses ''NNConfig
 

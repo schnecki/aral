@@ -193,9 +193,9 @@ prettyBORLTables t1 t2 t3 borl = do
       P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
     nnLearningParams = case borl ^. proxies.v of
       P.Table {} -> empty
-      P.Grenade _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. learningParams
+      P.Grenade _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. grenadeLearningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
-      P.TensorflowProxy _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. learningParams
+      P.TensorflowProxy _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. grenadeLearningParams
                          in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 
