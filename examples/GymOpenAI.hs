@@ -87,9 +87,7 @@ nnConfig gym maxRew = NNConfig
 
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = gymRangeToDoubleLists range
-        vals =
-          trace ("hilo: " ++ show (lows, highs))
-          zipWith (\lo hi -> [lo, lo+(hi-lo)/3..hi]) lows highs
+        vals = zipWith (\lo hi -> [lo, lo+(hi-lo)/3..hi]) lows highs
         ppSts = take 1000 $ combinations vals
 
 combinations :: [[a]] -> [[a]]
@@ -102,13 +100,12 @@ type St = [Double]
 
 
 netInp :: Gym -> St -> [Double]
-netInp gym = zipWith3 (curry scaleNegPosOne) lows highs
+netInp gym =
+  -- trace ("lows: " ++ show lows)
+  -- trace ("highs: " ++ show highs)
+  zipWith3 (curry scaleNegPosOne) lows highs
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = gymRangeToDoubleLists range
-
-  -- [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st),
-  --   scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
-
 
 modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> m TensorflowModel
 modelBuilder nrInp nrOut =
@@ -119,20 +116,24 @@ modelBuilder nrInp nrOut =
 action :: Gym -> Integer -> Action St
 action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   res <- stepGym gym idx
-  obs <- if episodeDone res
+  (rew, obs) <- if episodeDone res
          then do obs <- resetGym gym
-                 putStrLn $ "Done: " ++ show (observation res)
-                 return obs
-                else return (observation res)
-  return (reward res, cut ranges $ gymObservationToDoubleList obs, episodeDone res)
+                 -- putStrLn $ "Done: " ++ show (cut ranges $ gymObservationToDoubleList $ observation res)
+                 return (-10, obs)
+                else return (0.5 -- reward res
+                            , observation res)
+  return (rew, cut ranges $ gymObservationToDoubleList obs, episodeDone res)
   where ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
 
 
 cut :: ([Double], [Double]) -> [Double] -> [Double]
-cut (lows, highs) xs = zipWith3 splitInto lows highs xs
+cut _ xs = xs
+-- cut (lows, highs) xs = zipWith3 splitInto lows highs xs
   where
-    splitInto lo hi x = fromIntegral (round (20 * x * nr)) / 20 -- nr
-      where nr = 1/(hi - lo)
+    splitInto lo hi x = -- x * scale
+      fromIntegral (round (gran * x)) / gran
+      where scale = 1/(hi - lo)
+            gran = 100
 
 
 main :: IO ()
@@ -142,9 +143,9 @@ main = do
   let name | length args >= 1 = args!!0
            | otherwise = "CartPole-v0"
   let maxReward | length args >= 2  = read (args!!1)
-                | otherwise = 1
+                | otherwise = 2.5
   (obs, gym) <- initGym (T.pack name)
-  setMaxEpisodeSteps gym 30000
+  setMaxEpisodeSteps gym 10000
   let inputNodes = dimension (observationSpace gym)
       actionNodes = dimension (actionSpace gym)
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
@@ -154,7 +155,7 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just (-1))
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
   let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just (-1))
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -164,12 +165,12 @@ main = do
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.5
+  { _alpha            = 0.30
   , _beta             = 0.05
   , _delta            = 0.04
-  , _gamma            = 0.30
-  , _epsilon          = 0.075
-  , _exploration      = 0.8
+  , _gamma            = 1.0
+  , _epsilon          = 0.75
+  , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
   , _xi               = 0.2
@@ -184,11 +185,10 @@ decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameter
       (max 0.015 $ slow * bet)
       (max 0.015 $ slow * del)
       (max 0.01 $ slow * ga)
-      (max 0.05 $ slow * eps) -- (0.5*bet)
+      (max 0.01 $ slow * eps)
       (max 0.01 $ slow * exp)
       rand
       zeta -- zeta
-      -- (max 0.075 $ slower * xi)
       (0.5*bet)
   | otherwise = p
   where

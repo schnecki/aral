@@ -7,6 +7,8 @@ module ML.BORL.Step
     , saveTensorflowModels
     , stepExecute
     , nextAction
+    , epsCompareWith
+    , sortBy
     ) where
 
 import           ML.BORL.Action
@@ -38,7 +40,7 @@ expSmthPsi :: Double
 expSmthPsi = 0.03
 
 keepXLastValues :: Int
-keepXLastValues = 1000
+keepXLastValues = 100
 
 approxAvg :: Double
 approxAvg = fromIntegral (100 :: Int)
@@ -108,6 +110,7 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
   r0ValState <- rValue borl RSmall state aNr
   r1ValState <- rValue borl RBig state aNr
   psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV)
+  -- let epsEnd  = 1
   let epsEnd | episodeEnd = 0
              | otherwise = 1
   rhoState <-
@@ -190,10 +193,10 @@ nextAction :: (Ord s) => BORL s -> MonadBorl (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
-  -- | True = do
-  --     rValues <- mapM (rValue borl RBig state . fst) as
-  --     let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-  --     return (borl, False, snd $ head bestR)
+  | True = do
+      rValues <- mapM (rValue borl RBig state . fst) as
+      let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+      return (borl, False, snd $ head bestR)
 
   | otherwise = do
     rand <- Simple $ randomRIO (0, 1)
@@ -221,12 +224,15 @@ nextAction borl
           else return (borl, False, head bestE)
   where
     eps = borl ^. parameters . epsilon
-    epsCompare f x y
-      | abs (x - y) <= eps = f 0 0
-      | otherwise = y `f` x
     explore = borl ^. parameters . exploration
     state = borl ^. s
     as = actionsIndexed borl state
+    epsCompare = epsCompareWith eps
+
+epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
+epsCompareWith eps f x y
+  | abs (x - y) <= eps = f 0 0
+  | otherwise = y `f` x
 
 
 actionsIndexed :: BORL s -> s -> [ActionIndexed s]

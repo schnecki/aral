@@ -52,7 +52,8 @@ prettyTableRows borl prettyAction prettyActionIdx modifier p =
       mtrue <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx True pr
       let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
-      return $ map printFun (unfoldActs mfalse) ++ [text "---"] ++ map printFun (unfoldActs mtrue)
+      return $ -- map printFun (unfoldActs mfalse) ++ [text "---"] ++
+        map printFun (unfoldActs mtrue)
 
 
 prettyActionEntry :: (Show k') => (k -> k') -> (ActionIndex -> Doc) -> k -> ActionIndex -> Doc
@@ -128,6 +129,9 @@ prettyBORLTables t1 t2 t3 borl = do
     text "Delta" <>
     colon $$
     nest 45 (printFloat $ borl ^. parameters . delta) $+$
+    text "Gamma" <>
+    colon $$
+    nest 45 (printFloat $ borl ^. parameters . gamma) $+$
     text "Epsilon" <>
     colon $$
     nest 45 (printFloat $ borl ^. parameters . epsilon) $+$

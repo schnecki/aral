@@ -85,8 +85,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay Nothing
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
