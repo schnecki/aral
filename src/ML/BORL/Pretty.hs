@@ -29,7 +29,7 @@ import           Text.PrettyPrint      as P
 import           Text.Printf
 
 commas :: Int
-commas = 4
+commas = 2
 
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
