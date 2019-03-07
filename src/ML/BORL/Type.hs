@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -58,14 +59,23 @@ data BORL s = BORL
   , _psis          :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , _proxies       :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
 
+#ifdef DEBUG
   -- Stats:
   , _visits        :: !(M.Map s Integer) -- ^ Counts the visits of the states
+#endif
   }
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t par dec gam lastVs lastRews psis proxies vis) =
+  rnf (BORL as af s t par dec gam lastVs lastRews psis proxies
+#ifdef DEBUG
+       vis
+#endif
+      ) =
     rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+#ifdef DEBUG
+       `seq` rnf vis
+#endif
 
 
 default_gamma0, default_gamma1 :: Double
@@ -80,8 +90,8 @@ idxStart = 0
 
 -- Tabular representations
 
-mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLUnichainTabular initialState as asFilter params decayFun =
+mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkBORLUnichainTabular initialState as asFilter params decayFun mRhoInit =
   BORL
     (zip [idxStart ..] as)
     asFilter
@@ -93,10 +103,12 @@ mkBORLUnichainTabular initialState as asFilter params decayFun =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar 0) (Scalar 0) tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies (Scalar $ fromMaybe 0 mRhoInit) (Scalar $ fromMaybe 0 mRhoInit) tabSA tabSA tabSA tabSA tabSA Nothing)
+#ifdef DEBUG
     mempty
+#endif
   where
-    tabSA = Table mempty
+    tabSA = Table mempty 0
 
 mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
 mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
@@ -131,7 +143,9 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       mempty
       (0, 0, 0)
       (Proxies (Scalar $ fromMaybe 0 mInitRho) (Scalar $ fromMaybe 0 mInitRho) psiV v w r0 r1 (Just repMem))
-      mempty
+#ifdef DEBUG
+    mempty
+#endif
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> Tensorflow modelBuilderFun
@@ -148,8 +162,8 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
     name PsiVTable = "psiV"
 
 
-mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> BORL s
-mkBORLMultichainTabular initialState as asFilter params decayFun =
+mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkBORLMultichainTabular initialState as asFilter params decayFun mRhoInit =
   BORL
     (zip [0 ..] as)
     asFilter
@@ -161,10 +175,13 @@ mkBORLMultichainTabular initialState as asFilter params decayFun =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies tabSA tabSA tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies tabSARho tabSARho tabSA tabSA tabSA tabSA tabSA Nothing)
+#ifdef DEBUG
     mempty
+#endif
   where
-    tabSA = Table mempty
+    tabSA = Table mempty 0
+    tabSARho = Table mempty (fromMaybe 0 mRhoInit)
 
 -- Neural network approximations
 
@@ -200,7 +217,9 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
       mempty
       (0, 0, 0)
       (Proxies (Scalar 0) (Scalar 0) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
-      mempty
+#ifdef DEBUG
+    mempty
+#endif
 
 
 mkBORLMultichainGrenade ::
@@ -237,7 +256,9 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = 
       mempty
       (0, 0, 0)
       (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
-      mempty
+#ifdef DEBUG
+    mempty
+#endif
 
 
 mkReplayMemory :: Int -> IO (ReplayMemory s)

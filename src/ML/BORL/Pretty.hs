@@ -1,5 +1,5 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
-
 module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
@@ -40,7 +40,7 @@ prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey
 prettyTableRows :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> ((k,ActionIndex) -> Double -> MonadBorl Double) -> P.Proxy k -> MonadBorl [Doc]
 prettyTableRows borl prettyAction prettyActionIdx modifier p =
   case p of
-    P.Table m -> mapM (\(((k,k'),idx),val) -> modifier (k,idx) val >>= \v -> return (prettyActionEntry id prettyActionIdx k' idx <> colon <+> printFloat v)) $
+    P.Table m _ -> mapM (\(((k,k'),idx),val) -> modifier (k,idx) val >>= \v -> return (prettyActionEntry id prettyActionIdx k' idx <> colon <+> printFloat v)) $
                  sortBy (compare `on` snd.fst.fst) $ M.toList (M.mapKeys (\(k,aIdx) -> ((k, prettyAction k), aIdx)) m)
     -- pr | maybe False (config ^. replayMemory . replayMemorySize >=) (fromIntegral <$> mPeriod) -> prettyTableRows mPeriod prettyAction (P.Table tab)
     --   where (tab, config) = case pr of
@@ -81,8 +81,8 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
         tbl px = case px of
           p@P.Table{}                   -> p
-          P.Grenade _ _ p _ _ _         -> P.Table p
-          P.TensorflowProxy _ _ p _ _ _ -> P.Table p
+          P.Grenade _ _ p _ _ _         -> P.Table p 0
+          P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
@@ -91,11 +91,11 @@ prettyBORLTables t1 t2 t3 borl = do
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
   let mkErr scale = case (borl ^. proxies.r1, borl ^. proxies.r0) of
-           (P.Table rm1, P.Table rm0) -> return $ P.Table $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
+           (P.Table rm1 _, P.Table rm0 _) -> return $ flip P.Table 0 $ M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0)
            (prNN1, prNN0) -> do
              n1 <- mkNNList borl scale prNN1
              n0 <- mkNNList borl scale prNN0
-             return $ P.Table $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0)
+             return $ flip P.Table 0 $ M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0)
   errScaled <- mkErr True
   prettyErr <- if t3
                then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
@@ -114,7 +114,9 @@ prettyBORLTables t1 t2 t3 borl = do
        m  -> do
          prAct <- prettyTable borl prettyAction prettyActionIdx m
          return $ text "Rho" $+$ prAct
-  prettyVisits <- prettyTable borl id (const empty) (P.Table vis)
+#ifdef DEBUG
+  prettyVisits <- prettyTable borl id (const empty) (P.Table vis 0)
+#endif
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies.v) (borl ^. proxies.w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies.r0) (borl ^. proxies.r1)
   return $
@@ -156,11 +158,16 @@ prettyBORLTables t1 t2 t3 borl = do
     prR0R1 $+$
     -- prettyErr $+$
     text "V+PsiV" $+$
-    vcat vPlusPsiV $+$
-    text "Visits [%]" $+$
-    prettyVisits
+    vcat vPlusPsiV
+#ifdef DEBUG
+    $+$ text "Visits [%]" $+$ prettyVisits
+#endif
   where
+#ifdef DEBUG
     vis = M.mapKeys (\x -> (x,0)) $ M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
+#endif
+
+
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     -- prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     prettyAction st = st

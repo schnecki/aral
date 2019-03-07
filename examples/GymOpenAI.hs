@@ -37,6 +37,7 @@ import           Control.Monad          (foldM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.List              (genericLength)
 import qualified Data.Text              as T
+import           Debug.Trace
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
@@ -76,7 +77,7 @@ nnConfig :: Gym -> Double -> NNConfig St
 nnConfig gym maxRew = NNConfig
   { _toNetInp              = netInp gym
   , _replayMemoryMaxSize   = 10000
-  , _trainBatchSize        = 32
+  , _trainBatchSize        = 1
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems      = ppSts
   , _scaleParameters       = scalingByMaxAbsReward False maxRew
@@ -86,7 +87,9 @@ nnConfig gym maxRew = NNConfig
 
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = gymRangeToDoubleLists range
-        vals = zipWith (\lo hi -> [lo, lo+(hi-lo)/3..hi]) lows highs
+        vals =
+          trace ("hilo: " ++ show (lows, highs))
+          zipWith (\lo hi -> [lo, lo+(hi-lo)/3..hi]) lows highs
         ppSts = take 1000 $ combinations vals
 
 combinations :: [[a]] -> [[a]]
@@ -117,10 +120,19 @@ action :: Gym -> Integer -> Action St
 action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   res <- stepGym gym idx
   obs <- if episodeDone res
-         then resetGym gym
-         else return $ observation res
-  -- putStrLn $ "rew: " ++ show (reward res)
-  return (reward res, gymObservationToDoubleList obs)
+         then do obs <- resetGym gym
+                 putStrLn $ "Done: " ++ show (observation res)
+                 return obs
+                else return (observation res)
+  return (reward res, cut ranges $ gymObservationToDoubleList obs, episodeDone res)
+  where ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+
+
+cut :: ([Double], [Double]) -> [Double] -> [Double]
+cut (lows, highs) xs = zipWith3 splitInto lows highs xs
+  where
+    splitInto lo hi x = fromIntegral (round (20 * x * nr)) / 20 -- nr
+      where nr = 1/(hi - lo)
 
 
 main :: IO ()
@@ -132,16 +144,18 @@ main = do
   let maxReward | length args >= 2  = read (args!!1)
                 | otherwise = 1
   (obs, gym) <- initGym (T.pack name)
+  setMaxEpisodeSteps gym 30000
   let inputNodes = dimension (observationSpace gym)
       actionNodes = dimension (actionSpace gym)
-      initState = gymObservationToDoubleList obs
+      ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+      initState = cut ranges (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
 
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just (-1))
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just (-1))
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just (-1))
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

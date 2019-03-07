@@ -86,10 +86,10 @@ main = do
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn nnConfig
   rl <- mkBORLUnichainTensorflow initState actions actFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",moveUp),("j",moveDown), ("k",moveLeft), ("l", moveRight) ] (tail names)
+  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 names = ["random", "up   ", "down ", "left ", "right"]
@@ -165,46 +165,46 @@ actFilter st | st == fromIdx (0,2) = True : repeat False
 actFilter _  = False : repeat True
 
 
-moveRand :: St -> IO (Reward, St)
+moveRand :: St -> IO (Reward, St, EpisodeEnd)
 moveRand = moveUp
 
 
-goalState :: (St -> IO (Reward, St)) -> St -> IO (Reward, St)
+goalState :: (St -> IO (Reward, St, EpisodeEnd)) -> St -> IO (Reward, St, EpisodeEnd)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew = first (+ r)
+  let stepRew (re,s,e) = (re + r, s ,e)
   case getCurrentIdx st of
     -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
     -- (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
-    (0, 2) -> return (10, fromIdx (x,y))
+    (0, 2) -> return (10, fromIdx (x,y), True)
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
 
 
-moveUp :: St -> IO (Reward,St)
+moveUp :: St -> IO (Reward,St, EpisodeEnd)
 moveUp st
-    | m == 0 = return (-1, st)
-    | otherwise = return (0, fromIdx (m-1,n))
+    | m == 0 = return (-1, st, False)
+    | otherwise = return (0, fromIdx (m-1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveDown :: St -> IO (Reward,St)
+moveDown :: St -> IO (Reward,St, EpisodeEnd)
 moveDown st
-    | m == maxX = return (-1, st)
-    | otherwise = return (0, fromIdx (m+1,n))
+    | m == maxX = return (-1, st, False)
+    | otherwise = return (0, fromIdx (m+1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveLeft :: St -> IO (Reward,St)
+moveLeft :: St -> IO (Reward,St, EpisodeEnd)
 moveLeft st
-    | n == 0 = return (-1, st)
-    | otherwise = return (0, fromIdx (m,n-1))
+    | n == 0 = return (-1, st, False)
+    | otherwise = return (0, fromIdx (m,n-1), False)
   where (m,n) = getCurrentIdx st
 
-moveRight :: St -> IO (Reward,St)
+moveRight :: St -> IO (Reward,St, EpisodeEnd)
 moveRight st
-    | n == maxY = return (-1, st)
-    | otherwise = return (0, fromIdx (m,n+1))
+    | n == maxY = return (-1, st, False)
+    | otherwise = return (0, fromIdx (m,n+1), False)
   where (m,n) = getCurrentIdx st
 
 

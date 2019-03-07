@@ -103,7 +103,7 @@ main = do
 
   -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
   rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay
+  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -166,20 +166,20 @@ actionFilter B = [False, True]
 actionFilter C = [True, False]
 
 
-moveLeft :: St -> IO (Reward,St)
+moveLeft :: St -> IO (Reward,St, EpisodeEnd)
 moveLeft s =
   return $
   case s of
-    A -> (2, B)
+    A -> (2, B, False)
     B -> error "not allowed"
-    C -> (2, A)
+    C -> (2, A, False)
 
-moveRight :: St -> IO (Reward,St)
+moveRight :: St -> IO (Reward,St, EpisodeEnd)
 moveRight s =
   return $
   case s of
-    A -> (0, C)
-    B -> (0, A)
+    A -> (0, C, False)
+    B -> (0, A, False)
     C -> error "not allowed"
 
 

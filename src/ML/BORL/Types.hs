@@ -10,14 +10,15 @@ import           System.IO.Unsafe          (unsafePerformIO)
 import qualified TensorFlow.Core           as TF
 import qualified TensorFlow.Session        as TF
 
-type Period = Integer
 type ActionIndex = Int
-type InitialState s = s         -- ^ Initial state
 type Batchsize = Int
-type Reward = Double
-type StateNext s = s
-type State s = s
+type EpisodeEnd = Bool
+type InitialState s = s         -- ^ Initial state
 type IsRandomAction = Bool
+type Period = Integer
+type Reward = Double
+type State s = s
+type StateNext s = s
 
 
 type MSE = Double               -- ^ Mean squared error

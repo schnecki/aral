@@ -9,8 +9,8 @@ import           ML.BORL.Types
 
 -- | An action is a function returning a reward and a new state, and has a name for pretty printing.
 data Action s = Action
-  { actionFunction :: s -> IO (Reward, s) -- ^ An action which returns a reward r and a new state s'
-  , actionName     :: T.Text              -- ^ Name of the action.
+  { actionFunction :: s -> IO (Reward, s, EpisodeEnd) -- ^ An action which returns a reward r and a new state s' and if s' is the episode end
+  , actionName     :: T.Text                          -- ^ Name of the action.
   }
 
 instance NFData (Action s) where

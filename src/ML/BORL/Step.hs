@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module ML.BORL.Step
     ( step
@@ -86,8 +87,8 @@ saveTensorflowModels borl = do
         _ -> return ()
 
 
-mkCalculation :: (Ord s) => BORL s -> s -> ActionIndex -> Bool -> Reward -> s -> MonadBorl Calculation
-mkCalculation borl state aNr randomAction reward stateNext = do
+mkCalculation :: (Ord s) => BORL s -> State s -> ActionIndex -> Bool -> Reward -> StateNext s -> EpisodeEnd -> MonadBorl Calculation
+mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
   let alp = borl ^. parameters . alpha
       bta = borl ^. parameters . beta
       dlt = borl ^. parameters . delta
@@ -107,23 +108,25 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   r0ValState <- rValue borl RSmall state aNr
   r1ValState <- rValue borl RBig state aNr
   psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV)
+  let epsEnd | episodeEnd = 0
+             | otherwise = 1
   rhoState <-
     if isUnichain borl
            then -- return (reward + vValStateNext - vValState)
                 -- return reward                                              -- Alternative to above (estimating it from actual reward)
                 return avgRew
       else do
-        rhoStateValNext <- rhoStateValue borl stateNext
-        return $ (approxAvg * rhoStateValNext + reward) / (approxAvg + 1) -- approximation
+      rhoStateValNext <- rhoStateValue borl stateNext
+      return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
   let rhoVal' = max rhoMinimumState rhoState
                 -- ((1 - alp) * rhoVal + alp * rhoState)
   let rhoMinimumVal' | rhoState < rhoMinimumState = rhoMinimumState
                      | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
   let psiRho = rhoVal' - rhoVal -- should converge to 0
-  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + vValStateNext)
+  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
       lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
-  let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + wValStateNext)
+  let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + epsEnd * wValStateNext)
   let psiW = wValStateNext - vValState' - wValState' -- should converge towards 0
   let psiValRho' = (1 - expSmthPsi) * psiValRho + expSmthPsi * (if randomAction then 0 else abs psiRho)
       psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * (if randomAction then 0 else abs psiV)
@@ -139,17 +142,16 @@ mkCalculation borl state aNr randomAction reward stateNext = do
   -- R0/R1
   rSmall <- rStateValue borl RSmall stateNext
   rBig <- rStateValue borl RBig stateNext
-  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + ga0 * rSmall)
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + ga1 * rBig)
-  return $ Calculation rhoMinimumVal' rhoVal' psiVTblVal'
-    vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
+  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * rSmall)
+  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * rBig)
+  return $ Calculation rhoMinimumVal' rhoVal' psiVTblVal' vValStateNew wValState' r0ValState' r1ValState' psiValRho' psiValV' psiValW' lastVs' lastRews'
 
 stepExecute :: forall s . (NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> MonadBorl (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
-  (reward, stateNext) <- Simple $ action state
-  (proxies', calc) <- P.insert period state aNr randomAction reward stateNext (mkCalculation borl) (borl ^. proxies)
+  (reward, stateNext, episodeEnd) <- Simple $ action state
+  (proxies', calc) <- P.insert period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
 
   -- File IO Operations
   Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
@@ -174,10 +176,13 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
     set lastVValues (getLastVs' calc) $
     set lastRewards (getLastRews' calc) $
     set proxies proxies' $
-    set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
     set s stateNext $
     set t (period + 1) $
-    set parameters params' borl
+    set parameters params' $
+#ifdef DEBUG
+    set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
+#endif
+    borl
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
@@ -185,6 +190,11 @@ nextAction :: (Ord s) => BORL s -> MonadBorl (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
+  -- | True = do
+  --     rValues <- mapM (rValue borl RBig state . fst) as
+  --     let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+  --     return (borl, False, snd $ head bestR)
+
   | otherwise = do
     rand <- Simple $ randomRIO (0, 1)
     if rand < explore
@@ -204,8 +214,6 @@ nextAction borl
         bestE <-
           do eVals <- mapM (eValue borl state) (map fst bestV)
              return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
-    -- bestR <- sortBy (epsCompare compare `on` rValue borl RBig state) bestV
-    -- return (False, head bestR)
         if length bestE > 1
           then do
             r <- Simple $ randomRIO (0, length bestE - 1)

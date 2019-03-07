@@ -7,7 +7,7 @@ import           ML.BORL.Types
 import           Control.DeepSeq
 import           GHC.Generics
 
-type ReplMemFun s = s -> ActionIndex -> Bool -> Reward -> s -> MonadBorl Calculation
+type ReplMemFun s = s -> ActionIndex -> Bool -> Reward -> s -> EpisodeEnd -> MonadBorl Calculation
 
 
 data Calculation = Calculation
