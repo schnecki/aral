@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLists            #-}
@@ -79,9 +80,9 @@ nnConfig gym maxRew = NNConfig
   , _replayMemoryMaxSize   = 10000
   , _trainBatchSize        = 1
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems      = ppSts
+  , _prettyPrintElems      = map (St 0) ppSts
   , _scaleParameters       = scalingByMaxAbsReward False maxRew
-  , _updateTargetInterval  = 1000
+  , _updateTargetInterval  = 5000
   , _trainMSEMax           = Nothing
   }
 
@@ -96,14 +97,23 @@ combinations [xs] = map return xs
 combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
   where ys = combinations xss
 
-type St = [Double]
+data St = St Int [Double]
+  deriving (Generic, NFData)
 
+instance Ord St where
+  compare (St _ xs) (St _ ys) = compare xs ys
+
+instance Eq St where
+  (==) (St _ xs) (St _ ys) = xs == ys
+
+instance Show St where
+  show (St _ xs) = show xs
 
 netInp :: Gym -> St -> [Double]
-netInp gym =
+netInp gym (St _ st)=
   -- trace ("lows: " ++ show lows)
   -- trace ("highs: " ++ show highs)
-  zipWith3 (curry scaleNegPosOne) lows highs
+  zipWith3 (curry scaleNegPosOne) lows highs st
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = gymRangeToDoubleLists range
 
@@ -111,29 +121,29 @@ modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> m TensorflowModel
 modelBuilder nrInp nrOut =
   buildModel $
   inputLayer1D (fromIntegral nrInp) >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 7 TF.relu' >> fullyConnected1D (fromIntegral nrOut) TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 action :: Gym -> Integer -> Action St
-action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
+action gym idx = flip Action (T.pack $ show idx) $ \(St nr _) -> do
   res <- stepGym gym idx
-  (rew, obs) <- if episodeDone res
-         then do obs <- resetGym gym
-                 -- putStrLn $ "Done: " ++ show (cut ranges $ gymObservationToDoubleList $ observation res)
-                 return (-10, obs)
-                else return (0.5 -- reward res
-                            , observation res)
-  return (rew, cut ranges $ gymObservationToDoubleList obs, episodeDone res)
+  (nr', rew, obs) <- if episodeDone res
+                then do obs <- resetGym gym
+                        appendFile "episodeSteps" (show nr ++ "\n")
+                        -- putStrLn $ "Done: " ++ show (cut ranges $ gymObservationToDoubleList $ observation res)
+                        return (0, -20, obs)
+                else return (nr+1, reward res , observation res)
+  return (rew, St nr' $ cut ranges $ gymObservationToDoubleList obs, episodeDone res)
   where ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
 
 
 cut :: ([Double], [Double]) -> [Double] -> [Double]
-cut _ xs = xs
--- cut (lows, highs) xs = zipWith3 splitInto lows highs xs
+-- cut _ xs = xs
+cut (lows, highs) xs = zipWith3 splitInto lows highs xs
   where
     splitInto lo hi x = -- x * scale
       fromIntegral (round (gran * x)) / gran
       where scale = 1/(hi - lo)
-            gran = 100
+            gran = 20
 
 
 main :: IO ()
@@ -149,14 +159,15 @@ main = do
   let inputNodes = dimension (observationSpace gym)
       actionNodes = dimension (actionSpace gym)
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
-      initState = cut ranges (gymObservationToDoubleList obs)
+      initState = St 0 (cut ranges (gymObservationToDoubleList obs))
       actions = map (action gym) [0..actionNodes-1]
 
+  writeFile "episodeSteps" ""
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just (-1))
+  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
+  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just 0)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

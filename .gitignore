@@ -21,3 +21,4 @@ TAGS
 *.cabal
 /rhoValues
 /examples/rhoValues
+episodeSteps

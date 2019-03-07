@@ -193,35 +193,42 @@ nextAction :: (Ord s) => BORL s -> MonadBorl (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
-  | True = do
-      rValues <- mapM (rValue borl RBig state . fst) as
-      let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-      return (borl, False, snd $ head bestR)
+  -- | True = do
+  --     rValues <- mapM (rValue borl RBig state . fst) as
+  --     let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+  --     return (borl, False, snd $ head bestR)
 
   | otherwise = do
-    rand <- Simple $ randomRIO (0, 1)
-    if rand < explore
-      then do
-        r <- Simple $ randomRIO (0, length as - 1)
-        return (borl, True, as !! r)
-      else do
-        bestRho <-
-          if isUnichain borl
-            then return as
-            else do
-              rhoVals <- mapM (rhoValue borl state) (map fst as)
-              return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
-        bestV <-
-          do vVals <- mapM (vValue True borl state) (map fst bestRho)
-             return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
-        bestE <-
-          do eVals <- mapM (eValue borl state) (map fst bestV)
-             return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
-        if length bestE > 1
-          then do
-            r <- Simple $ randomRIO (0, length bestE - 1)
-            return (borl, False, bestE !! r)
-          else return (borl, False, head bestE)
+    -- rand <- Simple $ randomRIO (0, 1)
+    -- if rand < (borl ^. parameters.exploration :: Double)
+    --   then do
+    --   rValues <- mapM (rValue borl RBig state . fst) as
+    --   let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+    --   return (borl, False, snd $ head bestR)
+    --   else do
+      rand <- Simple $ randomRIO (0, 1)
+      if rand < explore
+        then do
+          r <- Simple $ randomRIO (0, length as - 1)
+          return (borl, True, as !! r)
+        else do
+          bestRho <-
+            if isUnichain borl
+              then return as
+              else do
+                rhoVals <- mapM (rhoValue borl state) (map fst as)
+                return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
+          bestV <-
+            do vVals <- mapM (vValue True borl state) (map fst bestRho)
+               return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
+          bestE <-
+            do eVals <- mapM (eValue borl state) (map fst bestV)
+               return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
+          if length bestE > 1
+            then do
+              r <- Simple $ randomRIO (0, length bestE - 1)
+              return (borl, False, bestE !! r)
+            else return (borl, False, head bestE)
   where
     eps = borl ^. parameters . epsilon
     explore = borl ^. parameters . exploration
@@ -295,6 +302,7 @@ data RSize
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValue :: (Ord s) => BORL s -> RSize -> s -> ActionIndex -> MonadBorl Double
 rValue = rValueWith Worker
+
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValueWith :: (Ord s) => LookupType -> BORL s -> RSize -> s -> ActionIndex -> MonadBorl Double

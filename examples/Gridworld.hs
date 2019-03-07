@@ -175,10 +175,11 @@ goalState f st = do
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
   let stepRew (re,s,e) = (re + r, s ,e)
+
   case getCurrentIdx st of
     -- (0, 1) -> return [(1, (10, fromIdx (x,y)))]
     -- (0, 2) -> return (10, fromIdx (4,2)) -- (x,y))
-    (0, 2) -> return (10, fromIdx (x,y), True)
+    (0, 2) -> return (10, fromIdx (x,y), False)
     -- (0, 3) -> return [(1, (5, fromIdx (x,y)))]
     _      -> stepRew <$> f st
 

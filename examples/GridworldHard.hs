@@ -186,9 +186,9 @@ goalState f st = do
   r <- randomRIO (0, 8 :: Double)
   let stepRew (re,s,e)= (re - r, s ,e)
   case getCurrentIdx st of
-    (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y), True)
-    (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y), True)
-    _                        -> stepRew <$> f st
+    (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y), False)
+    (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y), False)
+    _      -> stepRew <$> f st
 
 
 stepWidth :: IO Int
