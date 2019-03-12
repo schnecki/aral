@@ -143,7 +143,7 @@ cut (lows, highs) xs = zipWith3 splitInto lows highs xs
     splitInto lo hi x = -- x * scale
       fromIntegral (round (gran * x)) / gran
       where scale = 1/(hi - lo)
-            gran = 20
+            gran = 10
 
 
 main :: IO ()
@@ -166,8 +166,8 @@ main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
-  -- let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just 0)
+  -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
+  let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just 0)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
