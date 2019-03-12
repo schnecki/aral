@@ -101,9 +101,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkBORLUnichainGrenade initState actions actionFilter params decay nn nnConfig
-  rl <- mkBORLUnichainTensorflow initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkBORLUnichainTabular initState actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
+  rl <- mkUnichainTensorflow algBORL initState actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- let rl = mkUnichainTabular algBORL initState actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -131,7 +131,7 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t _ _ p@(Parameters alp bet del ga eps exp rand zeta xi)
+decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
   | t > 0 && t `mod` 200 == 0 =
     Parameters
       (max 0.015 $ slow * alp)

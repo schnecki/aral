@@ -3,6 +3,7 @@ module ML.BORL
   ) where
 
 import           ML.BORL.Action        as BORL
+import           ML.BORL.Algorithm     as BORL
 import           ML.BORL.NeuralNetwork as BORL
 import           ML.BORL.Parameters    as BORL
 import           ML.BORL.Pretty        as BORL

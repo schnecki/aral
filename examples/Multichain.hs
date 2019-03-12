@@ -41,7 +41,7 @@ import           System.Random
 main :: IO ()
 main = do
 
-  let rl = mkBORLMultichainTabular initState actions (const $ repeat True) params decay Nothing
+  let rl = mkMultichainTabular algBORL initState actions (const $ repeat True) params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -55,7 +55,7 @@ initState :: St
 initState = St 5
 
 decay :: Decay
-decay t _ _ p@(Parameters alp bet del ga eps exp rand zeta xi)
+decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
   | t `mod` 200 == 0 = Parameters (f $ slower * alp) (f $ slow * bet) (f $ slow * del) ga (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi -- (1 - slower * (1-frc)) mRho
   | otherwise = p
 

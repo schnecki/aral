@@ -13,6 +13,7 @@
 module ML.BORL.Type where
 
 import           ML.BORL.Action
+import           ML.BORL.Algorithm
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Type
@@ -27,16 +28,15 @@ import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Mutable          as V
+import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Session           as TF
 
-
-type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
-type PsisOld = (Double, Double, Double)
-type PsisNew = PsisOld
-type Decay = Period -> PsisOld -> PsisNew -> Parameters -> Parameters -- ^ Function specifying the decay of the parameters at time t.
+type ActionIndexed s = (ActionIndex, Action s)                        -- ^ An action with index.
+type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the
+                                                                      -- parameters at time t.
 
 
 -------------------- Main RL Datatype --------------------
@@ -50,8 +50,8 @@ data BORL s = BORL
   , _parameters    :: !Parameters           -- ^ Parameter setup.
   , _decayFunction :: !Decay                -- ^ Decay function at period t.
 
-  -- discount factors
-  , _gammas        :: !(Double, Double) -- ^ Two gamma values in ascending order
+  -- define algorithm to use
+  , _algorithm     :: !Algorithm
 
   -- Values:
   , _lastVValues   :: ![Double] -- ^ List of X last V values
@@ -67,20 +67,16 @@ data BORL s = BORL
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t par dec gam lastVs lastRews psis proxies
+  rnf (BORL as af s t par dec alg lastVs lastRews psis proxies
 #ifdef DEBUG
        vis
 #endif
       ) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf gam `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 #ifdef DEBUG
        `seq` rnf vis
 #endif
 
-
-default_gamma0, default_gamma1 :: Double
-default_gamma0 = 0.25
-default_gamma1 = 0.99
 
 idxStart :: Int
 idxStart = 0
@@ -90,8 +86,8 @@ idxStart = 0
 
 -- Tabular representations
 
-mkBORLUnichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkBORLUnichainTabular initialState as asFilter params decayFun mRhoInit =
+mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkUnichainTabular alg initialState as asFilter params decayFun mRhoInit =
   BORL
     (zip [idxStart ..] as)
     asFilter
@@ -99,7 +95,7 @@ mkBORLUnichainTabular initialState as asFilter params decayFun mRhoInit =
     0
     params
     decayFun
-    (default_gamma0, default_gamma1)
+    alg
     mempty
     mempty
     (0, 0, 0)
@@ -110,8 +106,8 @@ mkBORLUnichainTabular initialState as asFilter params decayFun mRhoInit =
   where
     tabSA = Table mempty 0
 
-mkBORLUnichainTensorflow :: forall s m . (NFData s, Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
-mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
+mkUnichainTensorflow :: forall s m . (NFData s, Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
+mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
   -- Initialization for all NNs
  = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
@@ -138,7 +134,7 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
       0
       params
       decayFun
-      (default_gamma0, default_gamma1)
+      alg
       mempty
       mempty
       (0, 0, 0)
@@ -162,8 +158,8 @@ mkBORLUnichainTensorflow initialState as asFilter params decayFun modelBuilder n
     name PsiVTable = "psiV"
 
 
-mkBORLMultichainTabular :: (Ord s) => InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkBORLMultichainTabular initialState as asFilter params decayFun mRhoInit =
+mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkMultichainTabular alg initialState as asFilter params decayFun mRhoInit =
   BORL
     (zip [0 ..] as)
     asFilter
@@ -171,7 +167,7 @@ mkBORLMultichainTabular initialState as asFilter params decayFun mRhoInit =
     0
     params
     decayFun
-    (default_gamma0, default_gamma1)
+    alg
     mempty
     mempty
     (0, 0, 0)
@@ -185,9 +181,10 @@ mkBORLMultichainTabular initialState as asFilter params decayFun mRhoInit =
 
 -- Neural network approximations
 
-mkBORLUnichainGrenade ::
+mkUnichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
-  => InitialState s
+  => Algorithm
+  -> InitialState s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
@@ -195,7 +192,7 @@ mkBORLUnichainGrenade ::
   -> Network layers shapes
   -> NNConfig s
   -> IO (BORL s)
-mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
+mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
@@ -212,7 +209,7 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
       0
       params
       decayFun
-      (default_gamma0, default_gamma1)
+      alg
       mempty
       mempty
       (0, 0, 0)
@@ -222,9 +219,10 @@ mkBORLUnichainGrenade initialState as asFilter params decayFun net nnConfig = do
 #endif
 
 
-mkBORLMultichainGrenade ::
+mkMultichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
-  => InitialState s
+  => Algorithm
+  -> InitialState s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
@@ -232,7 +230,7 @@ mkBORLMultichainGrenade ::
   -> Network layers shapes
   -> NNConfig s
   -> IO (BORL s)
-mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = do
+mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
@@ -251,7 +249,7 @@ mkBORLMultichainGrenade initialState as asFilter params decayFun net nnConfig = 
       0
       params
       decayFun
-      (default_gamma0, default_gamma1)
+      alg
       mempty
       mempty
       (0, 0, 0)
@@ -278,8 +276,8 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
         maxW = 150 * maxR
-        maxR0 = 2 * maxDiscount default_gamma0
-        maxR1 = 0.8 * maxDiscount default_gamma1
+        maxR0 = 2 * maxDiscount defaultGamma0
+        maxR1 = 0.8 * maxDiscount defaultGamma1
 
 
 -------------------- Helpers --------------------

@@ -143,8 +143,8 @@ action gym idx = flip Action (T.pack $ show idx) $ \(St nr _) -> do
 
 
 cut :: ([Double], [Double]) -> [Double] -> [Double]
-cut _ xs = xs
--- cut (lows, highs) xs = zipWith3 splitInto lows highs xs
+-- cut _ xs = xs
+cut (lows, highs) xs = zipWith3 splitInto lows highs xs
   where
     splitInto lo hi x = -- x * scale
       fromIntegral (round (gran * x)) / gran
@@ -173,7 +173,7 @@ main = do
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
   -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
-  let rl = mkBORLUnichainTabular initState actions actFilter params decay (Just 0)
+  let rl = mkUnichainTabular algBORL initState actions actFilter params decay (Just 0)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -195,7 +195,7 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t (psiRhoOld, psiVOld, psiWOld) (psiRhoNew, psiVNew, psiWNew) p@(Parameters alp bet del ga eps exp rand zeta xi)
+decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
   | t `mod` 200 == 0 =
     Parameters
       (max 0.03 $ slow * alp)

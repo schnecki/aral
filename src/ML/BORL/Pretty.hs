@@ -7,6 +7,7 @@ module ML.BORL.Pretty
     ) where
 
 import           ML.BORL.Action
+import           ML.BORL.Algorithm
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
@@ -85,9 +86,16 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.Grenade _ _ p _ _ _         -> P.Table p 0
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
 
+prettyAlgorithm :: Algorithm -> Doc
+prettyAlgorithm (AlgBORL ga0 ga1) = text (show (printFloat ga0, printFloat ga1))
+prettyAlgorithm (AlgDQN ga1)      = printFloat ga1
+
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
 prettyBORLTables t1 t2 t3 borl = do
+
+  let algDoc doc | isAlgBorl (borl ^. algorithm) = doc
+                 | otherwise = empty
 
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
@@ -120,49 +128,29 @@ prettyBORLTables t1 t2 t3 borl = do
 #endif
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies.v) (borl ^. proxies.w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies.r0) (borl ^. proxies.r1)
+  prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies.r1)
   return $
-    text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$ text "Alpha" <> colon $$
-    nest 45 (printFloat $ borl ^. parameters . alpha) $+$
-    text "Beta" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . beta) $+$
-    text "Delta" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . delta) $+$
-    text "Gamma" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . gamma) $+$
-    text "Epsilon" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . epsilon) $+$
-    text "Exploration" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . exploration) $+$
-    text "Learn From Random Actions until Expl. hits" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . learnRandomAbove) $+$
+    text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
+    algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ borl ^. parameters . alpha)) $+$
+    algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . beta)) $+$
+    algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . delta)) $+$
+    text "Gamma" <> colon $$ nest 45 (printFloat $ borl ^. parameters . gamma) $+$
+    text "Epsilon" <> colon $$ nest 45 (printFloat $ borl ^. parameters . epsilon) $+$
+    text "Exploration" <> colon $$ nest 45 (printFloat $ borl ^. parameters . exploration) $+$
+    -- text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ borl ^. parameters . learnRandomAbove) $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$
-    text "Gammas" <>
-    colon $$
-    nest 45 (text (show (printFloat $ borl ^. gammas . _1, printFloat $ borl ^. gammas . _2))) $+$
-    text "Xi (ratio of W error forcing to V)" <>
-    colon $$
-    nest 45 (printFloat $ borl ^. parameters . xi) $+$
-    text "Scaling (V,W,R0,R1) by V Config" <>
-    colon $$
-    nest 45 scalingText $+$
-    text "Psi Rho/Psi V/Psi W" <>
-    colon $$
-    nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3))) $+$
-    prettyRhoVal $$
-    prVW $+$
+    text "Algorithm" <> colon $$ nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ borl ^. parameters . xi)) $+$
+    (if isAlgBorl (borl ^. algorithm) then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
+    algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
+    algDoc prettyRhoVal $$
+    algDoc prVW $+$
     -- prettyVWPsi $+$
-    prR0R1 $+$
+    (if isAlgBorl (borl ^. algorithm) then prR0R1 else vcat prR1) $+$
     -- prettyErr $+$
-    text "V+PsiV" $+$
-    vcat vPlusPsiV
+    algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
 #ifdef DEBUG
     $+$ text "Visits [%]" $+$ prettyVisits
 #endif
@@ -193,6 +181,11 @@ prettyBORLTables t1 t2 t3 borl = do
                , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+    scalingTextDqn =
+      case borl ^. proxies.v of
+        P.Table {} -> text "Tabular representation (no scaling needed)"
+        P.Grenade _ _ _ _ conf _ -> text (show ( (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show ( (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
 
     nnBatchSize = case borl ^. proxies.v of
       P.Table {} -> empty

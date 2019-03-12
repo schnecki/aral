@@ -19,6 +19,12 @@ type Period = Integer
 type Reward = Double
 type State s = s
 type StateNext s = s
+type PsisOld = (Double, Double, Double)
+type PsisNew = PsisOld
+
+type GammaLow = Double
+type GammaHigh = Double
+type Gamma = Double
 
 
 type MSE = Double               -- ^ Mean squared error
