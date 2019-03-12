@@ -27,7 +27,7 @@ isAlgDqn _        = False
 
 defaultGamma0,defaultGamma1 :: Double
 defaultGamma0 = 0.25
-defaultGamma1 = 0.99
+defaultGamma1 = 0.80
 
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.

@@ -46,6 +46,12 @@ keepXLastValues = 100
 approxAvg :: Double
 approxAvg = fromIntegral (100 :: Int)
 
+fileStateValues :: FilePath
+fileStateValues = "stateValues"
+
+fileEpisodeLength :: FilePath
+fileEpisodeLength = "episodeLength"
+
 
 -- TF.asyncProdNodes TODO
 
@@ -105,6 +111,7 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
       epsEnd
         | episodeEnd = 0
         | otherwise = 1
+
   case borl ^. algorithm of
     AlgBORL ga0 ga1 -> do
       rhoMinimumState <- rhoMinimumValue borl state aNr
@@ -165,11 +172,12 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
           (Just psiValW')
           (Just lastVs')
           lastRews'
+          episodeEnd
     AlgDQN ga -> do
       r1ValState <- rValue borl RBig state aNr
       rBig <- rStateValue borl RBig stateNext
       let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * rBig)
-      return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews'
+      return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
 -- TODO maybe integrate learnRandomAbove, etc.:
   -- let borl'
@@ -187,13 +195,26 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
 
   -- File IO Operations
-  Simple $ doesFileExist "rhoValues" >>= \exists -> when (exists && period == 0) $ removeFile "rhoValues"
-  Simple $ appendFile "rhoValues" (show period ++ "\t" ++ show (fromMaybe 0 (getRhoVal' calc)) ++ "\t" ++ show (fromMaybe 0 (getRhoMinimumVal' calc))
-                                   ++ "\t" ++ show (sum lastVsLst / fromIntegral (length lastVsLst)) ++ "\n")
+  when (period == 0) $ do
+    -- Simple $ mapM_ (\f -> doesFileExist f >>= \exists -> when exists (removeFile f)) [fileStateValues, fileEpisodeLength]
+    Simple $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
+    Simple $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
+  let strRho = show (fromMaybe 0 (getRhoVal' calc))
+      strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
+      strVAvg = show (sum lastVsLst / fromIntegral (length lastVsLst))
+      strR0 = show $ fromMaybe 0 (getR0ValState' calc)
+      strR1 = show $ getR1ValState' calc
+  Simple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+  let (eNr, eStart) = borl ^. episodeNrStart
+      eLength = borl ^. t - eStart
+  when (getEpisodeEnd calc) $ Simple $ appendFile fileEpisodeLength (show eNr ++"\t" ++ show eLength ++ "\n")
+
 
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
 
   -- update values
+  let setEpisode curEp | getEpisodeEnd calc = (eNr+1, borl ^. t)
+                       | otherwise = curEp
   return $ force $ -- needed to ensure constant memory consumption
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $
@@ -202,8 +223,9 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
     set s stateNext $
     set t (period + 1) $
     set parameters params' $
+    over episodeNrStart setEpisode
 #ifdef DEBUG
-    set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits)) $
+    $ set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits))
 #endif
     borl
 
@@ -213,10 +235,6 @@ nextAction :: (Ord s) => BORL s -> MonadBorl (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
-  -- | True = do
-  --     rValues <- mapM (rValue borl RBig state . fst) as
-  --     let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-  --     return (borl, False, snd $ head bestR)
   | otherwise = do
     rand <- Simple $ randomRIO (0, 1)
     if rand < explore
@@ -227,6 +245,7 @@ nextAction borl
              AlgDQN {} -> do
                rValues <- mapM (rValue borl RBig state . fst) as
                let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+               -- Simple $ putStrLn ("bestR: " ++ show bestR)
                return (borl, False, snd $ head bestR)
              AlgBORL {} -> do
                bestRho <-

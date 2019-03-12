@@ -19,6 +19,5 @@
 TAGS
 *.tags
 *.cabal
-/rhoValues
-/examples/rhoValues
-episodeSteps
+*stateValues
+*episodeLength

@@ -6,6 +6,7 @@ module ML.BORL.Pretty
     , prettyBORLTables
     ) where
 
+
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.NeuralNetwork

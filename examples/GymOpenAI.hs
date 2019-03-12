@@ -134,8 +134,6 @@ action gym idx = flip Action (T.pack $ show idx) $ \(St nr _) -> do
   res <- stepGym gym idx
   (nr', rew, obs) <- if episodeDone res
                 then do obs <- resetGym gym
-                        appendFile "episodeSteps" (show nr ++ "\n")
-                        -- putStrLn $ "Done: " ++ show (cut ranges $ gymObservationToDoubleList $ observation res)
                         return (0, reward res, obs)
                 else return (nr+1, reward res, observation res)
   return (rew, St nr' $ cut ranges $ gymObservationToDoubleList obs, episodeDone res)
@@ -167,13 +165,10 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St 0 (cut ranges (gymObservationToDoubleList obs))
       actions = map (action gym) [0..actionNodes-1]
-
-  writeFile "episodeSteps" ""
-
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkBORLUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
   -- rl <- mkBORLUnichainTensorflow initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
-  let rl = mkUnichainTabular algBORL initState actions actFilter params decay (Just 0)
+  let rl = mkUnichainTabular (AlgDQN 0.5) initState actions actFilter params decay (Just 0)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

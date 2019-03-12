@@ -25,6 +25,7 @@ data Calculation = Calculation
   , getPsiValW'       :: Maybe Double
   , getLastVs'        :: Maybe [Double]
   , getLastRews'      :: [Reward]
+  , getEpisodeEnd     :: Bool
   } deriving (Generic, NFData)
 
 
@@ -44,5 +45,6 @@ avgCalculation xs =
     (avg <$> mapM getPsiValW' xs)
     (mapM (fmap avg . getLastVs') xs)
     (map (avg . getLastRews') xs)
+    (all getEpisodeEnd xs)
   where
     avg xs = sum xs / fromIntegral (length xs)

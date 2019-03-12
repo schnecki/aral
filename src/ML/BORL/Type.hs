@@ -43,36 +43,37 @@ type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the dec
 
 
 data BORL s = BORL
-  { _actionList    :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
-  , _actionFilter  :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
-  , _s             :: !s                    -- ^ Current state.
-  , _t             :: !Integer              -- ^ Current time t.
-  , _parameters    :: !Parameters           -- ^ Parameter setup.
-  , _decayFunction :: !Decay                -- ^ Decay function at period t.
+  { _actionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
+  , _actionFilter   :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
+  , _s              :: !s                    -- ^ Current state.
+  , _t              :: !Integer              -- ^ Current time t.
+  , _episodeNrStart :: !(Integer, Integer)   -- ^ Nr of Episode and start period.
+  , _parameters     :: !Parameters           -- ^ Parameter setup.
+  , _decayFunction  :: !Decay                -- ^ Decay function at period t.
 
   -- define algorithm to use
-  , _algorithm     :: !Algorithm
+  , _algorithm      :: !Algorithm
 
   -- Values:
-  , _lastVValues   :: ![Double] -- ^ List of X last V values
-  , _lastRewards   :: ![Double] -- ^ List of X last rewards
-  , _psis          :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
-  , _proxies       :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
+  , _lastVValues    :: ![Double] -- ^ List of X last V values
+  , _lastRewards    :: ![Double] -- ^ List of X last rewards
+  , _psis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
+  , _proxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
 
 #ifdef DEBUG
   -- Stats:
-  , _visits        :: !(M.Map s Integer) -- ^ Counts the visits of the states
+  , _visits         :: !(M.Map s Integer) -- ^ Counts the visits of the states
 #endif
   }
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t par dec alg lastVs lastRews psis proxies
+  rnf (BORL as af s t epNr par dec alg lastVs lastRews psis proxies
 #ifdef DEBUG
        vis
 #endif
       ) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 #ifdef DEBUG
        `seq` rnf vis
 #endif
@@ -93,6 +94,7 @@ mkUnichainTabular alg initialState as asFilter params decayFun mRhoInit =
     asFilter
     initialState
     0
+    (0, 0)
     params
     decayFun
     alg
@@ -132,6 +134,7 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
       asFilter
       initialState
       0
+      (0, 0)
       params
       decayFun
       alg
@@ -165,6 +168,7 @@ mkMultichainTabular alg initialState as asFilter params decayFun mRhoInit =
     asFilter
     initialState
     0
+    (0, 0)
     params
     decayFun
     alg
@@ -207,6 +211,7 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
       asFilter
       initialState
       0
+      (0, 0)
       params
       decayFun
       alg
@@ -247,6 +252,7 @@ mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = 
       asFilter
       initialState
       0
+      (0, 0)
       params
       decayFun
       alg

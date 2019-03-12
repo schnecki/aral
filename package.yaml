@@ -68,6 +68,7 @@ library:
     -Wincomplete-uni-patterns
     -Wredundant-constraints
     -fwarn-tabs
+  default-extensions: CPP
   when:
     - condition: flag(fast)
       then:
@@ -85,7 +86,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+      - borl
 
   gridworld-hard:
     main:                GridworldHard.hs

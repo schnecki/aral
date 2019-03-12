@@ -89,7 +89,7 @@ main = do
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algBORL initState actions actFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algDQN initState actions actFilter params decay Nothing
+  let rl = mkUnichainTabular (AlgDQN 0.6) initState actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
@@ -135,14 +135,12 @@ decay t  p@(Parameters alp bet del ga eps exp rand zeta xi)
 
 
 initState :: St
-initState = fromIdx 0 (2,2)
+initState = fromIdx (2,2)
 
 
 -- State
-data St = St Integer [[Integer]] deriving (NFData, Generic)
+newtype St = St [[Integer]] deriving (Eq, NFData, Generic)
 
-instance Eq St where
-  (St _ x) == (St _ y) = x == y
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
@@ -153,11 +151,11 @@ instance Show St where
 instance Enum St where
   fromEnum st = let (x,y) = getCurrentIdx st
                 in x * (maxX + 1) + y
-  toEnum x = fromIdx 0 (x `div` (maxX+1), x `mod` (maxX+1))
+  toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
 
 instance Bounded St where
-  minBound = fromIdx 0 (0,0)
-  maxBound = fromIdx 0 (maxX, maxY)
+  minBound = fromIdx (0,0)
+  maxBound = fromIdx (maxX, maxY)
 
 
 -- Actions
@@ -167,7 +165,7 @@ actions = zipWith Action
   names
 
 actFilter :: St -> [Bool]
-actFilter st | st == fromIdx 0 (0,2) = True : repeat False
+actFilter st | st == fromIdx (0,2) = True : repeat False
 actFilter _  = False : repeat True
 
 
@@ -176,55 +174,51 @@ moveRand = moveUp
 
 
 goalState :: (St -> IO (Reward, St, EpisodeEnd)) -> St -> IO (Reward, St, EpisodeEnd)
-goalState f s@(St nr st) = do
+goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew (re,St _ s,e) = (re + r, St (nr+1) s ,e)
+  let stepRew (re,s,e) = (re + r, s ,e)
 
-
-  case getCurrentIdx s of
-    (0, 2) -> do
-      appendFile "episodeSteps" (show nr ++ "\n")
-      return (10, fromIdx 0 (x,y), False)
-    _      -> do
-      stepRew <$> f s
+  case getCurrentIdx st of
+    (0, 2) ->  return (10, fromIdx (x,y), False)
+    _      -> stepRew <$> f st
 
 
 moveUp :: St -> IO (Reward,St, EpisodeEnd)
 moveUp st
     | m == 0 = return (-1, st, False)
-    | otherwise = return (0, fromIdx 0 (m-1,n), False)
+    | otherwise = return (0, fromIdx (m-1,n), False)
   where (m,n) = getCurrentIdx st
 
 moveDown :: St -> IO (Reward,St, EpisodeEnd)
 moveDown st
     | m == maxX = return (-1, st, False)
-    | otherwise = return (0, fromIdx 0 (m+1,n), False)
+    | otherwise = return (0, fromIdx (m+1,n), False)
   where (m,n) = getCurrentIdx st
 
 moveLeft :: St -> IO (Reward,St, EpisodeEnd)
 moveLeft st
     | n == 0 = return (-1, st, False)
-    | otherwise = return (0, fromIdx 0 (m,n-1), False)
+    | otherwise = return (0, fromIdx (m,n-1), False)
   where (m,n) = getCurrentIdx st
 
 moveRight :: St -> IO (Reward,St, EpisodeEnd)
 moveRight st
     | n == maxY = return (-1, st, False)
-    | otherwise = return (0, fromIdx 0 (m,n+1), False)
+    | otherwise = return (0, fromIdx (m,n+1), False)
   where (m,n) = getCurrentIdx st
 
 
 -- Conversion from/to index for state
 
-fromIdx :: Integer -> (Int, Int) -> St
-fromIdx nr (m,n) = St nr $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
+fromIdx :: (Int, Int) -> St
+fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
   where base = replicate 5 [0,0,0,0,0]
 
 
 getCurrentIdx :: St -> (Int,Int)
-getCurrentIdx (St _ st) = second (fst . head . filter ((==1) . snd)) $
+getCurrentIdx (St st) = second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
   zip [0..] $ map (zip [0..]) st
 
