@@ -103,7 +103,7 @@ main = do
 
   -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
   rl <- mkUnichainTensorflow algBORL initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkUnichainTabular algBORL initState actions actionFilter params decay Nothing
+  -- let rl = mkUnichainTabular algBORL initState id actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

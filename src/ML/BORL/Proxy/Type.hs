@@ -37,8 +37,9 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                { _proxyScalar :: !Double
                }
              | Table            -- ^ Representation using a table.
-               { _proxyTable   :: !(M.Map (s,ActionIndex) Double)
-               , _proxyDefault :: !Double
+               { _proxyTable            :: !(M.Map (s,ActionIndex) Double)
+               , _proxyDefault          :: !Double
+               , _proxyStateGeneraliser :: !(s -> s)
                }
              | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes), NFData (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
@@ -60,7 +61,7 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
 makeLenses ''Proxy
 
 instance (NFData s) => NFData (Proxy s) where
-  rnf (Table x def)           = rnf x `seq` rnf def
+  rnf (Table x def gen)           = rnf x `seq` rnf def `seq` rnf gen
   rnf (Grenade t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x

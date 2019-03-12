@@ -87,8 +87,8 @@ idxStart = 0
 
 -- Tabular representations
 
-mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkUnichainTabular alg initialState as asFilter params decayFun mRhoInit =
+mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkUnichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
   BORL
     (zip [idxStart ..] as)
     asFilter
@@ -106,7 +106,7 @@ mkUnichainTabular alg initialState as asFilter params decayFun mRhoInit =
     mempty
 #endif
   where
-    tabSA = Table mempty 0
+    tabSA = Table mempty 0 gen
 
 mkUnichainTensorflow :: forall s m . (NFData s, Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
 mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
@@ -161,8 +161,8 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
     name PsiVTable = "psiV"
 
 
-mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkMultichainTabular alg initialState as asFilter params decayFun mRhoInit =
+mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
+mkMultichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
   BORL
     (zip [0 ..] as)
     asFilter
@@ -180,8 +180,8 @@ mkMultichainTabular alg initialState as asFilter params decayFun mRhoInit =
     mempty
 #endif
   where
-    tabSA = Table mempty 0
-    tabSARho = Table mempty (fromMaybe 0 mRhoInit)
+    tabSA = Table mempty 0 gen
+    tabSARho = Table mempty (fromMaybe 0 mRhoInit) gen
 
 -- Neural network approximations
 

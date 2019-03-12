@@ -41,7 +41,7 @@ import           System.Random
 main :: IO ()
 main = do
 
-  let rl = mkMultichainTabular algBORL initState actions (const $ repeat True) params decay Nothing
+  let rl = mkMultichainTabular algBORL initState id actions (const $ repeat True) params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

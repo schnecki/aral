@@ -125,7 +125,7 @@ insert period s aNr randAct rew s' episodeEnd getCalc pxs@(Proxies pRhoMin pRho 
 -- `trainBatch` to train the neural networks.
 insertProxy :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> Double -> Proxy s -> T.MonadBorl (Proxy s)
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
-insertProxy _ s aNr v (Table m def) = return $ Table (M.insert (s,aNr) v m) def
+insertProxy _ s aNr v (Table m def gen) = return $ Table (M.insert (gen s,aNr) v m) def gen
 insertProxy period st idx v px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && (px ^?! proxyNNConfig . trainBatchSize) == 1 =
       trainBatch [((config ^. toNetInp $ st, idx), v)] px >>= updateNNTargetNet False period
@@ -222,7 +222,7 @@ trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type 
 -- | Retrieve a value.
 lookupProxy :: (Ord k) => Period -> LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl Double
 lookupProxy _ _ _ (Scalar x) = return x
-lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
+lookupProxy _ _ k (Table m def gen) = return $ M.findWithDefault def (first gen k) m
 lookupProxy period lkType k px
   | period <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1 = return $ M.findWithDefault 0 k tab
   | otherwise = lookupNeuralNetwork lkType k px
