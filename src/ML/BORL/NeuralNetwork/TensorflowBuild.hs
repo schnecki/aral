@@ -141,9 +141,9 @@ buildModel builder = do
   buildInfo <- execStateT builder emptyBuildInfo
   case buildInfo of
     BuildInfo (Just inp) (Just out) (Just lab) (Just trainN) nnV trV _ _ _ -> return $ TensorflowModel inp out lab trainN nnV trV
-    BuildInfo Nothing _ _ _ _ _ _ _ _ -> error "No input layer detected"
-    BuildInfo _ Nothing _ _ _ _ _ _ _ -> error "No input output detected"
-    BuildInfo _ _ Nothing _ _ _ _ _ _ -> error "No input training model detected"
+    BuildInfo Nothing _ _ _ _ _ _ _ _ -> error "No input layer specified"
+    BuildInfo _ Nothing _ _ _ _ _ _ _ -> error "No output layer specified"
+    BuildInfo _ _ Nothing _ _ _ _ _ _ -> error "No training model specified"
     BuildInfo _ _ _ Nothing _ _ _ _ _  -> error "No training node specified (programming error in training action!)"
 
   where emptyBuildInfo = BuildInfo Nothing Nothing Nothing Nothing [] [] [] Nothing layerIdxStartNr
