@@ -94,13 +94,13 @@ nnConfig :: Gym -> Double -> NNConfig St
 nnConfig gym maxRew = NNConfig
   { _toNetInp              = netInp gym
   , _replayMemoryMaxSize   = 20000
-  , _trainBatchSize        = 32
+  , _trainBatchSize        = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems      = map St ppSts
   , _scaleParameters       =
-      -- scalingByMaxAbsReward True 1.5
+      scalingByMaxAbsReward True 100
       -- scalingByMaxAbsReward False maxRew
-    ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
+    -- ScalingNetOutParameters (-20) 20 (-20*150) (20*150) 0 20 0 200
   , _updateTargetInterval  = 5000
   , _trainMSEMax           = Just 0.05
   }
@@ -112,10 +112,10 @@ nnConfig gym maxRew = NNConfig
         ppSts = take 1000 $ combinations vals
 
 netInp :: Gym -> St -> [Double]
-netInp gym (St st) =
+netInp gym (St st) = st
   -- trace ("lows: " ++ show lows)
   -- trace ("highs: " ++ show highs)
-  zipWith3 (curry scaleNegPosOne) lows highs st
+  -- zipWith3 (curry scaleNegPosOne) lows highs st
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
 
@@ -132,8 +132,8 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   res <- stepGym gym idx
   (rew, obs) <- if episodeDone res
                 then do obs <- resetGym gym
-                        return (reward res, obs)
-                else return (reward res, observation res)
+                        return (0, obs)
+                else return (100*reward res, observation res)
   return (rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
 
@@ -161,11 +161,11 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
-      initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
+      initValues = Just $ defInitValues { defaultRho = 99.5, defaultR1 = 1}
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  rl <- mkUnichainTensorflow (AlgDQN 0.999) initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
-  -- let rl = mkUnichainTabular (AlgDQN 0.999) initState (stGen ranges) actions actFilter params decay initValues
+  rl <- mkUnichainTensorflow (AlgBORL 0.25 0.995 ByMovAvg) initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
+  -- let rl = mkUnichainTabular (AlgBORL 0.25 0.999 ByMovAvg) initState (stGen ranges) actions actFilter params decay initValues
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
