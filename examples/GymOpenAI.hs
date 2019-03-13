@@ -93,14 +93,16 @@ modelBuilder nrInp nrOut =
 nnConfig :: Gym -> Double -> NNConfig St
 nnConfig gym maxRew = NNConfig
   { _toNetInp              = netInp gym
-  , _replayMemoryMaxSize   = 10000
+  , _replayMemoryMaxSize   = 20000
   , _trainBatchSize        = 32
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems      = map St ppSts
-  , _scaleParameters       = scalingByMaxAbsReward True 1.5
+  , _scaleParameters       =
+      -- scalingByMaxAbsReward True 1.5
       -- scalingByMaxAbsReward False maxRew
+    ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
   , _updateTargetInterval  = 5000
-  , _trainMSEMax           = Nothing
+  , _trainMSEMax           = Just 0.05
   }
 
   where range = getGymRangeFromSpace $ observationSpace gym
@@ -159,10 +161,11 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
+      initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkUnichainTensorflow (AlgDQN 0.8) initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) (Just 0)
-  let rl = mkUnichainTabular (AlgDQN 0.8) initState (stGen ranges) actions actFilter params decay (Just 0)
+  rl <- mkUnichainTensorflow (AlgDQN 0.999) initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
+  -- let rl = mkUnichainTabular (AlgDQN 0.999) initState (stGen ranges) actions actFilter params decay initValues
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -175,7 +178,7 @@ params = Parameters
   , _beta             = 0.25
   , _delta            = 0.04
   , _gamma            = 1.0
-  , _epsilon          = 0.25
+  , _epsilon          = 0.01
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
@@ -191,7 +194,7 @@ decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
       (max 0.015 $ slow * bet)
       (max 0.015 $ slow * del)
       (max 0.01 $ slow * ga)
-      (max 0.05 $ slow * eps)
+      (max 0.01 $ slow * eps)
       (max 0.01 $ slower * exp)
       rand
       zeta -- zeta

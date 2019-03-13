@@ -83,12 +83,24 @@ idxStart :: Int
 idxStart = 0
 
 
+data InitValues = InitValues
+  { defaultRho :: Double
+  , defaultV   :: Double
+  , defaultW   :: Double
+  , defaultR0  :: Double
+  , defaultR1  :: Double
+  }
+
+
+defInitValues :: InitValues
+defInitValues = InitValues 0 0 0 0 0
+
 -------------------- Constructors --------------------
 
 -- Tabular representations
 
-mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkUnichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
+mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
   BORL
     (zip [idxStart ..] as)
     asFilter
@@ -101,15 +113,31 @@ mkUnichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar $ fromMaybe 0 mRhoInit) (Scalar $ fromMaybe 0 mRhoInit) tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
 #ifdef DEBUG
     mempty
 #endif
   where
-    tabSA = Table mempty 0 gen
+    tabSA def = Table mempty def gen
+    defRho = defaultRho (fromMaybe defInitValues initVals)
+    defV = defaultV (fromMaybe defInitValues initVals)
+    defW = defaultW (fromMaybe defInitValues initVals)
+    defR0 = defaultR0 (fromMaybe defInitValues initVals)
+    defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
-mkUnichainTensorflow :: forall s m . (NFData s, Ord s) => Algorithm -> InitialState s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> TF.Session TensorflowModel -> NNConfig s -> Maybe Double -> IO (BORL s)
-mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig mInitRho
+mkUnichainTensorflow ::
+     forall s m. (NFData s, Ord s)
+  => Algorithm
+  -> InitialState s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> TF.Session TensorflowModel
+  -> NNConfig s
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig initValues
   -- Initialization for all NNs
  = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
@@ -141,7 +169,7 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar $ fromMaybe 0 mInitRho) (Scalar $ fromMaybe 0 mInitRho) psiV v w r0 r1 (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) psiV v w r0 r1 (Just repMem))
 #ifdef DEBUG
     mempty
 #endif
@@ -159,10 +187,11 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
     name R0Table   = "r0"
     name R1Table   = "r1"
     name PsiVTable = "psiV"
+    defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
-mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe Double -> BORL s
-mkMultichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
+mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular alg initialState gen as asFilter params decayFun initValues =
   BORL
     (zip [0 ..] as)
     asFilter
@@ -175,13 +204,17 @@ mkMultichainTabular alg initialState gen as asFilter params decayFun mRhoInit =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies tabSARho tabSARho tabSA tabSA tabSA tabSA tabSA Nothing)
+    (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
 #ifdef DEBUG
     mempty
 #endif
   where
-    tabSA = Table mempty 0 gen
-    tabSARho = Table mempty (fromMaybe 0 mRhoInit) gen
+    tabSA def = Table mempty def gen
+    defRho = defaultRho (fromMaybe defInitValues initValues)
+    defV = defaultV (fromMaybe defInitValues initValues)
+    defW = defaultW (fromMaybe defInitValues initValues)
+    defR0 = defaultR0 (fromMaybe defInitValues initValues)
+    defR1 = defaultR1 (fromMaybe defInitValues initValues)
 
 -- Neural network approximations
 
@@ -195,8 +228,9 @@ mkUnichainGrenade ::
   -> Decay
   -> Network layers shapes
   -> NNConfig s
+  -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
+mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig initValues = do
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
@@ -218,10 +252,12 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar 0) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
 #ifdef DEBUG
     mempty
 #endif
+  where
+    defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
 mkMultichainGrenade ::

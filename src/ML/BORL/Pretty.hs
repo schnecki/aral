@@ -83,8 +83,13 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0 id
 
 prettyAlgorithm :: Algorithm -> Doc
-prettyAlgorithm (AlgBORL ga0 ga1) = text (show (printFloat ga0, printFloat ga1))
-prettyAlgorithm (AlgDQN ga1)      = printFloat ga1
+prettyAlgorithm (AlgBORL ga0 ga1 avgRewType) = text "BORL with gammas " <+> text (show (printFloat ga0, printFloat ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho"
+prettyAlgorithm (AlgDQN ga1)      = text "DQN with gamma" <+> printFloat ga1
+
+prettyAvgRewardType :: AvgReward -> Doc
+prettyAvgRewardType ByMovAvg      = "moving average"
+prettyAvgRewardType ByReward      = "reward"
+prettyAvgRewardType ByStateValues = "state values"
 
 
 prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
@@ -105,9 +110,6 @@ prettyBORLTables t1 t2 t3 borl = do
   prettyErr <- if t3
                then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
                else return empty
-  -- prettyVWPsi <- if t3
-  --              then prBoolTblsStateAction t3 (text "Psi V" $$ nest 40 (text "Psi W")) (borl ^. proxies.psiV) (borl ^. proxies.psiW)
-  --              else return empty
   let addPsiV k v = do
         vPsi <- P.lookupProxy (borl ^. t) P.Worker k (borl ^. proxies.psiV)
         return (v + vPsi)

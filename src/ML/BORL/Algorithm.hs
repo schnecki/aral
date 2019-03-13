@@ -8,9 +8,14 @@ import           ML.BORL.Types
 import           Control.DeepSeq
 import           GHC.Generics
 
+data AvgReward = ByMovAvg | ByReward | ByStateValues
+  deriving (NFData, Generic, Eq, Ord)
+
+
 data Algorithm
   = AlgBORL GammaLow
             GammaHigh
+            AvgReward
   | AlgDQN Gamma
   deriving (NFData, Generic, Eq, Ord)
 
@@ -32,7 +37,7 @@ defaultGamma1 = 0.80
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
 algBORL :: Algorithm
-algBORL = AlgBORL defaultGamma0 defaultGamma1
+algBORL = AlgBORL defaultGamma0 defaultGamma1 ByMovAvg
 
 
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.

@@ -113,7 +113,7 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
         | otherwise = 1
 
   case borl ^. algorithm of
-    AlgBORL ga0 ga1 -> do
+    AlgBORL ga0 ga1 avgRewardType -> do
       rhoMinimumState <- rhoMinimumValue borl state aNr
       vValState <- vValue False borl state aNr
       vValStateNext <- vStateValue False borl stateNext
@@ -125,9 +125,10 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
       psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV)
       rhoState <-
         if isUnichain borl
-          then -- return (reward + vValStateNext - vValState)
-               -- return reward                                              -- Alternative to above (estimating it from actual reward)
-               return avgRew
+          then case avgRewardType of
+                 ByMovAvg      -> return avgRew
+                 ByReward      -> return reward
+                 ByStateValues -> return (reward + vValStateNext - vValState)
           else do
             rhoStateValNext <- rhoStateValue borl stateNext
             return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
