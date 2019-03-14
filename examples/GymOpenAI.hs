@@ -94,7 +94,7 @@ nnConfig :: Gym -> Double -> NNConfig St
 nnConfig gym maxRew = NNConfig
   { _toNetInp              = netInp gym
   , _replayMemoryMaxSize   = 20000
-  , _trainBatchSize        = 32
+  , _trainBatchSize        = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems      = map St ppSts
   , _scaleParameters       =
@@ -112,10 +112,10 @@ nnConfig gym maxRew = NNConfig
         ppSts = take 1000 $ combinations vals
 
 netInp :: Gym -> St -> [Double]
-netInp gym (St st) =
+netInp gym (St st) = st
   -- trace ("lows: " ++ show lows)
   -- trace ("highs: " ++ show highs)
-  zipWith3 (curry scaleNegPosOne) lows highs st
+  -- zipWith3 (curry scaleNegPosOne) lows highs st
   where range = getGymRangeFromSpace $ observationSpace gym
         (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
 
@@ -132,8 +132,8 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   res <- stepGym gym idx
   (rew, obs) <- if episodeDone res
                 then do obs <- resetGym gym
-                        return (0, obs)
-                else return (100 * reward res, observation res)
+                        return (reward res, obs)
+                else return (reward res, observation res)
   return (rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
 
@@ -161,6 +161,7 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
+
       initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
   nn <- randomNetworkInitWith UniformInit :: IO NN
