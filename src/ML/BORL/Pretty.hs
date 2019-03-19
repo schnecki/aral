@@ -83,11 +83,15 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0 id
 
 prettyAlgorithm :: Algorithm -> Doc
-prettyAlgorithm (AlgBORL ga0 ga1 avgRewType) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho"
+prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand
 prettyAlgorithm (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 
+prettyStateValueHandling :: StateValueHandling -> Doc
+prettyStateValueHandling Normal = empty
+prettyStateValueHandling (DivideValuesAfterGrowth nr max ) = text "Divide values after growth " <> parens (int nr <> text ","  <+> integer max)
+
 prettyAvgRewardType :: AvgReward -> Doc
-prettyAvgRewardType ByMovAvg      = "moving average"
+prettyAvgRewardType (ByMovAvg nr) = "moving average" <> parens (int nr)
 prettyAvgRewardType ByReward      = "reward"
 prettyAvgRewardType ByStateValues = "state values"
 

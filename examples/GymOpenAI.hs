@@ -164,11 +164,12 @@ main = do
 
       initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
+  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) Normal
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkUnichainTensorflow (AlgDQN 0.999) initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
-  -- let rl = mkUnichainTabular (AlgDQN 0.9) initState (stGen ranges) actions actFilter params decay initValues
-  let rl = mkUnichainTabular (AlgBORL 0.2 0.9 ByMovAvg) initState (stGen ranges) actions actFilter params decay initValues
+  -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
+  -- let rl = mkUnichainTabular algorithm initState (stGen ranges) actions actFilter params decay initValues
+  let rl = mkUnichainTabular algorithm initState (stGen ranges) actions actFilter params decay initValues
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

@@ -8,7 +8,7 @@ import           ML.BORL
 
 import           Control.Arrow
 import           Control.DeepSeq (NFData, force)
-import           Control.Lens    (set, (^.))
+import           Control.Lens    (over, set, traversed, (^.))
 import           Control.Monad   (foldM, unless, when)
 import           Data.Function   (on)
 import           Data.List       (find, sortBy)
@@ -26,6 +26,7 @@ askUser showHelp addUsage cmds ql = do
         , ("p", "Print everything")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
+        , ("m", "Multiply all state values by X")
         -- , ("s" "Save to file save.dat (overwrites the file if it exists)")
         -- , ("l" "Load from file save.dat")
         , ("_", "Any other input starts another learning round\n")
@@ -56,12 +57,23 @@ askUser showHelp addUsage cmds ql = do
     "p" -> do
       prettyBORL ql >>= print
       askUser False addUsage cmds ql
+    "m" -> do
+      putStr "Multiply by: " >> hFlush stdout
+      l <- getLine
+      case reads l :: [(Double, String)] of
+        [(nr, _)] -> askUser False addUsage cmds (foldl (\q f -> over (proxies . f) (multiplyProxy nr) q) ql [psiV, v, w])
+        _ -> do
+          putStr "Could not read your input :( You are supposed to enter an Integer.\n"
+          askUser False addUsage cmds ql
     "v" -> do
       runMonadBorl (restoreTensorflowModels ql >> prettyBORLTables True False False ql) >>= print
       askUser False addUsage cmds ql
     _ ->
       case find ((== c) . fst) cmds of
-        Nothing -> unless (c == "q") (step ql >>= \x -> runMonadBorl(restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
+        Nothing ->
+          unless
+            (c == "q")
+            (step ql >>= \x -> runMonadBorl (restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
         Just (_, cmd) -> runMonadBorl (restoreTensorflowModels ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser False addUsage cmds
 
 

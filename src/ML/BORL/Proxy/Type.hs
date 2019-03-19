@@ -51,12 +51,12 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                 , _proxyNrActions :: !Int
                 }
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
-                { _proxyTFTarget  :: TensorflowModel'
-                , _proxyTFWorker  :: TensorflowModel'
-                , _proxyNNStartup :: !(M.Map (s,ActionIndex) Double)
-                , _proxyType      :: !ProxyType
-                , _proxyNNConfig  :: !(NNConfig s)
-                , _proxyNrActions :: !Int
+                { _proxyqqqTFTarget :: TensorflowModel'
+                , _proxyTFWorker    :: TensorflowModel'
+                , _proxyNNStartup   :: !(M.Map (s,ActionIndex) Double)
+                , _proxyType        :: !ProxyType
+                , _proxyNNConfig    :: !(NNConfig s)
+                , _proxyNrActions   :: !Int
                 }
 makeLenses ''Proxy
 
@@ -65,6 +65,13 @@ instance (NFData s) => NFData (Proxy s) where
   rnf (Grenade t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
+
+
+multiplyProxy :: Double -> Proxy s -> Proxy s
+multiplyProxy v (Scalar x) = Scalar (v*x)
+multiplyProxy v (Table m d g) = Table (fmap (v*) m) d g
+multiplyProxy v (Grenade t w s tp config nr) = Grenade t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
+multiplyProxy v (TensorflowProxy t w s tp config nr) = TensorflowProxy t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
 
 
 isNeuralNetwork :: Proxy s -> Bool

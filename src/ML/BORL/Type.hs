@@ -1,6 +1,8 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -41,6 +43,10 @@ type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the dec
 
 -------------------- Main RL Datatype --------------------
 
+data Phase = IncreasingStateValues
+           --  | DecreasingStateValues
+           | SteadyStateValues
+  deriving (Eq, Ord, NFData, Generic, Show)
 
 data BORL s = BORL
   { _actionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
@@ -53,6 +59,7 @@ data BORL s = BORL
 
   -- define algorithm to use
   , _algorithm      :: !Algorithm
+  , _phase          :: !Phase
 
   -- Values:
   , _lastVValues    :: ![Double] -- ^ List of X last V values
@@ -68,12 +75,12 @@ data BORL s = BORL
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t epNr par dec alg lastVs lastRews psis proxies
+  rnf (BORL as af s t epNr par dec alg ph lastVs lastRews psis proxies
 #ifdef DEBUG
        vis
 #endif
       ) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 #ifdef DEBUG
        `seq` rnf vis
 #endif
@@ -110,6 +117,7 @@ mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
     params
     decayFun
     alg
+    SteadyStateValues
     mempty
     mempty
     (0, 0, 0)
@@ -166,6 +174,7 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
       params
       decayFun
       alg
+      SteadyStateValues
       mempty
       mempty
       (0, 0, 0)
@@ -201,6 +210,7 @@ mkMultichainTabular alg initialState gen as asFilter params decayFun initValues 
     params
     decayFun
     alg
+    SteadyStateValues
     mempty
     mempty
     (0, 0, 0)
@@ -249,6 +259,7 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig init
       params
       decayFun
       alg
+      SteadyStateValues
       mempty
       mempty
       (0, 0, 0)
@@ -292,6 +303,7 @@ mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = 
       params
       decayFun
       alg
+      SteadyStateValues
       mempty
       mempty
       (0, 0, 0)

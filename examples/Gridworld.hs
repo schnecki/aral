@@ -61,7 +61,7 @@ nnConfig :: NNConfig St
 nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
+  , _trainBatchSize       = 8
   , _grenadeLearningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxAbsReward False 6
@@ -86,10 +86,12 @@ main = do
 
   writeFile "episodeSteps" "0"
 
+  let algorithm = AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000)
+
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algBORL initState actions actFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular (AlgDQN 0.6) initState id actions actFilter params decay Nothing
+  -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
+  rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
+  -- let rl = mkUnichainTabular algorithm initState id actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
@@ -181,7 +183,7 @@ goalState f st = do
   let stepRew (re,s,e) = (re + r, s ,e)
 
   case getCurrentIdx st of
-    (0, 2) ->  return (10, fromIdx (x,y), False)
+    (0, 2) ->  return (10, fromIdx (x,y), True)
     _      -> stepRew <$> f st
 
 

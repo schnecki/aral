@@ -22,6 +22,11 @@ data ScalingNetOutParameters = ScalingNetOutParameters
 makeLenses ''ScalingNetOutParameters
 
 
+multiplyScale :: Double -> ScalingNetOutParameters -> ScalingNetOutParameters
+multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minR0 maxR0 minR1 maxR1) =
+  ScalingNetOutParameters (v*minV)  (v*maxV) (v*minW) (v*maxW) (v*minR0) (v*maxR0) (v*minR1) (v*maxR1)
+
+
 scaleValue :: (MinValue,MaxValue) -> Double -> Double
 scaleValue = scaleNegPosOne
 
