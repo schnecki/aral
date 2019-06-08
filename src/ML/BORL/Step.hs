@@ -111,14 +111,14 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
         | episodeEnd = 0
         | otherwise = 1
   case borl ^. algorithm of
-    AlgBORL ga0 ga1 avgRewardType stValHandling -> do
+    AlgBORL ga0 ga1 avgRewardType stValHandling vPlusPsiV -> do
       let lastRews' =
             case avgRewardType of
               ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
               _                  -> take keepXLastValues $ reward : borl ^. lastRewards
       rhoMinimumState <- rhoMinimumValue borl state aNr                        `using` rpar
       vValState <- vValue False borl state aNr                                 `using` rpar
-      vValStateNext <- vStateValue False borl stateNext                        `using` rpar
+      vValStateNext <- vStateValue vPlusPsiV borl stateNext                    `using` rpar
       rhoVal <- rhoValue borl state aNr                                        `using` rpar
       wValState <- wValue borl state aNr                                       `using` rpar
       wValStateNext <- wStateValue borl state                                  `using` rpar
@@ -128,15 +128,17 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
       rhoState <-
         if isUnichain borl
           then case avgRewardType of
-                 ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
-                 ByReward -> return reward
+                 Fixed x       -> return x
+                 ByMovAvg l    -> return $ sum lastRews' / fromIntegral l -- (length lastRews')
+                 ByReward      -> return reward
                  ByStateValues -> return (reward + vValStateNext - vValState)
           else do
             rhoStateValNext <- rhoStateValue borl stateNext
             return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-      let rhoVal' =
+      let rhoVal' = max rhoMinimumState $
             case avgRewardType of
-              ByMovAvg _ -> max rhoMinimumState rhoState
+              ByMovAvg _ -> rhoState
+              Fixed x    -> x
               _          -> (1 - alp) * rhoVal + alp * rhoState
       let rhoMinimumVal'
             | rhoState < rhoMinimumState = rhoMinimumState
@@ -223,7 +225,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
   let divideAfterGrowth borl =
         case borl ^. algorithm of
-          AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod)
+          AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _
             | period > maxPeriod -> borl
             | length lastVsLst == nr && endOfIncreasedStateValues -> trace ("multiply in period " ++ show period ++ " by " ++ show val) $
                                                                      foldl (\q f -> over (proxies . f) (multiplyProxy val) q) (set phase SteadyStateValues borl) [psiV, v, w]
@@ -232,7 +234,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
                   val = 0.2 / (sum lastVsLst / fromIntegral nr)
           _ -> borl
       setCurrentPhase borl = case borl ^. algorithm of
-        AlgBORL _ _ _ (DivideValuesAfterGrowth nr _)
+        AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _
           | length lastVsLst == nr && increasingStateValue -> trace ("period: " ++ show period) $ trace (show IncreasingStateValues) $ set phase IncreasingStateValues borl
           where increasingStateValue = borl ^. phase /= IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr > 0.20
         _ -> borl
@@ -242,7 +244,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
         | otherwise = curEp
   return $
     force $ -- needed to ensure constant memory consumption
-    setCurrentPhase $ divideAfterGrowth $
+    setCurrentPhase $ -- divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $
     set lastRewards (getLastRews' calc) $ set proxies proxies' $ set s stateNext $ set t (period + 1) $ set parameters params' $ over episodeNrStart setEpisode

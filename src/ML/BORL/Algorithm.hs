@@ -12,6 +12,7 @@ data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
+  | Fixed Double
   deriving (NFData, Generic, Eq, Ord)
 
 data StateValueHandling
@@ -19,11 +20,14 @@ data StateValueHandling
   | DivideValuesAfterGrowth Int Integer -- ^ How many periods to track, until how many periods to perform divisions.
   deriving (NFData, Generic, Eq, Ord)
 
+type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
+
 data Algorithm
   = AlgBORL GammaLow
             GammaHigh
             AvgReward
             StateValueHandling
+            DecideOnVPlusPsi
   | AlgDQN Gamma
   deriving (NFData, Generic, Eq, Ord)
 
@@ -38,17 +42,18 @@ isAlgDqn AlgDQN{} = True
 isAlgDqn _        = False
 
 
-defaultGamma0,defaultGamma1 :: Double
-defaultGamma0 = 0.25
+defaultGamma0,defaultGamma1,defaultGammaDQN :: Double
+defaultGamma0 = 0.50
 defaultGamma1 = 0.80
+defaultGammaDQN = 0.99
 
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
 algBORL :: Algorithm
-algBORL = AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 100) (DivideValuesAfterGrowth 1000 70000)
+algBORL = AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 100) (DivideValuesAfterGrowth 1000 70000) False
 
 
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.
 -- "Human-level control through deep reinforcement learning." Nature 518.7540 (2015): 529.
 algDQN :: Algorithm
-algDQN = AlgDQN defaultGamma1
+algDQN = AlgDQN defaultGammaDQN
