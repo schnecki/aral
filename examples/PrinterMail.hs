@@ -102,10 +102,11 @@ main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
+  let algorithm = AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal True
 
   -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues Normal) initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular (AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal)
+  let rl = mkUnichainTabular algorithm
            initState id actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
