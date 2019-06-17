@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 
@@ -9,7 +11,8 @@ import           ML.BORL.Types
 import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Vector.Mutable as V
-import           System.IO.Unsafe
+-- import qualified Data.Vector.Generic as V
+
 import           System.Random
 
 
@@ -18,6 +21,7 @@ data ReplayMemory s = ReplayMemory
   , _replayMemorySize   :: Int
   }
 makeLenses ''ReplayMemory
+
 
 instance NFData (ReplayMemory s) where
   rnf (ReplayMemory !_ s) = rnf s

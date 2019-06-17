@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,9 +15,11 @@ import qualified Data.ByteString.Char8                          as B8
 import           Data.Int                                       (Int32, Int64)
 import           Data.List                                      (genericLength)
 import           Data.Maybe                                     (isJust)
+import           Data.Serialize
 import           Data.Text                                      (Text)
 import qualified Data.Text                                      as T
 import qualified Data.Vector                                    as V
+import           GHC.Generics
 import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
 import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
 import           System.IO.Temp
@@ -53,6 +57,11 @@ data TensorflowModel' = TensorflowModel'
   , lastInputOutputTuple   :: Maybe ([Float], [Float])
   , tensorflowModelBuilder :: TF.Session TensorflowModel
   }
+
+instance Serialize TensorflowModel' where
+  put = undefined               --  use unsafePerformIO to save to file, read file and save file contents
+  get = undefined
+
 
 instance NFData TensorflowModel' where
   rnf (TensorflowModel' m f l !_) = rnf m `seq` rnf f `seq` rnf l

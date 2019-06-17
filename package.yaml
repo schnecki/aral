@@ -24,6 +24,10 @@ flags:
     description: Disables optimizations
     manual: true
     default: false
+  debug:
+    description: Turn on debug settings.
+    manual: false
+    default: false
 
 dependencies:
   - base >= 4.7 && < 5
@@ -58,6 +62,7 @@ dependencies:
   # - tensorflow-records-conduit
   # - tensorflow-records
   - HUnit
+  - cereal
 
 library:
   source-dirs: src
@@ -70,9 +75,10 @@ library:
     -fwarn-tabs
   default-extensions: CPP
   when:
-    - condition: flag(fast)
+    - condition: (flag(dev)) || (flag(fast))
       then:
         ghc-options: -O0
+        cpp-options: -DDEBUG
       else:
         ghc-options: -O2
 

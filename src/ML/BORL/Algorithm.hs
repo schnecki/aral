@@ -6,6 +6,7 @@ module ML.BORL.Algorithm where
 import           ML.BORL.Types
 
 import           Control.DeepSeq
+import           Data.Serialize
 import           GHC.Generics
 
 data AvgReward
@@ -13,12 +14,12 @@ data AvgReward
   | ByReward
   | ByStateValues
   | Fixed Double
-  deriving (NFData, Generic, Eq, Ord)
+  deriving (NFData, Generic, Eq, Ord, Serialize)
 
 data StateValueHandling
   = Normal
   | DivideValuesAfterGrowth Int Integer -- ^ How many periods to track, until how many periods to perform divisions.
-  deriving (NFData, Generic, Eq, Ord)
+  deriving (NFData, Generic, Eq, Ord, Serialize)
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
 
@@ -30,7 +31,7 @@ data Algorithm
             DecideOnVPlusPsi
   | AlgDQN Gamma
   | AlgDQNAvgRew Gamma AvgReward -- ^ DQN algorithm but subtracts average reward in every state
-  deriving (NFData, Generic, Eq, Ord)
+  deriving (NFData, Generic, Eq, Ord, Serialize)
 
 
 isAlgBorl :: Algorithm -> Bool

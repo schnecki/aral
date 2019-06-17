@@ -15,6 +15,7 @@ import           ML.BORL.Types                as T
 import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Map.Strict              as M
+import           Data.Serialize
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
@@ -28,7 +29,7 @@ data ProxyType
   | R0Table
   | R1Table
   | PsiVTable
-  deriving (Show, NFData, Generic)
+  deriving (Show, NFData, Generic, Serialize)
 
 data LookupType = Target | Worker
 
@@ -41,7 +42,7 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                , _proxyDefault          :: !Double
                , _proxyStateGeneraliser :: !(s -> s)
                }
-             | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes), NFData (Network layers shapes)) =>
+             | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)
@@ -59,6 +60,7 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                 , _proxyNrActions   :: !Int
                 }
 makeLenses ''Proxy
+
 
 instance (NFData s) => NFData (Proxy s) where
   rnf (Table x def gen)           = rnf x `seq` rnf def `seq` rnf gen
@@ -89,7 +91,7 @@ data Proxies s = Proxies        -- ^ This data type holds all data for BORL.
   , _r0           :: !(Proxy s)
   , _r1           :: !(Proxy s)
   , _replayMemory :: !(Maybe (ReplayMemory s))
-  }
+  } deriving (Generic)
 makeLenses ''Proxies
 
 instance NFData s => NFData (Proxies s) where

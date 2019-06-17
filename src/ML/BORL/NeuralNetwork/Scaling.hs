@@ -7,6 +7,7 @@ import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
+import           Data.Serialize
 import           GHC.Generics
 
 data ScalingNetOutParameters = ScalingNetOutParameters
@@ -18,7 +19,7 @@ data ScalingNetOutParameters = ScalingNetOutParameters
   , _scaleMaxR0Value :: MaxValue
   , _scaleMinR1Value :: MinValue
   , _scaleMaxR1Value :: MaxValue
-  } deriving (Show,NFData,Generic)
+  } deriving (Show,NFData,Generic, Serialize)
 makeLenses ''ScalingNetOutParameters
 
 

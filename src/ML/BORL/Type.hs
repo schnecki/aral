@@ -28,6 +28,7 @@ import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import qualified Data.Map.Strict              as M
 import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
+import           Data.Serialize
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Mutable          as V
 import           GHC.Generics
@@ -46,7 +47,7 @@ type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the dec
 data Phase = IncreasingStateValues
            --  | DecreasingStateValues
            | SteadyStateValues
-  deriving (Eq, Ord, NFData, Generic, Show)
+  deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s = BORL
   { _actionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
@@ -229,7 +230,7 @@ mkMultichainTabular alg initialState gen as asFilter params decayFun initValues 
 -- Neural network approximations
 
 mkUnichainGrenade ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm
   -> InitialState s
   -> [Action s]
@@ -272,7 +273,7 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig init
 
 
 mkMultichainGrenade ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes))
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm
   -> InitialState s
   -> [Action s]
