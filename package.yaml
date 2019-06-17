@@ -86,7 +86,8 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-      - borl
+    - borl
+    - experimenter
 
   gridworld-hard:
     main:                GridworldHard.hs
@@ -99,6 +100,7 @@ executables:
     dependencies:
     - borl
     - random-fu
+    - experimenter
 
   gym:
     main:                GymOpenAI.hs
@@ -111,6 +113,7 @@ executables:
     dependencies:
     - borl
     - gym-haskell
+    - experimenter
 
   multichain:
     main:                Multichain.hs
@@ -144,6 +147,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - borl
+    - experimenter
 
 
   tensorflow-test:

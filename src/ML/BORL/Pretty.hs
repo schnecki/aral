@@ -83,12 +83,13 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0 id
 
 prettyAlgorithm :: Algorithm -> Doc
-prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <> text ";" <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
+prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
 prettyAlgorithm (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm (AlgDQNAvgRew ga1 avgRewType)      = text "DQN SUBTRACT AvgReward with gamma" <+> text (show ga1) <> text ";" <+> prettyAvgRewardType avgRewType
 
 prettyStateValueHandling :: StateValueHandling -> Doc
 prettyStateValueHandling Normal = empty
-prettyStateValueHandling (DivideValuesAfterGrowth nr max ) = text "Divide values after growth " <> parens (int nr <> text ","  <+> integer max)
+prettyStateValueHandling (DivideValuesAfterGrowth nr max) = text "Divide values after growth " <> parens (int nr <> text "," <+> integer max) <> text ";"
 
 prettyAvgRewardType :: AvgReward -> Doc
 prettyAvgRewardType (ByMovAvg nr) = "moving average" <> parens (int nr)
@@ -102,6 +103,9 @@ prettyBORLTables t1 t2 t3 borl = do
 
   let algDoc doc | isAlgBorl (borl ^. algorithm) = doc
                  | otherwise = empty
+      algDocRho doc = case borl ^. algorithm of
+        AlgDQN{} -> empty
+        _        -> doc
 
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
@@ -148,7 +152,7 @@ prettyBORLTables t1 t2 t3 borl = do
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ borl ^. parameters . xi)) $+$
     (if isAlgBorl (borl ^. algorithm) then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
-    algDoc prettyRhoVal $$
+    algDocRho prettyRhoVal $$
     algDoc prVW $+$
     -- prettyVWPsi $+$
     (if isAlgBorl (borl ^. algorithm) then prR0R1 else vcat prR1) $+$

@@ -1,12 +1,16 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 module Main where
 
 import           ML.BORL
+
+import           Experimenter
 
 import           Helper
 
@@ -50,6 +54,16 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorValueFromName)
 
 
+instance ExperimentDef (BORL St) where
+  type InputValue (BORL St)= ()
+  type InputState (BORL St) = ()
+  generateInput _ _ _ _ = return ((), ())
+  runStep st _ _ = do
+
+    undefined
+  parameters _ = []
+  equalExperiments (borl1, _) (borl2, _) = False
+
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
@@ -86,11 +100,13 @@ main = do
 
   writeFile "episodeSteps" "0"
 
-  let algorithm = AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+  let algorithm =
+        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
-  rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
+  -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
   let rl = mkUnichainTabular algorithm initState id actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

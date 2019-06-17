@@ -25,7 +25,6 @@ module Main where
 import           ML.BORL
 import           ML.Gym
 
-
 import           Helper
 
 import           Control.Arrow          (first, second, (***))
@@ -144,6 +143,8 @@ stGen (lows, highs) (St xs) = St $ zipWith3 splitInto lows highs xs
       fromIntegral (round (gran * x)) / gran
       where scale = 1/(hi - lo)
             gran = 2
+
+instance ExperimenterDef 
 
 
 main :: IO ()

@@ -7,3 +7,6 @@
 [submodule "gym-haskell"]
 	path = gym-haskell
 	url = git@github.com:schnecki/gym-haskell.git
+[submodule "experimenter"]
+	path = experimenter
+	url = git@git.uibk.ac.at:c4371143/experimenter.git

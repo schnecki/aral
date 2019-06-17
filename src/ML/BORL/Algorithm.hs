@@ -29,6 +29,7 @@ data Algorithm
             StateValueHandling
             DecideOnVPlusPsi
   | AlgDQN Gamma
+  | AlgDQNAvgRew Gamma AvgReward -- ^ DQN algorithm but subtracts average reward in every state
   deriving (NFData, Generic, Eq, Ord)
 
 
@@ -38,8 +39,9 @@ isAlgBorl _         = False
 
 
 isAlgDqn :: Algorithm -> Bool
-isAlgDqn AlgDQN{} = True
-isAlgDqn _        = False
+isAlgDqn AlgDQN{}       = True
+isAlgDqn AlgDQNAvgRew{} = True
+isAlgDqn _              = False
 
 
 defaultGamma0,defaultGamma1,defaultGammaDQN :: Double

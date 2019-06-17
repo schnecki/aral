@@ -102,7 +102,9 @@ main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  let algorithm = AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal True
+  let algorithm =
+        -- AlgDQNAvgRew 0.99 (ByMovAvg 200)
+        AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
 
   -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues Normal) initState actions actionFilter params decay modelBuilder nnConfig Nothing

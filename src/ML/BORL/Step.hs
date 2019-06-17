@@ -111,19 +111,19 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
         | episodeEnd = 0
         | otherwise = 1
   case borl ^. algorithm of
-    AlgBORL ga0 ga1 avgRewardType stValHandling vPlusPsiV -> do
+    AlgBORL ga0 ga1 avgRewardType stValHandling decideOnVPlusPsiV -> do
       let lastRews' =
             case avgRewardType of
               ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
               _                  -> take keepXLastValues $ reward : borl ^. lastRewards
-      rhoMinimumState <- rhoMinimumValue borl state aNr                        `using` rpar
-      vValState <- vValue False borl state aNr                                 `using` rpar
-      vValStateNext <- vStateValue vPlusPsiV borl stateNext                    `using` rpar
-      rhoVal <- rhoValue borl state aNr                                        `using` rpar
-      wValState <- wValue borl state aNr                                       `using` rpar
-      wValStateNext <- wStateValue borl state                                  `using` rpar
-      r0ValState <- rValue borl RSmall state aNr                               `using` rpar
-      r1ValState <- rValue borl RBig state aNr                                 `using` rpar
+      rhoMinimumState <- rhoMinimumValue borl state aNr `using` rpar
+      vValState <- vValue False borl state aNr `using` rpar
+      vValStateNext <- vStateValue decideOnVPlusPsiV borl stateNext `using` rpar
+      rhoVal <- rhoValue borl state aNr `using` rpar
+      wValState <- wValue borl state aNr `using` rpar
+      wValStateNext <- wStateValue borl state `using` rpar
+      r0ValState <- rValue borl RSmall state aNr `using` rpar
+      r1ValState <- rValue borl RBig state aNr `using` rpar
       psiVTblVal <- P.lookupProxy period Worker label (borl ^. proxies . psiV) `using` rpar
       rhoState <-
         if isUnichain borl
@@ -135,7 +135,8 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
           else do
             rhoStateValNext <- rhoStateValue borl stateNext
             return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-      let rhoVal' = max rhoMinimumState $
+      let rhoVal' =
+            max rhoMinimumState $
             case avgRewardType of
               ByMovAvg _ -> rhoState
               Fixed x    -> x
@@ -146,9 +147,10 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
       let psiRho = rhoVal' - rhoVal -- should converge to 0
       let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
           psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge towards 0
-          lastVs' = case stValHandling of
-            Normal -> take keepXLastValues $ vValState' : borl ^. lastVValues
-            DivideValuesAfterGrowth nr _ -> take nr $ vValState' : borl ^. lastVValues
+          lastVs' =
+            case stValHandling of
+              Normal -> take keepXLastValues $ vValState' : borl ^. lastVValues
+              DivideValuesAfterGrowth nr _ -> take nr $ vValState' : borl ^. lastVValues
       let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + epsEnd * wValStateNext)
       let psiW = wValStateNext - vValState' - wValState' -- should converge towards 0
       let randAct
@@ -188,9 +190,40 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
     AlgDQN ga -> do
       let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
       r1ValState <- rValue borl RBig state aNr `using` rpar
-      rBig <- rStateValue borl RBig stateNext  `using` rpar
+      rBig <- rStateValue borl RBig stateNext `using` rpar
       let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * rBig)
       return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
+    AlgDQNAvgRew ga avgRewardType -> do
+      rhoVal <- rhoValue borl state aNr `using` rpar
+      let lastRews' =
+            case avgRewardType of
+              ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
+              _                  -> take keepXLastValues $ reward : borl ^. lastRewards
+      rhoMinimumState <- rhoMinimumValue borl state aNr `using` rpar
+      rhoState <-
+        if isUnichain borl
+          then case avgRewardType of
+                 Fixed x -> return x
+                 ByMovAvg l -> return $ sum lastRews' / fromIntegral l -- (length lastRews')
+                 ByReward -> return reward
+                 ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgDQNAvgRew"
+          else do
+            rhoStateValNext <- rhoStateValue borl stateNext
+            return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
+      let rhoVal' =
+            max rhoMinimumState $
+            case avgRewardType of
+              ByMovAvg _ -> rhoState
+              Fixed x    -> x
+              _          -> (1 - alp) * rhoVal + alp * rhoState
+      let rhoMinimumVal'
+            | rhoState < rhoMinimumState = rhoMinimumState
+            | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
+      let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
+      r1ValState <- rValue borl RBig state aNr `using` rpar
+      rBig <- rStateValue borl RBig stateNext `using` rpar
+      let r1ValState' = (1 - gam) * r1ValState + gam * (reward - rhoVal' + epsEnd * ga * rBig)
+      return $ Calculation (Just rhoMinimumVal') (Just rhoVal') Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
 -- TODO maybe integrate learnRandomAbove, etc.:
   -- let borl'
@@ -266,12 +299,7 @@ nextAction borl
         r <- Simple $ randomRIO (0, length as - 1)
         return (borl, True, as !! r)
       else case borl ^. algorithm of
-             AlgDQN {} -> do
-               rValues <- mapM (rValue borl RBig state . fst) as
-               let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-               -- Simple $ putStrLn ("bestR: " ++ show bestR)
-               return (borl, False, snd $ head bestR)
-             AlgBORL {} -> do
+             AlgBORL _ _ _ _ decideVPlusPsi -> do
                bestRho <-
                  if isUnichain borl
                    then return as
@@ -279,7 +307,7 @@ nextAction borl
                      rhoVals <- mapM (rhoValue borl state) (map fst as)
                      return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
                bestV <-
-                 do vVals <- mapM (vValue True borl state) (map fst bestRho)
+                 do vVals <- mapM (vValue decideVPlusPsi borl state) (map fst bestRho)
                     return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
                bestE <-
                  do eVals <- mapM (eValue borl state) (map fst bestV)
@@ -289,12 +317,19 @@ nextAction borl
                    r <- Simple $ randomRIO (0, length bestE - 1)
                    return (borl, False, bestE !! r)
                  else return (borl, False, head bestE)
+             AlgDQN {} -> dqnNextAction
+             AlgDQNAvgRew {} -> dqnNextAction
   where
     eps = borl ^. parameters . epsilon
     explore = borl ^. parameters . exploration
     state = borl ^. s
     as = actionsIndexed borl state
     epsCompare = epsCompareWith eps
+    dqnNextAction = do
+      rValues <- mapM (rValue borl RBig state . fst) as
+      let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
+               -- Simple $ putStrLn ("bestR: " ++ show bestR)
+      return (borl, False, snd $ head bestR)
 
 epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y
