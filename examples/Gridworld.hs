@@ -66,14 +66,14 @@ instance ExperimentDef (BORL St) where
     liftIO $ do
       rl' <- steps rl 1000
       let (eNr, eStart) = rl ^. episodeNrStart
-          eLength = rl ^. t - eStart
+          eLength = fromIntegral eStart / fromIntegral eNr
           results =
             [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
             , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
             , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
             , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
-            , StepResult "episodeLength" (Just $ fromIntegral $ rl' ^. t) (fromIntegral eLength)
-            , StepResult "episodeLengthNr" (Just $ fromIntegral eNr) (fromIntegral eLength)
+            , StepResult "avgEpisodeLength" (Just $ fromIntegral $ rl' ^. t) eLength
+            , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
             ]
       return (results, rl')
   parameters _ =
@@ -81,7 +81,11 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False, AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False, AlgDQN 0.99])
+        (Just $ const $ return [ algBORL
+                               , AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+                               , AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False
+                               , AlgDQN 0.99
+                               ])
         Nothing
     ]
   equalExperiments (borl1, _) (borl2, _) = borl1 ^. algorithm == borl2 ^. algorithm
@@ -119,12 +123,12 @@ modelBuilder =
 
 expSetup :: ExperimentSetup
 expSetup = ExperimentSetup
-  { _experimentBaseName         = "gridworld"
+  { _experimentBaseName         = "gridworld 4"
   , _experimentRepetitions      =  1
   , _preparationSteps           =  0
   , _evaluationWarmUpSteps      =  0
-  , _evaluationSteps            =  100
-  , _evaluationReplications     =  1
+  , _evaluationSteps            =  18
+  , _evaluationReplications     =  3
   , _maximumParallelEvaluations =  1
   }
 
@@ -135,13 +139,13 @@ main = do
   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
   (changed, res) <- runExperimentsLoggingNoSql databaseSetup expSetup () rl
   putStrLn $ "Any change: " ++ show changed
-  let evals = [ Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")
-              -- , Mean OverReplications (Of "psiRho"), StdDev OverReplications (Of "psiRho")
-              -- , Mean OverReplications (Of "psiV"), StdDev OverReplications (Of "psiV")
-              -- , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
-              -- , Mean OverReplications (Of "episodeLength"), StdDev OverReplications (Of "episodeLength")
-              -- , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-              , Id (Of "avgRew")
+  let evals = [ Id (Of "avgRew")
+              , Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")
+              , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+              , Mean OverReplications (Of "psiRho"), StdDev OverReplications (Of "psiRho")
+              , Mean OverReplications (Of "psiV"), StdDev OverReplications (Of "psiV")
+              , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
+              , Mean OverReplications (Of "avgEpisodeLength"), StdDev OverReplications (Of "avgEpisodeLength")
               ]
   evalRes <- genEvals res evals
   print (view evalsResults evalRes)
