@@ -17,6 +17,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (void, zipWithM)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Data.List                    (find)
 import qualified Data.Map.Strict              as M
 import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
@@ -61,19 +62,54 @@ data BORLSerialisable s = BORLSerialisable
 
 
 toSerialisable :: BORL s -> BORLSerialisable s
-toSerialisable = undefined
+#ifdef DEBUG
+toSerialisable (BORL _ _ s t e par _ alg ph v rew psis prS vis) = BORLSerialisable s t e par alg ph v rew psis prS vis
+#else 
+toSerialisable (BORL _ _ s t e par _ alg ph v rew psis prS) = BORLSerialisable s t e par alg ph v rew psis prS
+#endif
 
-fromSerialisable :: BORL s -> BORLSerialisable s
-fromSerialisable = undefined
+
+type ActionList s = [ActionIndexed s]
+type ActionFilter s = s -> [Bool]
+type ProxyTableStateGeneraliser s = s -> s
+type ProxyNetInput s = s -> [Double]
+type TensorflowModelBuilder = TF.Session TensorflowModel
+
+-- type ProxyNetInput
+
+fromSerialisable :: [Action s] -> ActionFilter s -> Decay -> ProxyTableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> BORL s
+fromSerialisable as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS
+#ifdef DEBUG
+                                             vis
+#endif                                             
+                                             ) =
+  let aL = zip [idxStart ..] as
+      borl = BORL aL aF s t e par decay alg ph lastV rew psis prS
+#ifdef DEBUG
+                                             vis
+#endif                                             
+  in flip (foldl (\b p -> over (proxies.p.filtered isTensorflow.proxyTFWorker) (\x -> x { tensorflowModelBuilder = builder }) b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
+   $ flip (foldl (\b p -> over (proxies.p.filtered isTensorflow.proxyTFTarget) (\x -> x { tensorflowModelBuilder = builder }) b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
+   $ flip (foldl (\b p -> set (proxies.p.filtered isNeuralNetwork.proxyNNConfig.toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
+   $       foldl (\b p -> set (proxies.p.filtered isTable.proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0 , r1]
+
   -- 1. state generaliser for table proxy
   -- 2. toNetInput
+  -- 3. builder
 
 instance (Ord s, Serialize s) => Serialize (Proxies s)
 
-instance (Serialize s) => Serialize (NNConfig s)  where
-  put (NNConfig _ memSz batchSz param prS scale upInt trainMax) =
-    put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
-  get = undefined
+instance (Serialize s) => Serialize (NNConfig s) where
+  put (NNConfig _ memSz batchSz param prS scale upInt trainMax) = put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
+  get = do
+    memSz <- get
+    batchSz <- get
+    param <- get
+    prS <- get
+    scale <- get
+    upInt <- get
+    trainMax <- get
+    return $ NNConfig (error "called netInp") memSz batchSz param prS scale upInt trainMax
 
 
 instance (Ord s, Serialize s) => Serialize (Proxy s) where
@@ -98,12 +134,12 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
   get = do
     (c::Int) <- get
     case c of
-      0 -> undefined
+      0 -> get >>= return . Scalar
       1 -> do
         m <- get
         d <- get
         return $ Table m d id
-      2 -> error "Serialisation of Grenade proxies is currently no supported!"
+      2 -> error "Deserialisation of Grenade proxies is currently no supported!"
         -- Problem: how to save types?
         -- do
         -- t <- get
@@ -113,7 +149,14 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
         -- conf <- get
         -- nr <- get
         -- return $ Grenade t w st tp conf nr
-      3 -> undefined
+      3 -> do
+        t <- get
+        w <- get
+        st <- get
+        tp <- get
+        conf <- get
+        nr <- get
+        return $ TensorflowProxy t w st tp conf nr
       _ -> error "Unknown constructor for proxy"
 
 -- ^ Replay Memory

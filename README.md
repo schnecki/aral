@@ -18,6 +18,7 @@ For ArchLinux using `sudo` and `yay`:
     $ curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
     $ python3.4 get-pip.py --user
     $ pip3.4 install gym --user
+    $ pip3.4 install atari-py --user
 
 
 ## Cloning & Building
@@ -25,7 +26,9 @@ For ArchLinux using `sudo` and `yay`:
 Ensure to clone all submodules:
 
     git clone --recursive git@git.uibk.ac.at:c4371143/blackwell_optimal_rl.git
-    cd blackwell_optimal_rl/borl
+    cd blackwell_optimal_rl/borl/tensorflow-haskell
+    git checkout 3cd2e15
+    cd ..
     stack build --install-ghc
 
 

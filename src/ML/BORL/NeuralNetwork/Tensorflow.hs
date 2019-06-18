@@ -10,19 +10,22 @@ module ML.BORL.NeuralNetwork.Tensorflow where
 import           Control.DeepSeq
 import           Control.Monad                                  (unless, void, zipWithM,
                                                                  zipWithM_)
+import           Data.Serialize.Text                            ()
+
 import           Control.Monad.IO.Class                         (liftIO)
 import qualified Data.ByteString.Char8                          as B8
 import           Data.Int                                       (Int32, Int64)
 import           Data.List                                      (genericLength)
-import           Data.Maybe                                     (isJust)
+import           Data.Maybe                                     (fromMaybe, isJust)
 import           Data.Serialize
 import           Data.Text                                      (Text)
 import qualified Data.Text                                      as T
 import qualified Data.Vector                                    as V
 import           GHC.Generics
+import           System.IO.Temp
+
 import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
 import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
-import           System.IO.Temp
 import qualified TensorFlow.Core                                as TF
 import qualified TensorFlow.GenOps.Core                         as TF (approximateEqual,
                                                                        lessEqual, square)
@@ -30,7 +33,14 @@ import qualified TensorFlow.Minimize                            as TF
 import qualified TensorFlow.Ops                                 as TF hiding
                                                                        (initializedVariable,
                                                                        zeroInitializedVariable)
+import qualified TensorFlow.Output                              as TF (ControlNode (..),
+                                                                       NodeName (..))
+import qualified TensorFlow.Tensor                              as TF (tensorNodeName,
+                                                                       tensorRefFromName)
 import qualified TensorFlow.Variable                            as TF hiding (assign)
+
+
+import           System.IO.Unsafe
 
 import           ML.BORL.Types
 
@@ -59,8 +69,36 @@ data TensorflowModel' = TensorflowModel'
   }
 
 instance Serialize TensorflowModel' where
-  put = undefined               --  use unsafePerformIO to save to file, read file and save file contents
-  get = undefined
+  put tf@(TensorflowModel' (TensorflowModel inp out label train nnVars trVars) _ lastIO builder) = do
+    put inp >> put out >> put label >> put (getTensorControlNodeName train) >> put lastIO
+    put $ map getTensorRefNodeName nnVars
+    put $ map getTensorRefNodeName trVars
+    let (mFile, bytes) =
+          unsafePerformIO $
+          runMonadBorl $ do
+            tf' <- saveModelWithLastIO tf
+            bytes <- Simple $ readFile (fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf'))
+            return (checkpointBaseFileName tf', bytes)
+    put mFile
+    put bytes
+  get = do
+    inp <- get
+    out <- get
+    label <- get
+    train <- getControlNodeTensorFromName <$> get
+    nnVars <- map getRefTensorFromName <$> get
+    trVars <- map getRefTensorFromName <$> get
+    lastIO <- get
+    mFile <- get
+    bytes <- get
+    return $
+      unsafePerformIO $
+      runMonadBorl $ do
+        let file = fromMaybe "/tmp/model" mFile
+        Simple $ writeFile file bytes
+        let tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just file) lastIO (error "called builder")
+        restoreModelWithLastIO tf
+        return tf
 
 
 instance NFData TensorflowModel' where
@@ -79,6 +117,17 @@ modelName = "model"
 trainName :: String
 trainName = "train"
 
+getTensorControlNodeName :: TF.ControlNode -> Text
+getTensorControlNodeName = TF.unNodeName . TF.unControlNode
+
+getTensorRefNodeName :: TF.Tensor TF.Ref a -> Text
+getTensorRefNodeName = TF.unNodeName . TF.tensorNodeName
+
+getRefTensorFromName :: Text -> TF.Tensor TF.Ref a
+getRefTensorFromName = TF.tensorRefFromName
+
+getControlNodeTensorFromName :: Text -> TF.ControlNode
+getControlNodeTensorFromName = TF.ControlNode . TF.NodeName
 
 encodeInputBatch :: Inputs -> TF.TensorData Float
 encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)

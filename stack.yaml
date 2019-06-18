@@ -20,5 +20,6 @@ extra-deps:
 - intero-0.1.30
 - cpython-3.4.0
 - esqueleto-3.0.0
-# allow-newer: true
+
+allow-newer: false
 resolver: lts-12.26

@@ -52,12 +52,12 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                 , _proxyNrActions :: !Int
                 }
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
-                { _proxyqqqTFTarget :: TensorflowModel'
-                , _proxyTFWorker    :: TensorflowModel'
-                , _proxyNNStartup   :: !(M.Map (s,ActionIndex) Double)
-                , _proxyType        :: !ProxyType
-                , _proxyNNConfig    :: !(NNConfig s)
-                , _proxyNrActions   :: !Int
+                { _proxyTFTarget  :: TensorflowModel'
+                , _proxyTFWorker  :: TensorflowModel'
+                , _proxyNNStartup :: !(M.Map (s,ActionIndex) Double)
+                , _proxyType      :: !ProxyType
+                , _proxyNNConfig  :: !(NNConfig s)
+                , _proxyNrActions :: !Int
                 }
 makeLenses ''Proxy
 
@@ -80,6 +80,15 @@ isNeuralNetwork :: Proxy s -> Bool
 isNeuralNetwork Grenade{}         = True
 isNeuralNetwork TensorflowProxy{} = True
 isNeuralNetwork _                 = False
+
+isTensorflow :: Proxy s -> Bool
+isTensorflow TensorflowProxy{} = True
+isTensorflow _                 = False
+
+
+isTable :: Proxy s -> Bool
+isTable Table{} = True
+isTable _       = False
 
 
 data Proxies s = Proxies        -- ^ This data type holds all data for BORL.

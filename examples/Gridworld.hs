@@ -18,9 +18,10 @@ import           Control.Arrow          (first, second)
 import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Control.Lens           (set, (^.))
-import           Control.Monad          (foldM, unless, when)
+import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.List              (genericLength)
+import           Data.Serialize
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
@@ -55,14 +56,35 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 
 instance ExperimentDef (BORL St) where
-  type InputValue (BORL St)= ()
+  type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
+  type Serializable (BORL St) = BORLSerialisable St
+  serialisable = toSerialisable
+  deserialisable = fromSerialisable actions actFilter decay id netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep st _ _ = do
-
-    undefined
-  parameters _ = []
-  equalExperiments (borl1, _) (borl2, _) = False
+  runStep rl _ _ =
+    liftIO $ do
+      rl' <- steps rl 1000
+      let (eNr, eStart) = rl ^. episodeNrStart
+          eLength = rl ^. t - eStart
+          results =
+            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
+            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
+            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
+            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
+            , StepResult "episodeLength" (Just $ fromIntegral $ rl' ^. t) (fromIntegral eLength)
+            , StepResult "episodeLengthNr" (Just $ fromIntegral eNr) (fromIntegral eLength)
+            ]
+      return (results, rl')
+  parameters _ =
+    [ ParameterSetup
+        "algorithm"
+        (set algorithm)
+        (view algorithm)
+        (Just $ const $ return [AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False, AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False, AlgDQN 0.99])
+        Nothing
+    ]
+  equalExperiments (borl1, _) (borl2, _) = borl1 ^. algorithm == borl2 ^. algorithm
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -95,23 +117,54 @@ modelBuilder =
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
+expSetup :: ExperimentSetup
+expSetup = ExperimentSetup
+  { _experimentBaseName         = "gridworld"
+  , _experimentRepetitions      =  1
+  , _preparationSteps           =  0
+  , _evaluationWarmUpSteps      =  0
+  , _evaluationSteps            =  100
+  , _evaluationReplications     =  1
+  , _maximumParallelEvaluations =  1
+  }
+
+
 main :: IO ()
 main = do
+  let rl = mkUnichainTabular algBORL initState id actions actFilter params decay Nothing
+  let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
+  (changed, res) <- runExperimentsLoggingNoSql databaseSetup expSetup () rl
+  putStrLn $ "Any change: " ++ show changed
+  let evals = [ Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")
+              -- , Mean OverReplications (Of "psiRho"), StdDev OverReplications (Of "psiRho")
+              -- , Mean OverReplications (Of "psiV"), StdDev OverReplications (Of "psiV")
+              -- , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
+              -- , Mean OverReplications (Of "episodeLength"), StdDev OverReplications (Of "episodeLength")
+              -- , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+              , Id (Of "avgRew")
+              ]
+  evalRes <- genEvals res evals
+  print (view evalsResults evalRes)
+  writeAndCompileLatex evalRes
 
-  writeFile "episodeSteps" "0"
 
-  let algorithm =
-        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
-        AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+-- main :: IO ()
+-- main = do
 
-  nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState id actions actFilter params decay Nothing
-  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+--   writeFile "episodeSteps" "0"
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
-        usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+--   let algorithm =
+--         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+--         AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+
+--   nn <- randomNetworkInitWith UniformInit :: IO NN
+--   -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
+--   -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
+--   let rl = mkUnichainTabular algorithm initState id actions actFilter params decay Nothing
+--   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+
+--   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
+--         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 names = ["random", "up   ", "down ", "left ", "right"]
 
@@ -157,7 +210,7 @@ initState = fromIdx (2,2)
 
 
 -- State
-newtype St = St [[Integer]] deriving (Eq, NFData, Generic)
+newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
 
 
 instance Ord St where

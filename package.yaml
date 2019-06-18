@@ -63,6 +63,7 @@ dependencies:
   # - tensorflow-records
   - HUnit
   - cereal
+  - cereal-text
 
 library:
   source-dirs: src
@@ -75,7 +76,7 @@ library:
     -fwarn-tabs
   default-extensions: CPP
   when:
-    - condition: (flag(dev)) || (flag(fast))
+    - condition: (flag(debug)) || (flag(fast))
       then:
         ghc-options: -O0
         cpp-options: -DDEBUG
