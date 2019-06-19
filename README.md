@@ -25,8 +25,8 @@ For ArchLinux using `sudo` and `yay`:
 
 Ensure to clone all submodules:
 
-    git clone --recursive git@git.uibk.ac.at:c4371143/blackwell_optimal_rl.git
-    cd blackwell_optimal_rl/borl/tensorflow-haskell
+    git clone --recursive git@git.uibk.ac.at:c4371143/borl.git
+    cd borl/tensorflow-haskell
     git checkout 3cd2e15
     cd ..
     stack build --install-ghc

@@ -1,3 +1,4 @@
+{-# LANGUAGE Unsafe #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,24 +14,12 @@ import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (void, zipWithM)
-import           Control.Monad.IO.Class       (MonadIO, liftIO)
-import           Data.List                    (find)
-import qualified Data.Map.Strict              as M
-import           Data.Maybe                   (fromMaybe)
-import qualified Data.Proxy                   as Type
 import           Data.Serialize
-import           Data.Singletons.Prelude.List
-import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Mutable          as V
 import           GHC.Generics
-import           GHC.TypeLits
-import           Grenade
 import qualified TensorFlow.Core              as TF
-import qualified TensorFlow.Session           as TF
-import           Unsafe.Coerce
 
 import           System.IO.Unsafe
 
