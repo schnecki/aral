@@ -12,6 +12,8 @@ import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Vector.Mutable as V
 -- import qualified Data.Vector.Generic as V
+import           Control.Monad
+import           System.IO.Unsafe
 
 import           System.Random
 
@@ -22,6 +24,11 @@ data ReplayMemory s = ReplayMemory
   }
 makeLenses ''ReplayMemory
 
+mapReplayMemoryForSeialisable :: (s -> s') -> ReplayMemory s -> ReplayMemory s'
+mapReplayMemoryForSeialisable f (ReplayMemory vec nr) =
+  let vec' = unsafePerformIO $ V.new nr
+  in  unsafePerformIO (mapM (V.read vec >=> V.write vec' nr . fun) [0..nr-1]) `seq` ReplayMemory vec' nr
+  where fun (s, idx, isRandAct, r, s' , episodeEnd) = (f s, idx, isRandAct, r, f s', episodeEnd)
 
 instance NFData (ReplayMemory s) where
   rnf (ReplayMemory !_ s) = rnf s

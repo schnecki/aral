@@ -12,6 +12,7 @@ module ML.BORL.Proxy.Type where
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Types                as T
 
+import           Control.Arrow                (first)
 import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Map.Strict              as M
@@ -68,6 +69,12 @@ instance (NFData s) => NFData (Proxy s) where
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
 
+mapProxyForSerialise :: (Ord s') => (s -> s') -> Proxy s -> Proxy s'
+mapProxyForSerialise f (Scalar x)          = Scalar x
+mapProxyForSerialise f (Table tbl def gen) = Table (M.mapKeys (first f) tbl) def id
+mapProxyForSerialise f (Grenade t w st tp config nr) = Grenade t w (M.mapKeys (first f) st) tp (mapNNConfigForSerialise f config) nr
+mapProxyForSerialise f (TensorflowProxy t w st tp config nr) = TensorflowProxy t w (M.mapKeys (first f) st) tp (mapNNConfigForSerialise f config) nr
+
 
 multiplyProxy :: Double -> Proxy s -> Proxy s
 multiplyProxy v (Scalar x) = Scalar (v*x)
@@ -110,3 +117,17 @@ instance NFData s => NFData (Proxies s) where
 
 allProxies :: Proxies s -> [Proxy s]
 allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. w, pxs ^. r0, pxs ^. r1]
+
+
+-- | Note: Only to be used for serialisation, as not all values are converted!
+mapProxiesForSerialise :: (Ord s') => (s -> s') -> Proxies s -> Proxies s'
+mapProxiesForSerialise f (Proxies rm rho psiV v w r0 r1 replMem) =
+  Proxies
+    (mapProxyForSerialise f rm)
+    (mapProxyForSerialise f rho)
+    (mapProxyForSerialise f psiV)
+    (mapProxyForSerialise f v)
+    (mapProxyForSerialise f w)
+    (mapProxyForSerialise f r0)
+    (mapProxyForSerialise f r1)
+    (fmap (mapReplayMemoryForSeialisable f) replMem)

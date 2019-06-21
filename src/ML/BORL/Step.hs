@@ -3,6 +3,7 @@
 module ML.BORL.Step
     ( step
     , steps
+    , stepM
     , restoreTensorflowModels
     , saveTensorflowModels
     , stepExecute
@@ -68,6 +69,11 @@ step borl = runMonadBorl $ do
   restoreTensorflowModels borl
   borl' <- nextAction borl >>= stepExecute
   force <$> saveTensorflowModels borl'
+
+-- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
+stepM :: (NFData s, Ord s) => BORL s -> MonadBorl (BORL s)
+stepM borl = nextAction borl >>= stepExecute
+
 
 restoreTensorflowModels :: BORL s -> MonadBorl ()
 restoreTensorflowModels borl = do

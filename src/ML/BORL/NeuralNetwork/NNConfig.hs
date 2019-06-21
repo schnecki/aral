@@ -22,6 +22,9 @@ data NNConfig s = NNConfig
   }
 makeLenses ''NNConfig
 
+mapNNConfigForSerialise :: (s -> s') -> NNConfig s -> NNConfig s'
+mapNNConfigForSerialise f (NNConfig inp rep bs lp pr sc up train) = NNConfig (const []) rep bs lp (map f pr) sc up train
+
 instance (NFData k) => NFData (NNConfig k) where
   rnf (NNConfig inp rep tr lp pp sc up mse) = rnf inp `seq` rnf rep `seq` rnf tr `seq` rnf lp `seq` rnf pp `seq` rnf sc `seq` rnf up `seq` rnf mse
 
