@@ -37,6 +37,7 @@ import           Control.Parallel.Strategies
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Maybe                   (fromJust, isNothing)
+import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
@@ -125,11 +126,11 @@ insert period s aNr randAct rew s' episodeEnd getCalc pxs@(Proxies pRhoMin pRho 
 -- `trainBatch` to train the neural networks.
 insertProxy :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> Double -> Proxy s -> T.MonadBorl (Proxy s)
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
-insertProxy _ s aNr v (Table m def gen) = return $ Table (M.insert (gen s,aNr) v m) def gen
+insertProxy _ s aNr v (Table (m, ss) def gen) = return $ Table (M.insert (gen s, aNr) v m, S.insert (gen s, s) ss) def gen
 insertProxy period st idx v px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && (px ^?! proxyNNConfig . trainBatchSize) == 1 =
       trainBatch [((config ^. toNetInp $ st, idx), v)] px >>= updateNNTargetNet False period
-  | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = return $ proxyNNStartup .~ M.insert (st, idx) v tab $ px
+  | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = return $ proxyNNStartup .~ M.insert (config ^. toNetInp $ st, idx) v tab $ px
   | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = updateNNTargetNet False period px
   | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 =
       Simple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> netInit px >>= updateNNTargetNet True period
@@ -173,7 +174,7 @@ trainBatch _ _ = error "called trainBatch on non-neural network proxy (programmi
 
 
 -- | Train until MSE hits the value given in NNConfig.
-trainMSE :: (NFData k) => Maybe Int -> [((k, ActionIndex), Double)] -> LearningParameters -> Proxy k -> T.MonadBorl (Proxy k)
+trainMSE :: (NFData k) => Maybe Int -> [(([Double], ActionIndex), Double)] -> LearningParameters -> Proxy k -> T.MonadBorl (Proxy k)
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
@@ -189,25 +190,25 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     -- net' = trainGrenade lp netW (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     vUnscaled = map snd dataset
-    kScaled = map (first (config ^. toNetInp) . fst) dataset
+    kScaled = map fst dataset
     getValue k
       -- unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
-     = (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . (config ^. toNetInp) . fst) k)
+     = (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | otherwise =
     let mseMax = fromJust (config ^. trainMSEMax)
-        kFullScaled = map (first (map realToFrac . (config ^. toNetInp)) . fst) dataset :: [([Float], ActionIndex)]
+        kFullScaled = map (first (map realToFrac) . fst) dataset :: [([Float], ActionIndex)]
         kScaled = map fst kFullScaled
         actIdxs = map snd kFullScaled
         vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
         vUnscaled = map (realToFrac . snd) dataset
-        datasetRepMem = map (first (first (map realToFrac . (config ^. toNetInp)))) dataset
+        datasetRepMem = map (first (first (map realToFrac))) dataset
     in do current <- forwardRun netW kScaled
           zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
         -- backwardRunRepMemData netW datasetRepMem
-          let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
+          let forward k = realToFrac <$> lookupNeuralNetworkUnscaledGen Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
           mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (** 2) . (vS -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaled) -- vUnscaled -- scaled or unscaled ones?
           if realToFrac mse < mseMax
             then Simple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
@@ -220,11 +221,11 @@ trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type 
 
 
 -- | Retrieve a value.
-lookupProxy :: (Ord k) => Period -> LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl Double
+lookupProxy :: Period -> LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl Double
 lookupProxy _ _ _ (Scalar x) = return x
-lookupProxy _ _ k (Table m def gen) = return $ M.findWithDefault def (first gen k) m
+lookupProxy _ _ k (Table (m,_) def gen) = return $ M.findWithDefault def (first gen k) m
 lookupProxy period lkType k px
-  | period <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1 = return $ M.findWithDefault 0 k tab
+  | period <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1 = return $ M.findWithDefault 0 (first (config ^. toNetInp) k) tab
   | otherwise = lookupNeuralNetwork lkType k px
   where config = px ^?! proxyNNConfig
         tab = px ^?! proxyNNStartup
@@ -253,6 +254,15 @@ lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf
 lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
+-- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
+lookupNeuralNetworkUnscaledGen :: LookupType -> ([Double], ActionIndex) -> Proxy k -> T.MonadBorl Double
+lookupNeuralNetworkUnscaledGen Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
+lookupNeuralNetworkUnscaledGen Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
+lookupNeuralNetworkUnscaledGen Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . head <$> forwardRun netW [map realToFrac st]
+lookupNeuralNetworkUnscaledGen Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . head <$> forwardRun netT [map realToFrac st]
+lookupNeuralNetworkUnscaledGen _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+
+
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: forall k . LookupType -> k -> Proxy k -> T.MonadBorl [Double]
 lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ _ conf _) = return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW $ (conf ^. toNetInp) st)
@@ -274,7 +284,7 @@ getMinMaxVal p  = case p ^?! proxyType of
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.
-mkNNList :: (Ord k, Eq k) => BORL k -> Bool -> Proxy k -> T.MonadBorl [(k, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
+mkNNList :: BORL k -> Bool -> Proxy k -> T.MonadBorl [(k, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkNNList borl scaled pr =
   mapM
     (\st -> do
@@ -305,5 +315,5 @@ mkNNList borl scaled pr =
       | scale = val -- values are being unscaled, thus let table value be unscaled
       | otherwise = map (scaleValue (getMinMaxVal pr)) val
       where
-        val = map (\actNr -> M.findWithDefault 0 (st, actNr) (_proxyNNStartup pr)) [0 .. _proxyNrActions pr]
+        val = map (\actNr -> M.findWithDefault 0 (_proxyNNConfig pr ^?! toNetInp $ st, actNr) (_proxyNNStartup pr)) [0 .. _proxyNrActions pr]
           -- map snd $ M.toList $ M.filterWithKey (\(x, _) _ -> x == st) (_proxyNNStartup pr)

@@ -22,7 +22,7 @@ type StateNext s = s
 type PsisOld = (Double, Double, Double)
 type PsisNew = PsisOld
 
-type StateGeneraliser s = s -> s
+type StateGeneraliser s = s -> [Double]
 type GammaLow = Double
 type GammaHigh = Double
 type Gamma = Double

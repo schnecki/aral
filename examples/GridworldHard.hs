@@ -96,7 +96,7 @@ main = do
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algBORL initState actions actFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algBORL initState id actions actFilter params decay Nothing
+  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
@@ -188,7 +188,7 @@ goalState f st = do
   case getCurrentIdx st of
     (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y), False)
     (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y), False)
-    _      -> stepRew <$> f st
+    _                        -> stepRew <$> f st
 
 
 stepWidth :: IO Int

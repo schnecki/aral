@@ -60,7 +60,7 @@ instance ExperimentDef (BORL St) where
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
-  deserialisable = fromSerialisable actions actFilter decay id netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ =
     liftIO $ do
@@ -102,7 +102,7 @@ nnConfig = NNConfig
   { _toNetInp             = netInp
   , _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
-  , _grenadeLearningParams       = LearningParameters 0.01 0.9 0.0001
+  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = [minBound .. maxBound] :: [St]
   , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 10000
@@ -135,7 +135,7 @@ expSetup = ExperimentSetup
 
 main :: IO ()
 main = do
-  let rl = mkUnichainTabular algBORL initState id actions actFilter params decay Nothing
+  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
   (changed, res) <- runExperimentsLoggingNoSql databaseSetup expSetup () rl
   putStrLn $ "Any change: " ++ show changed

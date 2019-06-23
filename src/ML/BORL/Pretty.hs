@@ -23,6 +23,7 @@ import           Control.Monad         (when)
 import           Data.Function         (on)
 import           Data.List             (find, sort, sortBy)
 import qualified Data.Map.Strict       as M
+import qualified Data.Set              as S
 import qualified Data.Text             as T
 import           Grenade
 import           Prelude               hiding ((<>))
@@ -42,8 +43,11 @@ prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey
 prettyTableRows :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> (k -> k') -> (ActionIndex -> Doc) -> ((k,ActionIndex) -> Double -> MonadBorl Double) -> P.Proxy k -> MonadBorl [Doc]
 prettyTableRows borl prettyAction prettyActionIdx modifier p =
   case p of
-    P.Table m _ _ -> mapM (\(((k,k'),idx),val) -> modifier (k,idx) val >>= \v -> return (prettyActionEntry id prettyActionIdx k' idx <> colon <+> printFloat v)) $
-                 sortBy (compare `on` snd.fst.fst) $ M.toList (M.mapKeys (\(k,aIdx) -> ((k, prettyAction k), aIdx)) m)
+    P.Table (m,ss) _ gen ->
+      let lookupTbl = M.fromList $ S.toList ss
+          m' = M.mapKeys (\(dbls,act) -> (M.findWithDefault (error $ "table data incomplete when constructing pretty print table: " ++ show dbls) dbls lookupTbl, act)) m
+      in mapM (\(((k,k'),idx),val) -> modifier (k,idx) val >>= \v -> return (prettyActionEntry id prettyActionIdx k' idx <> colon <+> printFloat v)) $
+         sortBy (compare `on`  snd.fst.fst) $ M.toList (M.mapKeys (\(k,aIdx) -> ((k, prettyAction k), aIdx)) m')
     pr -> do
       mfalse <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx False pr
       mtrue <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx True pr
@@ -78,9 +82,9 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
           P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
         tbl px = case px of
-          p@P.Table{}                   -> p
-          P.Grenade _ _ p _ _ _         -> P.Table p 0 id
-          P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0 id
+          p@P.Table{}                       -> p
+          P.Grenade _ _ p _ cfg _         -> P.Table (p,S.fromList $ map (\s -> (cfg^.toNetInp $ s, s)) (cfg^.prettyPrintElems)) 0 (const [])
+          P.TensorflowProxy _ _ p _ cfg _ -> P.Table (p,S.fromList $ map (\s -> (cfg^.toNetInp $ s, s)) (cfg^.prettyPrintElems)) 0 (const [])
 
 prettyAlgorithm :: Algorithm -> Doc
 prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
@@ -110,11 +114,12 @@ prettyBORLTables t1 t2 t3 borl = do
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
   let mkErr scale = case (borl ^. proxies.r1, borl ^. proxies.r0) of
-           (P.Table rm1 _ _, P.Table rm0 _ _) -> return $ (\t -> P.Table t 0 id) (M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
+           (P.Table (rm1,s) _ _, P.Table (rm0,_) _ _) -> return $ (\t -> P.Table (t,s) 0 (const [])) (M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
            (prNN1, prNN0) -> do
              n1 <- mkNNList borl scale prNN1
              n0 <- mkNNList borl scale prNN0
-             return $ (\t -> P.Table t 0 id) (M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0))
+             return $ (\t -> P.Table (t, S.fromList $ map (\s -> (prNN1 ^?! proxyNNConfig.toNetInp $ s, s)) (prNN1 ^?! proxyNNConfig.prettyPrintElems)) 0 (const []))
+                    (M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((prNN1 ^?! proxyNNConfig.toNetInp $ k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0))
   errScaled <- mkErr True
   prettyErr <- if t3
                then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)

@@ -1,4 +1,4 @@
-{-# LANGUAGE Unsafe #-}
+ {-# LANGUAGE Unsafe #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -67,15 +67,14 @@ toSerialisableWith f (BORL _ _ s t e par _ alg ph v rew psis prS) = BORLSerialis
 
 type ActionList s = [ActionIndexed s]
 type ActionFilter s = s -> [Bool]
-type ProxyTableStateGeneraliser s = s -> s
 type ProxyNetInput s = s -> [Double]
 type TensorflowModelBuilder = TF.Session TensorflowModel
 
 
-fromSerialisable :: (Ord s) => [Action s] -> ActionFilter s -> Decay -> ProxyTableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> BORL s
+fromSerialisable :: (Ord s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> BORL s
 fromSerialisable = fromSerialisableWith id
-
-fromSerialisableWith :: (Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> ProxyTableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> BORL s
+ 
+fromSerialisableWith :: (Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> BORL s
 fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS
 #ifdef DEBUG
                                              vis
@@ -136,7 +135,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
       1 -> do
         m <- get
         d <- get
-        return $ Table m d id
+        return $ Table m d (const [])
       2 -> error "Deserialisation of Grenade proxies is currently no supported!"
         -- Problem: how to save types?
         -- do

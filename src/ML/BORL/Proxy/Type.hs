@@ -12,11 +12,12 @@ module ML.BORL.Proxy.Type where
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Types                as T
 
-import           Control.Arrow                (first)
+import           Control.Arrow                (first, second)
 import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Map.Strict              as M
 import           Data.Serialize
+import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
@@ -34,20 +35,22 @@ data ProxyType
 
 data LookupType = Target | Worker
 
+type TableStateGeneraliser s = s -> [Double]
+
 
 data Proxy s = Scalar           -- ^ Combines multiple proxies in one for performance benefits.
                { _proxyScalar :: !Double
                }
              | Table            -- ^ Representation using a table.
-               { _proxyTable            :: !(M.Map (s,ActionIndex) Double)
+               { _proxyTable            :: !(M.Map ([Double],ActionIndex) Double, S.Set ([Double],s))
                , _proxyDefault          :: !Double
-               , _proxyStateGeneraliser :: !(s -> s)
+               , _proxyStateGeneraliser :: !(TableStateGeneraliser s)
                }
              | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)
-                , _proxyNNStartup :: !(M.Map (s,ActionIndex) Double)
+                , _proxyNNStartup :: !(M.Map ([Double],ActionIndex) Double)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !(NNConfig s)
                 , _proxyNrActions :: !Int
@@ -55,7 +58,7 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
                 { _proxyTFTarget  :: TensorflowModel'
                 , _proxyTFWorker  :: TensorflowModel'
-                , _proxyNNStartup :: !(M.Map (s,ActionIndex) Double)
+                , _proxyNNStartup :: !(M.Map ([Double],ActionIndex) Double)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !(NNConfig s)
                 , _proxyNrActions :: !Int
@@ -71,14 +74,14 @@ instance (NFData s) => NFData (Proxy s) where
 
 mapProxyForSerialise :: (Ord s') => (s -> s') -> Proxy s -> Proxy s'
 mapProxyForSerialise f (Scalar x)          = Scalar x
-mapProxyForSerialise f (Table tbl def gen) = Table (M.mapKeys (first f) tbl) def id
-mapProxyForSerialise f (Grenade t w st tp config nr) = Grenade t w (M.mapKeys (first f) st) tp (mapNNConfigForSerialise f config) nr
-mapProxyForSerialise f (TensorflowProxy t w st tp config nr) = TensorflowProxy t w (M.mapKeys (first f) st) tp (mapNNConfigForSerialise f config) nr
+mapProxyForSerialise f (Table (tbl, ss) def gen) = Table (tbl, S.map (second f) ss) def (const [])
+mapProxyForSerialise f (Grenade t w st tp config nr) = Grenade t w st tp (mapNNConfigForSerialise f config) nr
+mapProxyForSerialise f (TensorflowProxy t w st tp config nr) = TensorflowProxy t w st tp (mapNNConfigForSerialise f config) nr
 
 
 multiplyProxy :: Double -> Proxy s -> Proxy s
 multiplyProxy v (Scalar x) = Scalar (v*x)
-multiplyProxy v (Table m d g) = Table (fmap (v*) m) d g
+multiplyProxy v (Table (m,s) d g) = Table (fmap (v*) m,s) d g
 multiplyProxy v (Grenade t w s tp config nr) = Grenade t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
 multiplyProxy v (TensorflowProxy t w s tp config nr) = TensorflowProxy t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
 
