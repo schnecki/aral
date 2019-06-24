@@ -14,8 +14,11 @@ module ML.BORL.Proxy.Ops
     , lookupProxy
     , lookupNeuralNetwork
     , lookupNeuralNetworkUnscaled
+    , lookupNeuralNetworkUnscaledGen
     , lookupActionsNeuralNetwork
+    , lookupActionsNeuralNetworkGen
     , lookupActionsNeuralNetworkUnscaled
+    , lookupActionsNeuralNetworkUnscaledGen
     , getMinMaxVal
     , mkNNList
     ) where
@@ -126,7 +129,7 @@ insert period s aNr randAct rew s' episodeEnd getCalc pxs@(Proxies pRhoMin pRho 
 -- `trainBatch` to train the neural networks.
 insertProxy :: forall s . (NFData s, Ord s) => Period -> State s -> ActionIndex -> Double -> Proxy s -> T.MonadBorl (Proxy s)
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
-insertProxy _ s aNr v (Table (m, ss) def gen) = return $ Table (M.insert (gen s, aNr) v m, S.insert (gen s, s) ss) def gen
+insertProxy _ s aNr v (Table m def gen) = return $ Table (M.insert (gen s, aNr) v m) def gen
 insertProxy period st idx v px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && (px ^?! proxyNNConfig . trainBatchSize) == 1 =
       trainBatch [((config ^. toNetInp $ st, idx), v)] px >>= updateNNTargetNet False period
@@ -223,7 +226,7 @@ trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type 
 -- | Retrieve a value.
 lookupProxy :: Period -> LookupType -> (k, ActionIndex) -> Proxy k -> T.MonadBorl Double
 lookupProxy _ _ _ (Scalar x) = return x
-lookupProxy _ _ k (Table (m,_) def gen) = return $ M.findWithDefault def (first gen k) m
+lookupProxy _ _ k (Table m def gen) = return $ M.findWithDefault def (first gen k) m
 lookupProxy period lkType k px
   | period <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1 = return $ M.findWithDefault 0 (first (config ^. toNetInp) k) tab
   | otherwise = lookupNeuralNetwork lkType k px
@@ -244,6 +247,14 @@ lookupActionsNeuralNetwork :: LookupType -> k -> Proxy k -> T.MonadBorl [Double]
 lookupActionsNeuralNetwork tp k px@Grenade {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
 lookupActionsNeuralNetwork tp k px@TensorflowProxy {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
 lookupActionsNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
+
+
+-- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
+-- to the original interval before returned.
+lookupActionsNeuralNetworkGen :: LookupType -> [Double] -> Proxy k -> T.MonadBorl [Double]
+lookupActionsNeuralNetworkGen tp k px@Grenade {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaledGen tp k px
+lookupActionsNeuralNetworkGen tp k px@TensorflowProxy {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaledGen tp k px
+lookupActionsNeuralNetworkGen _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 
 -- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
@@ -271,6 +282,14 @@ lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ _ conf _)
 lookupActionsNeuralNetworkUnscaled Target st (TensorflowProxy netT _ _ _ conf _) = map realToFrac . head <$> forwardRun netT [map realToFrac $ (conf^. toNetInp) st]
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
+-- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
+lookupActionsNeuralNetworkUnscaledGen :: forall k . LookupType -> [Double] -> Proxy k -> T.MonadBorl [Double]
+lookupActionsNeuralNetworkUnscaledGen Worker st (Grenade _ netW _ _ conf _) = return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
+lookupActionsNeuralNetworkUnscaledGen Target st (Grenade netT _ _ _ conf _) = return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
+lookupActionsNeuralNetworkUnscaledGen Worker st (TensorflowProxy _ netW _ _ conf _) = map realToFrac . head <$> forwardRun netW [map realToFrac st]
+lookupActionsNeuralNetworkUnscaledGen Target st (TensorflowProxy netT _ _ _ conf _) = map realToFrac . head <$> forwardRun netT [map realToFrac st]
+lookupActionsNeuralNetworkUnscaledGen _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+
 
 -- | Finds the correct value for scaling.
 getMinMaxVal :: Proxy k -> (MinValue,MaxValue)
@@ -284,23 +303,24 @@ getMinMaxVal p  = case p ^?! proxyType of
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.
-mkNNList :: BORL k -> Bool -> Proxy k -> T.MonadBorl [(k, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
+mkNNList :: BORL k -> Bool -> Proxy k -> T.MonadBorl [(NetInput, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkNNList borl scaled pr =
   mapM
     (\st -> do
-       let fil = actFilt st
-           filterActions xs = map (\(_, a, b) -> (a, b)) $ filter (\(f, _, _) -> f) $ zip3 fil [(0 :: Int) ..] xs
+       -- let fil = actFilt st
+       --     filterActions xs = map (\(_, a, b) -> (a, b)) $ filter (\(f, _, _) -> f) $ zip3 fil [(0 :: Int) ..] xs
        t <-
          if useTable
            then return $ lookupTable scaled st
            else if scaled
-                  then lookupActionsNeuralNetwork Target st pr
-                  else lookupActionsNeuralNetworkUnscaled Target st pr
+                  then lookupActionsNeuralNetworkGen Target st pr
+                  else lookupActionsNeuralNetworkUnscaledGen Target st pr
        w <-
          if scaled
-           then lookupActionsNeuralNetwork Worker st pr
-           else lookupActionsNeuralNetworkUnscaled Worker st pr
-       return (st, (filterActions t, filterActions w)))
+           then lookupActionsNeuralNetworkGen Worker st pr
+           else lookupActionsNeuralNetworkUnscaledGen Worker st pr
+       -- return (st, (filterActions t, filterActions w)))
+       return (st, (zip [0..] t,zip [0..] w)))
     (conf ^. prettyPrintElems)
   where
     conf =
@@ -311,9 +331,9 @@ mkNNList borl scaled pr =
     actIdxs = [0 .. _proxyNrActions pr]
     actFilt = borl ^. actionFilter
     useTable = borl ^. t == fromIntegral (_proxyNNConfig pr ^?! replayMemoryMaxSize) && (_proxyNNConfig pr ^?! trainBatchSize) /= 1
+    lookupTable :: Bool -> [Double] -> [Double]
     lookupTable scale st
       | scale = val -- values are being unscaled, thus let table value be unscaled
       | otherwise = map (scaleValue (getMinMaxVal pr)) val
       where
-        val = map (\actNr -> M.findWithDefault 0 (_proxyNNConfig pr ^?! toNetInp $ st, actNr) (_proxyNNStartup pr)) [0 .. _proxyNrActions pr]
-          -- map snd $ M.toList $ M.filterWithKey (\(x, _) _ -> x == st) (_proxyNNStartup pr)
+        val = map (\actNr -> M.findWithDefault 0 (st, actNr) (_proxyNNStartup pr)) [0 .. _proxyNrActions pr]

@@ -56,6 +56,7 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 
 instance ExperimentDef (BORL St) where
+  type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
@@ -103,7 +104,7 @@ nnConfig = NNConfig
   , _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems     = [minBound .. maxBound] :: [St]
+  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 10000
   , _trainMSEMax          = Just $ 1/100 * 3
@@ -137,7 +138,7 @@ main :: IO ()
 main = do
   let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
-  (changed, res) <- runExperimentsLoggingNoSql databaseSetup expSetup () rl
+  (changed, res) <- runExperimentsIO databaseSetup expSetup () rl
   putStrLn $ "Any change: " ++ show changed
   let evals = [ Id (Of "avgRew")
               , Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")

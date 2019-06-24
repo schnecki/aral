@@ -64,6 +64,7 @@ dependencies:
   - HUnit
   - cereal
   - cereal-text
+  - unliftio-core
 
 library:
   source-dirs: src

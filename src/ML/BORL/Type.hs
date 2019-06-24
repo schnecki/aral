@@ -34,6 +34,7 @@ import qualified Data.Vector.Mutable          as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import           System.IO
 import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Session           as TF
 
@@ -134,8 +135,8 @@ mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
-mkUnichainTensorflow ::
-     forall s m. (NFData s, Ord s)
+mkUnichainTensorflowM ::
+     forall s m. (NFData s)
   => Algorithm
   -> InitialState s
   -> [Action s]
@@ -145,10 +146,8 @@ mkUnichainTensorflow ::
   -> TF.Session TensorflowModel
   -> NNConfig s
   -> Maybe InitValues
-  -> IO (BORL s)
-mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig initValues
-  -- Initialization for all NNs
- = do
+  -> MonadBorl (BORL s)
+mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
@@ -158,12 +157,13 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
-  v <- nnSA VTable 0
-  w <- nnSA WTable 2
-  r0 <- nnSA R0Table 4
-  r1 <- nnSA R1Table 6
-  psiV <- nnSA PsiVTable 8
-  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  v <-    Simple $ nnSA VTable 0
+  w <-    Simple $ nnSA WTable 2
+  r0 <-   Simple $ nnSA R0Table 4
+  r1 <-   Simple $ nnSA R1Table 6
+  psiV <- Simple $ nnSA PsiVTable 8
+  repMem <- Simple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  buildTensorflowModel (v ^?! proxyTFTarget)
   return $
     force $
     BORL
@@ -199,6 +199,73 @@ mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder n
     name PsiVTable = "psiV"
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
+
+mkUnichainTensorflow ::
+     forall s m. (NFData s)
+  => Algorithm
+  -> InitialState s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> TF.Session TensorflowModel
+  -> NNConfig s
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig initValues = runMonadBorl (mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder nnConfig initValues)
+-- do
+--   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
+--       scopes = concat $ repeat ["_target", "_worker"]
+--   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+--   let netInpInitState = (nnConfig ^. toNetInp) initialState
+--       nnSA :: ProxyType -> Int -> IO (Proxy s)
+--       nnSA tp idx = do
+--         nnT <- runMonadBorl $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
+--         nnW <- runMonadBorl $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
+--         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
+--   v <- nnSA VTable 0
+--   w <- nnSA WTable 2
+--   r0 <- nnSA R0Table 4
+--   r1 <- nnSA R1Table 6
+--   psiV <- nnSA PsiVTable 8
+--   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+--   return $
+--     force $
+--     BORL
+--       (zip [idxStart ..] as)
+--       asFilter
+--       initialState
+--       0
+--       (0, 0)
+--       params
+--       decayFun
+--       alg
+--       SteadyStateValues
+--       mempty
+--       mempty
+--       (0, 0, 0)
+--       (Proxies (Scalar defRho) (Scalar defRho) psiV v w r0 r1 (Just repMem))
+-- #ifdef DEBUG
+--     mempty
+-- #endif
+--   where
+--     mkModel tp scope netInpInitState modelBuilderFun = do
+--       !model <- prependName (name tp <> scope) <$> Tensorflow modelBuilderFun
+--       saveModel
+--         (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, replicate (length as) 0)) modelBuilderFun)
+--         [map realToFrac netInpInitState]
+--         [replicate (length as) 0]
+--     prependName txt model =
+--       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
+--     name VTable    = "v"
+--     name WTable    = "w"
+--     name R0Table   = "r0"
+--     name R1Table   = "r1"
+--     name PsiVTable = "psiV"
+--     defRho = defaultRho (fromMaybe defInitValues initValues)
+
+
+  -- runMonadBorl (mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder nnConfig initValues)
 
 mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState gen as asFilter params decayFun initValues =

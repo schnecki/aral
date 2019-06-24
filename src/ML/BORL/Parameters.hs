@@ -24,6 +24,6 @@ data Parameters = Parameters
   , _zeta             :: !Double             -- ^ Force bias optimality once the absolute error of psiV is less than or
                                              -- equal to this value.
   , _xi               :: !Double             -- ^ Ratio in the interval (0,1) on how much of the difference of W value to enforce on V values.
-  } deriving (NFData, Generic, Serialize)
+  } deriving (Eq, Ord, NFData, Generic, Serialize)
 makeLenses ''Parameters
 

@@ -5,6 +5,8 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
+import           Control.Monad.IO.Class
+import           Control.Monad.IO.Unlift
 import           Control.Monad.Trans.Class (lift)
 import           System.IO.Unsafe          (unsafePerformIO)
 import qualified TensorFlow.Core           as TF
@@ -73,4 +75,10 @@ runMonadBorl :: MonadBorl a -> IO a
 runMonadBorl (Tensorflow action) = TF.runSession action
 runMonadBorl (Simple action)     = action
 
+
+instance MonadIO MonadBorl where
+  liftIO = Simple
+
+instance MonadUnliftIO MonadBorl where
+  askUnliftIO = return $ UnliftIO runMonadBorl
 

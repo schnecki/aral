@@ -1,9 +1,12 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 module ML.BORL.Step
     ( step
     , steps
     , stepM
+    , stepsM
     , restoreTensorflowModels
     , saveTensorflowModels
     , stepExecute
@@ -58,21 +61,30 @@ fileEpisodeLength = "episodeLength"
 
 
 steps :: (NFData s, Ord s) => BORL s -> Integer -> IO (BORL s)
-steps borl nr = runMonadBorl $ do
+steps (force -> borl) nr = runMonadBorl $ do
   restoreTensorflowModels borl
-  borl' <- foldM (\b _ -> nextAction b >>= stepExecute) borl [0 .. nr - 1]
+  !borl' <- foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
   force <$> saveTensorflowModels borl'
 
-
 step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
-step borl = runMonadBorl $ do
+step (force -> borl) = runMonadBorl $ do
   restoreTensorflowModels borl
-  borl' <- nextAction borl >>= stepExecute
+  !borl' <- nextAction borl >>= stepExecute
   force <$> saveTensorflowModels borl'
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
 stepM :: (NFData s, Ord s) => BORL s -> MonadBorl (BORL s)
-stepM borl = nextAction borl >>= stepExecute
+stepM (force -> borl) = nextAction borl >>= fmap force . stepExecute
+
+-- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
+-- evaluation of the data structure every 1000 periods.
+stepsM :: (NFData s, Ord s) => BORL s -> Integer -> MonadBorl (BORL s)
+stepsM (force -> borl) nr = do
+  !borl' <- force <$> foldM (\b _ -> nextAction b >>= stepExecute) borl [1 .. min maxNr nr]
+  if nr > maxNr
+    then stepsM borl' (nr - maxNr)
+    else return borl'
+  where maxNr = 1000
 
 
 restoreTensorflowModels :: BORL s -> MonadBorl ()

@@ -95,7 +95,7 @@ nnConfig gym maxRew = NNConfig
   , _replayMemoryMaxSize   = 20000
   , _trainBatchSize        = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems      = map St ppSts
+  , _prettyPrintElems      = ppSts
   , _scaleParameters       =
       scalingByMaxAbsReward False 1.5
       -- scalingByMaxAbsReward False maxRew

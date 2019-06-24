@@ -42,7 +42,7 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                { _proxyScalar :: !Double
                }
              | Table            -- ^ Representation using a table.
-               { _proxyTable            :: !(M.Map ([Double],ActionIndex) Double, S.Set ([Double],s))
+               { _proxyTable            :: !(M.Map ([Double],ActionIndex) Double)
                , _proxyDefault          :: !Double
                , _proxyStateGeneraliser :: !(TableStateGeneraliser s)
                }
@@ -72,16 +72,16 @@ instance (NFData s) => NFData (Proxy s) where
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
 
-mapProxyForSerialise :: (Ord s') => (s -> s') -> Proxy s -> Proxy s'
-mapProxyForSerialise f (Scalar x)          = Scalar x
-mapProxyForSerialise f (Table (tbl, ss) def gen) = Table (tbl, S.map (second f) ss) def (const [])
-mapProxyForSerialise f (Grenade t w st tp config nr) = Grenade t w st tp (mapNNConfigForSerialise f config) nr
-mapProxyForSerialise f (TensorflowProxy t w st tp config nr) = TensorflowProxy t w st tp (mapNNConfigForSerialise f config) nr
+mapProxyForSerialise :: (Ord s') => Proxy s -> Proxy s'
+mapProxyForSerialise (Scalar x)          = Scalar x
+mapProxyForSerialise (Table tbl def gen) = Table tbl def (const [])
+mapProxyForSerialise (Grenade t w st tp config nr) = Grenade t w st tp (mapNNConfigForSerialise config) nr
+mapProxyForSerialise (TensorflowProxy t w st tp config nr) = TensorflowProxy t w st tp (mapNNConfigForSerialise config) nr
 
 
 multiplyProxy :: Double -> Proxy s -> Proxy s
 multiplyProxy v (Scalar x) = Scalar (v*x)
-multiplyProxy v (Table (m,s) d g) = Table (fmap (v*) m,s) d g
+multiplyProxy v (Table m d g) = Table (fmap (v*) m) d g
 multiplyProxy v (Grenade t w s tp config nr) = Grenade t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
 multiplyProxy v (TensorflowProxy t w s tp config nr) = TensorflowProxy t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
 
@@ -126,11 +126,11 @@ allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. w
 mapProxiesForSerialise :: (Ord s') => (s -> s') -> Proxies s -> Proxies s'
 mapProxiesForSerialise f (Proxies rm rho psiV v w r0 r1 replMem) =
   Proxies
-    (mapProxyForSerialise f rm)
-    (mapProxyForSerialise f rho)
-    (mapProxyForSerialise f psiV)
-    (mapProxyForSerialise f v)
-    (mapProxyForSerialise f w)
-    (mapProxyForSerialise f r0)
-    (mapProxyForSerialise f r1)
+    (mapProxyForSerialise rm)
+    (mapProxyForSerialise rho)
+    (mapProxyForSerialise psiV)
+    (mapProxyForSerialise v)
+    (mapProxyForSerialise w)
+    (mapProxyForSerialise r0)
+    (mapProxyForSerialise r1)
     (fmap (mapReplayMemoryForSeialisable f) replMem)
