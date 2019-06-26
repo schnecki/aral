@@ -55,6 +55,18 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorValueFromName)
 
 
+expSetup :: ExperimentSetup
+expSetup = ExperimentSetup
+  { _experimentBaseName         = "gridworld 4"
+  , _experimentRepetitions      =  1
+  , _preparationSteps           =  0
+  , _evaluationWarmUpSteps      =  0
+  , _evaluationSteps            =  18
+  , _evaluationReplications     =  3
+  , _maximumParallelEvaluations =  1
+  }
+
+
 instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
@@ -88,8 +100,18 @@ instance ExperimentDef (BORL St) where
                                , AlgDQN 0.99
                                ])
         Nothing
+        (const False)
     ]
-  equalExperiments (borl1, _) (borl2, _) = borl1 ^. algorithm == borl2 ^. algorithm
+  equalExperiments (borl1, st1) (borl2, st2) =
+    st1 == st2 &&
+    borl1 ^. s == borl2 ^. s &&
+    borl1 ^. t == borl2 ^. t &&
+    borl1 ^. episodeNrStart == borl2 ^. episodeNrStart &&
+    borl1 ^. ML.BORL.parameters == borl2 ^. ML.BORL.parameters &&
+    borl1 ^. algorithm == borl2 ^. algorithm &&
+    borl1 ^. phase == borl2 ^. phase &&
+    borl1 ^. lastVValues == borl2 ^. lastVValues &&
+    borl1 ^. lastRewards == borl2 ^. lastRewards
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -122,18 +144,6 @@ modelBuilder =
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
-expSetup :: ExperimentSetup
-expSetup = ExperimentSetup
-  { _experimentBaseName         = "gridworld 4"
-  , _experimentRepetitions      =  1
-  , _preparationSteps           =  0
-  , _evaluationWarmUpSteps      =  0
-  , _evaluationSteps            =  18
-  , _evaluationReplications     =  3
-  , _maximumParallelEvaluations =  1
-  }
-
-
 main :: IO ()
 main = do
   let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
@@ -149,7 +159,7 @@ main = do
               , Mean OverReplications (Of "avgEpisodeLength"), StdDev OverReplications (Of "avgEpisodeLength")
               ]
   evalRes <- genEvals res evals
-  print (view evalsResults evalRes)
+  -- print (view evalsResults evalRes)
   writeAndCompileLatex evalRes
 
 
