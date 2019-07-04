@@ -100,7 +100,8 @@ instance ExperimentDef (BORL St) where
                                , AlgDQN 0.99
                                ])
         Nothing
-        (const False)
+        Nothing
+        Nothing
     ]
   equalExperiments (borl1, st1) (borl2, st2) =
     st1 == st2 &&
@@ -158,7 +159,7 @@ main = do
               , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
               , Mean OverReplications (Of "avgEpisodeLength"), StdDev OverReplications (Of "avgEpisodeLength")
               ]
-  evalRes <- genEvals res evals
+  evalRes <- genEvalsIO databaseSetup res evals
   -- print (view evalsResults evalRes)
   writeAndCompileLatex evalRes
 
