@@ -65,6 +65,8 @@ dependencies:
   - cereal
   - cereal-text
   - unliftio-core
+  - random
+
 
 library:
   source-dirs: src

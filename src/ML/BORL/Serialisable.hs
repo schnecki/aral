@@ -14,6 +14,7 @@ import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
 
+import Data.List (find)
 import           Control.Lens
 import           Control.Monad                (void, zipWithM)
 import           Data.Serialize
@@ -22,6 +23,7 @@ import           GHC.Generics
 import qualified TensorFlow.Core              as TF
 
 import           System.IO.Unsafe
+import Debug.Trace
 
 
 data BORLSerialisable s = BORLSerialisable
@@ -42,27 +44,40 @@ data BORLSerialisable s = BORLSerialisable
   , serLastRewards    :: ![Double] -- ^ List of X last rewards
   , serPsis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , serProxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
-
-#ifdef DEBUG
-  -- Stats:
-  , serVisits         :: !(M.Map s Integer) -- ^ Counts the visits of the states
-#endif
   } deriving (Generic, Serialize)
 
+saveTensorflowModels :: (MonadBorl' m) => BORL s -> m (BORL s)
+saveTensorflowModels borl = do
+  mapM_ saveProxy (allProxies $ borl ^. proxies)
+  return borl
+  where
+    saveProxy px =
+      case px of
+        TensorflowProxy netT netW _ _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
+        _ -> return ()
 
-toSerialisable :: BORL s -> BORLSerialisable s
-#ifdef DEBUG
-toSerialisable (BORL _ _ s t e par _ alg ph v rew psis prS vis) = BORLSerialisable s t e par alg ph v rew psis prS vis
-#else 
-toSerialisable (BORL _ _ s t e par _ alg ph v rew psis prS) = BORLSerialisable s t e par alg ph v rew psis prS
-#endif
+restoreTensorflowModels :: (MonadBorl' m) => BORL s -> m ()
+restoreTensorflowModels borl = do
+  buildModels
+  mapM_ restoreProxy (allProxies $ borl ^. proxies)
+  where
+    restoreProxy px =
+      case px of
+        TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
+        _ -> return ()
+    buildModels =
+      case find isTensorflow (allProxies $ borl ^. proxies) of
+        Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
+        _                                     -> return ()
 
-toSerialisableWith :: (Ord s') => (s -> s') -> BORL s -> BORLSerialisable s'
-#ifdef DEBUG
-toSerialisableWith f (BORL _ _ s t e par _ alg ph v rew psis prS vis) = BORLSerialisable s t e par alg ph v rew psis prS (M.mapKeys f vis)
-#else 
-toSerialisableWith f (BORL _ _ s t e par _ alg ph v rew psis prS) = BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise f prS)
-#endif
+
+toSerialisable :: (MonadBorl' m, Ord s) => BORL s -> m (BORLSerialisable s)
+toSerialisable = toSerialisableWith id 
+
+toSerialisableWith :: (MonadBorl' m, Ord s') => (s -> s') -> BORL s -> m (BORLSerialisable s') 
+toSerialisableWith f borl@(BORL _ _ s t e par _ alg ph v rew psis prS) = do
+  BORL _ _ s t e par _ alg ph v rew psis prS <- trace ("SAVING") $ saveTensorflowModels borl
+  return $ trace ("SAVED") $ BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise f prS)
 
 
 type ActionList s = [ActionIndexed s]
@@ -71,25 +86,20 @@ type ProxyNetInput s = s -> [Double]
 type TensorflowModelBuilder = TF.Session TensorflowModel
 
 
-fromSerialisable :: (Ord s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> BORL s
+fromSerialisable :: (MonadBorl' m, Ord s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id
  
-fromSerialisableWith :: (Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> BORL s
-fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS
-#ifdef DEBUG
-                                             vis
-#endif                                             
-                                             ) =
-  let aL = zip [idxStart ..] as
+fromSerialisableWith :: (MonadBorl' m, Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
+  let aL = trace ("fromSerialisableWith") $ zip [idxStart ..] as
       borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise f prS)
-#ifdef DEBUG
-                                             vis
-#endif                                             
-  in flip (foldl (\b p -> over (proxies.p.filtered isTensorflow.proxyTFWorker) (\x -> x { tensorflowModelBuilder = builder }) b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
-   $ flip (foldl (\b p -> over (proxies.p.filtered isTensorflow.proxyTFTarget) (\x -> x { tensorflowModelBuilder = builder }) b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
-   $ flip (foldl (\b p -> set (proxies.p.filtered isNeuralNetwork.proxyNNConfig.toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0 , r1]
-   $       foldl (\b p -> set (proxies.p.filtered isTable.proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0 , r1]
-
+   in do let borl' =
+               flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+               flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+               flip (foldl (\b p -> set (proxies . p . filtered isNeuralNetwork . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+               foldl (\b p -> set (proxies . p . filtered isTable . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+         restoreTensorflowModels borl'
+         return $ borl'
   -- 1. state generaliser for table proxy
   -- 2. toNetInput
   -- 3. builder
@@ -121,7 +131,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
     put conf
     put nr
   put (TensorflowProxy t w st tp conf nr) = do
-    put (2::Int)
+    put (3::Int)
     put t
     put w
     put st

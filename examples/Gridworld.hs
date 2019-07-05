@@ -50,6 +50,7 @@ import qualified TensorFlow.Ops         as TF (initializedVariable, initializedV
                                                reduceSum, restore, save, scalar, vector,
                                                zeroInitializedVariable,
                                                zeroInitializedVariable')
+import qualified TensorFlow.Session     as TF
 import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorNodeName, tensorRefFromName,
                                                tensorValueFromName)
@@ -68,7 +69,7 @@ expSetup = ExperimentSetup
 
 
 instance ExperimentDef (BORL St) where
-  type ExpM (BORL St) = IO
+  type ExpM (BORL St) = TF.SessionT IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
@@ -147,9 +148,10 @@ modelBuilder =
 
 main :: IO ()
 main = do
-  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
-  (changed, res) <- runExperimentsIO databaseSetup expSetup () rl
+  (changed, res) <- runExperiments runMonadBorlTF databaseSetup expSetup () rl
   putStrLn $ "Any change: " ++ show changed
   let evals = [ Id (Of "avgRew")
               , Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")
@@ -159,7 +161,7 @@ main = do
               , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
               , Mean OverReplications (Of "avgEpisodeLength"), StdDev OverReplications (Of "avgEpisodeLength")
               ]
-  evalRes <- genEvalsIO databaseSetup res evals
+  evalRes <- genEvals runMonadBorlTF databaseSetup res evals
   -- print (view evalsResults evalRes)
   writeAndCompileLatex evalRes
 

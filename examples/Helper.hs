@@ -66,15 +66,23 @@ askUser showHelp addUsage cmds ql = do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser False addUsage cmds ql
     "v" -> do
-      runMonadBorl (restoreTensorflowModels ql >> prettyBORLTables True False False ql) >>= print
+      case find isTensorflow (allProxies $ ql ^. proxies) of
+        Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print
+        Just _ -> runMonadBorlTF (restoreTensorflowModels ql >> prettyBORLTables True False False ql) >>= print
       askUser False addUsage cmds ql
     _ ->
       case find ((== c) . fst) cmds of
         Nothing ->
           unless
             (c == "q")
-            (step ql >>= \x -> runMonadBorl (restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
-        Just (_, cmd) -> runMonadBorl (restoreTensorflowModels ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser False addUsage cmds
+            (step ql >>= \x ->
+               case find isTensorflow (allProxies $ ql ^. proxies) of
+                 Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print
+                 Just _ -> runMonadBorlTF (restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
+        Just (_, cmd) ->
+          case find isTensorflow (allProxies $ ql ^. proxies) of
+            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser False addUsage cmds
+            Just _ -> runMonadBorlTF (restoreTensorflowModels ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser False addUsage cmds
 
 
 time :: NFData t => IO t -> IO t

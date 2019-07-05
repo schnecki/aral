@@ -43,17 +43,17 @@ wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
-prettyTable :: (Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> MonadBorl Doc
+prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
 
 prettyTableRows ::
-     (Show k, Ord k, Eq k, Ord k', Show k')
+     (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k')
   => BORL k
   -> (NetInputWoAction -> k')
   -> (ActionIndex -> Doc)
-  -> (([Double], ActionIndex) -> Double -> MonadBorl Double)
+  -> (([Double], ActionIndex) -> Double -> m Double)
   -> P.Proxy k
-  -> MonadBorl [Doc]
+  -> m [Doc]
 prettyTableRows borl prettyAction prettyActionIdx modifier p =
   case p of
     P.Table m _ gen ->
@@ -74,16 +74,16 @@ prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> 
 
 
 mkListFromNeuralNetwork ::
-     (Show k, Ord k, Eq k, Show k')
+     (MonadBorl' m, Show k, Ord k, Eq k, Show k')
   => BORL k
   -> (NetInputWoAction -> k')
   -> (ActionIndex -> Doc)
   -> Bool
   -> P.Proxy k
-  -> MonadBorl [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
+  -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
 
-prettyTablesState :: (Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (NetInputWoAction -> k') -> P.Proxy k -> MonadBorl Doc
+prettyTablesState :: (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (NetInputWoAction -> k') -> P.Proxy k -> m Doc
 prettyTablesState borl period p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
   rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
@@ -114,87 +114,91 @@ prettyAvgRewardType ByStateValues = "state values"
 prettyAvgRewardType (Fixed x)     = "fixed value of " <> double x
 
 
-prettyBORLTables :: (Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> MonadBorl Doc
+prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> m Doc
 prettyBORLTables t1 t2 t3 borl = do
-
-  let algDoc doc | isAlgBorl (borl ^. algorithm) = doc
-                 | otherwise = empty
-      algDocRho doc = case borl ^. algorithm of
-        AlgDQN{} -> empty
-        _        -> doc
-
+  let algDoc doc
+        | isAlgBorl (borl ^. algorithm) = doc
+        | otherwise = empty
+      algDocRho doc =
+        case borl ^. algorithm of
+          AlgDQN {} -> empty
+          _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
-  let mkErr scale = case (borl ^. proxies.r1, borl ^. proxies.r0) of
-           (P.Table rm1 _ _, P.Table rm0 _ _) -> return $ (\t -> P.Table t 0 (const [])) (M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
-           (prNN1, prNN0) -> do
-             n1 <- mkNNList borl scale prNN1
-             n0 <- mkNNList borl scale prNN0
-             return $ (\t -> P.Table t 0 (const []))
-                    (M.fromList $ concat $ zipWith (\(k,ts) (_,ws) -> zipWith (\(nr, t) (_,w) -> ((k, nr), t-w)) ts ws) (map (second fst) n1) (map (second fst) n0))
+  let mkErr scale =
+        case (borl ^. proxies . r1, borl ^. proxies . r0) of
+          (P.Table rm1 _ _, P.Table rm0 _ _) -> return $ (\t -> P.Table t 0 (const [])) (M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
+          (prNN1, prNN0) -> do
+            n1 <- mkNNList borl scale prNN1
+            n0 <- mkNNList borl scale prNN0
+            return $
+              (\t -> P.Table t 0 (const []))
+                (M.fromList $ concat $ zipWith (\(k, ts) (_, ws) -> zipWith (\(nr, t) (_, w) -> ((k, nr), t - w)) ts ws) (map (second fst) n1) (map (second fst) n0))
   errScaled <- mkErr True
-  prettyErr <- if t3
-               then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
-               else return empty
-  let addPsiV k v = case borl ^. proxies.psiV of
-        P.Table m def _ -> return $ M.findWithDefault def k m
-        px -> let config = px ^?! proxyNNConfig
-
-          in if borl ^. t <= fromIntegral (config^.replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1
-          then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
-          else do vPsi <- P.lookupNeuralNetworkUnscaledGen P.Worker k (borl ^. proxies.psiV)
-                  return (v + vPsi)
-
-  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies.v)
-
-  prettyRhoVal <- case borl ^. proxies.rho of
-       Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
-       m  -> do
-         prAct <- prettyTable borl prettyAction prettyActionIdx m
-         return $ text "Rho" $+$ prAct
-#ifdef DEBUG
-  prettyVisits <- prettyTable borl id (const empty) (P.Table vis 0 id)
-#endif
-  prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies.v) (borl ^. proxies.w)
-  prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies.r0) (borl ^. proxies.r1)
-  prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies.r1)
-  return $
-    text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
+  prettyErr <-
+    if t3
+      then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
+      else return empty
+  let addPsiV k v =
+        case borl ^. proxies . psiV of
+          P.Table m def _ -> return $ M.findWithDefault def k m
+          px ->
+            let config = px ^?! proxyNNConfig
+             in if borl ^. t <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1
+                  then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
+                  else do
+                    vPsi <- P.lookupNeuralNetworkUnscaledGen P.Worker k (borl ^. proxies . psiV)
+                    return (v + vPsi)
+  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies . v)
+  prettyRhoVal <-
+    case borl ^. proxies . rho of
+      Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
+      m -> do
+        prAct <- prettyTable borl prettyAction prettyActionIdx m
+        return $ text "Rho" $+$ prAct
+  prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies . v) (borl ^. proxies . w)
+  prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+  prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
     algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ borl ^. parameters . alpha)) $+$
     algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . beta)) $+$
     algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . delta)) $+$
-    text "Gamma" <> colon $$ nest 45 (printFloat $ borl ^. parameters . gamma) $+$
-    text "Epsilon" <> colon $$ nest 45 (printFloat $ borl ^. parameters . epsilon) $+$
-    text "Exploration" <> colon $$ nest 45 (printFloat $ borl ^. parameters . exploration) $+$
+    text "Gamma" <>
+    colon $$
+    nest 45 (printFloat $ borl ^. parameters . gamma) $+$
+    text "Epsilon" <>
+    colon $$
+    nest 45 (printFloat $ borl ^. parameters . epsilon) $+$
+    text "Exploration" <>
+    colon $$
+    nest 45 (printFloat $ borl ^. parameters . exploration) $+$
     -- text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ borl ^. parameters . learnRandomAbove) $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$
-    text "Algorithm" <> colon $$ nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
+    text "Algorithm" <>
+    colon $$
+    nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ borl ^. parameters . xi)) $+$
-    (if isAlgBorl (borl ^. algorithm) then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
+    (if isAlgBorl (borl ^. algorithm)
+       then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
+       else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
     algDocRho prettyRhoVal $$
     algDoc prVW $+$
     -- prettyVWPsi $+$
-    (if isAlgBorl (borl ^. algorithm) then prR0R1 else vcat prR1) $+$
+    (if isAlgBorl (borl ^. algorithm)
+       then prR0R1
+       else vcat prR1) $+$
     -- prettyErr $+$
     algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
-#ifdef DEBUG
-    $+$ text "Visits [%]" $+$ prettyVisits
-#endif
   where
-#ifdef DEBUG
-    vis = M.mapKeys (\x -> (x,0)) $ M.map (\x -> 100 * fromIntegral x / fromIntegral (borl ^. t)) (borl ^. visits)
-#endif
-
-
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     -- prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     prettyAction st = st
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     scalingText =
-      case borl ^. proxies.v of
+      case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         P.Grenade _ _ _ _ conf _ ->
           text
@@ -211,43 +215,54 @@ prettyBORLTables t1 t2 t3 borl = do
                , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextDqn =
-      case borl ^. proxies.v of
+      case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf _ -> text (show ( (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
-        P.TensorflowProxy _ _ _ _ conf _ -> text (show ( (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
-
-    nnBatchSize = case borl ^. proxies.v of
-      P.Table {} -> empty
-      P.Grenade _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
-      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
-    nnReplMemSize = case borl ^. proxies.v of
-      P.Table {} -> empty
-      P.Grenade _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
-      P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
-    nnLearningParams = case borl ^. proxies.v of
-      P.Table {} -> empty
-      P.Grenade _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. grenadeLearningParams
-                         in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
-      P.TensorflowProxy _ _ _ _ conf _ -> let LearningParameters l m l2 = conf ^. grenadeLearningParams
-                         in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
+        P.Grenade _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+    nnBatchSize =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        P.Grenade _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+        P.TensorflowProxy _ _ _ _ conf _ -> text "NN Batchsize" <> colon $$ nest 45 (int $ conf ^. trainBatchSize)
+    nnReplMemSize =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        P.Grenade _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
+        P.TensorflowProxy _ _ _ _ conf _ -> text "NN Replay Memory size" <> colon $$ nest 45 (int $ conf ^. replayMemoryMaxSize)
+    nnLearningParams =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        P.Grenade _ _ _ _ conf _ ->
+          let LearningParameters l m l2 = conf ^. grenadeLearningParams
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
+        P.TensorflowProxy _ _ _ _ conf _ ->
+          let LearningParameters l m l2 = conf ^. grenadeLearningParams
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
-prettyBORL borl = runMonadBorl $ do
-  buildModels
-  reloadNets (borl ^. proxies.v)
-  reloadNets (borl ^. proxies.w)
-  reloadNets (borl ^. proxies.r0)
-  reloadNets (borl ^. proxies.r1)
-  prettyBORLTables True True True borl
-    where reloadNets px = case px of
-            P.TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
-            _ -> return ()
-          isTensorflowProxy P.TensorflowProxy{} = True
-          isTensorflowProxy _                   = False
-          buildModels = case find isTensorflowProxy (allProxies $ borl ^. proxies) of
-            Just (P.TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
-            _                                       -> return ()
+prettyBORL borl =
+  case find isTensorflowProxy (allProxies $ borl ^. proxies) of
+    Nothing -> runMonadBorlIO $ prettyBORLTables True True True borl
+    Just _ ->
+      runMonadBorlTF $ do
+        buildModels
+        reloadNets (borl ^. proxies . v)
+        reloadNets (borl ^. proxies . w)
+        reloadNets (borl ^. proxies . r0)
+        reloadNets (borl ^. proxies . r1)
+        prettyBORLTables True True True borl
+  where
+    reloadNets px =
+      case px of
+        P.TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
+        _ -> return ()
+    isTensorflowProxy P.TensorflowProxy {} = True
+    isTensorflowProxy _                    = False
+    buildModels =
+      case find isTensorflowProxy (allProxies $ borl ^. proxies) of
+        Just (P.TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
+        _                                       -> return ()
 
 instance (Ord s, Show s) => Show (BORL s) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyBORL borl

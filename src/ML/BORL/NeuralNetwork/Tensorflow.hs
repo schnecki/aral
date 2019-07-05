@@ -23,6 +23,8 @@ import qualified Data.Text                                      as T
 import qualified Data.Vector                                    as V
 import           GHC.Generics
 import           System.IO.Temp
+import           System.Random
+
 
 import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
 import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
@@ -74,11 +76,9 @@ instance Serialize TensorflowModel' where
     put $ map getTensorRefNodeName nnVars
     put $ map getTensorRefNodeName trVars
     let (mFile, bytes) =
-          unsafePerformIO $
-          runMonadBorl $ do
-            tf' <- saveModelWithLastIO tf
-            bytes <- Simple $ readFile (fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf'))
-            return (checkpointBaseFileName tf', bytes)
+          unsafePerformIO $ do
+            bytes <- liftSimple $ readFile (fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf)) -- models have been saved during conversion
+            return (checkpointBaseFileName tf, bytes)
     put mFile
     put bytes
   get = do
@@ -93,9 +93,10 @@ instance Serialize TensorflowModel' where
     bytes <- get
     return $
       unsafePerformIO $
-      runMonadBorl $ do
-        let file = fromMaybe "/tmp/model" mFile
-        Simple $ writeFile file bytes
+      runMonadBorlTF $ do
+        (nr :: Int) <- liftSimple randomIO
+        let file = fromMaybe ("/tmp/model_" ++ show nr) mFile
+        liftSimple $ writeFile file bytes
         let tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just file) lastIO (error "called builder")
         restoreModelWithLastIO tf
         return tf
@@ -135,9 +136,9 @@ encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head
 encodeLabelBatch :: Labels -> TF.TensorData Float
 encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
 
-forwardRun :: TensorflowModel' -> Inputs -> MonadBorl Outputs
+forwardRun :: (MonadBorl' m) => TensorflowModel' -> Inputs -> m Outputs
 forwardRun model inp =
-  Tensorflow $
+  liftTf $
   let inRef = getRef (inputLayerName $ tensorflowModel model)
       outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
@@ -150,7 +151,7 @@ forwardRun model inp =
       | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
       | otherwise = separate len (drop len xs) (take len xs : acc)
 
-backwardRunRepMemData :: TensorflowModel' -> [(([Double], ActionIndex), Double)] -> MonadBorl ()
+backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Double], ActionIndex), Double)] -> m ()
 backwardRunRepMemData model values = do
   let inputs = map (map realToFrac.fst.fst) values
   outputs <- forwardRun model inputs
@@ -160,7 +161,7 @@ backwardRunRepMemData model values = do
   backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.
-backwardRun :: TensorflowModel' -> Inputs -> Labels -> MonadBorl ()
+backwardRun :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m ()
 backwardRun model inp lab
   | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
   | otherwise =
@@ -168,30 +169,30 @@ backwardRun model inp lab
         labRef = getRef (labelLayerName $ tensorflowModel model)
         inpT = encodeInputBatch inp
         labT = encodeLabelBatch lab
-    in Tensorflow $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
+    in liftTf $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
        -- aft <- forwardRunSession model inp
        -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
 
 -- | Copies values from one model to the other.
-copyValuesFromTo :: TensorflowModel' -> TensorflowModel' -> MonadBorl ()
+copyValuesFromTo :: (MonadBorl' m) => TensorflowModel' -> TensorflowModel' -> m ()
 copyValuesFromTo from to = do
   let fromVars = neuralNetworkVariables $ tensorflowModel from
       toVars = neuralNetworkVariables $ tensorflowModel to
   if length fromVars /= length toVars
     then error "cannot copy values to models with different length of neural network variables"
-    else void $ Tensorflow $ zipWithM TF.assign toVars fromVars >>= TF.run_
+    else void $ liftTf $ zipWithM TF.assign toVars fromVars >>= TF.run_
 
 
-saveModelWithLastIO :: TensorflowModel' -> MonadBorl TensorflowModel'
+saveModelWithLastIO :: (MonadBorl' m) => TensorflowModel' -> m TensorflowModel'
 saveModelWithLastIO model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in saveModelWithLastIO"
     Just (i, o) -> saveModel model [i] [o]
 
-saveModel :: TensorflowModel' -> Inputs -> Labels -> MonadBorl TensorflowModel'
+saveModel :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m TensorflowModel'
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-  basePath <- maybe (Simple tempDir) return (checkpointBaseFileName model)
+  basePath <- maybe (liftSimple tempDir) return (checkpointBaseFileName model)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName $ tensorflowModel model)
@@ -200,9 +201,9 @@ saveModel model inp lab = do
       labT = encodeLabelBatch lab
   let resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
   unless (null $ neuralNetworkVariables $ tensorflowModel model) $
-    Tensorflow $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
+    liftTf $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
   unless (null $ trainingVariables $ tensorflowModel model) $
-    Tensorflow $ TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+    liftTf $ TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   -- res <- map V.toList <$> (Tensorflow $ TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel model))
   -- Simple $ putStrLn $ "Training variables (saveModel): " <> show res
 
@@ -211,18 +212,18 @@ saveModel model inp lab = do
       then resetLastIO model
       else resetLastIO $ model {checkpointBaseFileName = Just basePath}
 
-restoreModelWithLastIO :: TensorflowModel' -> MonadBorl ()
+restoreModelWithLastIO :: (MonadBorl' m) => TensorflowModel' -> m ()
 restoreModelWithLastIO model =
   case lastInputOutputTuple model of
     Nothing     -> error "No last IO in restoreModelWithLastIO"
     Just (i, o) -> restoreModel model [i] [o]
 
-buildTensorflowModel :: TensorflowModel' -> MonadBorl ()
-buildTensorflowModel tfModel = void $ Tensorflow $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
+buildTensorflowModel :: (MonadBorl' m) => TensorflowModel' -> m ()
+buildTensorflowModel tfModel = void $ liftTf $ tensorflowModelBuilder tfModel -- Build model (creates needed nodes)
 
 
-restoreModel :: TensorflowModel' -> Inputs -> Labels -> MonadBorl ()
-restoreModel tfModel inp lab = Tensorflow $ do
+restoreModel :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m ()
+restoreModel tfModel inp lab = liftTf $ do
   basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName

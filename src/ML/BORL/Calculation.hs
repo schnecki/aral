@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE RankNTypes     #-}
 module ML.BORL.Calculation where
 
 import           ML.BORL.Algorithm
@@ -9,7 +10,9 @@ import           Control.DeepSeq
 import           GHC.Generics
 
 
-type ReplMemFun s = s -> ActionIndex -> Bool -> Reward -> s -> EpisodeEnd -> MonadBorl Calculation
+type ReplMemFun s
+   = forall m. (MonadBorl' m) =>
+                 s -> ActionIndex -> Bool -> Reward -> s -> EpisodeEnd -> m Calculation
 
 
 data Calculation = Calculation
