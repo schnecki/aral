@@ -73,7 +73,7 @@ instance Serialize TensorflowModel' where
     put mBasePath
     put bytesModel
     put bytesTrain
-  get = trace ("get TensorflowModel'") $ do
+  get = do
     inp <- get
     out <- get
     label <- get

@@ -3,6 +3,7 @@
 module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
+    , prettyBORLHead
     , prettyBORLTables
     , wideStyle
     ) where
@@ -125,20 +126,6 @@ prettyBORLTables t1 t2 t3 borl = do
           _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
-  let mkErr scale =
-        case (borl ^. proxies . r1, borl ^. proxies . r0) of
-          (P.Table rm1 _ _, P.Table rm0 _ _) -> return $ (\t -> P.Table t 0 (const [])) (M.fromList $ zipWith subtr (M.toList rm1) (M.toList rm0))
-          (prNN1, prNN0) -> do
-            n1 <- mkNNList borl scale prNN1
-            n0 <- mkNNList borl scale prNN0
-            return $
-              (\t -> P.Table t 0 (const []))
-                (M.fromList $ concat $ zipWith (\(k, ts) (_, ws) -> zipWith (\(nr, t) (_, w) -> ((k, nr), t - w)) ts ws) (map (second fst) n1) (map (second fst) n0))
-  errScaled <- mkErr True
-  prettyErr <-
-    if t3
-      then prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) errScaled >>= \x -> return (text "Error Scaled (R1-R0)" $+$ vcat x)
-      else return empty
   let addPsiV k v =
         case borl ^. proxies . psiV of
           P.Table m def _ -> return $ M.findWithDefault def k m
@@ -159,6 +146,31 @@ prettyBORLTables t1 t2 t3 borl = do
   prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies . v) (borl ^. proxies . w)
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
   prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+  docHead <- prettyBORLHead False borl
+  return $
+    docHead $$
+    algDocRho prettyRhoVal $$
+    algDoc prVW $+$
+    -- prettyVWPsi $+$
+    (if isAlgBorl (borl ^. algorithm)
+       then prR0R1
+       else vcat prR1) $+$
+    -- prettyErr $+$
+    algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
+  where
+    subtr (k, v1) (_, v2) = (k, v1 - v2)
+    prettyAction st = st
+    prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+
+
+prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> BORL s -> m Doc
+prettyBORLHead printRho borl = do
+  let algDoc doc
+        | isAlgBorl (borl ^. algorithm) = doc
+        | otherwise = empty
+  let prettyRhoVal = case borl ^. proxies . rho of
+        Scalar val -> text "Rho" <> colon $$ nest 45 (printFloat val)
+        _          -> empty
   return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
     algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha)) $+$
     algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ params' ^. beta)) $+$
@@ -184,21 +196,9 @@ prettyBORLTables t1 t2 t3 borl = do
        then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
        else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
-    algDocRho prettyRhoVal $$
-    algDoc prVW $+$
-    -- prettyVWPsi $+$
-    (if isAlgBorl (borl ^. algorithm)
-       then prR0R1
-       else vcat prR1) $+$
-    -- prettyErr $+$
-    algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
+    (if printRho then prettyRhoVal else empty)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-
-    subtr (k, v1) (_, v2) = (k, v1 - v2)
-    -- prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
-    prettyAction st = st
-    prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

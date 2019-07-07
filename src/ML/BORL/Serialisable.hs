@@ -24,9 +24,6 @@ import           GHC.Generics
 import           System.IO.Unsafe
 import qualified TensorFlow.Core       as TF
 
-import           Debug.Trace
-
-
 data BORLSerialisable s = BORLSerialisable
   { -- serActionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
   -- , serActionFilter   :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
@@ -91,7 +88,7 @@ fromSerialisable :: (MonadBorl' m, Ord s) => [Action s] -> ActionFilter s -> Dec
 fromSerialisable = fromSerialisableWith id
 
 fromSerialisableWith :: (MonadBorl' m, Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
-fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = trace ("fromSerialisableWith") $ do
+fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise t f prS)
    in do let borl' =
@@ -106,7 +103,7 @@ instance (Ord s, Serialize s) => Serialize (Proxies s)
 
 instance (Serialize s) => Serialize (NNConfig s) where
   put (NNConfig _ memSz batchSz param prS scale upInt trainMax) = put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
-  get = trace ("serialize nnconfig") $ do
+  get = do
     memSz <- get
     batchSz <- get
     param <- get
@@ -136,7 +133,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
     put tp
     put conf
     put nr
-  get = trace ("serialize proxy") $ do
+  get = do
     (c::Int) <- get
     case c of
       0 -> get >>= return . Scalar
@@ -171,7 +168,7 @@ instance (Serialize s) => Serialize (ReplayMemory s) where
     put sz
     put xs
     put maxIdx
-  get = trace ("serialize replay memory") $ do
+  get = do
     sz <- get
     let vec = unsafePerformIO $ V.new sz
     xs :: [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)] <- get

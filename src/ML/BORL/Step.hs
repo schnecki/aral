@@ -303,7 +303,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
         | otherwise = curEp
   return $
     force $ -- needed to ensure constant memory consumption
-    setCurrentPhase $ -- divideAfterGrowth $
+    setCurrentPhase $ divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $
     set lastRewards (getLastRews' calc) $ set proxies proxies' $ set s stateNext $ set t (period + 1) $
