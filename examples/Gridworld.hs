@@ -58,12 +58,12 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 expSetup :: ExperimentSetup
 expSetup = ExperimentSetup
-  { _experimentBaseName         = "gridworld 4"
+  { _experimentBaseName         = "gridworld"
   , _experimentRepetitions      =  1
-  , _preparationSteps           =  10000
-  , _evaluationWarmUpSteps      =  0
-  , _evaluationSteps            =  1000
-  , _evaluationReplications     =  3
+  , _preparationSteps           =  100000
+  , _evaluationWarmUpSteps      =  10
+  , _evaluationSteps            =  10000
+  , _evaluationReplications     =  2
   , _maximumParallelEvaluations =  1
   }
 
@@ -80,6 +80,7 @@ instance ExperimentDef (BORL St) where
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
+      when (rl' ^. t `mod` 10000 == 0) $ liftSimple $ prettyBORLHead True rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
