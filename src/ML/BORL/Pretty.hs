@@ -160,26 +160,26 @@ prettyBORLTables t1 t2 t3 borl = do
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
   prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
   return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
-    algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ borl ^. parameters . alpha)) $+$
-    algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . beta)) $+$
-    algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ borl ^. parameters . delta)) $+$
+    algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha)) $+$
+    algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ params' ^. beta)) $+$
+    algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ params' ^. delta)) $+$
     text "Gamma" <>
     colon $$
-    nest 45 (printFloat $ borl ^. parameters . gamma) $+$
+    nest 45 (printFloat $ params' ^. gamma) $+$
     text "Epsilon" <>
     colon $$
-    nest 45 (printFloat $ borl ^. parameters . epsilon) $+$
+    nest 45 (printFloat $ params' ^. epsilon) $+$
     text "Exploration" <>
     colon $$
-    nest 45 (printFloat $ borl ^. parameters . exploration) $+$
-    -- text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ borl ^. parameters . learnRandomAbove) $+$
+    nest 45 (printFloat $ params' ^. exploration) $+$
+    -- text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ params' ^. learnRandomAbove) $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$
     text "Algorithm" <>
     colon $$
     nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ borl ^. parameters . xi)) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
     (if isAlgBorl (borl ^. algorithm)
        then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
        else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
@@ -193,6 +193,8 @@ prettyBORLTables t1 t2 t3 borl = do
     -- prettyErr $+$
     algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
   where
+    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     -- prettyAction (st, aIdx) = (st, maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
     prettyAction st = st

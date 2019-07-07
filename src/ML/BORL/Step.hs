@@ -125,11 +125,13 @@ stepsM (force -> borl) nr = do
 
 mkCalculation :: (MonadBorl' m, Ord s) => BORL s -> State s -> ActionIndex -> Bool -> Reward -> StateNext s -> EpisodeEnd -> m Calculation
 mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
-  let alp = borl ^. parameters . alpha
-      bta = borl ^. parameters . beta
-      dlt = borl ^. parameters . delta
-      gam = borl ^. parameters . gamma
+  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  let alp = params' ^. alpha
+      bta = params' ^. beta
+      dlt = params' ^. delta
+      gam = params' ^. gamma
       alg = borl ^. algorithm
+      xiVal = params' ^. xi
       period = borl ^. t
       (psiValRho, psiValV, psiValW) = borl ^. psis -- exponentially smoothed Psis
   let label = (state, aNr)
@@ -186,7 +188,6 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
           psiValV' = (1 - expSmthPsi) * psiValV + expSmthPsi * randAct * abs psiV
           psiValW' = (1 - expSmthPsi) * psiValW + expSmthPsi * randAct * abs psiW
       let psiVTblVal' = (1 - expSmthPsi) * psiVTblVal + expSmthPsi * psiV
-      let xiVal = borl ^. parameters . xi
       let vValStateNew -- enforce bias optimality (correction of V(s,a) values)
              --  | randomAction && (psiV > eps || (psiV <= eps && psiV > -eps && psiW > eps)) = vValState' -- interesting action
              --  | randomAction = vValState' -- psiW and psiV should not be 0!
@@ -253,7 +254,7 @@ mkCalculation borl state aNr randomAction reward stateNext episodeEnd = do
 
 -- TODO maybe integrate learnRandomAbove, etc.:
   -- let borl'
-  --       | randomAction && borl ^. parameters . exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
+  --       | randomAction && params' ^. exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
   --       | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
 
 
@@ -281,7 +282,6 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let (eNr, eStart) = borl ^. episodeNrStart
       eLength = borl ^. t - eStart
   when (getEpisodeEnd calc) $ liftSimple $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
-  let params' = (borl ^. decayFunction) (period + 1) (borl ^. parameters)
   let divideAfterGrowth borl =
         case borl ^. algorithm of
           AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _
@@ -306,7 +306,8 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
     setCurrentPhase $ -- divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $
-    set lastRewards (getLastRews' calc) $ set proxies proxies' $ set s stateNext $ set t (period + 1) $ set parameters params' $ over episodeNrStart setEpisode
+    set lastRewards (getLastRews' calc) $ set proxies proxies' $ set s stateNext $ set t (period + 1) $
+    over episodeNrStart setEpisode
 #ifdef DEBUG
     $ set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits))
 #endif
@@ -346,8 +347,9 @@ nextAction borl
              AlgDQN {} -> dqnNextAction
              AlgDQNAvgRew {} -> dqnNextAction
   where
-    eps = borl ^. parameters . epsilon
-    explore = borl ^. parameters . exploration
+    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    eps = params' ^. epsilon
+    explore = params' ^. exploration
     state = borl ^. s
     as = actionsIndexed borl state
     epsCompare = epsCompareWith eps

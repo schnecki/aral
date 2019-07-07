@@ -77,8 +77,8 @@ askUser showHelp addUsage cmds ql = do
             (c == "q")
             (step ql >>= \x ->
                case find isTensorflow (allProxies $ ql ^. proxies) of
-                 Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print
-                 Just _ -> runMonadBorlTF (restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> return x >>= askUser False addUsage cmds)
+                 Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print >> askUser False addUsage cmds x
+                 Just _ -> runMonadBorlTF (restoreTensorflowModels ql >> prettyBORLTables True False True x) >>= print >> askUser False addUsage cmds x)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
             Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser False addUsage cmds

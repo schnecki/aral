@@ -8,43 +8,30 @@
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
-import           Control.Monad                                  (unless, void, zipWithM,
-                                                                 zipWithM_)
-import           Data.Serialize.Text                            ()
-
-import           Control.Monad.IO.Class                         (liftIO)
-import qualified Data.ByteString.Char8                          as B8
-import           Data.Int                                       (Int32, Int64)
-import           Data.List                                      (genericLength)
-import           Data.Maybe                                     (fromMaybe, isJust)
+import           Control.Monad         (unless, void, zipWithM)
+import qualified Data.ByteString.Char8 as B8
+import           Data.List             (genericLength)
+import           Data.Maybe            (fromMaybe, isJust)
 import           Data.Serialize
-import           Data.Text                                      (Text)
-import qualified Data.Text                                      as T
-import qualified Data.Vector                                    as V
-import           GHC.Generics
+import           Data.Serialize.Text   ()
+import           Data.Text             (Text)
+import qualified Data.Vector           as V
 import           System.IO.Temp
+import           System.IO.Unsafe
 import           System.Random
 
 
-import qualified Proto.Tensorflow.Core.Framework.Graph_Fields   as TF (node)
-import qualified Proto.Tensorflow.Core.Framework.NodeDef_Fields as TF (name, op, value)
-import qualified TensorFlow.Core                                as TF
-import qualified TensorFlow.GenOps.Core                         as TF (approximateEqual,
-                                                                       lessEqual, square)
-import qualified TensorFlow.Minimize                            as TF
-import qualified TensorFlow.Ops                                 as TF hiding
-                                                                       (initializedVariable,
-                                                                       zeroInitializedVariable)
-import qualified TensorFlow.Output                              as TF (ControlNode (..),
-                                                                       NodeName (..))
-import qualified TensorFlow.Tensor                              as TF (tensorNodeName,
-                                                                       tensorRefFromName)
-import qualified TensorFlow.Variable                            as TF hiding (assign)
+import qualified TensorFlow.Core       as TF
+import qualified TensorFlow.Ops        as TF hiding (initializedVariable,
+                                              zeroInitializedVariable)
+import qualified TensorFlow.Output     as TF (ControlNode (..), NodeName (..))
+import qualified TensorFlow.Tensor     as TF (tensorNodeName, tensorRefFromName)
 
-
-import           System.IO.Unsafe
 
 import           ML.BORL.Types
+
+import           Debug.Trace
+
 
 type Outputs = [[Float]]
 type Inputs = [[Float]]
@@ -75,13 +62,18 @@ instance Serialize TensorflowModel' where
     put inp >> put out >> put label >> put (getTensorControlNodeName train) >> put lastIO
     put $ map getTensorRefNodeName nnVars
     put $ map getTensorRefNodeName trVars
-    let (mFile, bytes) =
+    let (mBasePath, bytesModel, bytesTrain) =
           unsafePerformIO $ do
-            bytes <- liftSimple $ readFile (fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf)) -- models have been saved during conversion
-            return (checkpointBaseFileName tf, bytes)
-    put mFile
-    put bytes
-  get = do
+            let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
+                pathModel = basePath ++ "/" ++ modelName
+                pathTrain = basePath ++ "/" ++ trainName
+            bModel <- liftSimple $ B8.readFile pathModel
+            bTrain <- liftSimple $ B8.readFile pathTrain
+            return (checkpointBaseFileName tf, bModel, bTrain)
+    put mBasePath
+    put bytesModel
+    put bytesTrain
+  get = trace ("get TensorflowModel'") $ do
     inp <- get
     out <- get
     label <- get
@@ -90,15 +82,18 @@ instance Serialize TensorflowModel' where
     trVars <- map getRefTensorFromName <$> get
     lastIO <- get
     mFile <- get
-    bytes <- get
+    bModel <- get
+    bTrain <- get
     return $
       unsafePerformIO $
       runMonadBorlTF $ do
-        (nr :: Int) <- liftSimple randomIO
-        let file = fromMaybe ("/tmp/model_" ++ show nr) mFile
-        liftSimple $ writeFile file bytes
-        let tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just file) lastIO (error "called builder")
-        restoreModelWithLastIO tf
+        newDir <- liftSimple $ getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
+        let basePath = fromMaybe newDir mFile
+            pathModel = basePath ++ "/" ++ modelName
+            pathTrain = basePath ++ "/" ++ trainName
+        liftSimple $ B8.writeFile pathModel bModel
+        liftSimple $ B8.writeFile pathTrain bTrain
+        let tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO (error "called builder")
         return tf
 
 

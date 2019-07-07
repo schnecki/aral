@@ -16,6 +16,7 @@ module ML.BORL.Type where
 
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
+import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Type
@@ -39,8 +40,6 @@ import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Session           as TF
 
 type ActionIndexed s = (ActionIndex, Action s)                        -- ^ An action with index.
-type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the decay of the
-                                                                      -- parameters at time t.
 
 
 -------------------- Main RL Datatype --------------------
@@ -68,24 +67,12 @@ data BORL s = BORL
   , _lastRewards    :: ![Double] -- ^ List of X last rewards
   , _psis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , _proxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
-
-#ifdef DEBUG
-  -- Stats:
-  , _visits         :: !(M.Map s Integer) -- ^ Counts the visits of the states
-#endif
   }
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t epNr par dec alg ph lastVs lastRews psis proxies
-#ifdef DEBUG
-       vis
-#endif
-      ) =
+  rnf (BORL as af s t epNr par dec alg ph lastVs lastRews psis proxies) =
     rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
-#ifdef DEBUG
-       `seq` rnf vis
-#endif
 
 
 idxStart :: Int
@@ -124,9 +111,6 @@ mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
     mempty
     (0, 0, 0)
     (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
-#ifdef DEBUG
-    mempty
-#endif
   where
     tabSA def = Table mempty def gen
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -180,9 +164,6 @@ mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder 
       mempty
       (0, 0, 0)
       (Proxies (Scalar defRho) (Scalar defRho) psiV v w r0 r1 (Just repMem))
-#ifdef DEBUG
-    mempty
-#endif
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> liftTensorflow modelBuilderFun
@@ -231,9 +212,6 @@ mkMultichainTabular alg initialState gen as asFilter params decayFun initValues 
     mempty
     (0, 0, 0)
     (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
-#ifdef DEBUG
-    mempty
-#endif
   where
     tabSA def = Table mempty def gen
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -280,9 +258,6 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig init
       mempty
       (0, 0, 0)
       (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
-#ifdef DEBUG
-    mempty
-#endif
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
@@ -324,15 +299,12 @@ mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = 
       mempty
       (0, 0, 0)
       (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
-#ifdef DEBUG
-    mempty
-#endif
 
 
 mkReplayMemory :: Int -> IO (ReplayMemory s)
 mkReplayMemory sz = do
   vec <- V.new sz
-  return $ ReplayMemory vec sz
+  return $ ReplayMemory vec sz (-1)
 
 
 -------------------- Other Constructors --------------------

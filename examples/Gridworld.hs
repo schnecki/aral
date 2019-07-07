@@ -60,16 +60,17 @@ expSetup :: ExperimentSetup
 expSetup = ExperimentSetup
   { _experimentBaseName         = "gridworld 4"
   , _experimentRepetitions      =  1
-  , _preparationSteps           =  0
+  , _preparationSteps           =  10000
   , _evaluationWarmUpSteps      =  0
-  , _evaluationSteps            =  18
+  , _evaluationSteps            =  1000
   , _evaluationReplications     =  3
   , _maximumParallelEvaluations =  1
   }
 
 
 instance ExperimentDef (BORL St) where
-  type ExpM (BORL St) = TF.SessionT IO
+  -- type ExpM (BORL St) = TF.SessionT IO
+  type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
@@ -78,7 +79,7 @@ instance ExperimentDef (BORL St) where
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ =
     liftIO $ do
-      rl' <- steps rl 1000
+      rl' <- stepM rl
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -115,6 +116,48 @@ instance ExperimentDef (BORL St) where
     borl1 ^. lastVValues == borl2 ^. lastVValues &&
     borl1 ^. lastRewards == borl2 ^. lastRewards
 
+main :: IO ()
+main = do
+  let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
+
+  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  let runner = runMonadBorlIO
+  -- let mkInitSt = mkUnichainTensorflowM algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
+  -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+  -- let runner = runMonadBorlTF
+  putStrLn $ "Any change: " ++ show changed
+  let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
+              , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
+              , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
+              , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+              ]
+  evalRes <- genEvals runner databaseSetup res evals
+  -- print (view evalsResults evalRes)
+  writeAndCompileLatex evalRes
+
+
+-- main :: IO ()
+-- main = do
+
+--   writeFile "episodeSteps" "0"
+
+--   let algorithm =
+--         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+--         AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+
+--   nn <- randomNetworkInitWith UniformInit :: IO NN
+--   -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
+--   -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
+--   let rl = mkUnichainTabular algorithm initState netInp actions actFilter params decay Nothing
+--   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+
+--   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
+--         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
@@ -146,44 +189,6 @@ modelBuilder =
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
-main :: IO ()
-main = do
-  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-  rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
-  (changed, res) <- runExperiments runMonadBorlTF databaseSetup expSetup () rl
-  putStrLn $ "Any change: " ++ show changed
-  let evals = [ Id (Of "avgRew")
-              , Mean OverReplications (Of "avgRew"), StdDev OverReplications (Of "avgRew")
-              , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-              , Mean OverReplications (Of "psiRho"), StdDev OverReplications (Of "psiRho")
-              , Mean OverReplications (Of "psiV"), StdDev OverReplications (Of "psiV")
-              , Mean OverReplications (Of "psiW"), StdDev OverReplications (Of "psiW")
-              , Mean OverReplications (Of "avgEpisodeLength"), StdDev OverReplications (Of "avgEpisodeLength")
-              ]
-  evalRes <- genEvals runMonadBorlTF databaseSetup res evals
-  -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
-
-
--- main :: IO ()
--- main = do
-
---   writeFile "episodeSteps" "0"
-
---   let algorithm =
---         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
---         AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
-
---   nn <- randomNetworkInitWith UniformInit :: IO NN
---   -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
---   -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
---   let rl = mkUnichainTabular algorithm initState id actions actFilter params decay Nothing
---   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
-
---   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
---         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
-
 names = ["random", "up   ", "down ", "left ", "right"]
 
 -- | BORL Parameters.
@@ -202,25 +207,22 @@ params = Parameters
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t  p@(Parameters alp bet del ga eps exp rand zeta xi)
-  | t `mod` 200 == 0 =
-    Parameters
-      (max 0.03 $ slow * alp)
-      (max 0.015 $ slow * bet)
-      (max 0.015 $ slow * del)
-      (max 0.01 $ slow * ga)
-      (max 0.05 $ slow * eps) -- (0.5*bet)
-      (max 0.10 $ slower * exp)
-      rand
-      zeta -- zeta
-      -- (max 0.075 $ slower * xi)
-      (0.5*bet)
-  | otherwise = p
+decay t p@(Parameters alp bet del ga eps exp rand zeta xi) =
+  Parameters
+    (max 0.03 $ decay slow * alp)
+    (max 0.015 $ decay slow * bet)
+    (max 0.015 $ decay slow * del)
+    (max 0.01 $ decay slow * ga)
+    (max 0.05 $ decay slow * eps)
+    (max 0.10 $ decay slower * exp)
+    rand
+    zeta
+    (0.5 * bet)
   where
-    slower = 0.995
-    slow = 0.98
-    faster = 1.0 / 0.99
-    f = max 0.01
+    slower = 0.01
+    slow = 0.005
+    decaySteps = 200000 :: Double
+    decay rate = rate ** (fromIntegral t / decaySteps)
 
 
 initState :: St

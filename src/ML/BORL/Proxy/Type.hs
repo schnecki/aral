@@ -123,8 +123,8 @@ allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. w
 
 
 -- | Note: Only to be used for serialisation, as not all values are converted!
-mapProxiesForSerialise :: (Ord s') => (s -> s') -> Proxies s -> Proxies s'
-mapProxiesForSerialise f (Proxies rm rho psiV v w r0 r1 replMem) =
+mapProxiesForSerialise :: (Ord s') => Period -> (s -> s') -> Proxies s -> Proxies s'
+mapProxiesForSerialise t f (Proxies rm rho psiV v w r0 r1 replMem) =
   Proxies
     (mapProxyForSerialise rm)
     (mapProxyForSerialise rho)
@@ -133,4 +133,4 @@ mapProxiesForSerialise f (Proxies rm rho psiV v w r0 r1 replMem) =
     (mapProxyForSerialise w)
     (mapProxyForSerialise r0)
     (mapProxyForSerialise r1)
-    (fmap (mapReplayMemoryForSeialisable f) replMem)
+    (fmap (mapReplayMemoryForSeialisable t f) replMem)

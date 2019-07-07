@@ -1,29 +1,30 @@
- {-# LANGUAGE Unsafe #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Unsafe              #-}
 
 
 module ML.BORL.Serialisable where
 
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
+import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import Data.List (find)
 import           Control.Lens
-import           Control.Monad                (void, zipWithM)
+import           Control.Monad         (void, zipWithM)
+import           Data.List             (find)
 import           Data.Serialize
-import qualified Data.Vector.Mutable          as V
+import qualified Data.Vector.Mutable   as V
 import           GHC.Generics
-import qualified TensorFlow.Core              as TF
-
 import           System.IO.Unsafe
-import Debug.Trace
+import qualified TensorFlow.Core       as TF
+
+import           Debug.Trace
 
 
 data BORLSerialisable s = BORLSerialisable
@@ -72,12 +73,12 @@ restoreTensorflowModels borl = do
 
 
 toSerialisable :: (MonadBorl' m, Ord s) => BORL s -> m (BORLSerialisable s)
-toSerialisable = toSerialisableWith id 
+toSerialisable = toSerialisableWith id
 
-toSerialisableWith :: (MonadBorl' m, Ord s') => (s -> s') -> BORL s -> m (BORLSerialisable s') 
+toSerialisableWith :: (MonadBorl' m, Ord s') => (s -> s') -> BORL s -> m (BORLSerialisable s')
 toSerialisableWith f borl@(BORL _ _ s t e par _ alg ph v rew psis prS) = do
-  BORL _ _ s t e par _ alg ph v rew psis prS <- trace ("SAVING") $ saveTensorflowModels borl
-  return $ trace ("SAVED") $ BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise f prS)
+  BORL _ _ s t e par _ alg ph v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise t f prS)
 
 
 type ActionList s = [ActionIndexed s]
@@ -88,27 +89,24 @@ type TensorflowModelBuilder = TF.Session TensorflowModel
 
 fromSerialisable :: (MonadBorl' m, Ord s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id
- 
+
 fromSerialisableWith :: (MonadBorl' m, Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
-fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
-  let aL = trace ("fromSerialisableWith") $ zip [idxStart ..] as
-      borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise f prS)
+fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = trace ("fromSerialisableWith") $ do
+  let aL = zip [idxStart ..] as
+      borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise t f prS)
    in do let borl' =
                flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
                flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
                flip (foldl (\b p -> set (proxies . p . filtered isNeuralNetwork . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
                foldl (\b p -> set (proxies . p . filtered isTable . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
          restoreTensorflowModels borl'
-         return $ borl'
-  -- 1. state generaliser for table proxy
-  -- 2. toNetInput
-  -- 3. builder
+         return borl'
 
 instance (Ord s, Serialize s) => Serialize (Proxies s)
 
 instance (Serialize s) => Serialize (NNConfig s) where
   put (NNConfig _ memSz batchSz param prS scale upInt trainMax) = put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
-  get = do
+  get = trace ("serialize nnconfig") $ do
     memSz <- get
     batchSz <- get
     param <- get
@@ -138,7 +136,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
     put tp
     put conf
     put nr
-  get = do
+  get = trace ("serialize proxy") $ do
     (c::Int) <- get
     case c of
       0 -> get >>= return . Scalar
@@ -168,15 +166,15 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
 
 -- ^ Replay Memory
 instance (Serialize s) => Serialize (ReplayMemory s) where
-  put (ReplayMemory vec nr) = do
-    let xs = unsafePerformIO $ mapM (V.read vec) [0..V.length vec]
-    put (V.length vec)
+  put (ReplayMemory vec sz maxIdx) = do
+    let xs = unsafePerformIO $ mapM (V.read vec) [0..maxIdx]
+    put sz
     put xs
-    put nr
-  get = do
-    len <- get
-    let vec = unsafePerformIO $ V.new len
+    put maxIdx
+  get = trace ("serialize replay memory") $ do
+    sz <- get
+    let vec = unsafePerformIO $ V.new sz
     xs :: [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)] <- get
-    return $ void $ unsafePerformIO $ zipWithM (V.write vec) [0..] xs
-    nr <- get
-    return $ ReplayMemory vec nr
+    maxIdx <- get
+    void $ return $ unsafePerformIO $ zipWithM (V.write vec) [0..] xs
+    return $ ReplayMemory vec sz maxIdx
