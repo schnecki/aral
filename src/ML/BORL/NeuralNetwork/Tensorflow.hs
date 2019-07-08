@@ -17,6 +17,7 @@ import           Data.Serialize
 import           Data.Serialize.Text   ()
 import           Data.Text             (Text)
 import qualified Data.Vector           as V
+import           System.Directory
 import           System.IO.Temp
 import           System.IO.Unsafe
 import           System.Random
@@ -87,9 +88,8 @@ instance Serialize TensorflowModel' where
     bytesTrain <- get
     return $ force $
       unsafePerformIO $ do
-        newDir <- getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-        let basePath = fromMaybe newDir mBasePath
-            pathModel = basePath ++ "/" ++ modelName
+        basePath <- maybe (getCanonicalTemporaryDirectory >>= flip createTempDirectory "") (\b -> createDirectoryIfMissing True b >> return b) mBasePath
+        let pathModel = basePath ++ "/" ++ modelName
             pathTrain = basePath ++ "/" ++ trainName
         BS.writeFile pathModel bytesModel
         BS.writeFile pathTrain bytesTrain
