@@ -63,8 +63,8 @@ data BORL s = BORL
   , _phase          :: !Phase
 
   -- Values:
-  , _lastVValues    :: ![Double] -- ^ List of X last V values
-  , _lastRewards    :: ![Double] -- ^ List of X last rewards
+  , _lastVValues    :: ![Double] -- ^ List of X last V values (head is last seen value)
+  , _lastRewards    :: ![Double] -- ^ List of X last rewards (head is last received reward)
   , _psis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , _proxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
   }

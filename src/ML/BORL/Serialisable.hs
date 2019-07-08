@@ -76,6 +76,7 @@ fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par a
         flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
         flip (foldl' (\b p -> set (proxies . p . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
         foldl' (\b p -> set (proxies . p . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+
   restoreTensorflowModels False borl'
   return $ force borl'
 
