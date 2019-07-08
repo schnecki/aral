@@ -9,6 +9,7 @@ module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
 import           Control.Monad         (unless, void, zipWithM)
+import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as B8
 import           Data.List             (genericLength)
 import           Data.Maybe            (fromMaybe, isJust)
@@ -67,8 +68,8 @@ instance Serialize TensorflowModel' where
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName
-            bModel <- liftSimple $ B8.readFile pathModel
-            bTrain <- liftSimple $ B8.readFile pathTrain
+            bModel <- liftSimple $ BS.readFile pathModel
+            bTrain <- liftSimple $ BS.readFile pathTrain
             return (checkpointBaseFileName tf, bModel, bTrain)
     put mBasePath
     put bytesModel
@@ -84,18 +85,16 @@ instance Serialize TensorflowModel' where
     mBasePath <- get
     bytesModel <- get
     bytesTrain <- get
-    return $
-      unsafePerformIO $
-      runMonadBorlTF $ do
-        newDir <- liftSimple $ getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
+    return $ force $
+      unsafePerformIO $ do
+        newDir <- getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
         let basePath = fromMaybe newDir mBasePath
             pathModel = basePath ++ "/" ++ modelName
             pathTrain = basePath ++ "/" ++ trainName
-        liftSimple $ B8.writeFile pathModel bytesModel
-        liftSimple $ B8.writeFile pathTrain bytesTrain
+        BS.writeFile pathModel bytesModel
+        BS.writeFile pathTrain bytesTrain
         let fakeBuilder = TF.runSession $ return $ TensorflowModel inp out label train nnVars trVars
-            tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO fakeBuilder
-        return tf
+        return $ TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO fakeBuilder
 
 
 instance NFData TensorflowModel' where
