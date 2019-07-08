@@ -25,6 +25,7 @@ import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                    as P
+import           ML.BORL.SaveRestore
 import           ML.BORL.Serialisable
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -67,7 +68,7 @@ steps (force -> borl) nr =
     Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
     Just _ ->
       runMonadBorlTF $ do
-        void $ restoreTensorflowModels borl
+        void $ restoreTensorflowModels True borl
         !borl' <- foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
         force <$> saveTensorflowModels borl'
 
@@ -78,7 +79,7 @@ step (force -> borl) =
     Nothing -> nextAction borl >>= stepExecute
     Just _ ->
       runMonadBorlTF $ do
-        void $ restoreTensorflowModels borl
+        void $ restoreTensorflowModels True borl
         !borl' <- nextAction borl >>= stepExecute
         force <$> saveTensorflowModels borl'
 

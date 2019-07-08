@@ -15,6 +15,8 @@ import qualified Data.Vector.Mutable as V
 import           System.IO.Unsafe
 import           System.Random
 
+import           Debug.Trace
+
 data ReplayMemory s = ReplayMemory
   { _replayMemoryVector :: V.IOVector (State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)
   , _replayMemorySize   :: Int
@@ -22,8 +24,8 @@ data ReplayMemory s = ReplayMemory
   }
 makeLenses ''ReplayMemory
 
-mapReplayMemoryForSeialisable :: Period -> (s -> s') -> ReplayMemory s -> ReplayMemory s'
-mapReplayMemoryForSeialisable t f (ReplayMemory vec nr maxIdx) =
+mapReplayMemoryForSeialisable :: (s -> s') -> ReplayMemory s -> ReplayMemory s'
+mapReplayMemoryForSeialisable f (ReplayMemory vec nr maxIdx) =
   let !vec' = unsafePerformIO $ V.new nr
    in unsafePerformIO (mapM (\i -> V.read vec i >>= V.write vec' i . fun) [0 .. maxIdx]) `seq` ReplayMemory vec' nr maxIdx
   where
@@ -42,9 +44,9 @@ addToReplayMemory p e (ReplayMemory vec sz maxIdx) = do
   return $ ReplayMemory vec sz (min (maxIdx+1) (sz-1))
 
 -- | Get a list of random input-output tuples from the replay memory.
-getRandomReplayMemoryElements :: Period -> Batchsize -> ReplayMemory s -> IO [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)]
-getRandomReplayMemoryElements t bs (ReplayMemory vec sz maxIdx) = do
-  let len = min bs (maxIdx + 1)
+getRandomReplayMemoryElements :: Batchsize -> ReplayMemory s -> IO [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)]
+getRandomReplayMemoryElements bs (ReplayMemory vec _ maxIdx) = do
+  let len = min bs maxIdx
   g <- newStdGen
   let rands = take len $ randomRs (0,maxIdx) g
   mapM (V.read vec) rands

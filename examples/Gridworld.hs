@@ -69,8 +69,8 @@ expSetup = ExperimentSetup
 
 
 instance ExperimentDef (BORL St) where
-  -- type ExpM (BORL St) = TF.SessionT IO
-  type ExpM (BORL St) = IO
+  type ExpM (BORL St) = TF.SessionT IO
+  -- type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
@@ -107,7 +107,8 @@ instance ExperimentDef (BORL St) where
         Nothing
     ]
   equalExperiments (borl1, st1) (borl2, st2) =
-    st1 == st2 &&
+    isNeuralNetwork (borl1 ^. proxies.v) == isNeuralNetwork (borl2 ^. proxies.v)  &&
+    isTensorflow (borl1 ^. proxies.v) == isTensorflow (borl2 ^. proxies.v)  &&
     borl1 ^. s == borl2 ^. s &&
     borl1 ^. t == borl2 ^. t &&
     borl1 ^. episodeNrStart == borl2 ^. episodeNrStart &&
@@ -121,12 +122,13 @@ main :: IO ()
 main = do
   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
 
-  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-  (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  let runner = runMonadBorlIO
-  -- let mkInitSt = mkUnichainTensorflowM algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  -- let runner = runMonadBorlTF
+  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  -- let runner = runMonadBorlIO
+
+  let mkInitSt = mkUnichainTensorflowM algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
+  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+  let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
   let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
               , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")

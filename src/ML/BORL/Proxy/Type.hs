@@ -133,4 +133,4 @@ mapProxiesForSerialise t f (Proxies rm rho psiV v w r0 r1 replMem) =
     (mapProxyForSerialise w)
     (mapProxyForSerialise r0)
     (mapProxyForSerialise r1)
-    (fmap (mapReplayMemoryForSeialisable t f) replMem)
+    (fmap (mapReplayMemoryForSeialisable f) replMem)

@@ -12,17 +12,28 @@ import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Type
+import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
+import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad         (void, zipWithM)
-import           Data.List             (find)
+import           Control.Monad         (void, zipWithM, zipWithM_)
+import           Data.List             (find, foldl')
 import           Data.Serialize
 import qualified Data.Vector.Mutable   as V
 import           GHC.Generics
 import           System.IO.Unsafe
 import qualified TensorFlow.Core       as TF
+
+import           Debug.Trace
+
+
+type ActionList s = [ActionIndexed s]
+type ActionFilter s = s -> [Bool]
+type ProxyNetInput s = s -> [Double]
+type TensorflowModelBuilder = TF.Session TensorflowModel
+
 
 data BORLSerialisable s = BORLSerialisable
   { -- serActionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
@@ -44,31 +55,6 @@ data BORLSerialisable s = BORLSerialisable
   , serProxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-saveTensorflowModels :: (MonadBorl' m) => BORL s -> m (BORL s)
-saveTensorflowModels borl = do
-  mapM_ saveProxy (allProxies $ borl ^. proxies)
-  return borl
-  where
-    saveProxy px =
-      case px of
-        TensorflowProxy netT netW _ _ _ _ -> saveModelWithLastIO netT >> saveModelWithLastIO netW >> return ()
-        _ -> return ()
-
-restoreTensorflowModels :: (MonadBorl' m) => BORL s -> m ()
-restoreTensorflowModels borl = do
-  buildModels
-  mapM_ restoreProxy (allProxies $ borl ^. proxies)
-  where
-    restoreProxy px =
-      case px of
-        TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW >> return ()
-        _ -> return ()
-    buildModels =
-      case find isTensorflow (allProxies $ borl ^. proxies) of
-        Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
-        _                                     -> return ()
-
-
 toSerialisable :: (MonadBorl' m, Ord s) => BORL s -> m (BORLSerialisable s)
 toSerialisable = toSerialisableWith id
 
@@ -78,26 +64,20 @@ toSerialisableWith f borl@(BORL _ _ s t e par _ alg ph v rew psis prS) = do
   return $ BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise t f prS)
 
 
-type ActionList s = [ActionIndexed s]
-type ActionFilter s = s -> [Bool]
-type ProxyNetInput s = s -> [Double]
-type TensorflowModelBuilder = TF.Session TensorflowModel
-
-
-fromSerialisable :: (MonadBorl' m, Ord s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id
 
-fromSerialisableWith :: (MonadBorl' m, Ord s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
 fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise t f prS)
-   in do let borl' =
-               flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-               flip (foldl (\b p -> over (proxies . p . filtered isTensorflow . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-               flip (foldl (\b p -> set (proxies . p . filtered isNeuralNetwork . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-               foldl (\b p -> set (proxies . p . filtered isTable . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
-         restoreTensorflowModels borl'
-         return borl'
+      borl' =
+        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+        flip (foldl' (\b p -> set (proxies . p . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
+        foldl' (\b p -> set (proxies . p . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+  restoreTensorflowModels False borl'
+  return $ force borl'
 
 instance (Ord s, Serialize s) => Serialize (Proxies s)
 
@@ -111,7 +91,7 @@ instance (Serialize s) => Serialize (NNConfig s) where
     scale <- get
     upInt <- get
     trainMax <- get
-    return $ NNConfig (error "called netInp") memSz batchSz param prS scale upInt trainMax
+    return $ NNConfig (const []) memSz batchSz param prS scale upInt trainMax
 
 
 instance (Ord s, Serialize s) => Serialize (Proxy s) where
@@ -164,14 +144,16 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
 -- ^ Replay Memory
 instance (Serialize s) => Serialize (ReplayMemory s) where
   put (ReplayMemory vec sz maxIdx) = do
-    let xs = unsafePerformIO $ mapM (V.read vec) [0..maxIdx]
+    let xs = unsafePerformIO $ mapM (V.read vec) [0 .. maxIdx]
     put sz
     put xs
     put maxIdx
   get = do
     sz <- get
-    let vec = unsafePerformIO $ V.new sz
     xs :: [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)] <- get
     maxIdx <- get
-    void $ return $ unsafePerformIO $ zipWithM (V.write vec) [0..] xs
-    return $ ReplayMemory vec sz maxIdx
+    return $
+      unsafePerformIO $ do
+        vec <- V.new sz
+        zipWithM_ (V.write vec) [0 .. maxIdx] xs
+        return (ReplayMemory vec sz maxIdx)

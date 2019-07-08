@@ -102,7 +102,7 @@ insert period s aNr randAct rew s' episodeEnd getCalc pxs@(Proxies pRhoMin pRho 
     replMem' <- liftSimple $ addToReplayMemory period (s, aNr, randAct, rew, s', episodeEnd) replMem
     calc <- getCalc s aNr randAct rew s' episodeEnd
     let config = pV ^?! proxyNNConfig
-    mems <- liftSimple $ getRandomReplayMemoryElements period (config ^. trainBatchSize) replMem'
+    mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     calcs <- parMap rdeepseq force <$> mapM (\m@(s, idx, _, _, _, _) -> mkCalc m >>= \v -> return ((config ^. toNetInp $ s, idx), v)) mems
 

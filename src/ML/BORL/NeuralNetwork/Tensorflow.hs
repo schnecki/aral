@@ -78,22 +78,23 @@ instance Serialize TensorflowModel' where
     out <- get
     label <- get
     train <- getControlNodeTensorFromName <$> get
+    lastIO <- get
     nnVars <- map getRefTensorFromName <$> get
     trVars <- map getRefTensorFromName <$> get
-    lastIO <- get
-    mFile <- get
-    bModel <- get
-    bTrain <- get
+    mBasePath <- get
+    bytesModel <- get
+    bytesTrain <- get
     return $
       unsafePerformIO $
       runMonadBorlTF $ do
         newDir <- liftSimple $ getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-        let basePath = fromMaybe newDir mFile
+        let basePath = fromMaybe newDir mBasePath
             pathModel = basePath ++ "/" ++ modelName
             pathTrain = basePath ++ "/" ++ trainName
-        liftSimple $ B8.writeFile pathModel bModel
-        liftSimple $ B8.writeFile pathTrain bTrain
-        let tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO (error "called builder")
+        liftSimple $ B8.writeFile pathModel bytesModel
+        liftSimple $ B8.writeFile pathTrain bytesTrain
+        let fakeBuilder = TF.runSession $ return $ TensorflowModel inp out label train nnVars trVars
+            tf = TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO fakeBuilder
         return tf
 
 
