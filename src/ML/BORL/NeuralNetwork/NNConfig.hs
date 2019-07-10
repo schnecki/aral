@@ -24,6 +24,7 @@ data NNConfig = NNConfig
   }
 makeLenses ''NNConfig
 
+
 instance NFData NNConfig where
   rnf (NNConfig rep tr lp pp sc up mse) = rnf rep `seq` rnf tr `seq` rnf lp `seq` rnf pp `seq` rnf sc `seq` rnf up `seq` rnf mse
 

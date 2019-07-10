@@ -111,7 +111,7 @@ insert borl aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pR
     let config = pV ^?! proxyNNConfig
     mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
-    calcs <- parMap rdeepseq force <$> mapM (\m@((s,_), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
+    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
     let mTrainBatch accessor calcs px =
           maybe

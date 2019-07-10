@@ -19,7 +19,7 @@ data ScalingNetOutParameters = ScalingNetOutParameters
   , _scaleMaxR0Value :: MaxValue
   , _scaleMinR1Value :: MinValue
   , _scaleMaxR1Value :: MaxValue
-  } deriving (Show,NFData,Generic, Serialize)
+  } deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 makeLenses ''ScalingNetOutParameters
 
 

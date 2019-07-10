@@ -56,16 +56,21 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorValueFromName)
 
 
-expSetup :: ExperimentSetup
-expSetup = ExperimentSetup
-  { _experimentBaseName         = "gridworld"
-  , _experimentRepetitions      =  1
-  , _preparationSteps           =  100000
-  , _evaluationWarmUpSteps      =  10
-  , _evaluationSteps            =  10000
-  , _evaluationReplications     =  2
-  , _maximumParallelEvaluations =  1
-  }
+expSetup :: BORL St -> ExperimentSetting
+expSetup borl =
+  ExperimentSetting
+    { _experimentBaseName         = "gridworld"
+    , _experimentInfoParameters   = [isNN, isTf]
+    , _experimentRepetitions      = 1
+    , _preparationSteps           = 100000
+    , _evaluationWarmUpSteps      = 10
+    , _evaluationSteps            = 10000
+    , _evaluationReplications     = 2
+    , _maximumParallelEvaluations = 1
+    }
+  where
+    isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
+    isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 
 instance ExperimentDef (BORL St) where
@@ -106,58 +111,47 @@ instance ExperimentDef (BORL St) where
         Nothing
         Nothing
     ]
-  equalExperiments (borl1, st1) (borl2, st2) =
-    isNeuralNetwork (borl1 ^. proxies.v) == isNeuralNetwork (borl2 ^. proxies.v)  &&
-    isTensorflow (borl1 ^. proxies.v) == isTensorflow (borl2 ^. proxies.v)  &&
-    borl1 ^. s == borl2 ^. s &&
-    borl1 ^. t == borl2 ^. t &&
-    borl1 ^. episodeNrStart == borl2 ^. episodeNrStart &&
-    borl1 ^. ML.BORL.parameters == borl2 ^. ML.BORL.parameters &&
-    borl1 ^. algorithm == borl2 ^. algorithm &&
-    borl1 ^. phase == borl2 ^. phase &&
-    borl1 ^. lastVValues == borl2 ^. lastVValues &&
-    borl1 ^. lastRewards == borl2 ^. lastRewards
-
--- main :: IO ()
--- main = do
---   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
-
---   -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
---   -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
---   -- let runner = runMonadBorlIO
-
---   let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
---   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
---   let runner = runMonadBorlTF
---   putStrLn $ "Any change: " ++ show changed
---   let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
---               , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
---               , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
---               , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
---               , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
---               , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
---               , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
---               ]
---   evalRes <- genEvals runner databaseSetup res evals
---   -- print (view evalsResults evalRes)
---   writeAndCompileLatex evalRes
-
 
 main :: IO ()
 main = do
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
 
-  let algorithm =
-        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
-        AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  -- let runner = runMonadBorlIO
 
-  nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
-  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+  let runner = runMonadBorlTF
+  putStrLn $ "Any change: " ++ show changed
+  let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
+              , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
+              , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
+              , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
+              , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+              ]
+  evalRes <- genEvals runner databaseSetup res evals
+  -- print (view evalsResults evalRes)
+  writeAndCompileLatex evalRes
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
-        usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+
+-- main :: IO ()
+-- main = do
+
+--   let algorithm =
+--         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+--         AlgBORL 0.2 0.6 (ByMovAvg 100) Normal False
+
+--   nn <- randomNetworkInitWith UniformInit :: IO NN
+--   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
+--   rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+--   -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
+--   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+
+--   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
+--         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]

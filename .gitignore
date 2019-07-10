@@ -24,3 +24,4 @@ TAGS
 /python-tensorflow-cuda-1.9.0-3-x86_64.pkg.tar.xz
 results/
 /episodeSteps
+/stack.yaml.lock
