@@ -65,6 +65,16 @@ data Proxy s = Scalar           -- ^ Combines multiple proxies in one for perfor
                 }
 makeLenses ''Proxy
 
+proxyFeatureExtractor :: forall s . Lens' (Proxy s) (s -> [Double])
+proxyFeatureExtractor = lens getter setter
+  where
+    getter (Scalar {})   = const []
+    getter (Table _ _ g) = g
+    getter nn            = nn ^. proxyNNConfig . toNetInp
+    setter p@Scalar{} v  = p
+    setter tbl@Table{} v = tbl { _proxyStateGeneraliser = v }
+    setter nn v          = set (proxyNNConfig . toNetInp) v nn
+
 
 instance (NFData s) => NFData (Proxy s) where
   rnf (Table x def gen)           = rnf x `seq` rnf def `seq` rnf gen

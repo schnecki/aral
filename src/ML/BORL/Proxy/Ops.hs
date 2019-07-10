@@ -26,7 +26,7 @@ module ML.BORL.Proxy.Ops
     ) where
 
 
-import           ML.BORL.Calculation
+import           ML.BORL.Calculation.Type
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Proxy.Type
