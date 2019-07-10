@@ -43,7 +43,7 @@ wideStyle :: Style
 wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
 
 printFloat :: Double -> Doc
-printFloat x = text $ printf ("%.2" ++ show commas ++ "f") x
+printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
 prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
