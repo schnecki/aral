@@ -39,10 +39,10 @@ import           System.IO
 import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Session           as TF
 
-type ActionIndexed s = (ActionIndex, Action s)                        -- ^ An action with index.
-
 
 -------------------- Main RL Datatype --------------------
+
+type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
 
 data Phase = IncreasingStateValues
            --  | DecreasingStateValues
@@ -50,29 +50,39 @@ data Phase = IncreasingStateValues
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s = BORL
-  { _actionList     :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
-  , _actionFilter   :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
-  , _s              :: !s                    -- ^ Current state.
-  , _t              :: !Integer              -- ^ Current time t.
-  , _episodeNrStart :: !(Integer, Integer)   -- ^ Nr of Episode and start period.
-  , _parameters     :: !Parameters           -- ^ Parameter setup.
-  , _decayFunction  :: !Decay                -- ^ Decay function at period t.
+  { _actionList       :: ![ActionIndexed s]  -- ^ List of possible actions in state s.
+  , _actionFilter     :: !(s -> [Bool])      -- ^ Function to filter actions in state s.
+  , _s                :: !s                  -- ^ Current state.
+  , _featureExtractor :: !(s -> [Double])    -- ^ Function that extracts the features of a state.
+  , _t                :: !Integer            -- ^ Current time t.
+  , _episodeNrStart   :: !(Integer, Integer) -- ^ Nr of Episode and start period.
+  , _parameters       :: !Parameters         -- ^ Parameter setup.
+  , _decayFunction    :: !Decay              -- ^ Decay function at period t.
 
   -- define algorithm to use
-  , _algorithm      :: !Algorithm
-  , _phase          :: !Phase
+  , _algorithm        :: !Algorithm
+  , _phase            :: !Phase
 
   -- Values:
-  , _lastVValues    :: ![Double] -- ^ List of X last V values (head is last seen value)
-  , _lastRewards    :: ![Double] -- ^ List of X last rewards (head is last received reward)
-  , _psis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
-  , _proxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
+  , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
+  , _lastRewards      :: ![Double]                 -- ^ List of X last rewards (head is last received reward)
+  , _psis             :: !(Double, Double, Double) -- ^ Exponentially smoothed psi values.
+  , _proxies          :: Proxies                   -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
 
 instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s t epNr par dec alg ph lastVs lastRews psis proxies) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+  rnf (BORL as af s ftExt t epNr par dec alg ph lastVs lastRews psis proxies) =
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf ftExt `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+
+------------------------------ Indexed Action ------------------------------
+
+
+actionsIndexed :: BORL s -> s -> [ActionIndexed s]
+actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
+
+
+------------------------------ Initial Values ------------------------------
 
 
 idxStart :: Int
@@ -95,12 +105,13 @@ defInitValues = InitValues 0 0 0 0 0
 
 -- Tabular representations
 
-mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
-mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
+mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
     (zip [idxStart ..] as)
     asFilter
     initialState
+    ftExt
     0
     (0, 0)
     params
@@ -112,7 +123,7 @@ mkUnichainTabular alg initialState gen as asFilter params decayFun initVals =
     (0, 0, 0)
     (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
-    tabSA def = Table mempty def gen
+    tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initVals)
     defV = defaultV (fromMaybe defInitValues initVals)
     defW = defaultW (fromMaybe defInitValues initVals)
@@ -123,20 +134,21 @@ mkUnichainTensorflowM ::
      forall s m. (NFData s, MonadBorl' m)
   => Algorithm
   -> InitialState s
+  -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
   -> Decay
   -> TF.Session TensorflowModel
-  -> NNConfig s
+  -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
-mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder nnConfig initValues = do
+mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
-  let netInpInitState = (nnConfig ^. toNetInp) initialState
-      nnSA :: ProxyType -> Int -> IO (Proxy s)
+  let netInpInitState = ftExt initialState
+      nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
@@ -154,6 +166,7 @@ mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder 
       (zip [idxStart ..] as)
       asFilter
       initialState
+      ftExt
       0
       (0, 0)
       params
@@ -185,23 +198,25 @@ mkUnichainTensorflow ::
      forall s m. (NFData s)
   => Algorithm
   -> InitialState s
+  -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
   -> Decay
   -> TF.Session TensorflowModel
-  -> NNConfig s
+  -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainTensorflow alg initialState as asFilter params decayFun modelBuilder nnConfig initValues =
-  runMonadBorlTF (mkUnichainTensorflowM alg initialState as asFilter params decayFun modelBuilder nnConfig initValues)
+mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
+  runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
-mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> StateGeneraliser s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
-mkMultichainTabular alg initialState gen as asFilter params decayFun initValues =
+mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
   BORL
     (zip [0 ..] as)
     asFilter
     initialState
+    ftExt
     0
     (0, 0)
     params
@@ -213,7 +228,7 @@ mkMultichainTabular alg initialState gen as asFilter params decayFun initValues 
     (0, 0, 0)
     (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
-    tabSA def = Table mempty def gen
+    tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defV = defaultV (fromMaybe defInitValues initValues)
     defW = defaultW (fromMaybe defInitValues initValues)
@@ -226,15 +241,16 @@ mkUnichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm
   -> InitialState s
+  -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
   -> Decay
   -> Network layers shapes
-  -> NNConfig s
+  -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig initValues = do
+mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfig initValues = do
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
@@ -248,6 +264,7 @@ mkUnichainGrenade alg initialState as asFilter params decayFun net nnConfig init
       (zip [idxStart ..] as)
       asFilter
       initialState
+      ftExt
       0
       (0, 0)
       params
@@ -266,14 +283,15 @@ mkMultichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm
   -> InitialState s
+  -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
   -> Parameters
   -> Decay
   -> Network layers shapes
-  -> NNConfig s
+  -> NNConfig
   -> IO (BORL s)
-mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = do
+mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfig = do
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
@@ -289,6 +307,7 @@ mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = 
       (zip [0 ..] as)
       asFilter
       initialState
+      ftExt
       0
       (0, 0)
       params
@@ -301,7 +320,7 @@ mkMultichainGrenade alg initialState as asFilter params decayFun net nnConfig = 
       (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
 
 
-mkReplayMemory :: Int -> IO (ReplayMemory s)
+mkReplayMemory :: Int -> IO ReplayMemory
 mkReplayMemory sz = do
   vec <- V.new sz
   return $ ReplayMemory vec sz (-1)
@@ -328,7 +347,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 checkGrenade ::
      forall layers shapes nrH nrL s. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
   => Network layers shapes
-  -> NNConfig s
+  -> NNConfig
   -> BORL s
   -> BORL s
 checkGrenade _ nnConfig borl
@@ -338,6 +357,6 @@ checkGrenade _ nnConfig borl
   where
     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
-    stInp = length ((nnConfig ^. toNetInp) (borl ^. s))
+    stInp = length ((borl ^. featureExtractor) (borl ^. s))
     nrActs = length (borl ^. actionList)
 

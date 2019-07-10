@@ -118,48 +118,46 @@ instance ExperimentDef (BORL St) where
     borl1 ^. lastVValues == borl2 ^. lastVValues &&
     borl1 ^. lastRewards == borl2 ^. lastRewards
 
-main :: IO ()
-main = do
-  let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
-
-  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  -- let runner = runMonadBorlIO
-
-  let mkInitSt = mkUnichainTensorflowM algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
-  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  let runner = runMonadBorlTF
-  putStrLn $ "Any change: " ++ show changed
-  let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
-              , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
-              , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
-              , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-              ]
-  evalRes <- genEvals runner databaseSetup res evals
-  -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
-
-
 -- main :: IO ()
 -- main = do
+--   let databaseSetup = DatabaseSetup "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
 
---   writeFile "episodeSteps" "0"
+--   -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+--   -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+--   -- let runner = runMonadBorlIO
 
---   let algorithm =
---         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
---         AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+--   let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+--   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+--   let runner = runMonadBorlTF
+--   putStrLn $ "Any change: " ++ show changed
+--   let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
+--               , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
+--               , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
+--               , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
+--               , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
+--               , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
+--               , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+--               ]
+--   evalRes <- genEvals runner databaseSetup res evals
+--   -- print (view evalsResults evalRes)
+--   writeAndCompileLatex evalRes
 
---   nn <- randomNetworkInitWith UniformInit :: IO NN
---   -- rl <- mkUnichainGrenade algorithm initState actions actFilter params decay nn nnConfig
---   -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay modelBuilder nnConfig Nothing
---   let rl = mkUnichainTabular algorithm initState netInp actions actFilter params decay Nothing
---   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
---   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
---         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+main :: IO ()
+main = do
+
+  let algorithm =
+        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        AlgBORL 0.2 0.6 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
+
+  nn <- randomNetworkInitWith UniformInit :: IO NN
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
+  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+
+  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
+        usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -168,10 +166,9 @@ maxY = 4                        -- [0..maxY]
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
-nnConfig :: NNConfig St
+nnConfig :: NNConfig
 nnConfig = NNConfig
-  { _toNetInp             = netInp
-  , _replayMemoryMaxSize  = 10000
+  { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
@@ -181,8 +178,10 @@ nnConfig = NNConfig
   }
 
 netInp :: St -> [Double]
-netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st),
-             scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+
+tblInp :: St -> [Double]
+tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel

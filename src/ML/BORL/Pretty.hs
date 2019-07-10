@@ -44,7 +44,7 @@ wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
 
-prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> m Doc
+prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
 
 prettyTableRows ::
@@ -53,11 +53,11 @@ prettyTableRows ::
   -> (NetInputWoAction -> k')
   -> (ActionIndex -> Doc)
   -> (([Double], ActionIndex) -> Double -> m Double)
-  -> P.Proxy k
+  -> P.Proxy
   -> m [Doc]
 prettyTableRows borl prettyAction prettyActionIdx modifier p =
   case p of
-    P.Table m _ gen ->
+    P.Table m _ ->
       let mkAct idx = actionName $ snd $ (borl ^. actionList) !! idx
           mkInput k = text (filter (/= '"') $ show $ map (\x -> if x < 0 then printFloat x else "+" <> printFloat x) k)
       in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return ( mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
@@ -80,11 +80,11 @@ mkListFromNeuralNetwork ::
   -> (NetInputWoAction -> k')
   -> (ActionIndex -> Doc)
   -> Bool
-  -> P.Proxy k
+  -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
 
-prettyTablesState :: (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy k -> (NetInputWoAction -> k') -> P.Proxy k -> m Doc
+prettyTablesState :: (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> k') -> P.Proxy -> m Doc
 prettyTablesState borl period p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
   rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
@@ -96,8 +96,8 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
         tbl px = case px of
           p@P.Table{}                     -> p
-          P.Grenade _ _ p _ cfg _         -> P.Table p 0 (const [])
-          P.TensorflowProxy _ _ p _ cfg _ -> P.Table p 0 (const [])
+          P.Grenade _ _ p _ cfg _         -> P.Table p 0
+          P.TensorflowProxy _ _ p _ cfg _ -> P.Table p 0
 
 prettyAlgorithm :: Algorithm -> Doc
 prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
@@ -128,13 +128,13 @@ prettyBORLTables t1 t2 t3 borl = do
       prBoolTblsStateAction False _ _ _ = return empty
   let addPsiV k v =
         case borl ^. proxies . psiV of
-          P.Table m def _ -> return $ M.findWithDefault def k m
+          P.Table m def -> return $ M.findWithDefault def k m
           px ->
             let config = px ^?! proxyNNConfig
              in if borl ^. t <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1
                   then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
                   else do
-                    vPsi <- P.lookupNeuralNetworkUnscaledGen P.Worker k (borl ^. proxies . psiV)
+                    vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
                     return (v + vPsi)
   vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies . v)
   prettyRhoVal <-
@@ -219,7 +219,7 @@ prettyBORLHead printRho borl = do
     scalingTextDqn =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
         P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
     nnBatchSize =
       case borl ^. proxies . v of

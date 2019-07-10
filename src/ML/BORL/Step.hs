@@ -146,7 +146,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
   (reward, stateNext, episodeEnd) <- liftSimple $ action state
-  (proxies', calc) <- P.insert period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
+  (proxies', calc) <- P.insert borl aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
   -- File IO Operations
   when (period == 0) $

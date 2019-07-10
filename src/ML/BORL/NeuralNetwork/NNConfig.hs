@@ -13,9 +13,8 @@ import           Grenade
 type NetInputWoAction = [Double]
 type NetInput = [Double]
 
-data NNConfig s = NNConfig
-  { _toNetInp              :: !(s -> NetInput)
-  , _replayMemoryMaxSize   :: !Int
+data NNConfig = NNConfig
+  { _replayMemoryMaxSize   :: !Int
   , _trainBatchSize        :: !Int
   , _grenadeLearningParams :: !LearningParameters
   , _prettyPrintElems      :: ![NetInput]
@@ -25,10 +24,7 @@ data NNConfig s = NNConfig
   }
 makeLenses ''NNConfig
 
-mapNNConfigForSerialise :: NNConfig s -> NNConfig s'
-mapNNConfigForSerialise (NNConfig inp rep bs lp pr sc up train) = NNConfig (const []) rep bs lp pr sc up train
-
-instance (NFData k) => NFData (NNConfig k) where
-  rnf (NNConfig inp rep tr lp pp sc up mse) = rnf inp `seq` rnf rep `seq` rnf tr `seq` rnf lp `seq` rnf pp `seq` rnf sc `seq` rnf up `seq` rnf mse
+instance NFData NNConfig where
+  rnf (NNConfig rep tr lp pp sc up mse) = rnf rep `seq` rnf tr `seq` rnf lp `seq` rnf pp `seq` rnf sc `seq` rnf up `seq` rnf mse
 
 

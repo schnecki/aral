@@ -61,10 +61,9 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-nnConfig :: NNConfig St
+nnConfig :: NNConfig 
 nnConfig = NNConfig
-  { _toNetInp             = netInp
-  , _replayMemoryMaxSize  = 10000
+  { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
   , _grenadeLearningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
@@ -101,8 +100,8 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
-  rl <- mkUnichainTensorflow algBORL initState actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- rl <- mkUnichainGrenade algBORL initState netInp actions actionFilter params decay nn nnConfig
+  rl <- mkUnichainTensorflow algBORL initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
   -- let rl = mkUnichainTabular algBORL initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

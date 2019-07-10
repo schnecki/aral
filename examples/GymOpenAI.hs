@@ -89,10 +89,9 @@ modelBuilder nrInp nrOut =
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
-nnConfig :: Gym -> Double -> NNConfig St
+nnConfig :: Gym -> Double -> NNConfig
 nnConfig gym maxRew = NNConfig
-  { _toNetInp              = netInp gym
-  , _replayMemoryMaxSize   = 20000
+  { _replayMemoryMaxSize   = 20000
   , _trainBatchSize        = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems      = ppSts
@@ -165,8 +164,8 @@ main = do
   let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) Normal True
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkUnichainTensorflow algorithm initState actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
-  -- let rl = mkUnichainTabular algorithm initState (stGen ranges) actions actFilter params decay initValues
+  -- rl <- mkUnichainTensorflow algorithm initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
+  -- let rl = mkUnichainTabular algorithm initState (netInp gym) (stGen ranges) actions actFilter params decay initValues
   let rl = mkUnichainTabular algorithm initState (netInp gym) actions actFilter params decay initValues
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

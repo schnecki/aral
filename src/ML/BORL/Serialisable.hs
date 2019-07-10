@@ -52,38 +52,35 @@ data BORLSerialisable s = BORLSerialisable
   , serLastVValues    :: ![Double] -- ^ List of X last V values
   , serLastRewards    :: ![Double] -- ^ List of X last rewards
   , serPsis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
-  , serProxies        :: Proxies s                  -- ^ Scalar, Tables and Neural Networks
+  , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
 toSerialisable :: (MonadBorl' m, Ord s) => BORL s -> m (BORLSerialisable s)
 toSerialisable = toSerialisableWith id
 
 toSerialisableWith :: (MonadBorl' m, Ord s') => (s -> s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f borl@(BORL _ _ s t e par _ alg ph v rew psis prS) = do
-  BORL _ _ s t e par _ alg ph v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) t e par alg ph v rew psis (mapProxiesForSerialise t f prS)
+toSerialisableWith f borl@(BORL _ _  s _ t e par _ alg ph v rew psis prS) = do
+  BORL _ _ s _ t e par _ alg ph v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) t e par alg ph v rew psis prS
 
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s) => [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id
 
-fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> TableStateGeneraliser s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
-fromSerialisableWith f as aF decay gen inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
+fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith f as aF decay ftExt inp builder (BORLSerialisable s t e par alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL aL aF (f s) t e par decay alg ph lastV rew psis (mapProxiesForSerialise t f prS)
+      borl = BORL aL aF (f s) ftExt t e par decay alg ph lastV rew psis prS
       borl' =
         flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-        flip (foldl' (\b p -> set (proxies . p . proxyNNConfig . toNetInp) inp b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-        foldl' (\b p -> set (proxies . p . proxyStateGeneraliser) gen b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
-
+        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] borl
   restoreTensorflowModels False borl'
   return $ force borl'
 
-instance (Ord s, Serialize s) => Serialize (Proxies s)
+instance Serialize Proxies
 
-instance (Serialize s) => Serialize (NNConfig s) where
-  put (NNConfig _ memSz batchSz param prS scale upInt trainMax) = put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
+instance Serialize NNConfig where
+  put (NNConfig memSz batchSz param prS scale upInt trainMax) = put memSz >> put batchSz >> put param >> put prS >> put scale >> put upInt >> put trainMax
   get = do
     memSz <- get
     batchSz <- get
@@ -92,12 +89,12 @@ instance (Serialize s) => Serialize (NNConfig s) where
     scale <- get
     upInt <- get
     trainMax <- get
-    return $ NNConfig (const []) memSz batchSz param prS scale upInt trainMax
+    return $ NNConfig memSz batchSz param prS scale upInt trainMax
 
 
-instance (Ord s, Serialize s) => Serialize (Proxy s) where
+instance Serialize Proxy where
   put (Scalar x)    = put (0::Int) >> put x
-  put (Table m d _) = put (1::Int) >> put m >> put d
+  put (Table m d)  = put (1::Int) >> put m >> put d
   put (Grenade t w st tp conf nr) = do
     put (2::Int)
     put t
@@ -121,7 +118,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
       1 -> do
         m <- get
         d <- get
-        return $ Table m d (const [])
+        return $ Table m d
       2 -> error "Deserialisation of Grenade proxies is currently no supported!"
         -- Problem: how to save types?
         -- do
@@ -143,7 +140,7 @@ instance (Ord s, Serialize s) => Serialize (Proxy s) where
       _ -> error "Unknown constructor for proxy"
 
 -- ^ Replay Memory
-instance (Serialize s) => Serialize (ReplayMemory s) where
+instance Serialize ReplayMemory where
   put (ReplayMemory vec sz maxIdx) = do
     let xs = unsafePerformIO $ mapM (V.read vec) [0 .. maxIdx]
     put sz
@@ -151,7 +148,7 @@ instance (Serialize s) => Serialize (ReplayMemory s) where
     put maxIdx
   get = do
     sz <- get
-    xs :: [(State s, ActionIndex, Bool, Double, StateNext s, EpisodeEnd)] <- get
+    xs :: [((StateFeatures, [ActionIndex]), ActionIndex, Bool, Double, (StateNextFeatures, [ActionIndex]), EpisodeEnd)] <- get
     maxIdx <- get
     return $
       unsafePerformIO $ do

@@ -66,10 +66,9 @@ maxY = 4                        -- [0..maxY]
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
-nnConfig :: NNConfig St
+nnConfig :: NNConfig
 nnConfig = NNConfig
-  { _toNetInp             = netInp
-  , _replayMemoryMaxSize  = 10000
+  { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
   , _grenadeLearningParams       = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
@@ -94,8 +93,8 @@ main :: IO ()
 main = do
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algBORL initState actions actFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algBORL initState actions actFilter params decay modelBuilder nnConfig Nothing
+  -- rl <- mkUnichainGrenade algBORL initState netInp actions actFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
   let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -188,7 +187,7 @@ goalState f st = do
   case getCurrentIdx st of
     (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y), False)
     (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y), False)
-    _                        -> stepRew <$> f st
+    _      -> stepRew <$> f st
 
 
 stepWidth :: IO Int

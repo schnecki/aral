@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InstanceSigs        #-}
@@ -25,10 +24,14 @@ type StateNext s = s
 type PsisOld = (Double, Double, Double)
 type PsisNew = PsisOld
 
-type StateGeneraliser s = s -> [Double]
+type FeatureExtractor s = s -> [Double]
 type GammaLow = Double
 type GammaHigh = Double
 type Gamma = Double
+
+
+type StateFeatures = [Double]
+type StateNextFeatures = [Double]
 
 
 type MSE = Double               -- ^ Mean squared error
