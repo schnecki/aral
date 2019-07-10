@@ -6,6 +6,7 @@ module ML.BORL.Pretty
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
+    , setPrettyPrintElems
     ) where
 
 
@@ -23,7 +24,7 @@ import           Control.Arrow         (first, second, (&&&))
 import           Control.Lens
 import           Control.Monad         (when)
 import           Data.Function         (on)
-import           Data.List             (find, sort, sortBy)
+import           Data.List             (find, foldl', sort, sortBy)
 import qualified Data.Map.Strict       as M
 import qualified Data.Set              as S
 import qualified Data.Text             as T
@@ -42,7 +43,7 @@ wideStyle :: Style
 wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
 
 printFloat :: Double -> Doc
-printFloat x = text $ printf ("%." ++ show commas ++ "f") x
+printFloat x = text $ printf ("%.2" ++ show commas ++ "f") x
 
 prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
@@ -63,7 +64,6 @@ prettyTableRows borl prettyAction prettyActionIdx modifier p =
       in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return ( mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
-      mfalse <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx False pr
       mtrue <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx True pr
       let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
@@ -240,6 +240,9 @@ prettyBORLHead printRho borl = do
         P.TensorflowProxy _ _ _ _ conf _ ->
           let LearningParameters l m l2 = conf ^. grenadeLearningParams
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
+
+setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
+setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
