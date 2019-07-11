@@ -18,7 +18,6 @@ type EpisodeEnd = Bool
 type InitialState s = s         -- ^ Initial state
 type IsRandomAction = Bool
 type Period = Integer
-type Reward = Double
 type State s = s
 type StateNext s = s
 type PsisOld = (Double, Double, Double)

@@ -10,6 +10,8 @@ import           ML.BORL.Parameters    as BORL
 import           ML.BORL.Pretty        as BORL
 import           ML.BORL.Properties    as BORL
 import           ML.BORL.Proxy         as BORL
+import           ML.BORL.Reward        as BORL
+import           ML.BORL.Reward        as BORL
 import           ML.BORL.Serialisable  as BORL
 import           ML.BORL.Step          as BORL
 import           ML.BORL.Type          as BORL

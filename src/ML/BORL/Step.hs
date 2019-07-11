@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
 module ML.BORL.Step
     ( step
@@ -25,6 +26,7 @@ import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                    as P
+import           ML.BORL.Reward
 import           ML.BORL.SaveRestore
 import           ML.BORL.Serialisable
 import           ML.BORL.Type
@@ -154,12 +156,26 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
   (reward, stateNext, episodeEnd) <- liftSimple $ action state
-  (proxies', calc) <- P.insert borl aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
+  let borl' = over futureRewards (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd]) borl
+  borlNew <- snd <$> foldM stepExecuteMaterialisedFutures (False, borl') (borl' ^. futureRewards)
+  let dropLen = fromIntegral $ borlNew ^. t - period
+  return $ force $ over futureRewards (drop dropLen) $set s stateNext borlNew
+
+
+stepExecuteMaterialisedFutures :: forall m s . (MonadBorl' m, NFData s, Ord s) => (Bool, BORL s) -> RewardFutureData s -> m (Bool, BORL s)
+stepExecuteMaterialisedFutures (True, borl) _ = return (True, borl)
+stepExecuteMaterialisedFutures (_, borl) dt =
+  case futureReward dt of
+    RewardEmpty     -> return (False, borl)
+    RewardFuture {} -> return (True, borl)
+    Reward {}       -> (False, ) <$> execute borl dt
+
+execute :: (MonadBorl' m, NFData s, Ord s) => BORL s -> RewardFutureData s -> m (BORL s)
+execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+  (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
   -- File IO Operations
-  when (period == 0) $
-    -- liftSimple $ mapM_ (\f -> doesFileExist f >>= \exists -> when exists (removeFile f)) [fileStateValues, fileEpisodeLength]
-   do
+  when (period == 0) $ do
     liftSimple $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftSimple $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
   let strRho = show (fromMaybe 0 (getRhoVal' calc))
@@ -167,39 +183,37 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
       strR1 = show $ getR1ValState' calc
-      avg xs = sum xs / fromIntegral (length xs)
-
-  liftSimple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
-  let (eNr, eStart) = borl ^. episodeNrStart
-      eLength = borl ^. t - eStart
-  when (getEpisodeEnd calc) $ liftSimple $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
-  let divideAfterGrowth borl =
+      divideAfterGrowth :: BORL s -> BORL s
+      divideAfterGrowth borl =
         case borl ^. algorithm of
           AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _
             | period > maxPeriod -> borl
-            | length lastVsLst == nr && endOfIncreasedStateValues -> trace ("multiply in period " ++ show period ++ " by " ++ show val) $
-                                                                     foldl (\q f -> over (proxies . f) (multiplyProxy val) q) (set phase SteadyStateValues borl) [psiV, v, w]
+            | length lastVsLst == nr && endOfIncreasedStateValues ->
+              trace ("multiply in period " ++ show period ++ " by " ++ show val) $
+              foldl (\q f -> over (proxies . f) (multiplyProxy val) q) (set phase SteadyStateValues borl) [psiV, v, w]
             where endOfIncreasedStateValues =
                     borl ^. phase == IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr < 0.00
                   val = 0.2 / (sum lastVsLst / fromIntegral nr)
           _ -> borl
-      setCurrentPhase borl = case borl ^. algorithm of
-        AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _
-          | length lastVsLst == nr && increasingStateValue -> trace ("period: " ++ show period) $ trace (show IncreasingStateValues) $ set phase IncreasingStateValues borl
-          where increasingStateValue = borl ^. phase /= IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr > 0.20
-        _ -> borl
+      setCurrentPhase :: BORL s -> BORL s
+      setCurrentPhase borl =
+        case borl ^. algorithm of
+          AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _
+            | length lastVsLst == nr && increasingStateValue -> trace ("period: " ++ show period) $ trace (show IncreasingStateValues) $ set phase IncreasingStateValues borl
+            where increasingStateValue =
+                    borl ^. phase /= IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr > 0.20
+          _ -> borl
+      avg xs = sum xs / fromIntegral (length xs)
+  liftSimple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+  let (eNr, eStart) = borl ^. episodeNrStart
+      eLength = borl ^. t - eStart
+  when (getEpisodeEnd calc) $ liftSimple $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
   -- update values
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
   return $
-    force $ -- needed to ensure constant memory consumption
-    setCurrentPhase $ divideAfterGrowth $
+    setCurrentPhase $
+    divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
-    set lastVValues (fromMaybe [] (getLastVs' calc)) $
-    set lastRewards (getLastRews' calc) $ set proxies proxies' $ set s stateNext $ set t (period + 1) $
-    over episodeNrStart setEpisode
-#ifdef DEBUG
-    $ set visits (M.alter (\mV -> ((+ 1) <$> mV) <|> Just 1) state (borl ^. visits))
-#endif
-    borl
+    set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl

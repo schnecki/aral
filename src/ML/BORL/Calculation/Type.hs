@@ -3,6 +3,7 @@
 {-# LANGUAGE RankNTypes     #-}
 module ML.BORL.Calculation.Type where
 
+import           ML.BORL.Reward
 import           ML.BORL.Types
 
 import           Control.DeepSeq
@@ -11,7 +12,7 @@ import           GHC.Generics
 
 type ReplMemFun s
    = forall m. (MonadBorl' m) =>
-                 (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> Reward -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
+                 (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
 
 
 data Calculation = Calculation
@@ -26,7 +27,7 @@ data Calculation = Calculation
   , getPsiValV'       :: Maybe Double
   , getPsiValW'       :: Maybe Double
   , getLastVs'        :: Maybe [Double]
-  , getLastRews'      :: [Reward]
+  , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
   } deriving (Generic, NFData)
 

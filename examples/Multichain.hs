@@ -74,23 +74,23 @@ type P = Double
 actions :: [Action St]
 actions =  [Action (addReset move) "move"]
 
-addReset :: Num a => (St -> IO (a, St, EpisodeEnd)) -> St -> IO (a, St, EpisodeEnd)
+addReset :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
 addReset f st = do
   r <- randomRIO (0,1)
   if r < (0.003 :: Double)
     then do
     x <- randomRIO (4,5)
-    return (0, St x, True)
+    return (Reward 0, St x, True)
     else f st
 
-move :: St -> IO (Reward,St,EpisodeEnd)
+move :: St -> IO (Reward St,St,EpisodeEnd)
 move s = do
   rand <- randomRIO (0, 1 :: Double)
   let possMove = case s of
-         St 1 -> [(1.0, (2, St 1,False))]
-         St 2 -> [(0.4, (5, St 2,False)), (0.6, (5, St 3,False))]
-         St 3 -> [(0.7, (4, St 2,False)), (0.3, (4, St 3,False))]
-         St 4 -> [(0.5, (1, St 1,False)), (0.2, (1, St 2,False)), (0.3, (1, St 5,False))]
-         St 5 -> [(0.2, (3, St 1,False)), (0.3, (3, St 2,False)), (0.3, (3, St 3,False)), (0.2, (3, St 4,False))]
+         St 1 -> [(1.0, (Reward 2, St 1,False))]
+         St 2 -> [(0.4, (Reward 5, St 2,False)), (0.6, (Reward 5, St 3,False))]
+         St 3 -> [(0.7, (Reward 4, St 2,False)), (0.3, (Reward 4, St 3,False))]
+         St 4 -> [(0.5, (Reward 1, St 1,False)), (0.2, (Reward 1, St 2,False)), (0.3, (Reward 1, St 5,False))]
+         St 5 -> [(0.2, (Reward 3, St 1,False)), (0.3, (Reward 3, St 2,False)), (0.3, (Reward 3, St 3,False)), (0.2, (Reward 3, St 4,False))]
   return $ snd $ snd $ foldl' (\(ps, c) c'@(p,_) -> if ps <= rand && ps + p > rand then (ps + p, c') else (ps + p, c)) (0, head possMove) possMove
 

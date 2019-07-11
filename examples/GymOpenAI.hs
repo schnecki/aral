@@ -132,7 +132,7 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
                 then do obs <- resetGym gym
                         return (reward res, obs)
                 else return (reward res, observation res)
-  return (rew, St $ gymObservationToDoubleList obs, episodeDone res)
+  return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
 
 stGen :: ([Double], [Double]) -> St -> St

@@ -173,21 +173,21 @@ actFilter st | fromEnum st `elem` goalStates  = repeat True
 actFilter _  = False : repeat True
 
 
-moveRand :: St -> IO (Reward, St, EpisodeEnd)
+moveRand :: St -> IO (Reward St, St, EpisodeEnd)
 moveRand = moveUp
 
 
-goalState :: (St -> IO (Reward, St, EpisodeEnd)) -> St -> IO (Reward, St, EpisodeEnd)
+goalState :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   xG <- randomRIO (0, 1 :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew (re,s,e)= (re - r, s ,e)
+  let stepRew (Reward re,s,e)= (Reward $ re - r, s ,e)
   case getCurrentIdx st of
-    (0, 0) | True || xG == 0 -> return (10, fromIdx (x,y), False)
-    (4, 4) | True || xG == 1 -> return (10, fromIdx (x,y), False)
-    _      -> stepRew <$> f st
+    (0, 0) | True || xG == 0 -> return (Reward 10, fromIdx (x,y), False)
+    (4, 4) | True || xG == 1 -> return (Reward 10, fromIdx (x,y), False)
+    _                        -> stepRew <$> f st
 
 
 stepWidth :: IO Int
@@ -196,20 +196,20 @@ stepWidth = do
   return $ ceiling (x :: Float)
 
 
-moveUp :: St -> IO (Reward,St,EpisodeEnd)
-moveUp st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (m-w), fromIdx (max 0 (m-w),n), False)
+moveUp :: St -> IO (Reward St,St,EpisodeEnd)
+moveUp st = stepWidth >>= \w -> return (Reward $ fromIntegral $ 5 * min 0 (m-w), fromIdx (max 0 (m-w),n), False)
   where (m,n) = getCurrentIdx st
 
-moveDown :: St -> IO (Reward,St,EpisodeEnd)
-moveDown st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (-(m+w-4)), fromIdx (min 4 (m+w),n), False)
+moveDown :: St -> IO (Reward St,St,EpisodeEnd)
+moveDown st = stepWidth >>= \w -> return (Reward $ fromIntegral $ 5 * min 0 (-(m+w-4)), fromIdx (min 4 (m+w),n), False)
   where (m,n) = getCurrentIdx st
 
-moveLeft :: St -> IO (Reward,St,EpisodeEnd)
-moveLeft st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (n-w), fromIdx (m,max 0 (n-w)), False)
+moveLeft :: St -> IO (Reward St,St,EpisodeEnd)
+moveLeft st = stepWidth >>= \w -> return (Reward $ fromIntegral $ 5 * min 0 (n-w), fromIdx (m,max 0 (n-w)), False)
   where (m,n) = getCurrentIdx st
 
-moveRight :: St -> IO (Reward,St,EpisodeEnd)
-moveRight st = stepWidth >>= \w -> return (fromIntegral $ 5 * min 0 (-(n+w-4)), fromIdx (m,min 4 (n+w)), False)
+moveRight :: St -> IO (Reward St,St,EpisodeEnd)
+moveRight st = stepWidth >>= \w -> return (Reward $ fromIntegral $ 5 * min 0 (-(n+w-4)), fromIdx (m,min 4 (n+w)), False)
   where (m,n) = getCurrentIdx st
 
 

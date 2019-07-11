@@ -22,36 +22,18 @@ module ML.BORL.Calculation.Ops
     , RSize (..)
     ) where
 
-import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
-import           ML.BORL.Fork
-import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
-                                                   restoreModelWithLastIO,
-                                                   saveModelWithLastIO)
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
-import           ML.BORL.Proxy                    as P
-import           ML.BORL.SaveRestore
-import           ML.BORL.Serialisable
+import           ML.BORL.Proxy               as P
+import           ML.BORL.Reward
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Applicative              ((<|>))
-import           Control.DeepSeq                  (NFData, force)
 import           Control.Lens
-import           Control.Monad
-import           Control.Monad.IO.Class           (MonadIO, liftIO)
-import           Control.Parallel.Strategies      hiding (r0)
-import           Data.Function                    (on)
-import           Data.List                        (find, groupBy, sortBy)
-import qualified Data.Map.Strict                  as M
-import           Data.Maybe                       (fromMaybe, isJust)
-import           System.Directory
-import           System.IO
-import           System.Random
+import           Control.Parallel.Strategies hiding (r0)
 
-import           Debug.Trace
 
 -- | Used to select a discount factor.
 data RSize
@@ -69,16 +51,12 @@ approxAvg :: Double
 approxAvg = fromIntegral (100 :: Int)
 
 
--- mkCalculation :: (MonadBorl' m, Ord s) => BORL s -> State s -> ActionIndex -> Bool -> Reward -> StateNext s -> EpisodeEnd -> m Calculation
--- mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
---   mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (borl ^. algorithm)
-
-mkCalculation :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> Reward -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
+mkCalculation :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
 mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
   mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
 
 
-mkCalculation' :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> Reward -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> Algorithm -> m Calculation
+mkCalculation' :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> Algorithm -> m Calculation
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType stValHandling decideOnVPlusPsiV) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let alp = params' ^. alpha

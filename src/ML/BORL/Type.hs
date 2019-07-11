@@ -1,16 +1,17 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE CPP                  #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module ML.BORL.Type where
 
@@ -20,6 +21,7 @@ import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Type
+import           ML.BORL.Reward.Type
 import           ML.BORL.Types
 
 import           Control.DeepSeq
@@ -49,6 +51,21 @@ data Phase = IncreasingStateValues
            | SteadyStateValues
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
+
+data RewardFutureData s = RewardFutureData
+                { futurePeriod       :: Period
+                , futureState        :: State s
+                , futureActionNr     :: ActionIndex
+                , futureRandomAction :: IsRandomAction
+                , futureReward       :: Reward s
+                , futureStateNext    :: StateNext s
+                , futureEpisodeEnd   :: Bool
+                } deriving (Generic, NFData, Serialize)
+
+mapRewardFutureData :: (RewardFutureState s') => (s -> s') -> RewardFutureData s -> RewardFutureData s'
+mapRewardFutureData f (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward f rew) (f stateNext) epEnd
+
+
 data BORL s = BORL
   { _actionList       :: ![ActionIndexed s]  -- ^ List of possible actions in state s.
   , _actionFilter     :: !(s -> [Bool])      -- ^ Function to filter actions in state s.
@@ -58,6 +75,7 @@ data BORL s = BORL
   , _episodeNrStart   :: !(Integer, Integer) -- ^ Nr of Episode and start period.
   , _parameters       :: !Parameters         -- ^ Parameter setup.
   , _decayFunction    :: !Decay              -- ^ Decay function at period t.
+  , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
   -- define algorithm to use
   , _algorithm        :: !Algorithm
@@ -71,9 +89,11 @@ data BORL s = BORL
   }
 makeLenses ''BORL
 
-instance NFData s => NFData (BORL s) where
-  rnf (BORL as af s ftExt t epNr par dec alg ph lastVs lastRews psis proxies) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf ftExt `seq` rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+instance (NFData s) => NFData (BORL s) where
+  rnf (BORL as af s ftExt t epNr par dec fut alg ph lastVs lastRews psis proxies) =
+    rnf as `seq` rnf af `seq` rnf s `seq` rnf ftExt `seq`
+    rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf fut `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+
 
 ------------------------------ Indexed Action ------------------------------
 
@@ -105,7 +125,7 @@ defInitValues = InitValues 0 0 0 0 0
 
 -- Tabular representations
 
-mkUnichainTabular :: (Ord s) => Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular :: Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
     (zip [idxStart ..] as)
@@ -116,6 +136,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     (0, 0)
     params
     decayFun
+    mempty
     alg
     SteadyStateValues
     mempty
@@ -171,6 +192,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       (0, 0)
       params
       decayFun
+      mempty
       alg
       SteadyStateValues
       mempty
@@ -210,7 +232,7 @@ mkUnichainTensorflow ::
 mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
   runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
-mkMultichainTabular :: (Ord s) => Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular :: Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
   BORL
     (zip [0 ..] as)
@@ -221,6 +243,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     (0, 0)
     params
     decayFun
+    mempty
     alg
     SteadyStateValues
     mempty
@@ -269,6 +292,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       (0, 0)
       params
       decayFun
+      []
       alg
       SteadyStateValues
       mempty
@@ -312,6 +336,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       (0, 0)
       params
       decayFun
+      []
       alg
       SteadyStateValues
       mempty

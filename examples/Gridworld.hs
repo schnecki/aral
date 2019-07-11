@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -72,6 +73,14 @@ expSetup borl =
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
+data NoStorage = NoStorage
+
+instance RewardFutureState s where
+  type Storage s = ()
+  applyState :: Storage s -> s -> Reward s
+  applyState _ _ = error "no FutureRewards needed. Thus not to be called"
+  mapStorage :: (s -> s') -> Storage s -> Storage s'
+  mapStorage _ _ = ()
 
 instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = TF.SessionT IO
@@ -80,6 +89,7 @@ instance ExperimentDef (BORL St) where
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
+  deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
   deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ =
@@ -113,45 +123,57 @@ instance ExperimentDef (BORL St) where
     ]
 
 main :: IO ()
+
+
 main = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+  putStr "Experiment or user mode [Experiment]? Enter u for user mode: " >> hFlush stdout
+  l <- getLine
+  case l of
+    "u" -> usermode
+    "user" -> usermode
+    _ -> do
+      let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+     -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+     -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+     -- let runner = runMonadBorlIO
+      let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+      (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+      let runner = runMonadBorlTF
+      putStrLn $ "Any change: " ++ show changed
+      let evals =
+            [ Id $ EveryXthElem 10 $ Of "avgRew"
+            , Mean OverReplications $ EveryXthElem 10 (Of "avgRew")
+            , StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
+            , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+            , Mean OverReplications $ EveryXthElem 10 (Of "psiRho")
+            , StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
+            , Mean OverReplications $ EveryXthElem 10 (Of "psiV")
+            , StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
+            , Mean OverReplications $ EveryXthElem 10 (Of "psiW")
+            , StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
+            , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+            , StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+            ]
+      evalRes <- genEvals runner databaseSetup res evals
+     -- print (view evalsResults evalRes)
+      writeAndCompileLatex evalRes
 
-  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  -- let runner = runMonadBorlIO
 
-  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
-  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  let runner = runMonadBorlTF
-  putStrLn $ "Any change: " ++ show changed
-  let evals = [ Id $ EveryXthElem 10 $ Of "avgRew"
-              , Mean OverReplications $ EveryXthElem 10 (Of "avgRew"),           StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
-              , Mean OverReplications  (Stats $ Mean OverPeriods (Of "avgRew"))
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiRho"),           StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiV"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
-              , Mean OverReplications $ EveryXthElem 10 (Of "psiW"),             StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
-              , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength"), StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-              ]
-  evalRes <- genEvals runner databaseSetup res evals
-  -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
+usermode :: IO ()
+usermode = do
 
+  let algorithm =
+        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        AlgBORL 0.2 0.6 (ByMovAvg 100) Normal False
 
--- main :: IO ()
--- main = do
+  nn <- randomNetworkInitWith UniformInit :: IO NN
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
+  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
---   let algorithm =
---         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
---         AlgBORL 0.2 0.6 (ByMovAvg 100) Normal False
-
---   nn <- randomNetworkInitWith UniformInit :: IO NN
---   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
---   rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
---   -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
---   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
-
---   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
---         usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
+        usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -256,44 +278,44 @@ actFilter st | st == fromIdx (0,2) = True : repeat False
 actFilter _  = False : repeat True
 
 
-moveRand :: St -> IO (Reward, St, EpisodeEnd)
+moveRand :: St -> IO (Reward St, St, EpisodeEnd)
 moveRand = moveUp
 
 
-goalState :: (St -> IO (Reward, St, EpisodeEnd)) -> St -> IO (Reward, St, EpisodeEnd)
+goalState :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
 goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew (re,s,e) = (re + r, s ,e)
+  let stepRew (Reward re,s,e) = (Reward $ re + r, s ,e)
 
   case getCurrentIdx st of
-    (0, 2) ->  return (10, fromIdx (x,y), True)
+    (0, 2) ->  return (Reward 10, fromIdx (x,y), True)
     _      -> stepRew <$> f st
 
 
-moveUp :: St -> IO (Reward,St, EpisodeEnd)
+moveUp :: St -> IO (Reward St,St, EpisodeEnd)
 moveUp st
-    | m == 0 = return (-1, st, False)
-    | otherwise = return (0, fromIdx (m-1,n), False)
+    | m == 0 = return (Reward (-1), st, False)
+    | otherwise = return (Reward 0, fromIdx (m-1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveDown :: St -> IO (Reward,St, EpisodeEnd)
+moveDown :: St -> IO (Reward St,St, EpisodeEnd)
 moveDown st
-    | m == maxX = return (-1, st, False)
-    | otherwise = return (0, fromIdx (m+1,n), False)
+    | m == maxX = return (Reward (-1), st, False)
+    | otherwise = return (Reward 0, fromIdx (m+1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveLeft :: St -> IO (Reward,St, EpisodeEnd)
+moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
 moveLeft st
-    | n == 0 = return (-1, st, False)
-    | otherwise = return (0, fromIdx (m,n-1), False)
+    | n == 0 = return (Reward (-1), st, False)
+    | otherwise = return (Reward 0, fromIdx (m,n-1), False)
   where (m,n) = getCurrentIdx st
 
-moveRight :: St -> IO (Reward,St, EpisodeEnd)
+moveRight :: St -> IO (Reward St,St, EpisodeEnd)
 moveRight st
-    | n == maxY = return (-1, st, False)
-    | otherwise = return (0, fromIdx (m,n+1), False)
+    | n == maxY = return (Reward (-1), st, False)
+    | otherwise = return (Reward 0, fromIdx (m,n+1), False)
   where (m,n) = getCurrentIdx st
 
 

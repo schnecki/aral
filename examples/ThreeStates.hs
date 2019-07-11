@@ -61,7 +61,7 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-nnConfig :: NNConfig 
+nnConfig :: NNConfig
 nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 32
@@ -165,20 +165,20 @@ actionFilter B = [False, True]
 actionFilter C = [True, False]
 
 
-moveLeft :: St -> IO (Reward,St, EpisodeEnd)
+moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
 moveLeft s =
   return $
   case s of
-    A -> (2, B, False)
+    A -> (Reward 2, B, False)
     B -> error "not allowed"
-    C -> (2, A, False)
+    C -> (Reward 2, A, False)
 
-moveRight :: St -> IO (Reward,St, EpisodeEnd)
+moveRight :: St -> IO (Reward St,St, EpisodeEnd)
 moveRight s =
   return $
   case s of
-    A -> (0, C, False)
-    B -> (0, A, False)
+    A -> (Reward 0, C, False)
+    B -> (Reward 0, A, False)
     C -> error "not allowed"
 
 

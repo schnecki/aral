@@ -31,6 +31,7 @@ import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
+import           ML.BORL.Reward
 import           ML.BORL.Types                as T
 import           ML.BORL.Types
 
@@ -55,16 +56,18 @@ import qualified Data.Map.Strict              as M
 -- | Insert (or update) a value.
 insert ::
      forall m s. (NFData s, Ord s, MonadBorl' m)
-  => BORL s
+  => BORL s                     -- ^ Latest BORL
+  -> Period                     -- ^ Period when action was taken
+  -> State s                    -- ^ State when action was taken
   -> ActionIndex
   -> IsRandomAction
-  -> Reward
+  -> RewardValue
   -> StateNext s
   -> EpisodeEnd
   -> ReplMemFun s
   -> Proxies
   -> m (Proxies, Calculation)
-insert borl aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 Nothing) = do
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 Nothing) = do
   let 
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
@@ -82,16 +85,15 @@ insert borl aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho p
     sActIdxes = map fst $ actionsIndexed borl state
     sNextActIdxes = map fst $ actionsIndexed borl stateNext
     period = borl ^. t
-    state = borl ^. s
+    -- state = borl ^. s
     stateFeat = (borl ^. featureExtractor) state
     stateNextFeat = (borl ^. featureExtractor) stateNext
     stateActs = (stateFeat, sActIdxes)
     stateNextActs = (stateNextFeat, sNextActIdxes)
-
-insert borl aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 (Just replMem))
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 (Just replMem))
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
-    (pxs', calc) <- insert borl aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
+    (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | pV ^?! proxyNNConfig . trainBatchSize == 1 = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
