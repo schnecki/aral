@@ -107,22 +107,30 @@ nextAction borl
                  if isUnichain borl
                    then return as
                    else do
-                     rhoVals <- mapM (rhoValue borl state) (map fst as)
-                     return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
+                     rhoVals <- mapM (rhoValue borl state . fst) as
+                     return $ map snd $ headRho $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
                bestV <-
-                 do vVals <- mapM (vValue decideVPlusPsi borl state) (map fst bestRho)
-                    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
+                 do vVals <- mapM (vValue decideVPlusPsi borl state . fst) bestRho
+                    return $ map snd $ headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
                bestE <-
-                 do eVals <- mapM (eValue borl state) (map fst bestV)
+                 do eVals <- mapM (eValue borl state . fst) bestV
                     return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
                if length bestE > 1
                  then do
                    r <- liftSimple $ randomRIO (0, length bestE - 1)
                    return (borl, False, bestE !! r)
-                 else return (borl, False, head bestE)
+                 else return (borl, False, headE bestE)
              AlgDQN {} -> dqnNextAction
              AlgDQNAvgRew {} -> dqnNextAction
   where
+    headRho []    = error "head: empty input data in nextAction on Rho value"
+    headRho (x:_) = x
+    headV []    = error "head: empty input data in nextAction on V value"
+    headV (x:_) = x
+    headE []    = error "head: empty input data in nextAction on E Value"
+    headE (x:_) = x
+    headDqn []    = error "head: empty input data in nextAction on Dqn Value"
+    headDqn (x:_) = x
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration
@@ -133,7 +141,7 @@ nextAction borl
       rValues <- mapM (rValue borl RBig state . fst) as
       let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
                -- liftSimple $ putStrLn ("bestR: " ++ show bestR)
-      return (borl, False, snd $ head bestR)
+      return (borl, False, snd $ headDqn bestR)
 
 epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y

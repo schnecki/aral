@@ -33,7 +33,6 @@ fromLastShapes _ _                = error "NN output currently not supported."
 -- -- | Create Vec from a list.
 -- reifySVec :: (KnownNat nr) => [a] -> SV.Vec nr a
 -- reifySVec xs = head <$> SV.iterateI tail xs
-
 -- -- | Create SNat from Integer >= 0, otherwise SNat 0.
 -- reifySNat :: Integer -> SV.SNat a
 -- reifySNat n | n < 0 = reifyNat 0 (unsafeCoerce . SV.snatProxy)

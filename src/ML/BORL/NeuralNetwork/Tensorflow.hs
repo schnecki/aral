@@ -126,10 +126,15 @@ getControlNodeTensorFromName :: Text -> TF.ControlNode
 getControlNodeTensorFromName = TF.ControlNode . TF.NodeName
 
 encodeInputBatch :: Inputs -> TF.TensorData Float
-encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
+encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head' xs)] (V.fromList $ mconcat xs)
+  where head' []    = error "head: empty input data in encodeInputBatch"
+        head' (x:_) = x
+
 
 encodeLabelBatch :: Labels -> TF.TensorData Float
-encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head xs)] (V.fromList $ mconcat xs)
+encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head' xs)] (V.fromList $ mconcat xs)
+  where head' []    = error "head: empty input data in encodeLabelBatch"
+        head' (x:_) = x
 
 forwardRun :: (MonadBorl' m) => TensorflowModel' -> Inputs -> m Outputs
 forwardRun model inp =
