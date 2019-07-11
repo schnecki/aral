@@ -18,7 +18,7 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
-askUser :: (NFData s, Ord s, Show s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
+askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
 askUser showHelp addUsage cmds ql = do
   let usage =
         sortBy (compare `on` fst) $

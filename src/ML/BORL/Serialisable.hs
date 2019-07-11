@@ -57,20 +57,20 @@ data BORLSerialisable s = BORLSerialisable
   , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadBorl' m, Ord s, RewardFutureState s) => BORL s -> m (BORLSerialisable s)
+toSerialisable :: (MonadBorl' m, Ord s, RewardFuture s) => BORL s -> m (BORLSerialisable s)
 toSerialisable = toSerialisableWith id
 
 
-toSerialisableWith :: (MonadBorl' m, Ord s', RewardFutureState s') => (s -> s') -> BORL s -> m (BORLSerialisable s')
+toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> BORL s -> m (BORLSerialisable s')
 toSerialisableWith f borl@(BORL _ _  s _ t eNr par _ _ alg ph v rew psis prS) = do
   BORL _ _ s _ t eNr par _ future alg ph v rew psis prS <- saveTensorflowModels borl
   return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f) future) alg ph v rew psis prS
 
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFutureState s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id
 
-fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s, RewardFutureState s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => (s' -> s) -> [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
 fromSerialisableWith f as aF decay ftExt inp builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f) future) alg ph lastV rew psis prS

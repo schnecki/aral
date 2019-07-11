@@ -53,16 +53,17 @@ data Phase = IncreasingStateValues
 
 
 data RewardFutureData s = RewardFutureData
-                { futurePeriod       :: Period
-                , futureState        :: State s
-                , futureActionNr     :: ActionIndex
-                , futureRandomAction :: IsRandomAction
-                , futureReward       :: Reward s
-                , futureStateNext    :: StateNext s
-                , futureEpisodeEnd   :: Bool
+                { _futurePeriod       :: Period
+                , _futureState        :: State s
+                , _futureActionNr     :: ActionIndex
+                , _futureRandomAction :: IsRandomAction
+                , _futureReward       :: Reward s
+                , _futureStateNext    :: StateNext s
+                , _futureEpisodeEnd   :: Bool
                 } deriving (Generic, NFData, Serialize)
+makeLenses ''RewardFutureData
 
-mapRewardFutureData :: (RewardFutureState s') => (s -> s') -> RewardFutureData s -> RewardFutureData s'
+mapRewardFutureData :: (RewardFuture s') => (s -> s') -> RewardFutureData s -> RewardFutureData s'
 mapRewardFutureData f (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward f rew) (f stateNext) epEnd
 
 

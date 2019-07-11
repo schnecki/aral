@@ -56,7 +56,7 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, Ord s) => BORL s -> Integer -> IO (BORL s)
+steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
 steps (force -> borl) nr =
   case find isTensorflow (allProxies $ borl ^. proxies) of
     Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
@@ -67,7 +67,7 @@ steps (force -> borl) nr =
         force <$> saveTensorflowModels borl'
 
 
-step :: (NFData s, Ord s) => BORL s -> IO (BORL s)
+step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
 step (force -> borl) =
   case find isTensorflow (allProxies $ borl ^. proxies) of
     Nothing -> nextAction borl >>= stepExecute
@@ -78,12 +78,12 @@ step (force -> borl) =
         force <$> saveTensorflowModels borl'
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
-stepM :: (MonadBorl' m, NFData s, Ord s) => BORL s -> m (BORL s)
+stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 stepM (force -> borl) = nextAction borl >>= fmap force . stepExecute
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
 -- evaluation of the data structure every 1000 periods.
-stepsM :: (MonadBorl' m, NFData s, Ord s) => BORL s -> Integer -> m (BORL s)
+stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
 stepsM (force -> borl) nr = do
   !borl' <- force <$> foldM (\b _ -> nextAction b >>= stepExecute) borl [1 .. min maxNr nr]
   if nr > maxNr
@@ -151,21 +151,24 @@ epsCompareWith eps f x y
   | otherwise = y `f` x
 
 
-stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
+stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t
   (reward, stateNext, episodeEnd) <- liftSimple $ action state
-  let borl' = over futureRewards (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd]) borl
+  let applyToReward r@(RewardFuture storage) = applyState storage state
+      applyToReward r                        = r
+      updateFutures = map (over futureReward applyToReward)
+  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   borlNew <- snd <$> foldM stepExecuteMaterialisedFutures (False, borl') (borl' ^. futureRewards)
   let dropLen = fromIntegral $ borlNew ^. t - period
-  return $ force $ over futureRewards (drop dropLen) $set s stateNext borlNew
+  return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
 
 stepExecuteMaterialisedFutures :: forall m s . (MonadBorl' m, NFData s, Ord s) => (Bool, BORL s) -> RewardFutureData s -> m (Bool, BORL s)
 stepExecuteMaterialisedFutures (True, borl) _ = return (True, borl)
 stepExecuteMaterialisedFutures (_, borl) dt =
-  case futureReward dt of
+  case view futureReward dt of
     RewardEmpty     -> return (False, borl)
     RewardFuture {} -> return (True, borl)
     Reward {}       -> (False, ) <$> execute borl dt

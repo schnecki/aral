@@ -73,14 +73,17 @@ expSetup borl =
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
-data NoStorage = NoStorage
+instance RewardFuture St where
+  type Storage St = ()
 
-instance RewardFutureState s where
-  type Storage s = ()
-  applyState :: Storage s -> s -> Reward s
-  applyState _ _ = error "no FutureRewards needed. Thus not to be called"
-  mapStorage :: (s -> s') -> Storage s -> Storage s'
-  mapStorage _ _ = ()
+-- instance RewardFutureState s where
+--   type Storage s = ()
+--   applyState :: Storage s -> s -> Reward s
+--   applyState _ _ = error "no FutureRewards needed. Thus not to be called"
+--   serialisableStorage
+
+--   mapStorage :: (s -> s') -> Storage s -> Storage s'
+--   mapStorage _ _ = ()
 
 instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = TF.SessionT IO
@@ -112,11 +115,7 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ algBORL
-                               , AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False
-                               , AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False
-                               , AlgDQN 0.99
-                               ])
+        (Just $ const $ return [algBORL, AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False, AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False, AlgDQN 0.99])
         Nothing
         Nothing
         Nothing

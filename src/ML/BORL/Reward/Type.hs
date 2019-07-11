@@ -1,11 +1,12 @@
 {-# LANGUAGE DefaultSignatures         #-}
-{-# LANGUAGE DeriveAnyClass            #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 
 module ML.BORL.Reward.Type where
@@ -13,6 +14,7 @@ module ML.BORL.Reward.Type where
 import           Control.DeepSeq
 import           GHC.Generics
 
+import           Data.ByteString
 import           Data.Serialize
 
 -- type Reward s = Double
@@ -24,7 +26,7 @@ type RewardValue = Double
 data Reward s
   = Reward RewardValue
   | RewardEmpty
-  | (RewardFutureState s) => RewardFuture (Storage s)
+  | (RewardFuture s) => RewardFuture (Storage s)
 
 
 instance Num (Reward s) where
@@ -49,7 +51,7 @@ instance NFData (Reward s) where
   rnf RewardEmpty      = ()
   rnf (RewardFuture v) = rnf v
 
-instance (RewardFutureState s) => Serialize (Reward s) where
+instance (RewardFuture s) => Serialize (Reward s) where
   put (Reward r)       = put (0::Int) >> put r
   put RewardEmpty      = put (1::Int)
   put (RewardFuture f) = put (2::Int) >> put f
@@ -62,13 +64,19 @@ instance (RewardFutureState s) => Serialize (Reward s) where
       _ -> error "unmatched case in Serialize instance of Reward"
 
 -- ^ Class that defines the future reward state and storage type.
-class (NFData (Storage s), Serialize (Storage s)) => RewardFutureState s where
+class (NFData (Storage s), Serialize (Storage s)) => RewardFuture s where
   type Storage s :: *
-  applyState :: Storage s -> s -> Reward s
   mapStorage :: (s -> s') -> Storage s -> Storage s'
+  mapStorage = error "Called map storage, thus you added future rewards, but have not set it up!"
+  -- default mapStorage :: (s -> s) -> Storage s -> s
+  -- mapStorage _ x  = RewardFuture x
+
+  applyState :: Storage s -> s -> Reward s
+  default applyState :: Storage s -> s -> Reward s
+  applyState = error "called apply state without overriding the function in RewardFuture."
 
 
-mapReward :: (RewardFutureState s') => (s -> s') -> Reward s -> Reward s'
-mapReward f (RewardFuture storage) = RewardFuture (mapStorage f storage)
+mapReward :: (RewardFuture s') => (s -> s') -> Reward s -> Reward s'
+mapReward f (RewardFuture storage) = RewardFuture $ mapStorage f storage
 mapReward _ (Reward v)             = Reward v
 mapReward _ RewardEmpty            = RewardEmpty

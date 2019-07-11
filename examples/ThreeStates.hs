@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
 
@@ -93,6 +94,10 @@ modelBuilder =
   buildModel $
   inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >>
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+
+instance RewardFuture St where
+  type Storage St = ()
+
 
 main :: IO ()
 main = do

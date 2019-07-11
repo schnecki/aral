@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 -- This is example is a multichain example from Puttermann 1994 (Example 8.2.2). For multichain MDPs the average reward
 -- value may differ between set of recurrent states. There are no decisions, moves are by probability.
 
@@ -69,6 +70,10 @@ decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
 newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)
 type R = Double
 type P = Double
+
+instance RewardFuture St where
+  type Storage St = ()
+
 
 -- Actions
 actions :: [Action St]

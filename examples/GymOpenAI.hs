@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | !!! IMPORTANT !!!
 --
@@ -142,6 +143,10 @@ stGen (lows, highs) (St xs) = St $ zipWith3 splitInto lows highs xs
       fromIntegral (round (gran * x)) / gran
       where scale = 1/(hi - lo)
             gran = 2
+
+instance RewardFuture St where
+  type Storage St = ()
+
 
 main :: IO ()
 main = do
