@@ -158,6 +158,7 @@ insertProxy _ st aNr v (Table m def) = return $ Table (M.insert (st, aNr) v m) d
 insertProxy period st idx v px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && (px ^?! proxyNNConfig . trainBatchSize) == 1 =
     trainBatch [((st, idx), v)] px >>= updateNNTargetNet False period
+  | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 = return $ proxyNNStartup .~ M.insert (st, idx) v tab $ px
   | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = updateNNTargetNet False period px
   | period == fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 =
