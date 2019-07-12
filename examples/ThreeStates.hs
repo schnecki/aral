@@ -96,7 +96,7 @@ modelBuilder =
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 instance RewardFuture St where
-  type Storage St = ()
+  type StoreType St = ()
 
 
 main :: IO ()

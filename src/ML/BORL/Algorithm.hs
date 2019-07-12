@@ -18,7 +18,7 @@ data AvgReward
 
 data StateValueHandling
   = Normal
-  | DivideValuesAfterGrowth Int Integer -- ^ How many periods to track, until how many periods to perform divisions.
+  | DivideValuesAfterGrowth Int Period -- ^ How many periods to track, until how many periods to perform divisions.
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.

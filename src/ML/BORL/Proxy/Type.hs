@@ -15,6 +15,7 @@ import           ML.BORL.Types                as T
 import           Control.Arrow                (first, second)
 import           Control.DeepSeq
 import           Control.Lens
+import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Serialize
 import qualified Data.Set                     as S

@@ -145,7 +145,7 @@ stGen (lows, highs) (St xs) = St $ zipWith3 splitInto lows highs xs
             gran = 2
 
 instance RewardFuture St where
-  type Storage St = ()
+  type StoreType St = ()
 
 
 main :: IO ()

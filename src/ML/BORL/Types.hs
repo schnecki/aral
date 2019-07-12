@@ -5,10 +5,8 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
-import           Control.Monad.IO.Class
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Trans.Class (lift)
-import           System.IO.Unsafe          (unsafePerformIO)
 import qualified TensorFlow.Core           as TF
 import qualified TensorFlow.Session        as TF
 
@@ -17,7 +15,7 @@ type Batchsize = Int
 type EpisodeEnd = Bool
 type InitialState s = s         -- ^ Initial state
 type IsRandomAction = Bool
-type Period = Integer
+type Period = Int
 type State s = s
 type StateNext s = s
 type PsisOld = (Double, Double, Double)

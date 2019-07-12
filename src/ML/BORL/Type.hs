@@ -28,6 +28,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (zipWithM)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
+import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
@@ -63,8 +64,8 @@ data RewardFutureData s = RewardFutureData
                 } deriving (Generic, NFData, Serialize)
 makeLenses ''RewardFutureData
 
-mapRewardFutureData :: (RewardFuture s') => (s -> s') -> RewardFutureData s -> RewardFutureData s'
-mapRewardFutureData f (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward f rew) (f stateNext) epEnd
+mapRewardFutureData :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> RewardFutureData s -> RewardFutureData s'
+mapRewardFutureData f g (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward g rew) (f stateNext) epEnd
 
 
 data BORL s = BORL
@@ -72,8 +73,8 @@ data BORL s = BORL
   , _actionFilter     :: !(s -> [Bool])      -- ^ Function to filter actions in state s.
   , _s                :: !s                  -- ^ Current state.
   , _featureExtractor :: !(s -> [Double])    -- ^ Function that extracts the features of a state.
-  , _t                :: !Integer            -- ^ Current time t.
-  , _episodeNrStart   :: !(Integer, Integer) -- ^ Nr of Episode and start period.
+  , _t                :: !Int                -- ^ Current time t.
+  , _episodeNrStart   :: !(Int, Int) -- ^ Nr of Episode and start period.
   , _parameters       :: !Parameters         -- ^ Parameter setup.
   , _decayFunction    :: !Decay              -- ^ Decay function at period t.
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
@@ -385,4 +386,11 @@ checkGrenade _ nnConfig borl
     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
     stInp = length ((borl ^. featureExtractor) (borl ^. s))
     nrActs = length (borl ^. actionList)
+
+
+overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
+overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+
+setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
+setAllProxies len = overAllProxies len . const
 

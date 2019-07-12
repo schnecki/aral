@@ -72,7 +72,7 @@ type R = Double
 type P = Double
 
 instance RewardFuture St where
-  type Storage St = ()
+  type StoreType St = ()
 
 
 -- Actions

@@ -19,7 +19,7 @@ data NNConfig = NNConfig
   , _grenadeLearningParams :: !LearningParameters
   , _prettyPrintElems      :: ![NetInput]
   , _scaleParameters       :: !ScalingNetOutParameters
-  , _updateTargetInterval  :: !Integer
+  , _updateTargetInterval  :: !Int
   , _trainMSEMax           :: !(Maybe MSE) -- ^ Mean squared error to train for.
   }
 makeLenses ''NNConfig

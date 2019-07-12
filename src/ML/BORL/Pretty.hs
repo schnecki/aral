@@ -106,7 +106,7 @@ prettyAlgorithm (AlgDQNAvgRew ga1 avgRewType)      = text "DQN SUBTRACT AvgRewar
 
 prettyStateValueHandling :: StateValueHandling -> Doc
 prettyStateValueHandling Normal = empty
-prettyStateValueHandling (DivideValuesAfterGrowth nr max) = text "Divide values after growth " <> parens (int nr <> text "," <+> integer max) <> text ";"
+prettyStateValueHandling (DivideValuesAfterGrowth nr max) = text "Divide values after growth " <> parens (int nr <> text "," <+> int max) <> text ";"
 
 prettyAvgRewardType :: AvgReward -> Doc
 prettyAvgRewardType (ByMovAvg nr) = "moving average" <> parens (int nr)
@@ -131,7 +131,7 @@ prettyBORLTables t1 t2 t3 borl = do
           P.Table m def -> return $ M.findWithDefault def k m
           px ->
             let config = px ^?! proxyNNConfig
-             in if borl ^. t <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1
+             in if borl ^. t <= config ^. replayMemoryMaxSize && (config ^. trainBatchSize) /= 1
                   then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
                   else do
                     vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
@@ -147,15 +147,10 @@ prettyBORLTables t1 t2 t3 borl = do
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
   prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
   docHead <- prettyBORLHead False borl
-  return $
-    docHead $$
-    algDocRho prettyRhoVal $$
-    algDoc prVW $+$
-    -- prettyVWPsi $+$
+  return $ docHead $$ algDocRho prettyRhoVal $$ algDoc prVW $+$
     (if isAlgBorl (borl ^. algorithm)
        then prR0R1
        else vcat prR1) $+$
-    -- prettyErr $+$
     algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
@@ -171,7 +166,7 @@ prettyBORLHead printRho borl = do
   let prettyRhoVal = case borl ^. proxies . rho of
         Scalar val -> text "Rho" <> colon $$ nest 45 (printFloat val)
         _          -> empty
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (integer $ borl ^. t) $+$
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (int $ borl ^. t) $+$
     algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha)) $+$
     algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ params' ^. beta)) $+$
     algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ params' ^. delta)) $+$

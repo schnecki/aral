@@ -74,7 +74,7 @@ expSetup borl =
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 instance RewardFuture St where
-  type Storage St = ()
+  type StoreType St = ()
 
 -- instance RewardFutureState s where
 --   type Storage s = ()

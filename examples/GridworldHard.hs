@@ -91,7 +91,7 @@ modelBuilder =
 
 
 instance RewardFuture St where
-  type Storage St = ()
+  type StoreType St = ()
 
 
 main :: IO ()

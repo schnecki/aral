@@ -52,6 +52,9 @@ import           Debug.Trace
 fileStateValues :: FilePath
 fileStateValues = "stateValues"
 
+fileReward :: FilePath
+fileReward = "reward"
+
 fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
@@ -154,24 +157,24 @@ epsCompareWith eps f x y
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
-      period = borl ^. t
+      period = borl ^. t + length (borl ^. futureRewards)
   (reward, stateNext, episodeEnd) <- liftSimple $ action state
   let applyToReward r@(RewardFuture storage) = applyState storage state
       applyToReward r                        = r
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
-  borlNew <- snd <$> foldM stepExecuteMaterialisedFutures (False, borl') (borl' ^. futureRewards)
-  let dropLen = fromIntegral $ borlNew ^. t - period
+  (dropLen,_, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
+  -- let dropLen = fromIntegral $ borlNew ^. t + length (borlNew ^. futureRewards) - period
   return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
 
-stepExecuteMaterialisedFutures :: forall m s . (MonadBorl' m, NFData s, Ord s) => (Bool, BORL s) -> RewardFutureData s -> m (Bool, BORL s)
-stepExecuteMaterialisedFutures (True, borl) _ = return (True, borl)
-stepExecuteMaterialisedFutures (_, borl) dt =
+stepExecuteMaterialisedFutures :: forall m s . (MonadBorl' m, NFData s, Ord s) => (Int, Bool, BORL s) -> RewardFutureData s -> m (Int, Bool, BORL s)
+stepExecuteMaterialisedFutures (nr, True, borl) _ = return (nr, True, borl)
+stepExecuteMaterialisedFutures (nr, _, borl) dt =
   case view futureReward dt of
-    RewardEmpty     -> return (False, borl)
-    RewardFuture {} -> return (True, borl)
-    Reward {}       -> (False, ) <$> execute borl dt
+    RewardEmpty     -> return (nr, False, borl)
+    RewardFuture {} -> return (nr, True, borl)
+    Reward {}       -> (nr+1, False, ) <$> execute borl dt
 
 execute :: (MonadBorl' m, NFData s, Ord s) => BORL s -> RewardFutureData s -> m (BORL s)
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
@@ -181,6 +184,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
   when (period == 0) $ do
     liftSimple $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftSimple $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
+    liftSimple $ writeFile fileReward "Period\tReward\n"
   let strRho = show (fromMaybe 0 (getRhoVal' calc))
       strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
@@ -211,6 +215,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
   let (eNr, eStart) = borl ^. episodeNrStart
       eLength = borl ^. t - eStart
   when (getEpisodeEnd calc) $ liftSimple $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
+  liftSimple $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
   -- update values
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
