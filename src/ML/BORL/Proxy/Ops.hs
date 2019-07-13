@@ -32,6 +32,7 @@ import           ML.BORL.NeuralNetwork
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Reward
+import           ML.BORL.Parameters
 import           ML.BORL.Types                as T
 import           ML.BORL.Types
 
@@ -67,25 +68,27 @@ insert ::
   -> ReplMemFun s
   -> Proxies
   -> m (Proxies, Calculation)
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 Nothing) = do
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 Nothing) = do
   let 
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftSimple $ collectForkResult forkMv'
-  let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
-  pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
-  pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
-  pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
-  pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-  pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
-  return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' Nothing, calc)
+  if borl ^. parameters.disableAllLearning
+    then return (pxs, calc)
+    else do
+    let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+    pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+    pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
+    pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
+    pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
+    pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
+    pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
+    return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' Nothing, calc)
   where
     sActIdxes = map fst $ actionsIndexed borl state
     sNextActIdxes = map fst $ actionsIndexed borl stateNext
     period = borl ^. t
-    -- state = borl ^. s
     stateFeat = (borl ^. featureExtractor) state
     stateNextFeat = (borl ^. featureExtractor) stateNext
     stateActs = (stateFeat, sActIdxes)
@@ -98,47 +101,53 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   | pV ^?! proxyNNConfig . trainBatchSize == 1 = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
-    let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
-    pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
-    pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-    pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
-    pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
-    pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
-    pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-    pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc) -- avgCalculation (map snd calcs))
+    if borl ^. parameters . disableAllLearning
+      then return (set replayMemory (Just replMem') pxs, calc)
+      else do
+        let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+        pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+        pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+        pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
+        pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
+        pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
+        pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
+        pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
+        return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc)
   | otherwise = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
-    let config = pV ^?! proxyNNConfig
-    mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
-    let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
-    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
-    let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
-    let mTrainBatch accessor calcs px =
-          maybe
-            (return px)
-            (flip trainBatch px)
-            (mapM
-               (\c ->
-                  let (inp, mOut) = second accessor c
-                   in mOut >>= \out -> return (inp, out))
-               calcs)
-    -- let avgCalc = avgCalculation (map snd calcs)
-    pRhoMin' <-
-      if isNeuralNetwork pRhoMin
-        then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
-        else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-    pRho' <-
-      if isNeuralNetwork pRho
-        then mTrainBatch getRhoVal' calcs pRho `using` rpar
-        else mInsertProxy (getRhoVal' calc) pRho `using` rpar
-    pV' <- mTrainBatch getVValState' calcs pV `using` rpar
-    pW' <- mTrainBatch getWValState' calcs pW `using` rpar
-    pPsiV' <- mTrainBatch getPsiVVal' calcs pPsiV `using` rpar
-    pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
-    pR1' <- trainBatch (map (second getR1ValState') calcs) pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc)
+    if borl ^. parameters . disableAllLearning
+      then return (set replayMemory (Just replMem') pxs, calc)
+      else do
+        let config = pV ^?! proxyNNConfig
+        mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
+        let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
+        calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
+        let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+        let mTrainBatch accessor calcs px =
+              maybe
+                (return px)
+                (flip trainBatch px)
+                (mapM
+                   (\c ->
+                      let (inp, mOut) = second accessor c
+                       in mOut >>= \out -> return (inp, out))
+                   calcs)
+      -- let avgCalc = avgCalculation (map snd calcs)
+        pRhoMin' <-
+          if isNeuralNetwork pRhoMin
+            then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
+            else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+        pRho' <-
+          if isNeuralNetwork pRho
+            then mTrainBatch getRhoVal' calcs pRho `using` rpar
+            else mInsertProxy (getRhoVal' calc) pRho `using` rpar
+        pV' <- mTrainBatch getVValState' calcs pV `using` rpar
+        pW' <- mTrainBatch getWValState' calcs pW `using` rpar
+        pPsiV' <- mTrainBatch getPsiVVal' calcs pPsiV `using` rpar
+        pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
+        pR1' <- trainBatch (map (second getR1ValState') calcs) pR1 `using` rpar
+        return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc)
             -- avgCalculation (map snd calcs))
   where
     sActIdxes = map fst $ actionsIndexed borl state

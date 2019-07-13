@@ -69,19 +69,19 @@ mapRewardFutureData f g (RewardFutureData p s aNr rand rew stateNext epEnd) = Re
 
 
 data BORL s = BORL
-  { _actionList       :: ![ActionIndexed s]  -- ^ List of possible actions in state s.
-  , _actionFilter     :: !(s -> [Bool])      -- ^ Function to filter actions in state s.
-  , _s                :: !s                  -- ^ Current state.
-  , _featureExtractor :: !(s -> [Double])    -- ^ Function that extracts the features of a state.
-  , _t                :: !Int                -- ^ Current time t.
-  , _episodeNrStart   :: !(Int, Int) -- ^ Nr of Episode and start period.
-  , _parameters       :: !Parameters         -- ^ Parameter setup.
-  , _decayFunction    :: !Decay              -- ^ Decay function at period t.
+  { _actionList       :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
+  , _actionFilter     :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
+  , _s                :: !s                    -- ^ Current state.
+  , _featureExtractor :: !(s -> [Double])      -- ^ Function that extracts the features of a state.
+  , _t                :: !Int                  -- ^ Current time t.
+  , _episodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
+  , _parameters       :: !Parameters           -- ^ Parameter setup.
+  , _decayFunction    :: !Decay                -- ^ Decay function at period t.
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
   -- define algorithm to use
-  , _algorithm        :: !Algorithm
-  , _phase            :: !Phase
+  , _algorithm        :: !Algorithm -- ^ What algorithm to use.
+  , _phase            :: !Phase     -- ^ Current phase for scaling by `StateValueHandling`.
 
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)

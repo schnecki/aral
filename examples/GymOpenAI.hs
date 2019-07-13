@@ -189,11 +189,12 @@ params = Parameters
   , _learnRandomAbove = 0.0
   , _zeta             = 1.0
   , _xi               = 0.2
+  , _disableAllLearning = False
   }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
+decay t p@(Parameters alp bet del ga eps exp rand zeta xi dis)
   | t `mod` 200 == 0 =
     Parameters
       (max 0.03 $ slow * alp)
@@ -205,6 +206,7 @@ decay t p@(Parameters alp bet del ga eps exp rand zeta xi)
       rand
       zeta -- zeta
       (0.5*bet)
+      dis
   | otherwise = p
   where
     slower = 0.995
