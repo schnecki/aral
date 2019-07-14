@@ -163,7 +163,9 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 -- `trainBatch` to train the neural networks.
 insertProxy :: (MonadBorl' m) => Period -> StateFeatures -> ActionIndex -> Double -> Proxy -> m Proxy
 insertProxy _ _ _ v (Scalar _) = return $ Scalar v
-insertProxy _ st aNr v (Table m def) = return $ Table (M.insert (st, aNr) v m) def
+insertProxy _ st aNr v (Table m def) = return $ Table (M.insert (map trunc st, aNr) v m) def
+  where trunc x = (fromInteger $ round $ x * (10^n)) / (10.0^^n)
+        n = 3
 insertProxy period st idx v px
   | period < fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize) - 1 && (px ^?! proxyNNConfig . trainBatchSize) == 1 =
     trainBatch [((st, idx), v)] px >>= updateNNTargetNet False period

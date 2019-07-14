@@ -122,40 +122,41 @@ instance ExperimentDef (BORL St) where
     ]
 
 main :: IO ()
-
-
 main = do
-  putStr "Experiment or user mode [Experiment]? Enter u for user mode: " >> hFlush stdout
+  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, u for user mode: " >> hFlush stdout
   l <- getLine
   case l of
-    "u" -> usermode
-    "user" -> usermode
-    _ -> do
-      let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+    "e"   -> experimentMode
+    "exp" -> experimentMode
+    _     -> usermode
+
+experimentMode :: IO ()
+experimentMode = do
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
      -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
      -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
      -- let runner = runMonadBorlIO
-      let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
-      (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-      let runner = runMonadBorlTF
-      putStrLn $ "Any change: " ++ show changed
-      let evals =
-            [ Id $ EveryXthElem 10 $ Of "avgRew"
-            , Mean OverReplications $ EveryXthElem 10 (Of "avgRew")
-            , StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
-            , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-            , Mean OverReplications $ EveryXthElem 10 (Of "psiRho")
-            , StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
-            , Mean OverReplications $ EveryXthElem 10 (Of "psiV")
-            , StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
-            , Mean OverReplications $ EveryXthElem 10 (Of "psiW")
-            , StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
-            , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-            , StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-            ]
-      evalRes <- genEvals runner databaseSetup res evals
+  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+  let runner = runMonadBorlTF
+  putStrLn $ "Any change: " ++ show changed
+  let evals =
+        [ Id $ EveryXthElem 10 $ Of "avgRew"
+        , Mean OverReplications $ EveryXthElem 10 (Of "avgRew")
+        , StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
+        , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+        , Mean OverReplications $ EveryXthElem 10 (Of "psiRho")
+        , StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
+        , Mean OverReplications $ EveryXthElem 10 (Of "psiV")
+        , StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
+        , Mean OverReplications $ EveryXthElem 10 (Of "psiW")
+        , StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
+        , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+        , StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
+        ]
+  evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
-      writeAndCompileLatex evalRes
+  writeAndCompileLatex evalRes
 
 
 usermode :: IO ()
@@ -163,7 +164,8 @@ usermode = do
 
   let algorithm =
         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
-        AlgBORL 0.2 0.6 (ByMovAvg 100) Normal False
+        AlgBORL 0.2 0.6 (ByMovAvg 100) -- ByStateValues
+        Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
@@ -211,37 +213,35 @@ names = ["random", "up   ", "down ", "left ", "right"]
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.5
-  , _beta             = 0.05
-  , _delta            = 0.04
-  , _gamma            = 0.30
-  , _epsilon          = 0.075
-  , _exploration      = 0.8
-  , _learnRandomAbove = 0.0
+  { _alpha            = 0.005
+  , _beta             = 0.07
+  , _delta            = 0.07
+  , _gamma            = 0.07
+  , _epsilon          = 0.1
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
   , _zeta             = 1.0
-  , _xi               = 0.2
+  , _xi               = 0.25
   , _disableAllLearning = False
   }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p@(Parameters alp bet del ga eps exp rand zeta xi dis) =
-  Parameters
-    (max 0.03 $ decay slow * alp)
-    (max 0.015 $ decay slow * bet)
-    (max 0.015 $ decay slow * del)
-    (max 0.01 $ decay slow * ga)
-    (max 0.05 $ decay slow * eps)
-    (max 0.10 $ decay slower * exp)
-    rand
-    zeta
-    (0.5 * bet)
-    dis
+decay t = exponentialDecay (Just minValues) 0.25 100000 t
   where
-    slower = 0.01
-    slow = 0.005
-    decaySteps = 200000 :: Double
-    decay rate = rate ** (fromIntegral t / decaySteps)
+    minValues =
+      Parameters
+        { _alpha = 0.001
+        , _beta = 0.01
+        , _delta = 0.01
+        , _gamma = 0.01
+        , _epsilon = 0.05
+        , _exploration = 0.01
+        , _learnRandomAbove = 0.1
+        , _zeta = 1.0
+        , _xi = 0.5
+        , _disableAllLearning = False
+        }
 
 
 initState :: St

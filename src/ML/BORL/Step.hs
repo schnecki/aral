@@ -119,12 +119,19 @@ nextAction borl
                     return $ map snd $ headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
                bestE <-
                  do eVals <- mapM (eValue borl state . fst) bestV
-                    return $ map snd $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
-               if length bestE > 1
-                 then do
-                   r <- liftSimple $ randomRIO (0, length bestE - 1)
-                   return (borl, False, bestE !! r)
-                 else return (borl, False, headE bestE)
+                    rhoVal <- rhoValue borl state (fst $ head bestRho)
+                    vVal <- vValue decideVPlusPsi borl state (fst $ head bestV) -- all a have the same V(s,a) value!
+                    r0Value <- rValue borl RSmall state (fst $ head bestV)      -- all a have the same V_g0(s,a) value!
+                    let headOrLast | rhoVal / (1-gamma0) + vVal > r0Value = head
+                                   | otherwise = last
+                    return $ map snd $ headOrLast $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
+               if length bestV == 1
+                 then return (borl, False, head bestV)
+                 else if length bestE > 1
+                        then do
+                          r <- liftSimple $ randomRIO (0, length bestE - 1)
+                          return (borl, False, bestE !! r)
+                        else return (borl, False, headE bestE)
              AlgDQN {} -> dqnNextAction
              AlgDQNAvgRew {} -> dqnNextAction
   where
@@ -136,6 +143,10 @@ nextAction borl
     headE (x:_) = x
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"
     headDqn (x:_) = x
+    gamma0 = case borl ^. algorithm of
+      AlgBORL g0 _ _ _ _ -> g0
+      AlgDQN g0          -> g0
+      AlgDQNAvgRew g0 _  -> g0
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration

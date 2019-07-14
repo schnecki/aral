@@ -53,7 +53,9 @@ defaultGammaDQN = 0.99
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
 algBORL :: Algorithm
-algBORL = AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 100) (DivideValuesAfterGrowth 1000 70000) False
+algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False
+
+  -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 
 
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.

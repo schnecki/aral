@@ -37,7 +37,7 @@ import           Text.Printf
 import           Debug.Trace
 
 commas :: Int
-commas = 2
+commas = 4
 
 wideStyle :: Style
 wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
@@ -186,6 +186,7 @@ prettyBORLHead printRho borl = do
     text "Algorithm" <>
     colon $$
     nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
+    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloat $ params' ^. zeta)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
     (if isAlgBorl (borl ^. algorithm)
        then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText

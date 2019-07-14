@@ -106,8 +106,8 @@ main = do
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   -- rl <- mkUnichainGrenade algBORL initState netInp actions actionFilter params decay nn nnConfig
-  rl <- mkUnichainTensorflow algBORL initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkUnichainTabular algBORL initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- rl <- mkUnichainTensorflow algBORL initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkUnichainTabular algBORL initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -121,42 +121,39 @@ initState = A
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.05
-  , _beta             = 0.05
-  , _delta            = 0.05
-  , _gamma            = 0.01
-  , _epsilon          = 0.1
-  , _exploration      = 1.0
-  , _learnRandomAbove = 0.0
-  , _zeta             = 0.5
-  , _xi               = 0.25
-  , _disableAllLearning = False
-  }
+        { _alpha = 0.005
+        , _beta = 0.07
+        , _delta = 0.07
+        , _gamma = 0.07
+        , _epsilon = 1.5
+        , _exploration = 1.0
+        , _learnRandomAbove = 0.1
+        , _zeta = 1.0
+        , _xi = 0.2
+        , _disableAllLearning = False
+        }
 
-
--- | Decay function of parameters.
 decay :: Decay
-decay t p@(Parameters alp bet del ga eps exp rand zeta xi dis)
-  | t > 0 && t `mod` 200 == 0 =
-    Parameters
-      (max 0.015 $ slow * alp)
-      (max 0.015 $ slower * bet)
-      (max 0.015 $ slower * del)
-      ga
-      (max 0.1 $ slow * eps)
-      (max 0.01 $ slow * exp)
-      rand
-      zeta
-      xi
-      dis
-  | otherwise = p
+decay = exponentialDecay (Just minValues) 0.05 100000
   where
-    slower = 0.995
-    slow = 0.98
+    minValues =
+      Parameters
+        { _alpha = 0.005
+        , _beta = 0.07
+        , _delta = 0.07
+        , _gamma = 0.07
+        , _epsilon = 0.05
+        , _exploration = 0.01
+        , _learnRandomAbove = 0.0
+        , _zeta = 1.0
+        , _xi = 0.2
+        , _disableAllLearning = False
+        }
 
 
 -- State
-data St = B | A | C deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
+data St = B | A | C
+  deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
 type R = Double
 type P = Double
 
