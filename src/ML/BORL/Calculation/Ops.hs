@@ -151,7 +151,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- enforce values
   let maxDeviation = sortBy (compare `on` abs) [psiW,psiV,psiW+psiV,-psiV,-psiW,-psiV-psiW]
   let vValStateNew = vValState' -- + xiVal * psiW
-                     + clip (max 0.2 (0.1*abs vValState')) (xiVal * head maxDeviation)
+                     + clip ((0.1*max 0.5 (abs vValState'))) (xiVal * head maxDeviation)
                      -- + clip (max 0.2 (0.1*abs wValState')) (xiVal * psiV)
         --  | psiValV' < zetaVal = vValState' + clip vValState' (xiVal * psiW  + xiVal * psiV)
         --  | otherwise = vValState' + xiVal * psiV  + clip vValState' (xiVal * psiV)

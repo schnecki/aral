@@ -221,7 +221,7 @@ params = Parameters
   , _exploration      = 1.0
   , _learnRandomAbove = 0.1
   , _zeta             = 1.0
-  , _xi               = 0.25
+  , _xi               = 0.75
   , _disableAllLearning = False
   }
 
@@ -239,7 +239,7 @@ decay t = exponentialDecay (Just minValues) 0.25 100000 t
         , _exploration = 0.01
         , _learnRandomAbove = 0.1
         , _zeta = 1.0
-        , _xi = 0.5
+        , _xi = 0.75
         , _disableAllLearning = False
         }
 
