@@ -72,8 +72,8 @@ fromSerialisableWith f g as aF decay ftExt inp builder (BORLSerialisable s t e p
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg ph lastV rew psis prS
       borl' =
-        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] $
-        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, w, r0, r1] borl
+        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] $
+        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] borl
   restoreTensorflowModels False borl'
   return $ force borl'
 

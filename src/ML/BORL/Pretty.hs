@@ -147,11 +147,13 @@ prettyBORLTables t1 t2 t3 borl = do
   prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
   prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
   docHead <- prettyBORLHead False borl
+  psis <- prBoolTblsStateAction t1 (text "PsiV" $$ nest 40 (text "PsiW")) (borl ^. proxies . psiV) (borl ^. proxies . psiW)
   return $ docHead $$ algDocRho prettyRhoVal $$ algDoc prVW $+$
     (if isAlgBorl (borl ^. algorithm)
        then prR0R1
        else vcat prR1) $+$
-    algDoc (text "V+PsiV" $+$ vcat vPlusPsiV)
+    psis
+    --  $+$ algDoc (text "PsiV" $+$ vcat vPlusPsiV)
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     prettyAction st = st

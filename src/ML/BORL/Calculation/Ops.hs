@@ -35,7 +35,7 @@ import           Control.Lens
 import           Control.Monad               (when)
 import           Control.Parallel.Strategies hiding (r0)
 import           Data.Function               (on)
-import           Data.List                   (sortBy)
+import           Data.List                   (maximumBy, minimumBy, sortBy)
 
 import           Debug.Trace
 
@@ -89,15 +89,16 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV) `using` rpar
+  psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW) `using` rpar
 
   -- Rho
   rhoState <-
     if isUnichain borl
       then case avgRewardType of
              Fixed x       -> return x
-             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l -- (length lastRews')
+             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
              ByReward      -> return reward
-             ByStateValues -> return (reward + vValStateNext - vValState)
+             ByStateValues -> return $ reward + vValStateNext - vValState
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
@@ -147,38 +148,21 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiW
 
   let psiVState' = (1 - expSmthPsi) * psiVState + expSmthPsi * psiV
+  let psiWState' = (1 - expSmthPsi) * psiWState + expSmthPsi * psiW
 
   -- enforce values
-  let maxDeviation = sortBy (compare `on` abs) [psiW,psiV,psiW+psiV,-psiV,-psiW,-psiV-psiW]
-  let vValStateNew = vValState' -- + xiVal * psiW
-                     + clip ((0.1*max 0.5 (abs vValState'))) (xiVal * head maxDeviation)
-                     -- + clip (max 0.2 (0.1*abs wValState')) (xiVal * psiV)
-        --  | psiValV' < zetaVal = vValState' + clip vValState' (xiVal * psiW  + xiVal * psiV)
-        --  | otherwise = vValState' + xiVal * psiV  + clip vValState' (xiVal * psiV)
-
-      wValStateNew = wValState' -- clip (max 0.1 (0.1*abs wValState')) (xiVal * psiV)
-
-      -- xiVal * psiVState' -- signum psiV * psiValV'
-        --  | otherwise = wValState' -- - (1-xiVal) * psiV
-
-
-        -- (xiVal * psiV + 2*xiVal * psiW)
-  --   | abs psiV > abs psiW = vValState' - if randomAction then 0 else xiVal * psiV + xiVal * psiV
-  --   | otherwise = vValState' - if randomAction then 0 else xiVal * psiW + xiVal * psiV
-
-
-        -- xiVal * psiV
-
-      clip minmax val = max (-minmax) $ min minmax val
+  let correction = psiWState' + psiVState'
+        -- | abs psiWState' > abs psiVState' = psiWState'
+        --          | otherwise = psiVState'
+  let vValStateNew | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState'
+                   | otherwise = vValState' + clip ((1-zetaVal)*abs vValState') xiVal * correction
+      clip minmax val = max (-minmax') $ min minmax' val
+        where minmax' | xiVal > 0 = max 0.02 minmax -- ensure enforcing even if state value is very small
+                      | otherwise = minmax
+      -- rhoValNew = max rhoMinimumState $ reward + vValStateNext - vValStateNew
 
   when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV\tPsiW\tZeta\t-Zeta\n"
   liftSimple $ appendFile "psiValues" (show period ++ "\t" ++ show (if randomAction then 0 else psiV) ++ "\t" ++ show (if randomAction then 0 else psiW) ++ "\t"  ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")
-
-
-  -- let borl' | randomAction && borl ^. parameters.exploration <= borl ^. parameters.learnRandomAbove = borl -- multichain ?
-  --           | otherwise = set v (M.insert state vValStateNew mv) $ set w (M.insert state wValState' mw) $ set rho rhoNew $
-  --                         set r0 (M.insert state r0ValState' mr0) $ set r1 (M.insert state r1ValState' mr1) borl
-
 
   return $
     Calculation
@@ -186,7 +170,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       (Just rhoVal')
       (Just psiVState')
       (Just vValStateNew)
-      (Just wValStateNew)
+      (Just psiWState')
+      (Just wValState')
       (Just r0ValState')
       r1ValState'
       (Just psiValRho')
@@ -206,7 +191,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * rBig)
-  return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
+  return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
 mkCalculation' borl (state,stateActIdxes) aNr randomAction reward (stateNext,stateNextActIdxes) episodeEnd (AlgDQNAvgRew ga avgRewardType) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
@@ -244,7 +229,7 @@ mkCalculation' borl (state,stateActIdxes) aNr randomAction reward (stateNext,sta
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward - rhoVal' + epsEnd * ga * rBig)
-  return $ Calculation (Just rhoMinimumVal') (Just rhoVal') Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
+  return $ Calculation (Just rhoMinimumVal') (Just rhoVal') Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
 -- TODO maybe integrate learnRandomAbove, etc.:
   -- let borl'

@@ -128,8 +128,8 @@ params = Parameters
         , _epsilon = 1.5
         , _exploration = 1.0
         , _learnRandomAbove = 0.1
-        , _zeta = 1.0
-        , _xi = 0.2
+        , _zeta = 0.1
+        , _xi = 0.5
         , _disableAllLearning = False
         }
 

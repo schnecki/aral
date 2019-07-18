@@ -27,3 +27,6 @@ results/
 /stack.yaml.lock
 /psiValues
 /reward
+/test/plot.sh
+/test/psiValues
+/test/reward

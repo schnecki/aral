@@ -20,6 +20,7 @@ data Calculation = Calculation
   , getRhoVal'        :: Maybe Double
   , getPsiVVal'       :: Maybe Double
   , getVValState'     :: Maybe Double
+  , getPsiWVal'       :: Maybe Double
   , getWValState'     :: Maybe Double
   , getR0ValState'    :: Maybe Double
   , getR1ValState'    :: Double
@@ -40,6 +41,7 @@ avgCalculation xs =
     (avg <$> mapM getRhoVal' xs)
     (avg <$> mapM getPsiVVal' xs)
     (avg <$> mapM getVValState' xs)
+    (avg <$> mapM getPsiWVal' xs)
     (avg <$> mapM getWValState' xs)
     (avg <$> mapM getR0ValState' xs)
     (avg $ map getR1ValState' xs)

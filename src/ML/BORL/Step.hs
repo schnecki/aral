@@ -33,13 +33,14 @@ import           ML.BORL.Type
 import           ML.BORL.Types
 
 import           Control.Applicative              ((<|>))
+import           Control.Arrow                    ((&&&), (***))
 import           Control.DeepSeq                  (NFData, force)
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Parallel.Strategies      hiding (r0)
 import           Data.Function                    (on)
-import           Data.List                        (find, groupBy, sortBy)
+import           Data.List                        (find, groupBy, partition, sortBy)
 import qualified Data.Map.Strict                  as M
 import           Data.Maybe                       (fromMaybe, isJust)
 import           System.Directory
@@ -121,10 +122,10 @@ nextAction borl
                  do eVals <- mapM (eValue borl state . fst) bestV
                     rhoVal <- rhoValue borl state (fst $ head bestRho)
                     vVal <- vValue decideVPlusPsi borl state (fst $ head bestV) -- all a have the same V(s,a) value!
-                    r0Value <- rValue borl RSmall state (fst $ head bestV)      -- all a have the same V_g0(s,a) value!
-                    let headOrLast | rhoVal / (1-gamma0) + vVal > r0Value = head
-                                   | otherwise = last
-                    return $ map snd $ headOrLast $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip eVals bestV)
+                    r0Values <- mapM (rValue borl RSmall state . fst) bestV
+                    let rhoPlusV = rhoVal / (1-gamma0) + vVal
+                        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
+                    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
                if length bestV == 1
                  then return (borl, False, head bestV)
                  else if length bestE > 1
