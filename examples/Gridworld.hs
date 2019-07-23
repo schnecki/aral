@@ -110,8 +110,10 @@ policy s a
       | otherwise = actionName a /= actionName actRand
     filterColumn ((_, c), x)
       | c == 2 = actionName x == actionName actUp || actionName x == actionName actRand
-      | c < 2 = actionName x /= actionName actLeft
-      | c > 2 = actionName x /= actionName actRight
+      | c < 2 = actionName x == actionName actRight
+          -- actionName x /= actionName actLeft
+      | c > 2 = actionName x == actionName actLeft
+        -- actionName x /= actionName actRight
       | otherwise = True
     filterRow ((r, c), a)
       | r == 0 = actionName a /= actionName actUp
@@ -230,7 +232,7 @@ experimentMode = do
 
 usermode :: IO ()
 usermode = do
-
+  putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
   runBorlLp policy >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
@@ -238,7 +240,8 @@ usermode = do
         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
         AlgBORL 0.5 0.8
         -- (ByMovAvg 100)
-        ByStateValues
+        -- ByStateValues
+        (Fixed 5.09)
         Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN

@@ -93,7 +93,7 @@ makeReward s = do
     fst3 (x,_,_) = x
     snd3 (_,x,_) = x
     acts = map snd $ filter fst $ zip (lpActionFilter s) lpActions
-    nr = 10000
+    nr = 80000
     mkList :: [(Reward s, NextState s, Bool)] -> Double
     mkList [] = error "policy defines a transition which could not be inferred using the given actions! Aborting."
     mkList xs@((_,s',_):_) = sum (map (fromReward . fst3) xs) / fromIntegral (length xs)
