@@ -121,6 +121,42 @@ instance ExperimentDef (BORL St) where
         Nothing
     ]
 
+-- | BORL Parameters.
+params :: Parameters
+params = Parameters
+  { _alpha            = 0.05
+  , _beta             = 0.01
+  , _delta            = 0.01
+  , _gamma            = 0.01
+  , _epsilon          = 1.0
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
+  , _zeta             = 0.0
+  , _xi               = 0.75
+  , _disableAllLearning = False
+  }
+
+-- | Decay function of parameters.
+decay :: Decay
+decay t = exponentialDecay (Just minValues) 0.25 300000 t
+  where
+    minValues =
+      Parameters
+        { _alpha = 0.025
+        , _beta =  0.05
+        , _delta = 0.05
+        , _gamma = 0.05
+        , _epsilon = 0.05
+        , _exploration = 0.10
+        , _learnRandomAbove = 0.1
+        , _zeta = 0.0 -- 0.0
+        , _xi = 1.0 -- 0.75
+        , _disableAllLearning = False
+        }
+
+initVals :: InitValues
+initVals = InitValues 0 0 0 0 0
+
 main :: IO ()
 main = do
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, u for user mode: " >> hFlush stdout
@@ -136,7 +172,7 @@ experimentMode = do
      -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
      -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
      -- let runner = runMonadBorlIO
-  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
+  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
@@ -164,13 +200,15 @@ usermode = do
 
   let algorithm =
         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
-        AlgBORL 0.2 0.6 (ByMovAvg 100) -- ByStateValues
+        AlgBORL 0.5 0.8
+        -- (ByMovAvg 100)
+        ByStateValues
         Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay Nothing
+  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
@@ -209,39 +247,6 @@ modelBuilder =
 
 
 names = ["random", "up   ", "down ", "left ", "right"]
-
--- | BORL Parameters.
-params :: Parameters
-params = Parameters
-  { _alpha            = 0.005
-  , _beta             = 0.07
-  , _delta            = 0.07
-  , _gamma            = 0.07
-  , _epsilon          = 0.1
-  , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
-  , _zeta             = 1.0
-  , _xi               = 0.75
-  , _disableAllLearning = False
-  }
-
--- | Decay function of parameters.
-decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.25 100000 t
-  where
-    minValues =
-      Parameters
-        { _alpha = 0.001
-        , _beta = 0.01
-        , _delta = 0.01
-        , _gamma = 0.01
-        , _epsilon = 0.05
-        , _exploration = 0.01
-        , _learnRandomAbove = 0.1
-        , _zeta = 1.0
-        , _xi = 0.75
-        , _disableAllLearning = False
-        }
 
 
 initState :: St

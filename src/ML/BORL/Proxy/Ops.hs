@@ -68,7 +68,7 @@ insert ::
   -> ReplMemFun s
   -> Proxies
   -> m (Proxies, Calculation)
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 Nothing) = do
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing) = do
   let 
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
@@ -82,9 +82,10 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
     pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
     pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
+    pPsiW' <- mInsertProxy (getPsiWVal' calc) pPsiW `using` rpar
     pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
     pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' Nothing, calc)
+    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     sActIdxes = map fst $ actionsIndexed borl state
     sNextActIdxes = map fst $ actionsIndexed borl stateNext
@@ -93,7 +94,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     stateNextFeat = (borl ^. featureExtractor) stateNext
     stateActs = (stateFeat, sActIdxes)
     stateNextActs = (stateNextFeat, sNextActIdxes)
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pW pR0 pR1 (Just replMem))
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
@@ -110,9 +111,10 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
         pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
         pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
+        pPsiW' <- mInsertProxy (getPsiWVal' calc) pPsiW `using` rpar
         pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
         pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
-        return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc)
+        return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
   | otherwise = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
@@ -145,9 +147,10 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         pV' <- mTrainBatch getVValState' calcs pV `using` rpar
         pW' <- mTrainBatch getWValState' calcs pW `using` rpar
         pPsiV' <- mTrainBatch getPsiVVal' calcs pPsiV `using` rpar
+        pPsiW' <- mTrainBatch getPsiWVal' calcs pPsiW `using` rpar
         pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
         pR1' <- trainBatch (map (second getR1ValState') calcs) pR1 `using` rpar
-        return (Proxies pRhoMin' pRho' pPsiV' pV' pW' pR0' pR1' (Just replMem'), calc)
+        return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
             -- avgCalculation (map snd calcs))
   where
     sActIdxes = map fst $ actionsIndexed borl state

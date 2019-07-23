@@ -144,7 +144,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -167,7 +167,7 @@ mkUnichainTensorflowM ::
   -> Maybe InitValues
   -> m (BORL s)
 mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
-  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable]
+  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
   let netInpInitState = ftExt initialState
@@ -181,6 +181,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
   r0 <-   liftSimple $ nnSA R0Table 4
   r1 <-   liftSimple $ nnSA R1Table 6
   psiV <- liftSimple $ nnSA PsiVTable 8
+  psiW <- liftSimple $ nnSA PsiVTable 10
   repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (v ^?! proxyTFTarget)
   return $
@@ -200,7 +201,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) psiV v w r0 r1 (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) psiV v psiW w r0 r1 (Just repMem))
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> liftTensorflow modelBuilderFun
@@ -251,7 +252,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -282,6 +283,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
+  let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
@@ -300,7 +302,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
@@ -326,6 +328,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
+  let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nnConfig $
@@ -344,7 +347,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       mempty
       mempty
       (0, 0, 0)
-      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
 
 
 mkReplayMemory :: Int -> IO ReplayMemory
