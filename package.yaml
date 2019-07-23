@@ -149,7 +149,9 @@ executables:
 
   three-states:
     main:                ThreeStates.hs
-    other-modules:       Helper
+    other-modules:
+    - Helper
+    - SolveLp
     source-dirs:         examples
     ghc-options:
     - -threaded
@@ -158,7 +160,7 @@ executables:
     dependencies:
     - borl
     - experimenter
-
+    - hmatrix-glpk
 
   tensorflow-test:
     main:                Tensorflow.hs

@@ -26,6 +26,7 @@
 module Main where
 
 import           ML.BORL                hiding (actionFilter)
+import           SolveLp
 
 import           Helper
 
@@ -99,9 +100,25 @@ instance RewardFuture St where
   type StoreType St = ()
 
 
+instance BorlLp St where
+  lpActions = actions
+  lpActionFilter = actionFilter
+
+
+policy :: Policy St
+policy s a
+  | (s, a) == (A, left)  = [((B, right), 1.0)]
+  | (s, a) == (B, right) = [((A, left), 1.0)]
+  | (s, a) == (A, right) = [((C, left), 1.0)]
+  | (s, a) == (C, left)  = [((A, left), 1.0)]
+  | otherwise = []
+
 main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
+
+  runBorlLp policy >>= print
+  putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
@@ -159,9 +176,11 @@ type P = Double
 
 -- Actions
 actions :: [Action St]
-actions =
-  [ Action moveLeft "left "
-  , Action moveRight "right"]
+actions = [left, right]
+
+left,right :: Action St
+left = Action moveLeft "left "
+right = Action moveRight "right"
 
 actionFilter :: St -> [Bool]
 actionFilter A = [True, True]

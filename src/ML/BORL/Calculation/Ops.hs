@@ -82,7 +82,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           _                  -> take keepXLastValues $ reward : borl ^. lastRewards
   vValState <- vValueFeat False borl state aNr `using` rpar
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
-  vValStateNext <- vStateValue decideOnVPlusPsiV borl (stateNext, stateNextActIdxes) `using` rpar
+  vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   wValState <- wValueFeat borl state aNr `using` rpar
   wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes) `using` rpar
