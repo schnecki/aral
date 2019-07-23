@@ -89,7 +89,9 @@ library:
 executables:
   gridworld:
     main:                Gridworld.hs
-    other-modules:       Helper
+    other-modules:
+      - Helper
+      - SolveLp
     source-dirs:         examples
     ghc-options:
     - -threaded
@@ -98,6 +100,7 @@ executables:
     dependencies:
     - borl
     - experimenter
+    - hmatrix-glpk
 
   gridworld-hard:
     main:                GridworldHard.hs

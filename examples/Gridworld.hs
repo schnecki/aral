@@ -6,10 +6,12 @@
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
 import           ML.BORL
+import           SolveLp
 
 import           Experimenter
 
@@ -57,6 +59,8 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorValueFromName)
 
 
+import           Debug.Trace
+
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
@@ -76,14 +80,43 @@ expSetup borl =
 instance RewardFuture St where
   type StoreType St = ()
 
--- instance RewardFutureState s where
---   type Storage s = ()
---   applyState :: Storage s -> s -> Reward s
---   applyState _ _ = error "no FutureRewards needed. Thus not to be called"
---   serialisableStorage
+instance BorlLp St where
+  lpActions = actions
+  lpActionFilter = actFilter
 
---   mapStorage :: (s -> s') -> Storage s -> Storage s'
---   mapStorage _ _ = ()
+policy :: Policy St
+policy s a
+  | s == fromIdx (0, 2) && a == actRand = map (, 1 / fromIntegral (length stateActions)) stateActions
+  | s == fromIdx (0, 2) = []
+  | a == actRand = []
+  | otherwise = mkProbability $ filter filterActRand $ filter filterColumn $ filter filterRow [(st', actUp), (st', actLeft), (st', actRight), (st', actRand)]
+  where
+    st'
+      | a == actUp = (max 0 $ row - 1, col)
+      | a == actDown = (min 4 $ row + 1, col)
+      | a == actLeft = (row, max 0 $ col - 1)
+      | a == actRight = (row, min 4 $ col + 1)
+    row = fst $ getCurrentIdx s
+    col = snd $ getCurrentIdx s
+    actRand = head actions
+    actUp = actions !! 1
+    actDown = actions !! 2
+    actLeft = actions !! 3
+    actRight = actions !! 4
+    states = [minBound .. maxBound] :: [St]
+    stateActions = [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
+    filterActRand ((r, c), a)
+      | r == 0 && c == 2 = actionName a == actionName actRand
+      | otherwise = actionName a /= actionName actRand
+    filterColumn ((_, c), x)
+      | c == 2 = actionName x == actionName actUp || actionName x == actionName actRand
+      | c < 2 = actionName x /= actionName actLeft
+      | c > 2 = actionName x /= actionName actRight
+      | otherwise = True
+    filterRow ((r, c), a)
+      | r == 0 = actionName a /= actionName actUp
+      | otherwise = True
+    mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
 instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = TF.SessionT IO
@@ -198,6 +231,9 @@ experimentMode = do
 usermode :: IO ()
 usermode = do
 
+  runBorlLp policy >>= print
+  putStr "NOTE: Above you can see the solution generated using linear programming."
+
   let algorithm =
         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
         AlgBORL 0.5 0.8
@@ -255,7 +291,6 @@ initState = fromIdx (2,2)
 
 -- State
 newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
-
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
@@ -333,7 +368,8 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
 
 
 getCurrentIdx :: St -> (Int,Int)
-getCurrentIdx (St st) = second (fst . head . filter ((==1) . snd)) $
+getCurrentIdx (St st) =
+  second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
   zip [0..] $ map (zip [0..]) st
 

@@ -4,7 +4,7 @@
 module SolveLp
     ( runBorlLp
     , BorlLp (..)
-    , Policy (..)
+    , Policy
     , LpResult (..)
     ) where
 
@@ -52,19 +52,20 @@ runBorlLp policy = do
         map (\xs@(x:_) -> (fst x, map snd xs)) $
         groupBy ((==) `on` second actionName . fst) $
         sortBy (compare `on` second actionName . fst) $ filter ((/= 0) . snd . snd) $ concat [map ((s, a), ) (policy s a) | s <- states, a <- lpActions]
+  -- print transitionProbs
+  let stateActions = map fst transitionProbs
   let stateActionIndices = M.fromList $ zip (map (second actionName . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
-  let obj = Maximize (1 : replicate (2*length transitionProbs) 0)
+  let obj = Maximize (1 : replicate (2 * length transitionProbs) 0)
   rewards <- concat <$> mapM makeReward states
   let rewards' = map (first (second actionName)) rewards
   let constr = map (makeConstraints stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
-  let bounds = map Free [1 .. (2*length transitionProbs + 1)]
+  let bounds = map Free [1 .. (2 * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
-  let stateActions = map fst transitionProbs
   let transProbs = map (second (map (first (second actionName))) . first (second actionName)) transitionProbs
   case sol of
-    Optimal (g, vals) -> return $ LpResult transProbs rewards' g (zipWith mkResult stateActions (tail vals))
-                         (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
+    Optimal (g, vals) ->
+      return $ LpResult transProbs rewards' g (zipWith mkResult stateActions (tail vals)) (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
   where
     states = [minBound .. maxBound] :: [st]
     mkResult (s, a) v = ((s, actionName a), v)
@@ -76,7 +77,7 @@ makeConstraints stateActionIndices rewards (stAct, xs) =
   , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs) :==: 0
   ]
   where
-    stateIndex state = M.findWithDefault (error "state not found in stateIndices") (second actionName state) stateActionIndices
+    stateIndex state = M.findWithDefault (error $ "state " ++ show state ++ " not found in stateIndices") (second actionName state) stateActionIndices
     stateCount = M.size stateActionIndices
     wIndex state = stateCount + stateIndex state
     rewardValue k =
