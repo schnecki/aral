@@ -143,26 +143,29 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | randomAction = 0
         | otherwise = 1
   let expSmth = randAct * expSmthPsi
-  let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
-  let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiV
-  let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiW
+
 
   let psiVState' = (1 - expSmthPsi) * psiVState + expSmthPsi * psiV
   let psiWState' = (1 - expSmthPsi) * psiWState + expSmthPsi * psiW
 
+  let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
+  -- let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiV
+  let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
+  -- let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiW
+  let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
+
+
   -- enforce values
-  let correction = psiWState' + psiVState'
-        -- | abs psiWState' > abs psiVState' = psiWState'
-        --          | otherwise = psiVState'
   let vValStateNew | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState'
-                   | otherwise = vValState' + clip ((1-zetaVal)*abs vValState') xiVal * correction
+                   | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = (1-bta) * vValState' + bta * xiVal * psiVState'
+                   | otherwise = (1-bta) * vValState' + bta * xiVal * psiWState'
       clip minmax val = max (-minmax') $ min minmax' val
         where minmax' | xiVal > 0 = max 0.02 minmax -- ensure enforcing even if state value is very small
                       | otherwise = minmax
       -- rhoValNew = max rhoMinimumState $ reward + vValStateNext - vValStateNew
 
-  when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV\tPsiW\tZeta\t-Zeta\n"
-  liftSimple $ appendFile "psiValues" (show period ++ "\t" ++ show (if randomAction then 0 else psiV) ++ "\t" ++ show (if randomAction then 0 else psiW) ++ "\t"  ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")
+  when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV ExpSmth\tPsiW\tZeta\t-Zeta\n"
+  liftSimple $ appendFile "psiValues" (show period ++ "\t" ++ show (if randomAction then 0 else psiVState') ++ "\t" ++ show (if randomAction then 0 else psiW) ++ "\t"  ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")
 
   return $
     Calculation

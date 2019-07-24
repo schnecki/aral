@@ -153,7 +153,7 @@ prettyBORLTables t1 t2 t3 borl = do
        then prR0R1
        else vcat prR1) $+$
     psis
-    --  $+$ algDoc (text "PsiV" $+$ vcat vPlusPsiV)
+
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     prettyAction st = st
