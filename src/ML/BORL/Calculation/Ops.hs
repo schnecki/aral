@@ -157,8 +157,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
 
   -- enforce values
   let vValStateNew | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState'
-                   | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = (1-bta) * vValState' + bta * xiVal * psiVState'
-                   | otherwise = (1-bta) * vValState' + bta * xiVal * psiWState'
+                   | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' + xiVal * psiVState'
+                   | otherwise = vValState' + xiVal * psiWState'
       clip minmax val = max (-minmax') $ min minmax' val
         where minmax' | xiVal > 0 = max 0.02 minmax -- ensure enforcing even if state value is very small
                       | otherwise = minmax
