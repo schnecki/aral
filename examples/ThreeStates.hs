@@ -117,14 +117,19 @@ main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
 
+  let algorithm =
+        algBORL
+        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        -- AlgDQN 0.99
+
   runBorlLp policy >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade algBORL initState netInp actions actionFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algBORL initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algBORL initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
