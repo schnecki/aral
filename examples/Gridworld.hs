@@ -161,7 +161,7 @@ params :: Parameters
 params = Parameters
   { _alpha            = 0.05
   , _beta             = 0.01
-  , _delta            = 0.01
+  , _delta            = 0.005
   , _gamma            = 0.01
   , _epsilon          = 1.0
   , _exploration      = 1.0
@@ -179,7 +179,7 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
       Parameters
         { _alpha = 0.005
         , _beta =  0.000
-        , _delta = 0.000
+        , _delta = 0.005
         , _gamma = 0.005
         , _epsilon = 0.05
         , _exploration = 0.01
