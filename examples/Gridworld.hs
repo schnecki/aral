@@ -160,14 +160,14 @@ instance ExperimentDef (BORL St) where
 params :: Parameters
 params = Parameters
   { _alpha            = 0.05
-  , _beta             = 0.01
-  , _delta            = 0.01
-  , _gamma            = 0.01
+  , _beta             = 0.001
+  , _delta            = 0.001
+  , _gamma            = 0.001
   , _epsilon          = 1.0
   , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
+  , _learnRandomAbove = 1.0 -- 0.1
   , _zeta             = 0.0
-  , _xi               = 0.75
+  , _xi               = 0.15
   , _disableAllLearning = False
   }
 
@@ -177,15 +177,15 @@ decay t = exponentialDecay (Just minValues) 0.25 300000 t
   where
     minValues =
       Parameters
-        { _alpha = 0.025
-        , _beta =  0.05
-        , _delta = 0.05
-        , _gamma = 0.05
+        { _alpha = 0.005
+        , _beta =  0.000
+        , _delta = 0.000
+        , _gamma = 0.005
         , _epsilon = 0.05
         , _exploration = 0.10
         , _learnRandomAbove = 0.1
         , _zeta = 0.0 -- 0.0
-        , _xi = 1.0 -- 0.75
+        , _xi = 0.15 -- 0.75
         , _disableAllLearning = False
         }
 
@@ -194,9 +194,10 @@ initVals = InitValues 0 0 0 0 0
 
 main :: IO ()
 main = do
-  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, u for user mode: " >> hFlush stdout
+  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
   case l of
+    "l"   -> lpMode
     "e"   -> experimentMode
     "exp" -> experimentMode
     _     -> usermode
@@ -230,11 +231,15 @@ experimentMode = do
   writeAndCompileLatex evalRes
 
 
-usermode :: IO ()
-usermode = do
+lpMode :: IO ()
+lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
   runBorlLp policy >>= print
-  putStr "NOTE: Above you can see the solution generated using linear programming."
+  putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
+
+
+usermode :: IO ()
+usermode = do
 
   let algorithm =
         -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
