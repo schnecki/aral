@@ -320,6 +320,7 @@ getMinMaxVal p  = case p ^?! proxyType of
   R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
   PsiVTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiWTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
   RDqnAvgRewTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
 
 
