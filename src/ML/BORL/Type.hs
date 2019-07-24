@@ -181,7 +181,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
   r0 <-   liftSimple $ nnSA R0Table 4
   r1 <-   liftSimple $ nnSA R1Table 6
   psiV <- liftSimple $ nnSA PsiVTable 8
-  psiW <- liftSimple $ nnSA PsiVTable 10
+  psiW <- liftSimple $ nnSA PsiWTable 10
   repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (v ^?! proxyTFTarget)
   return $
@@ -216,6 +216,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
     name R0Table   = "r0"
     name R1Table   = "r1"
     name PsiVTable = "psiV"
+    name PsiWTable = "psiW"
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
