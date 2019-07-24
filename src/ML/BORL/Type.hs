@@ -175,6 +175,9 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
+        let tp' = case alg of
+              AlgDQNAvgRew{} | tp == R1Table -> VTable
+              _                              -> tp
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <-    liftSimple $ nnSA VTable 0
   w <-    liftSimple $ nnSA WTable 2
