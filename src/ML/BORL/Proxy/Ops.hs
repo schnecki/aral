@@ -319,7 +319,8 @@ getMinMaxVal p  = case p ^?! proxyType of
   WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
   R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
-  PsiVTable -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiVTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  RDqnAvgRewTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.

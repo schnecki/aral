@@ -44,6 +44,10 @@ isAlgDqn AlgDQN{}       = True
 isAlgDqn AlgDQNAvgRew{} = True
 isAlgDqn _              = False
 
+isAlgDqnAvgRew :: Algorithm -> Bool
+isAlgDqnAvgRew AlgDQNAvgRew{} = True
+isAlgDqnAvgRew _              = False
+
 
 defaultGamma0,defaultGamma1,defaultGammaDQN :: Double
 defaultGamma0 = 0.50

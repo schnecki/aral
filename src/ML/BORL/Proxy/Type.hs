@@ -33,6 +33,7 @@ data ProxyType
   | R1Table
   | PsiVTable
   | PsiWTable
+  | RDqnAvgRewTable
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 data LookupType = Target | Worker
