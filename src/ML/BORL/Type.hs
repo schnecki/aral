@@ -96,7 +96,6 @@ instance (NFData s) => NFData (BORL s) where
     rnf as `seq` rnf af `seq` rnf s `seq` rnf ftExt `seq`
     rnf t `seq` rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf fut `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 
-
 ------------------------------ Indexed Action ------------------------------
 
 
@@ -399,8 +398,11 @@ checkGrenade _ nnConfig borl
 
 
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
-overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 
 setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
 setAllProxies len = overAllProxies len . const
+
+allProxies :: Proxies -> [Proxy]
+allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. psiW , pxs ^. w, pxs ^. r0, pxs ^. r1]
 

@@ -112,7 +112,4 @@ instance NFData Proxies where
   rnf (Proxies rhoMin rho psiV v psiW w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV
     `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
 
-allProxies :: Proxies -> [Proxy]
-allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. psiW , pxs ^. w, pxs ^. r0, pxs ^. r1]
-
 

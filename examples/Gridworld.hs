@@ -253,9 +253,9 @@ usermode = do
         Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
+  rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)

@@ -190,9 +190,11 @@ prettyBORLHead printRho borl = do
     nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
     algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloat $ params' ^. zeta)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
-    (if isAlgBorl (borl ^. algorithm)
-       then text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
-       else text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn) $+$
+    (case borl ^. algorithm of
+       AlgBORL{} -> text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
+       AlgDQN{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
+       AlgDQNAvgRew{} -> text "Scaling RDqnAvgRew by V Config" <> colon $$ nest 45 scalingTextDqnAvgRew
+    ) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
     (if printRho then prettyRhoVal else empty)
   where
@@ -219,6 +221,11 @@ prettyBORLHead printRho borl = do
         P.Table {} -> text "Tabular representation (no scaling needed)"
         P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
         P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+    scalingTextDqnAvgRew =
+      case borl ^. proxies . v of
+        P.Table {} -> text "Tabular representation (no scaling needed)"
+        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ 2 * conf ^. scaleParameters . scaleMinVValue, printFloat $ 2 * conf ^. scaleParameters . scaleMaxVValue))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ 2 * conf ^. scaleParameters . scaleMinVValue, printFloat $ 2 * conf ^. scaleParameters . scaleMaxVValue)))
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty
