@@ -176,7 +176,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       (Just psiWState')
       (Just wValState')
       (Just r0ValState')
-      r1ValState'
+      (Just r1ValState')
       (Just psiValRho')
       (Just psiValV')
       (Just psiValW')
@@ -194,9 +194,9 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * rBig)
-  return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
+  return $ Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing (Just r1ValState') Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
-mkCalculation' borl (state,stateActIdxes) aNr randomAction reward (stateNext,stateNextActIdxes) episodeEnd (AlgDQNAvgRew ga avgRewardType) = do
+mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let alp = params' ^. alpha
       gam = params' ^. gamma
@@ -213,7 +213,7 @@ mkCalculation' borl (state,stateActIdxes) aNr randomAction reward (stateNext,sta
     if isUnichain borl
       then case avgRewardType of
              Fixed x -> return x
-             ByMovAvg l -> return $ sum lastRews' / fromIntegral l -- (length lastRews')
+             ByMovAvg l -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
              ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgDQNAvgRew"
       else do
@@ -228,11 +228,10 @@ mkCalculation' borl (state,stateActIdxes) aNr randomAction reward (stateNext,sta
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
         | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
-  let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
-  r1ValState <- rValueFeat borl RBig state aNr `using` rpar
-  rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward - rhoVal' + epsEnd * ga * rBig)
-  return $ Calculation (Just rhoMinimumVal') (Just rhoVal') Nothing Nothing Nothing Nothing Nothing r1ValState' Nothing Nothing Nothing Nothing lastRews' episodeEnd
+  vValState <- vValueFeat False borl state aNr `using` rpar
+  vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
+  let vValState' = (1 - gam) * vValState + gam * (reward - rhoVal' + epsEnd * vValStateNext)
+  return $ Calculation (Just rhoMinimumVal') (Just rhoVal') Nothing (Just vValState') Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing lastRews' episodeEnd
 
 -- TODO maybe integrate learnRandomAbove, etc.:
   -- let borl'

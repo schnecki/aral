@@ -133,8 +133,8 @@ nextAction borl
                           r <- liftSimple $ randomRIO (0, length bestE - 1)
                           return (borl, False, bestE !! r)
                         else return (borl, False, headE bestE)
-             AlgDQN {} -> dqnNextAction
-             AlgDQNAvgRew {} -> dqnNextAction
+             AlgBORLVOnly {} -> singleValueNextAction (vValue False borl state . fst)
+             AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
   where
     headRho []    = error "head: empty input data in nextAction on Rho value"
     headRho (x:_) = x
@@ -147,15 +147,15 @@ nextAction borl
     gamma0 = case borl ^. algorithm of
       AlgBORL g0 _ _ _ _ -> g0
       AlgDQN g0          -> g0
-      AlgDQNAvgRew g0 _  -> g0
+      AlgBORLVOnly _     -> 1
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration
     state = borl ^. s
     as = actionsIndexed borl state
     epsCompare = epsCompareWith eps
-    dqnNextAction = do
-      rValues <- mapM (rValue borl RBig state . fst) as
+    singleValueNextAction f = do
+      rValues <- mapM f as
       let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
                -- liftSimple $ putStrLn ("bestR: " ++ show bestR)
       return (borl, False, snd $ headDqn bestR)

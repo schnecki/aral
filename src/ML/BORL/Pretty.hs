@@ -102,7 +102,7 @@ prettyTablesState borl period p1 pIdx m1 p2 m2 = do
 prettyAlgorithm :: Algorithm -> Doc
 prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
 prettyAlgorithm (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm (AlgDQNAvgRew ga1 avgRewType)      = text "DQN SUBTRACT AvgReward with gamma" <+> text (show ga1) <> text ";" <+> prettyAvgRewardType avgRewType
+prettyAlgorithm (AlgBORLVOnly avgRewType)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType
 
 prettyStateValueHandling :: StateValueHandling -> Doc
 prettyStateValueHandling Normal = empty
@@ -143,17 +143,19 @@ prettyBORLTables t1 t2 t3 borl = do
       m -> do
         prAct <- prettyTable borl prettyAction prettyActionIdx m
         return $ text "Rho" $+$ prAct
-  prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies . v) (borl ^. proxies . w)
-  prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
-  prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
   docHead <- prettyBORLHead False borl
-  psis <- prBoolTblsStateAction t1 (text "PsiV" $$ nest 40 (text "PsiW")) (borl ^. proxies . psiV) (borl ^. proxies . psiW)
-  return $ docHead $$ algDocRho prettyRhoVal $$ algDoc prVW $+$
-    (if isAlgBorl (borl ^. algorithm)
-       then prR0R1
-       else vcat prR1) $+$
-    psis
-
+  case borl ^. algorithm of
+    AlgBORL {} -> do
+      prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies . v) (borl ^. proxies . w)
+      prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      psis <- prBoolTblsStateAction t1 (text "PsiV" $$ nest 40 (text "PsiW")) (borl ^. proxies . psiV) (borl ^. proxies . psiW)
+      return $ docHead $$ algDocRho prettyRhoVal $$ prVW $+$ prR0R1 $+$ psis
+    AlgBORLVOnly {} -> do
+      prV <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
+      return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
+    AlgDQN {} -> do
+      prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+      return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     prettyAction st = st

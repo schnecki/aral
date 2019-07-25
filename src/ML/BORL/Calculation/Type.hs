@@ -23,7 +23,7 @@ data Calculation = Calculation
   , getPsiWVal'       :: Maybe Double
   , getWValState'     :: Maybe Double
   , getR0ValState'    :: Maybe Double
-  , getR1ValState'    :: Double
+  , getR1ValState'    :: Maybe Double
   , getPsiValRho'     :: Maybe Double
   , getPsiValV'       :: Maybe Double
   , getPsiValW'       :: Maybe Double
@@ -44,7 +44,7 @@ avgCalculation xs =
     (avg <$> mapM getPsiWVal' xs)
     (avg <$> mapM getWValState' xs)
     (avg <$> mapM getR0ValState' xs)
-    (avg $ map getR1ValState' xs)
+    (avg <$> mapM getR1ValState' xs)
     (avg <$> mapM getPsiValRho' xs)
     (avg <$> mapM getPsiValV' xs)
     (avg <$> mapM getPsiValW' xs)
