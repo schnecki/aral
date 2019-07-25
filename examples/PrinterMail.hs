@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
 
@@ -63,13 +64,12 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-nnConfig :: NNConfig St
+nnConfig :: NNConfig
 nnConfig = NNConfig
-  { _toNetInp              = netInp
-  , _replayMemoryMaxSize   = 10000
+  { _replayMemoryMaxSize   = 10000
   , _trainBatchSize        = 32
   , _grenadeLearningParams = LearningParameters 0.005 0.0 0.0000
-  , _prettyPrintElems      = [minBound .. maxBound] :: [St]
+  , _prettyPrintElems      = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters       = scalingByMaxAbsReward False 20
   , _updateTargetInterval  = 100
   , _trainMSEMax           = Just 0.015
@@ -78,6 +78,10 @@ nnConfig = NNConfig
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
+
+tblInp :: St -> [Double]
+tblInp st = [fromIntegral $ fromEnum st]
+
 
 maxVal :: Double
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
@@ -97,19 +101,23 @@ modelBuilder =
   inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >>
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
+instance RewardFuture St where
+  type StoreType St = ()
+
+
 main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   let algorithm =
-        -- AlgDQNAvgRew 0.99 (ByMovAvg 200)
-        AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
+        AlgBORLVOnly (ByMovAvg 1000)
+
+        -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
 
   -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues Normal) initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm
-           initState id actions actionFilter params decay Nothing
+  let rl = mkUnichainTabular algorithm initState tblInp actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]
@@ -120,44 +128,38 @@ main = do
 initState :: St
 initState = One
 
-
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.5
-  , _beta             = 0.15
-  , _delta            = 0.04
-  , _gamma            = 0.30
-  , _epsilon          = 0.075
-  , _exploration      = 0.8
-  , _learnRandomAbove = 0.0
-  , _zeta             = 1.0
-  , _xi               = 0.30
+  { _alpha            = 0.05
+  , _beta             = 0.01
+  , _delta            = 0.005
+  , _gamma            = 0.01
+  , _epsilon          = 1.0
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
+  , _zeta             = 0.0
+  , _xi               = 0.0075
   , _disableAllLearning = False
   }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t  p@(Parameters alp bet del ga eps exp rand zeta xi dis)
-  | t `mod` 200 == 0 =
-    Parameters
-      (max 0.03 $ slow * alp)
-      (max 0.015 $ slow * bet)
-      (max 0.015 $ slow * del)
-      (max 0.01 $ slow * ga)
-      (max 0.05 $ slow * eps) -- (0.5*bet)
-      (max 0.01 $ slower * exp)
-      rand
-      zeta
-      (max 0.08 $ slow * xi) -- 0.5*bet)
-      dis
-  | otherwise = p
+decay t = exponentialDecay (Just minValues) 0.05 300000 t
   where
-    slower = 0.995
-    slow = 0.98
-    faster = 1.0 / 0.99
-    f = max 0.01
-
+    minValues =
+      Parameters
+        { _alpha = 0.000
+        , _beta =  0.005
+        , _delta = 0.005
+        , _gamma = 0.005
+        , _epsilon = 0.05
+        , _exploration = 0.01
+        , _learnRandomAbove = 0.1
+        , _zeta = 0.0
+        , _xi = 0.0075
+        , _disableAllLearning = False
+        }
 
 -- State
 data St
@@ -194,7 +196,7 @@ actionFilter Left{}  = [True, False]
 actionFilter Right{} = [False, True]
 
 
-moveLeft :: St -> IO (Reward,St, EpisodeEnd)
+moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
 moveLeft s =
   case s of
     One    -> return (0, Left 2, False)
@@ -202,7 +204,7 @@ moveLeft s =
     Left x -> return (0, Left (x+1), False)
     _      -> moveRight s
 
-moveRight :: St -> IO (Reward,St, EpisodeEnd)
+moveRight :: St -> IO (Reward St,St, EpisodeEnd)
 moveRight s =
   case s of
     One      -> return (0, Right 2, False)

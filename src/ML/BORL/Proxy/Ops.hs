@@ -84,7 +84,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
     pPsiW' <- mInsertProxy (getPsiWVal' calc) pPsiW `using` rpar
     pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-    pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
+    pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
     return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     sActIdxes = map fst $ actionsIndexed borl state
@@ -113,7 +113,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
         pPsiW' <- mInsertProxy (getPsiWVal' calc) pPsiW `using` rpar
         pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-        pR1' <- insertProxy period stateFeat aNr (getR1ValState' calc) pR1 `using` rpar
+        pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
         return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
   | otherwise = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
@@ -149,7 +149,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         pPsiV' <- mTrainBatch getPsiVVal' calcs pPsiV `using` rpar
         pPsiW' <- mTrainBatch getPsiWVal' calcs pPsiW `using` rpar
         pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
-        pR1' <- trainBatch (map (second getR1ValState') calcs) pR1 `using` rpar
+        pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
         return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
             -- avgCalculation (map snd calcs))
   where
@@ -321,7 +321,6 @@ getMinMaxVal p  = case p ^?! proxyType of
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
   PsiVTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
   PsiWTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
-  RDqnAvgRewTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.

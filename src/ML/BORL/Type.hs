@@ -174,9 +174,6 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        let tp' = case alg of
-              AlgDQNAvgRew{} | tp == R1Table -> RDqnAvgRewTable
-              _                              -> tp
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <-    liftSimple $ nnSA VTable 0
   w <-    liftSimple $ nnSA WTable 2
@@ -213,13 +210,12 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
         [replicate (length as) 0]
     prependName txt model =
       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
-    name VTable          = "v"
-    name WTable          = "w"
-    name R0Table         = "r0"
-    name R1Table         = "r1"
-    name PsiVTable       = "psiV"
-    name PsiWTable       = "psiW"
-    name RDqnAvgRewTable = "r0DqnAvgRew"
+    name VTable    = "v"
+    name WTable    = "w"
+    name R0Table   = "r0"
+    name R1Table   = "r1"
+    name PsiVTable = "psiV"
+    name PsiWTable = "psiW"
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
@@ -285,8 +281,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
-  let nnSAR1Table | isAlgDqnAvgRew alg = nnSA RDqnAvgRewTable
-                  | otherwise = nnSA R1Table
+  let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
@@ -331,8 +326,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
-  let nnSAR1Table | isAlgDqnAvgRew alg = nnSA RDqnAvgRewTable
-                  | otherwise = nnSA R1Table
+  let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)

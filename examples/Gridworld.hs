@@ -244,13 +244,13 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
-        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        AlgBORLVOnly (ByMovAvg 10000)
 
-        AlgBORL 0.5 0.8
-        -- (ByMovAvg 300)
-        -- ByStateValues
-        (Fixed 5.4285)
-        Normal False
+        -- AlgBORL 0.5 0.8
+        -- -- (ByMovAvg 300)
+        -- -- ByStateValues
+        -- (Fixed 5.4285)
+        -- Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)

@@ -118,8 +118,8 @@ main = do
   -- createModel >>= mapM_ testRun
 
   let algorithm =
-        algBORL
-        -- AlgDQNAvgRew 0.99 (ByMovAvg 100)
+        -- algBORL
+        AlgBORLVOnly (Fixed 1) -- (ByMovAvg 10000)
         -- AlgDQN 0.99
 
   runBorlLp policy >>= print
