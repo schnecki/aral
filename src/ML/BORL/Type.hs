@@ -200,7 +200,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) psiV v psiW w r0 r1 (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) psiV v psiW w r0 r1 repMem)
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> liftTensorflow modelBuilderFun
@@ -302,7 +302,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
@@ -347,13 +347,14 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       mempty
       mempty
       (0, 0, 0)
-      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table (Just repMem))
+      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
 
 
-mkReplayMemory :: Int -> IO ReplayMemory
+mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
+mkReplayMemory sz | sz <= 0 = return Nothing
 mkReplayMemory sz = do
   vec <- V.new sz
-  return $ ReplayMemory vec sz (-1)
+  return $ Just $ ReplayMemory vec sz (-1)
 
 
 -------------------- Other Constructors --------------------

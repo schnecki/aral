@@ -253,8 +253,8 @@ usermode = do
         -- Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -268,14 +268,22 @@ maxY = 4                        -- [0..maxY]
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
+modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
+modelBuilder =
+  buildModel $
+  inputLayer1D inpLen >> fullyConnected1D (5*inpLen) TF.relu' >> fullyConnected1D (3*inpLen) TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
+  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  where inpLen = genericLength (netInp initState)
+
+
 nnConfig :: NNConfig
 nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 8
+  , _trainBatchSize       = 32
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 6
-  , _updateTargetInterval = 10000
+  , _updateTargetInterval = 3000
   , _trainMSEMax          = Just $ 1/100 * 3
   }
 
@@ -284,13 +292,6 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 
 tblInp :: St -> [Double]
 tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
-
-
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
-  buildModel $
-  inputLayer1D (genericLength (netInp initState)) >> fullyConnected1D 10 TF.relu' >> fullyConnected1D 7 TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 names = ["random", "up   ", "down ", "left ", "right"]

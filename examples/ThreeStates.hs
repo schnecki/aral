@@ -65,12 +65,12 @@ type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, Full
 
 nnConfig :: NNConfig
 nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
+  { _replayMemoryMaxSize  = 0
   , _trainBatchSize       = 32
   , _grenadeLearningParams       = LearningParameters 0.005 0.0 0.0000
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 2
-  , _updateTargetInterval = 100
+  , _updateTargetInterval = 1
   , _trainMSEMax          = Just 0.015
   }
 
@@ -115,8 +115,6 @@ policy s a
 
 main :: IO ()
 main = do
-  -- createModel >>= mapM_ testRun
-
   let algorithm =
         -- algBORL
         AlgBORLVOnly (Fixed 1) -- (ByMovAvg 10000)
@@ -127,9 +125,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig
+  rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

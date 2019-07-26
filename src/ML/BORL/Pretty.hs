@@ -194,8 +194,8 @@ prettyBORLHead printRho borl = do
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
     (case borl ^. algorithm of
        AlgBORL{} -> text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
+       AlgBORLVOnly{} -> text "Scaling RDqnAvgRew by V Config" <> colon $$ nest 45 scalingTextDqnAvgRew
        AlgDQN{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
-       AlgDQNAvgRew{} -> text "Scaling RDqnAvgRew by V Config" <> colon $$ nest 45 scalingTextDqnAvgRew
     ) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
     (if printRho then prettyRhoVal else empty)

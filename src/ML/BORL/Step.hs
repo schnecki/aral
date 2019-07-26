@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns        #-}
+!{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}

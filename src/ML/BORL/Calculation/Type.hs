@@ -30,7 +30,7 @@ data Calculation = Calculation
   , getLastVs'        :: Maybe [Double]
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
-  } deriving (Generic, NFData)
+  } deriving (Show, Generic, NFData)
 
 
 avgCalculation :: [Calculation] -> Calculation
