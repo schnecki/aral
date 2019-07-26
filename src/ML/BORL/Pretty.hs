@@ -210,8 +210,8 @@ prettyBORLHead printRho borl = do
     algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloat $ params' ^. zeta)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
     (case borl ^. algorithm of
-       AlgBORL{} -> text "Scaling (V,W,R0,R1) by V Config" <> colon $$ nest 45 scalingText
-       AlgBORLVOnly{} -> text "Scaling RDqnAvgRew by V Config" <> colon $$ nest 45 scalingTextDqnAvgRew
+       AlgBORL{} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest 45 scalingText
+       AlgBORLVOnly{} -> text "Scaling BorlVOnly by V config" <> colon $$ nest 45 scalingTextBorlVOnly
        AlgDQN{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
     ) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
@@ -239,12 +239,12 @@ prettyBORLHead printRho borl = do
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
-        P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
-    scalingTextDqnAvgRew =
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
+    scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ 2 * conf ^. scaleParameters . scaleMinVValue, printFloat $ 2 * conf ^. scaleParameters . scaleMaxVValue))
-        P.TensorflowProxy _ _ _ _ conf _ -> text (show ((printFloat $ 2 * conf ^. scaleParameters . scaleMinVValue, printFloat $ 2 * conf ^. scaleParameters . scaleMaxVValue)))
+        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue))
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty
@@ -266,7 +266,7 @@ prettyBORLHead printRho borl = do
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
 setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
-setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, w, r0, r1]
+setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc

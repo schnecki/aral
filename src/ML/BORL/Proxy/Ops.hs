@@ -36,6 +36,7 @@ import           ML.BORL.Parameters
 import           ML.BORL.Types                as T
 import           ML.BORL.Types
 
+import System.Random.Shuffle
 import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Lens
@@ -214,43 +215,48 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     liftSimple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
     return px
   | otherwise = do
-    when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+    datasetShuffled <- liftSimple $ shuffleM dataset
+    let net' = foldl' (trainGrenade lp) netW (zipWith (curry return) (map fst datasetShuffled) (map snd datasetShuffled))
+    when (maybe False ((== 0) . (`mod` 10)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
     fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = fromJust (config ^. trainMSEMax)
-    netSGD = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
-    net' = trainGrenade lp netSGD (zip kScaled vScaled)
+    -- net' = trainGrenade lp netSGD (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
     vUnscaled = map snd dataset
     kScaled = map fst dataset
     (minV,maxV) = getMinMaxVal px
     getValue k =
-       unscaleValue (getMinMaxVal px) $ 
+       -- unscaleValue (getMinMaxVal px) $ 
        (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min maxV . max minV) vUnscaled)) -- scaled or unscaled ones?
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
-  | otherwise =
+  | otherwise = do
+    datasetShuffled <- liftSimple $ shuffleM dataset
     let mseMax = fromJust (config ^. trainMSEMax)
         kFullScaled = map (first (map realToFrac) . fst) dataset :: [([Float], ActionIndex)]
         kScaled = map fst kFullScaled
         actIdxs = map snd kFullScaled
         (minV,maxV) = getMinMaxVal px
-        vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
+        vScaledDbl = map (scaleValue (getMinMaxVal px) . snd) datasetShuffled
+        vScaled = map realToFrac vScaledDbl
         vUnscaled = map (realToFrac . snd) dataset
         datasetRepMem = map (first (first (map realToFrac))) dataset
-    in do current <- forwardRun netW kScaled
-          zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
-          backwardRunRepMemData netW datasetRepMem
-          let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetworkUnscaled Worker k px -- scaled or unscaled ones?
-          mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vU -> (** 2) . (vU -) <$> forward k) (map fst dataset) (map (min maxV . max minV) vUnscaled) -- scaled or unscaled ones?
-          if realToFrac mse < mseMax
-            then liftSimple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
-            else do
-              when (maybe False ((== 0) . (`mod` 100)) mPeriod) $ do
-                void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
-                liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-              trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
+    current <- forwardRun netW kScaled
+    zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
+    -- backwardRunRepMemData netW datasetRepMem
+    let forward k = realToFrac <$> lookupNeuralNetwork Worker k px -- lookupNeuralNetworkUnscaled Worker k px -- scaled or unscaled ones?
+    mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vU -> (** 2) . (vU -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaledDbl) -- scaled or unscaled ones?
+    if (realToFrac mse < mseMax)
+      then do
+      liftSimple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse)
+      void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
+      return px
+      else do
+      when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ do
+        liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+      trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
 
 -- | Retrieve a value.

@@ -71,7 +71,7 @@ nnConfig = NNConfig
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 2
   , _updateTargetInterval = 1000
-  , _trainMSEMax          = Just 0.065
+  , _trainMSEMax          = Just 0.03
   }
 
 

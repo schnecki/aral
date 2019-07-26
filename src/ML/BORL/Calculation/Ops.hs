@@ -121,10 +121,12 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- V
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
       psiV = reward - rhoVal' - vValState' + vValStateNext -- should converge to 0
+  -- LastVs
+  let vValStateLastVs' = (1 - params' ^. beta) * vValState + (params' ^. beta) * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' =
         case stValHandling of
-          Normal -> take keepXLastValues $ vValState' : borl ^. lastVValues
-          DivideValuesAfterGrowth nr _ -> take nr $ vValState' : borl ^. lastVValues
+          Normal -> take keepXLastValues $ vValStateLastVs' : borl ^. lastVValues
+          DivideValuesAfterGrowth nr _ -> take nr $ vValStateLastVs' : borl ^. lastVValues
   -- W
   let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + epsEnd * wValStateNext)
       -- psiW = vValState' + wValState' - wValStateNext
@@ -220,7 +222,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   vValState <- vValueFeat False borl state aNr `using` rpar
   vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
-  let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
+  let vValStateLastVs' = (1 - params' ^. beta) * vValState + (params' ^. beta) * (reward - rhoVal' + epsEnd * vValStateNext)
+  let lastVs' = take keepXLastValues $ vValStateLastVs' : borl ^. lastVValues
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'

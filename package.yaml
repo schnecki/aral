@@ -66,6 +66,7 @@ dependencies:
   - cereal-text
   - unliftio-core
   - random
+  - random-shuffle
 
 
 library:
