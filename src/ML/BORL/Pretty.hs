@@ -15,7 +15,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
-import           ML.BORL.Proxy.Ops     (mkNNList)
+import           ML.BORL.Proxy.Ops     (lookupNeuralNetwork, mkNNList)
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -82,14 +82,31 @@ mkListFromNeuralNetwork ::
   -> Bool
   -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
-mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = map (first $ prettyActionEntry prettyAction prettyActionIdx) <$> mkNNList borl scaled pr
+mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = do
+  nnList <- mkNNList borl scaled pr
+  if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize
+    then do
+    let inp = map fst tbl
+    let tableVals = tbl
+    workerVals <- mapM (\x -> lookupNeuralNetwork Worker x pr) inp
+    return $ finalize $ zipWith (\((feat,actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))  ) tbl workerVals
 
-prettyTablesState :: (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k') => BORL k -> Period -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> k') -> P.Proxy -> m Doc
-prettyTablesState borl period p1 pIdx m1 p2 m2 = do
+    else finalize <$> mkNNList borl scaled pr
+  where
+    finalize = map (first $ prettyActionEntry prettyAction prettyActionIdx)
+    tbl =
+      case pr of
+        P.Table t _                     -> M.toList t
+        P.Grenade _ _ p _ cfg _         -> M.toList p
+        P.TensorflowProxy _ _ p _ cfg _ -> M.toList p
+
+prettyTablesState :: (MonadBorl' m, Show k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> k') -> P.Proxy -> m Doc
+prettyTablesState borl p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
   rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
   return $ vcat $ zipWith (\x y -> x $$ nest 40 y) rows1 rows2
   where fromTable = period < fromIntegral memSize
+        period = borl ^. t
         memSize = case m1 of
           P.Table{}                       -> -1
           P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
@@ -124,7 +141,7 @@ prettyBORLTables t1 t2 t3 borl = do
         case borl ^. algorithm of
           AlgDQN {} -> empty
           _         -> doc
-  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl (borl ^. t) prettyAction prettyActionIdx m1 prettyAction m2
+  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
   let addPsiV k v =
         case borl ^. proxies . psiV of

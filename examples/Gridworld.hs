@@ -66,16 +66,33 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld"
     , _experimentInfoParameters   = [isNN, isTf]
-    , _experimentRepetitions      = 1
-    , _preparationSteps           = 100000
-    , _evaluationWarmUpSteps      = 10
+    , _experimentRepetitions      = 3
+    , _preparationSteps           = 300000
+    , _evaluationWarmUpSteps      = 0
     , _evaluationSteps            = 10000
-    , _evaluationReplications     = 2
+    , _evaluationReplications     = 3
     , _maximumParallelEvaluations = 1
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
+
+evals :: [StatsDef s]
+evals =
+  [ Id $ EveryXthElem 10 $ Of "avgRew"
+  , Mean OverReplications $ EveryXthElem 100 (Of "avgRew")
+  , StdDev OverReplications $ EveryXthElem 100 (Of "avgRew")
+  , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+  , Mean OverReplications $ EveryXthElem 100 (Of "psiRho")
+  , StdDev OverReplications $ EveryXthElem 100 (Of "psiRho")
+  , Mean OverReplications $ EveryXthElem 100 (Of "psiV")
+  , StdDev OverReplications $ EveryXthElem 100 (Of "psiV")
+  , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
+  , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
+  , Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , StdDev OverReplications $ Last (Of "avgEpisodeLength")
+  ]
+
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -150,7 +167,8 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [algBORL, AlgBORL 0.5 0.8 (ByMovAvg 100) (DivideValuesAfterGrowth 3000 50000) False, AlgBORL 0.5 0.8 (ByMovAvg 100) Normal False, AlgDQN 0.99])
+        (Just $ const $
+         return [AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False, AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True, AlgBORLVOnly (ByMovAvg 3000)])
         Nothing
         Nothing
         Nothing
@@ -212,20 +230,6 @@ experimentMode = do
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
-  let evals =
-        [ Id $ EveryXthElem 10 $ Of "avgRew"
-        , Mean OverReplications $ EveryXthElem 10 (Of "avgRew")
-        , StdDev OverReplications $ EveryXthElem 10 (Of "avgRew")
-        , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-        , Mean OverReplications $ EveryXthElem 10 (Of "psiRho")
-        , StdDev OverReplications $ EveryXthElem 10 (Of "psiRho")
-        , Mean OverReplications $ EveryXthElem 10 (Of "psiV")
-        , StdDev OverReplications $ EveryXthElem 10 (Of "psiV")
-        , Mean OverReplications $ EveryXthElem 10 (Of "psiW")
-        , StdDev OverReplications $ EveryXthElem 10 (Of "psiW")
-        , Mean OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-        , StdDev OverReplications $ EveryXthElem 10 (Of "avgEpisodeLength")
-        ]
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex evalRes
@@ -253,8 +257,8 @@ usermode = do
         -- Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -271,7 +275,7 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected1D (5*inpLen) TF.relu' >> fullyConnected1D (3*inpLen) TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected1D (5*inpLen) TF.relu' >> fullyConnected1D (3*inpLen) TF.relu' >> fullyConnected1D (2*inpLen) TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
   trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
@@ -284,7 +288,7 @@ nnConfig = NNConfig
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 3000
-  , _trainMSEMax          = Just $ 1/100 * 3
+  , _trainMSEMax          = Just $ 0.065
   }
 
 netInp :: St -> [Double]

@@ -218,15 +218,16 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = fromJust (config ^. trainMSEMax)
-    net' = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
-    -- net' = trainGrenade lp netW (zip kScaled vScaled)
+    netSGD = foldl' (trainGrenade lp) netW (zipWith (curry return) kScaled vScaled)
+    net' = trainGrenade lp netSGD (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
-    -- vUnscaled = map snd dataset
+    vUnscaled = map snd dataset
     kScaled = map fst dataset
-    getValue k
-      -- unscaleValue (getMinMaxVal px) $                                                                                 -- scaled or unscaled ones?
-     = (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
-    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
+    (minV,maxV) = getMinMaxVal px
+    getValue k =
+       unscaleValue (getMinMaxVal px) $ 
+       (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
+    mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min maxV . max minV) vUnscaled)) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | otherwise =
@@ -234,14 +235,15 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
         kFullScaled = map (first (map realToFrac) . fst) dataset :: [([Float], ActionIndex)]
         kScaled = map fst kFullScaled
         actIdxs = map snd kFullScaled
+        (minV,maxV) = getMinMaxVal px
         vScaled = map (realToFrac . scaleValue (getMinMaxVal px) . snd) dataset
         vUnscaled = map (realToFrac . snd) dataset
         datasetRepMem = map (first (first (map realToFrac))) dataset
     in do current <- forwardRun netW kScaled
           zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
-        -- backwardRunRepMemData netW datasetRepMem
-          let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetwork Worker k px -- scaled or unscaled ones?
-          mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vS -> (** 2) . (vS -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaled) -- vUnscaled -- scaled or unscaled ones?
+          backwardRunRepMemData netW datasetRepMem
+          let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetworkUnscaled Worker k px -- scaled or unscaled ones?
+          mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vU -> (** 2) . (vU -) <$> forward k) (map fst dataset) (map (min maxV . max minV) vUnscaled) -- scaled or unscaled ones?
           if realToFrac mse < mseMax
             then liftSimple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse) >> return px
             else do
@@ -262,22 +264,23 @@ lookupProxy period lkType k px
         tab = px ^?! proxyNNStartup
 
 
--- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
--- to the original interval before returned.
+-- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an
+-- error is thrown. The returned value is up-scaled to the original interval before returned.
 lookupNeuralNetwork :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupNeuralNetwork tp k px@Grenade {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork tp k px@TensorflowProxy {} = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
 lookupNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
--- | Retrieve a value from a neural network proxy. For other proxies an error is thrown. The returned value is up-scaled
--- to the original interval before returned.
+-- | Retrieve all values of one feature from a neural network proxy. The output is sclaed to the original range. For
+-- other proxies an error is thrown. The returned value is up-scaled to the original interval before returned.
 lookupActionsNeuralNetwork :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
 lookupActionsNeuralNetwork tp k px@Grenade {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
 lookupActionsNeuralNetwork tp k px@TensorflowProxy {} = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
 lookupActionsNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neural network proxy"
 
 
--- | Retrieve a value from a neural network proxy. For other proxies an error is thrown.
+-- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
+-- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
 lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
