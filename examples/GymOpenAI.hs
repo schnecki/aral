@@ -180,39 +180,43 @@ main = do
 -- | BORL Parameters.
 params :: Parameters
 params = Parameters
-  { _alpha            = 0.30
-  , _beta             = 0.25
-  , _delta            = 0.04
-  , _gamma            = 1.0
-  , _epsilon          = 0.01
-  , _exploration      = 1.0
-  , _learnRandomAbove = 0.0
-  , _zeta             = 1.0
-  , _xi               = 0.2
+  { _alpha              = 0.05
+  , _alphaANN           = 1
+  , _beta               = 0.01
+  , _betaANN            = 1
+  , _delta              = 0.005
+  , _deltaANN           = 1
+  , _gamma              = 0.01
+  , _gammaANN           = 1
+  , _epsilon            = 1.0
+  , _exploration        = 1.0
+  , _learnRandomAbove   = 0.1
+  , _zeta               = 0.0
+  , _xi                 = 0.0075
   , _disableAllLearning = False
   }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p@(Parameters alp bet del ga eps exp rand zeta xi dis)
-  | t `mod` 200 == 0 =
-    Parameters
-      (max 0.03 $ slow * alp)
-      (max 0.015 $ slow * bet)
-      (max 0.015 $ slow * del)
-      (max 0.01 $ slow * ga)
-      (max 0.01 $ slow * eps)
-      (max 0.01 $ slower * exp)
-      rand
-      zeta -- zeta
-      (0.5*bet)
-      dis
-  | otherwise = p
+decay t = exponentialDecay (Just minValues) 0.05 300000 t
   where
-    slower = 0.995
-    slow = 0.98
-    faster = 1.0 / 0.99
-    f = max 0.01
+    minValues =
+      Parameters
+        { _alpha              = 0.000
+        , _alphaANN           = 1.0
+        , _beta               =  0.005
+        , _betaANN            = 1.0
+        , _delta              = 0.005
+        , _deltaANN           = 1.0
+        , _gamma              = 0.005
+        , _gammaANN           = 1.0
+        , _epsilon            = 0.05
+        , _exploration        = 0.01
+        , _learnRandomAbove   = 0.1
+        , _zeta               = 0.0
+        , _xi                 = 0.0075
+        , _disableAllLearning = False
+        }
 
 
 actFilter :: St -> [Bool]

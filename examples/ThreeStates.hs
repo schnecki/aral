@@ -140,18 +140,23 @@ initState = A
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters
-        { _alpha = 0.005
-        , _beta = 0.07
-        , _delta = 0.07
-        , _gamma = 0.07
-        , _epsilon = 1.5
-        , _exploration = 1.0
-        , _learnRandomAbove = 0.1
-        , _zeta = 0.1
-        , _xi = 0.5
-        , _disableAllLearning = False
-        }
+params =
+  Parameters
+    { _alpha = 0.005
+    , _alphaANN = 1
+    , _beta = 0.07
+    , _betaANN = 1
+    , _delta = 0.07
+    , _deltaANN = 1
+    , _gamma = 0.07
+    , _gammaANN = 1
+    , _epsilon = 1.5
+    , _exploration = 1.0
+    , _learnRandomAbove = 0.1
+    , _zeta = 0.1
+    , _xi = 0.5
+    , _disableAllLearning = False
+    }
 
 decay :: Decay
 decay = exponentialDecay (Just minValues) 0.05 100000
@@ -159,9 +164,13 @@ decay = exponentialDecay (Just minValues) 0.05 100000
     minValues =
       Parameters
         { _alpha = 0.005
+        , _alphaANN = 1
         , _beta = 0.07
+        , _betaANN = 1
         , _delta = 0.07
+        , _deltaANN = 1
         , _gamma = 0.07
+        , _gammaANN = 1
         , _epsilon = 0.05
         , _exploration = 0.01
         , _learnRandomAbove = 0.0

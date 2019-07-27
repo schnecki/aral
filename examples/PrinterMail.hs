@@ -132,9 +132,13 @@ initState = One
 params :: Parameters
 params = Parameters
   { _alpha            = 0.05
+  , _alphaANN = 1
   , _beta             = 0.01
+  , _betaANN = 1
   , _delta            = 0.005
+  , _deltaANN = 1
   , _gamma            = 0.01
+  , _gammaANN = 1
   , _epsilon          = 1.0
   , _exploration      = 1.0
   , _learnRandomAbove = 0.1
@@ -150,9 +154,13 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
     minValues =
       Parameters
         { _alpha = 0.000
+        , _alphaANN = 1.0
         , _beta =  0.005
+        , _betaANN = 1.0
         , _delta = 0.005
+        , _deltaANN = 1.0
         , _gamma = 0.005
+        , _gammaANN = 1.0
         , _epsilon = 0.05
         , _exploration = 0.01
         , _learnRandomAbove = 0.1

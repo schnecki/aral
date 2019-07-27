@@ -217,7 +217,7 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
   | otherwise = do
     datasetShuffled <- liftSimple $ shuffleM dataset
     let net' = foldl' (trainGrenade lp) netW (zipWith (curry return) (map fst datasetShuffled) (map snd datasetShuffled))
-    when (maybe False ((== 0) . (`mod` 10)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+    when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
     fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = fromJust (config ^. trainMSEMax)

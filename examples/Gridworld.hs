@@ -176,18 +176,23 @@ instance ExperimentDef (BORL St) where
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters
-  { _alpha            = 0.05
-  , _beta             = 0.01
-  , _delta            = 0.005
-  , _gamma            = 0.01
-  , _epsilon          = 1.0
-  , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
-  , _zeta             = 0.0
-  , _xi               = 0.0075
-  , _disableAllLearning = False
-  }
+params =
+  Parameters
+    { _alpha              = 0.05
+    , _alphaANN           = 0.5
+    , _beta               = 0.01
+    , _betaANN            = 1
+    , _delta              = 0.005
+    , _deltaANN           = 1
+    , _gamma              = 0.01
+    , _gammaANN           = 1
+    , _epsilon            = 1.0
+    , _exploration        = 1.0
+    , _learnRandomAbove   = 0.1
+    , _zeta               = 0.0
+    , _xi                 = 0.0075
+    , _disableAllLearning = False
+    }
 
 -- | Decay function of parameters.
 decay :: Decay
@@ -195,15 +200,19 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
   where
     minValues =
       Parameters
-        { _alpha = 0.000
-        , _beta =  0.005
-        , _delta = 0.005
-        , _gamma = 0.005
-        , _epsilon = 0.05
-        , _exploration = 0.01
-        , _learnRandomAbove = 0.1
-        , _zeta = 0.0
-        , _xi = 0.0075
+        { _alpha              = 0.000
+        , _alphaANN           = 0.5
+        , _beta               = 0.005
+        , _betaANN            = 1.0
+        , _delta              = 0.005
+        , _deltaANN           = 1.0
+        , _gamma              = 0.005
+        , _gammaANN           = 1.0
+        , _epsilon            = 0.05
+        , _exploration        = 0.01
+        , _learnRandomAbove   = 0.1
+        , _zeta               = 0.0
+        , _xi                 = 0.0075
         , _disableAllLearning = False
         }
 
@@ -251,9 +260,9 @@ usermode = do
         AlgBORLVOnly (ByMovAvg 10000)
 
         -- AlgBORL 0.5 0.8
-        -- -- (ByMovAvg 300)
+        -- (ByMovAvg 1000)
         -- -- ByStateValues
-        -- (Fixed 5.4285)
+        -- -- (Fixed 5.4285)
         -- Normal False
 
   nn <- randomNetworkInitWith UniformInit :: IO NN

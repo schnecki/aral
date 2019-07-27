@@ -61,18 +61,24 @@ mkCalculation :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex
 mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
   mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
 
+ite :: Bool -> p -> p -> p
+ite b t e
+  | b = t
+  | otherwise = e
+
 
 mkCalculation' :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> Algorithm -> m Calculation
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType stValHandling decideOnVPlusPsiV) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN p p2 = P.isNeuralNetwork (borl ^. proxies . p) && borl ^. t > borl ^?! proxies . p2 . proxyNNConfig . replayMemoryMaxSize
-      ite b t e
-        | b = t
-        | otherwise = e
   let alp = params' ^. alpha
-      bta = ite (isANN rho rho) 1 (params' ^. beta)
-      dlt = ite (isANN v v) 1 (params' ^. delta)
-      gam = ite (isANN w w) 1 (params' ^. gamma)
+      alpANN = params' ^. alphaANN
+      bta = params' ^. beta
+      btaANN = params' ^. betaANN
+      dlt = params' ^. delta
+      dltANN = params' ^. deltaANN
+      gamR0 = ite (isANN r0 r0) 1 (params' ^. gamma)
+      gamR1 = ite (isANN r1 r1) 1 (params' ^. gamma)
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
@@ -106,36 +112,35 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-  let rhoVal' =
+  let rhoVal' alphaVal =
         max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
-          _          -> (1 - alp) * rhoVal + alp * rhoState
+          _          -> (1 - alphaVal) * rhoVal + alphaVal * rhoState
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' -- rhoState
+        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' alp -- rhoState
   -- PsiRho (should converge to 0)
-  psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
+  psiRho <- ite (isUnichain borl) (return $ rhoVal' alp - rhoVal) (subtract (rhoVal' alp) <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
-  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
-      psiV = reward - rhoVal' - vValState' + vValStateNext -- should converge to 0
+  let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - (rhoVal' alp) + epsEnd * vValStateNext)
+
+      psiV = reward - rhoVal' alp - vValState' bta + vValStateNext -- should converge to 0
   -- LastVs
-  let vValStateLastVs' = (1 - params' ^. beta) * vValState + (params' ^. beta) * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' =
         case stValHandling of
-          Normal -> take keepXLastValues $ vValStateLastVs' : borl ^. lastVValues
-          DivideValuesAfterGrowth nr _ -> take nr $ vValStateLastVs' : borl ^. lastVValues
+          Normal -> take keepXLastValues $ vValState' bta : borl ^. lastVValues
+          DivideValuesAfterGrowth nr _ -> take nr $ vValState' bta : borl ^. lastVValues
   -- W
-  let wValState' = (1 - dlt) * wValState + dlt * (-vValState' + epsEnd * wValStateNext)
-      -- psiW = vValState' + wValState' - wValStateNext
-      psiW = wValStateNext - vValState' - wValState
+  let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta + epsEnd * wValStateNext)
+      psiW = wValStateNext - vValState' alp - wValState
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
-  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * rSmall)
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * rBig)
+  let r0ValState' = (1 - gamR0) * r0ValState + gamR0 * (reward + epsEnd * ga0 * rSmall)
+  let r1ValState' = (1 - gamR1) * r1ValState + gamR1 * (reward + epsEnd * ga1 * rBig)
   -- Psis
   let randAct
         | randomAction = 0
@@ -144,34 +149,26 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiVState' = (1 - expSmthPsi) * psiVState + expSmthPsi * psiV
   let psiWState' = (1 - expSmthPsi) * psiWState + expSmthPsi * psiW
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
-  -- let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiV
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
-  -- let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiW
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
   -- enforce values
-  let vValStateNew
-        | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState'
-        | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' + xiVal * psiVState'
-        | otherwise = vValState' + xiVal * psiWState'
-      clip minmax val = max (-minmax') $ min minmax' val
-        where
-          minmax'
-            | xiVal > 0 = max 0.02 minmax -- ensure enforcing even if state value is very small
-            | otherwise = minmax
-      -- rhoValNew = max rhoMinimumState $ reward + vValStateNext - vValStateNew
-  when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV ExpSmth\tPsiW\tZeta\t-Zeta\n"
+  let vValStateNew betaVal
+        | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState' betaVal
+        | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * psiVState'
+        | otherwise = vValState' betaVal + xiVal * psiWState'
+  when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftSimple $
     appendFile
       "psiValues"
-      (show period ++ "\t" ++ show (ite randomAction 0 psiVState') ++ "\t" ++ show (ite randomAction 0 psiW) ++ "\t" ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")
+      (show period ++ "\t" ++ show (ite randomAction 0 psiVState') ++ "\t" ++ show (ite randomAction 0 psiWState') ++ "\t" ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
-      , getRhoVal' = Just rhoVal'
+      , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
       , getPsiVVal' = Just psiVState'
-      , getVValState' = Just vValStateNew
+      , getVValState' = Just $ vValStateNew (ite (isANN v v) btaANN bta)
       , getPsiWVal' = Just psiWState'
-      , getWValState' = Just wValState'
+      , getWValState' = Just $  wValState' (ite (isANN w w) dltANN dlt)
       , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Just psiValRho'
@@ -185,12 +182,10 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN p p2 = P.isNeuralNetwork (borl ^. proxies . p) && borl ^. t > borl ^?! proxies . p2 . proxyNNConfig . replayMemoryMaxSize
-      alp
-        | isANN rho rho = 1
-        | otherwise = params' ^. alpha
-      bta
-        | isANN v v = 1
-        | otherwise = params' ^. beta
+      alp = params' ^. alpha
+      alpANN = params' ^. alphaANN
+      bta = params' ^. beta
+      btaANN = params' ^. betaANN
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -204,32 +199,31 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
     if isUnichain borl
       then case avgRewardType of
              Fixed x -> return x
-             ByMovAvg l -> return $ sum lastRews' / fromIntegral (length lastRews')
+             ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
-             ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgDQNAvgRew"
+             ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgBORLVOnly"
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-  let rhoVal' =
+  let rhoVal' alpVal =
         max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
-          _          -> (1 - alp) * rhoVal + alp * rhoState
+          _          -> (1 - alpVal) * rhoVal + alpVal * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
         | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
   vValState <- vValueFeat False borl state aNr `using` rpar
   vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
-  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
-  let vValStateLastVs' = (1 - params' ^. beta) * vValState + (params' ^. beta) * (reward - rhoVal' + epsEnd * vValStateNext)
-  let lastVs' = take keepXLastValues $ vValStateLastVs' : borl ^. lastVValues
+  let vValState' btaVal = (1 - btaVal) * vValState + btaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
+  let lastVs' = take keepXLastValues $ vValState' bta : borl ^. lastVValues
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
-      , getRhoVal' = Just rhoVal'
+      , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
       , getPsiVVal' = Nothing
-      , getVValState' = Just vValState'
+      , getVValState' = Just $ vValState' (ite (isANN v v) btaANN bta)
       , getPsiWVal' = Nothing
       , getWValState' = Nothing
       , getR0ValState' = Nothing
@@ -245,10 +239,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
-      gam = params' ^. gamma
-      bta
-        | isANN = 1
-        | otherwise = params' ^. beta
+      gam
+        | isANN = params' ^. gammaANN
+        | otherwise = params' ^. gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1

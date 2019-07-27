@@ -48,23 +48,49 @@ main = do
   where cmds = []
         usage = []
 
-params :: Parameters
-params = Parameters 0.15 0.05 0.05 0.01 1.0 1.0 0.1 0.75 0.2 False
-
-
 initState :: St
 initState = St 5
 
+-- | BORL Parameters.
+params :: Parameters
+params = Parameters
+  { _alpha            = 0.05
+  , _alphaANN = 1
+  , _beta             = 0.01
+  , _betaANN = 1
+  , _delta            = 0.005
+  , _deltaANN = 1
+  , _gamma            = 0.01
+  , _gammaANN = 1
+  , _epsilon          = 1.0
+  , _exploration      = 1.0
+  , _learnRandomAbove = 0.1
+  , _zeta             = 0.0
+  , _xi               = 0.0075
+  , _disableAllLearning = False
+  }
+
+-- | Decay function of parameters.
 decay :: Decay
-decay t p@(Parameters alp bet del ga eps exp rand zeta xi _)
-  | t `mod` 200 == 0 = Parameters (f $ slower * alp) (f $ slow * bet) (f $ slow * del) ga (max 0.1 $ slower * eps) (f $ slower * exp) rand zeta xi False
-  | otherwise = p
-
-  where slower = 0.995
-        slow = 0.95
-        faster = 1.0/0.995
-        f = max 0.001
-
+decay t = exponentialDecay (Just minValues) 0.05 300000 t
+  where
+    minValues =
+      Parameters
+        { _alpha = 0.000
+        , _alphaANN = 1.0
+        , _beta =  0.005
+        , _betaANN = 1.0
+        , _delta = 0.005
+        , _deltaANN = 1.0
+        , _gamma = 0.005
+        , _gammaANN = 1.0
+        , _epsilon = 0.05
+        , _exploration = 0.01
+        , _learnRandomAbove = 0.1
+        , _zeta = 0.0
+        , _xi = 0.0075
+        , _disableAllLearning = False
+        }
 
 -- State
 newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)

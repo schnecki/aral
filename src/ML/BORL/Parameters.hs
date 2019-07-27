@@ -12,9 +12,13 @@ import           GHC.Generics
 -- Parameters
 data Parameters = Parameters
   { _alpha              :: !Double             -- ^ for rho value
+  , _alphaANN           :: !Double             -- ^ for rho value when training the ANN (e.g. after filling the replay memory)
   , _beta               :: !Double             -- ^ for V values
+  , _betaANN            :: !Double             -- ^ for V value when training the ANN (e.g. after filling the replay memory)
   , _delta              :: !Double             -- ^ for W values
+  , _deltaANN           :: !Double             -- ^ for W value when training the ANN
   , _gamma              :: !Double             -- ^ Gamma values for R0/R1.
+  , _gammaANN           :: !Double             -- ^ Gamma values for R0/R1 when using the ANN.
   , _epsilon            :: !Double             -- ^ for comparison between state values
   , _exploration        :: !Double             -- ^ exploration rate
   , _learnRandomAbove   :: !Double             -- ^ Value which specifies until when randomized actions are learned.

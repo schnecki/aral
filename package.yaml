@@ -103,19 +103,6 @@ executables:
     - experimenter
     - hmatrix-glpk
 
-  gridworld-hard:
-    main:                GridworldHard.hs
-    other-modules:       Helper
-    source-dirs:         examples
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - borl
-    - random-fu
-    - experimenter
-
   gym:
     main:                GymOpenAI.hs
     other-modules:       Helper

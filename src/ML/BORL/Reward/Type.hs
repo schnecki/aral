@@ -69,7 +69,7 @@ instance RewardFuture s => Serialize (Reward s) where
 rewardValue :: Reward s -> RewardValue
 rewardValue (Reward v) = v
 rewardValue RewardEmpty = 0
-rewardValue (RewardFuture _) = error "reward value of RewardFutureState no known for calculation"
+rewardValue (RewardFuture _) = error "reward value of RewardFutureState not known for calculation"
 
 
 mapReward :: (RewardFuture s') => (StoreType s -> StoreType s') -> Reward s -> Reward s'

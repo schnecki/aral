@@ -97,7 +97,7 @@ stepsM (force -> borl) nr = do
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (MonadBorl' m, Ord s) => BORL s -> m (BORL s, Bool, ActionIndexed s)
+nextAction :: (MonadBorl' m) => BORL s -> m (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
