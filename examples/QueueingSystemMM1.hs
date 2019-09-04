@@ -142,45 +142,34 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
--- instance BorlLp St where
---   lpActions = actions
---   lpActionFilter = actFilter
+instance BorlLp St where
+  lpActions = actions
+  lpActionFilter = actFilter
 
--- policy :: Policy St
--- policy s a
---   | s == fromIdx (0, 2) && a == actRand = map (, 1 / fromIntegral (length stateActions)) stateActions
---   | s == fromIdx (0, 2) = []
---   | a == actRand = []
---   | otherwise = mkProbability $ filter filterActRand $ filter filterColumn $ filter filterRow [(st', actUp), (st', actLeft), (st', actRight), (st', actRand)]
---   where
---     st'
---       | a == actUp = (max 0 $ row - 1, col)
---       | a == actDown = (min 4 $ row + 1, col)
---       | a == actLeft = (row, max 0 $ col - 1)
---       | a == actRight = (row, min 4 $ col + 1)
---     row = fst $ getCurrentIdx s
---     col = snd $ getCurrentIdx s
---     actRand = head actions
---     actUp = actions !! 1
---     actDown = actions !! 2
---     actLeft = actions !! 3
---     actRight = actions !! 4
---     states = [minBound .. maxBound] :: [St]
---     stateActions = [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
---     filterActRand ((r, c), a)
---       | r == 0 && c == 2 = actionName a == actionName actRand
---       | otherwise = actionName a /= actionName actRand
---     filterColumn ((_, c), x)
---       | c == 2 = actionName x == actionName actUp || actionName x == actionName actRand
---       | c < 2 = actionName x == actionName actRight
---           -- actionName x /= actionName actLeft
---       | c > 2 = actionName x == actionName actLeft
---         -- actionName x /= actionName actRight
---       | otherwise = True
---     filterRow ((r, c), a)
---       | r == 0 = actionName a /= actionName actUp
---       | otherwise = True
---     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
+policy :: Int -> Policy St
+policy maxAdmit (St s incoming) act
+  | not incoming && act == rejectAct =
+    [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
+  | incoming && act == rejectAct = [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, rejectAct), pReject s * pLambda)] ++ [((St (max 0 (s - 1)) False, rejectAct), pMu)]
+  | incoming && act == admitAct =
+    [((St (s + 1) True, condAdmit (s + 1)), pAdmit (s + 1) * pLambda), ((St (s + 1) True, rejectAct), pReject (s + 1) * pLambda)] ++ [((St s False, rejectAct), pMu)]
+  | otherwise = error "unexpected case in policy"
+  where
+    pAdmit s
+      | s >= maxAdmit = 0
+      | otherwise = 1
+    pReject s
+      | pAdmit s == 1 = 0
+      | otherwise = 1
+    pMu = mu / (lambda + mu)
+    pLambda = lambda / (lambda + mu)
+    condAdmit s =
+      if pAdmit s == 1
+        then admitAct
+        else rejectAct
+    admitAct = actions !! 1
+    rejectAct = head actions
+
 
 instance ExperimentDef (BORL St) where
   -- type ExpM (BORL St) = TF.SessionT IO
@@ -225,51 +214,51 @@ params =
   Parameters
     { _alpha              = 0.05
     , _alphaANN           = 0.5
-    , _beta               = 0.01
+    , _beta               = 0.03
     , _betaANN            = 1
-    , _delta              = 0.005
+    , _delta              = 0.03
     , _deltaANN           = 1
-    , _gamma              = 0.01
+    , _gamma              = 0.03
     , _gammaANN           = 1
     , _epsilon            = 1.0
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.1
     , _zeta               = 0.0
-    , _xi                 = 0.0075
+    , _xi                 = 0.01
     , _disableAllLearning = False
     }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.05 300000 t
+decay t = exponentialDecay (Just minValues) 0.80 100000 t
   where
     minValues =
       Parameters
-        { _alpha              = 0.000
-        , _alphaANN           = 0.5
-        , _beta               = 0.005
-        , _betaANN            = 1.0
-        , _delta              = 0.005
-        , _deltaANN           = 1.0
-        , _gamma              = 0.005
-        , _gammaANN           = 1.0
-        , _epsilon            = 0.05
-        , _exploration        = 0.01
-        , _learnRandomAbove   = 0.1
-        , _zeta               = 0.0
-        , _xi                 = 0.0075
+        { _alpha = 0.0
+        , _alphaANN = 0.5
+        , _beta = 0.0
+        , _betaANN = 1.0
+        , _delta = 0.0
+        , _deltaANN = 1.0
+        , _gamma = 0.0
+        , _gammaANN = 1.0
+        , _epsilon = 0.0
+        , _exploration = 0.001
+        , _learnRandomAbove = 0.1
+        , _zeta = 0.0
+        , _xi = 0.01
         , _disableAllLearning = False
         }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 0
+initVals = InitValues 0 (-500) 0 0 0
 
 main :: IO ()
 main = do
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
   case l of
-    -- "l"   -> lpMode
+    "l"   -> lpMode
     "e"   -> experimentMode
     "exp" -> experimentMode
     _     -> usermode
@@ -289,11 +278,12 @@ experimentMode = do
   writeAndCompileLatex evalRes
 
 
--- lpMode :: IO ()
--- lpMode = do
---   putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
---   runBorlLp policy >>= print
---   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
+lpMode :: IO ()
+lpMode = do
+  putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
+  l <- putStr "Enter integer! L=" >> hFlush stdout >> read <$> getLine
+  runBorlLpInferWithRewardRepet 1000 (policy l) >>= print
+  putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
 usermode :: IO ()
@@ -301,10 +291,10 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
   let algorithm =
         -- AlgDQN 0.99             -- does not work
-        AlgDQN 0.50             -- does work
-        -- AlgBORLVOnly (ByMovAvg 10000)
+        -- AlgDQN 0.50             -- does work
+        -- AlgBORLVOnly (ByMovAvg 5000)
 
-        -- AlgBORL 0.5 0.8 (ByMovAvg 1000) Normal False
+        AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
