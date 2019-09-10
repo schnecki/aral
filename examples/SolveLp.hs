@@ -34,15 +34,17 @@ data LpResult st = LpResult
   , gain            :: Double
   , bias            :: [((st, T.Text), Double)]
   , wValues         :: [((st, T.Text), Double)]
+  , w2Values        :: [((st, T.Text), Double)]
   }
 
 instance (Show st) => Show (LpResult st) where
-  show (LpResult pol rew g b w) =
+  show (LpResult pol rew g b w w2) =
     "Provided Policy:\n--------------------\n" <> unlines (map showPol pol) <>
     "\nInferred Rewards:\n--------------------\n" <> unlines (map show rew) <>
     "\nGain: " <> show g <>
     "\nBias values:\n--------------------\n" <> unlines (map show b) <>
-    "\nW values:\n--------------------\n" <> unlines (map show w)
+    "\nW values:\n--------------------\n" <> unlines (map show w) <>
+    "\nW2 values:\n--------------------\n" <> unlines (map show w2)
     where showPol (sa, sa') = show sa <> ": " <> show sa'
 
 type Policy st = State st -> Action st -> [((NextState st, Action st), Probability)]
@@ -70,7 +72,14 @@ runBorlLpInferWithRewardRepet repetitionsReward policy = do
   let transProbs = map (second (map (first (second actionName))) . first (second actionName)) transitionProbs
   case sol of
     Optimal (g, vals) ->
-      return $ LpResult transProbs rewards' g (zipWith mkResult stateActions (tail vals)) (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
+      return $
+      LpResult
+        transProbs
+        rewards'
+        g
+        (zipWith mkResult stateActions (tail vals))
+        (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
+        (zipWith mkResult stateActions (drop (2 * length stateActions) (tail vals)))
   where
     states = [minBound .. maxBound] :: [st]
     mkResult (s, a) v = ((s, actionName a), v)

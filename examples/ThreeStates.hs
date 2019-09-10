@@ -116,8 +116,8 @@ policy s a
 main :: IO ()
 main = do
   let algorithm =
-        -- algBORL
-        AlgBORLVOnly (Fixed 1) -- (ByMovAvg 10000)
+        algBORL
+        -- AlgBORLVOnly (Fixed 1) -- (ByMovAvg 10000)
         -- AlgDQN 0.99
 
   runBorlLp policy >>= print
@@ -125,9 +125,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

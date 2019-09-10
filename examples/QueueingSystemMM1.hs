@@ -212,35 +212,36 @@ instance ExperimentDef (BORL St) where
 params :: Parameters
 params =
   Parameters
-    { _alpha              = 0.05
+    { _alpha              = 0.03
     , _alphaANN           = 0.5
-    , _beta               = 0.03
+    , _beta               = 0.01
     , _betaANN            = 1
-    , _delta              = 0.03
+    , _delta              = 0.01
     , _deltaANN           = 1
-    , _gamma              = 0.03
+    , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 1.0
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.1
     , _zeta               = 0.0
-    , _xi                 = 0.01
+    , _xi                 = 0.1
     , _disableAllLearning = False
     }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.80 100000 t
+decay t = exponentialDecay (Just minValues)
+          0.50 300000 t
   where
     minValues =
       Parameters
-        { _alpha = 0.0
+        { _alpha = 0.001
         , _alphaANN = 0.5
-        , _beta = 0.0
+        , _beta = 0.005
         , _betaANN = 1.0
-        , _delta = 0.0
+        , _delta = 0.0001
         , _deltaANN = 1.0
-        , _gamma = 0.0
+        , _gamma = 0.0001
         , _gammaANN = 1.0
         , _epsilon = 0.0
         , _exploration = 0.001
@@ -251,7 +252,7 @@ decay t = exponentialDecay (Just minValues) 0.80 100000 t
         }
 
 initVals :: InitValues
-initVals = InitValues 0 (-500) 0 0 0
+initVals = InitValues 30 0 0 0 0
 
 main :: IO ()
 main = do

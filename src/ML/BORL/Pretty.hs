@@ -163,10 +163,12 @@ prettyBORLTables t1 t2 t3 borl = do
   docHead <- prettyBORLHead False borl
   case borl ^. algorithm of
     AlgBORL {} -> do
-      prVW <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "W")) (borl ^. proxies . v) (borl ^. proxies . w)
+      prVs <- prBoolTblsStateAction t1 (text "V" $$ nest 40 (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
+      prWs <- prBoolTblsStateAction t1 (text "W" $$ nest 40 (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
+      prW2s <- prBoolTblsStateAction t1 (text "W2" $$ nest 40 (text "PsiW2")) (borl ^. proxies . w2) (borl ^. proxies . psiW2)
       prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
-      psis <- prBoolTblsStateAction t1 (text "PsiV" $$ nest 40 (text "PsiW")) (borl ^. proxies . psiV) (borl ^. proxies . psiW)
-      return $ docHead $$ algDocRho prettyRhoVal $$ prVW $+$ prR0R1 $+$ psis
+      return $ docHead $$ algDocRho prettyRhoVal $$ -- prVW $+$ prR0R1 $+$ psis $+$ prWW2
+        prVs $+$ prWs $+$ prW2s $+$ prR0R1
     AlgBORLVOnly {} -> do
       prV <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV

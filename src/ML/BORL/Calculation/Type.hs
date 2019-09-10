@@ -18,15 +18,17 @@ type ReplMemFun s
 data Calculation = Calculation
   { getRhoMinimumVal' :: Maybe Double
   , getRhoVal'        :: Maybe Double
-  , getPsiVVal'       :: Maybe Double
+  , getPsiVValState'  :: Maybe Double -- ^ Deviation of this state
   , getVValState'     :: Maybe Double
-  , getPsiWVal'       :: Maybe Double
+  , getPsiWValState'  :: Maybe Double -- ^ Deviation of this state
   , getWValState'     :: Maybe Double
+  , getPsiW2ValState' :: Maybe Double -- ^ Deviation of this state
+  , getW2ValState'    :: Maybe Double
   , getR0ValState'    :: Maybe Double
   , getR1ValState'    :: Maybe Double
   , getPsiValRho'     :: Maybe Double
-  , getPsiValV'       :: Maybe Double
-  , getPsiValW'       :: Maybe Double
+  , getPsiValV'       :: Maybe Double -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'       :: Maybe Double -- ^ Scalar deviation over all states (for output only)
   , getLastVs'        :: Maybe [Double]
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
@@ -39,10 +41,12 @@ avgCalculation xs =
   Calculation
     (avg <$> mapM getRhoMinimumVal' xs)
     (avg <$> mapM getRhoVal' xs)
-    (avg <$> mapM getPsiVVal' xs)
+    (avg <$> mapM getPsiVValState' xs)
     (avg <$> mapM getVValState' xs)
-    (avg <$> mapM getPsiWVal' xs)
+    (avg <$> mapM getPsiWValState' xs)
     (avg <$> mapM getWValState' xs)
+    (avg <$> mapM getPsiW2ValState' xs)
+    (avg <$> mapM getW2ValState' xs)
     (avg <$> mapM getR0ValState' xs)
     (avg <$> mapM getR1ValState' xs)
     (avg <$> mapM getPsiValRho' xs)

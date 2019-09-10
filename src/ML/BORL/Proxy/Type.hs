@@ -29,10 +29,12 @@ import           Grenade
 data ProxyType
   = VTable
   | WTable
+  | W2Table
   | R0Table
   | R1Table
   | PsiVTable
   | PsiWTable
+  | PsiW2Table
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 data LookupType = Target | Worker
@@ -100,6 +102,8 @@ data Proxies =
     , _v            :: !Proxy
     , _psiW         :: !Proxy
     , _w            :: !Proxy
+    , _psiW2        :: !Proxy
+    , _w2           :: !Proxy
     , _r0           :: !Proxy
     , _r1           :: !Proxy
     , _replayMemory :: !(Maybe ReplayMemory)
@@ -108,7 +112,5 @@ data Proxies =
 makeLenses ''Proxies
 
 instance NFData Proxies where
-  rnf (Proxies rhoMin rho psiV v psiW w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV
-    `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
-
-
+  rnf (Proxies rhoMin rho psiV v psiW w psiW2 w2 r0 r1 repMem) =
+    rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf psiW2 `seq` rnf w2 `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem

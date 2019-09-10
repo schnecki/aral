@@ -2,23 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module ML.BORL.Calculation.Ops
     ( mkCalculation
-    , expSmthPsi
-    , keepXLastValues
-    , approxAvg
     , rValue
-    , rValueWith
-    , rStateValue
     , eValue
-    , wStateValue
-    , wValueWith
-    , wValue
-    , vStateValue
     , vValue
-    , rhoStateValue
-    , rhoValueWith
     , rhoValue
-    , rhoMinimumValueWith
-    , rhoMinimumValue
     , RSize (..)
     ) where
 
@@ -97,10 +84,13 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   wValState <- wValueFeat borl state aNr `using` rpar
   wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes) `using` rpar
+  w2ValState <- w2ValueFeat borl state aNr `using` rpar
+  w2ValStateNext <- w2StateValue borl (stateNext, stateNextActIdxes) `using` rpar
   r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV) `using` rpar
   psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW) `using` rpar
+  psiW2State <- P.lookupProxy period Worker label (borl ^. proxies . psiW2) `using` rpar
   -- Rho
   rhoState <-
     if isUnichain borl
@@ -135,7 +125,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           DivideValuesAfterGrowth nr _ -> take nr $ vValState' bta : borl ^. lastVValues
   -- W
   let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta + epsEnd * wValStateNext)
-      psiW = wValStateNext - vValState' alp - wValState
+      psiW = wValStateNext - vValState' alp - wValState' bta
+  -- W2
+  let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta + epsEnd * w2ValStateNext)
+      psiW2 = w2ValStateNext - wValState' alp - w2ValState' bta
+
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
@@ -148,14 +142,21 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let expSmth = randAct * expSmthPsi
   let psiVState' = (1 - expSmthPsi) * psiVState + expSmthPsi * psiV
   let psiWState' = (1 - expSmthPsi) * psiWState + expSmthPsi * psiW
+  let psiW2State' = (1 - expSmthPsi) * psiW2State + expSmthPsi * psiW2
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
+  -- let psiValW2' = (1 - expSmth) * psiValW2 + expSmth * abs psiW2State'
   -- enforce values
+  let wValStateNew betaVal
+        | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = wValState' betaVal
+        | otherwise = wValState' betaVal + xiVal * psiW2State'
   let vValStateNew betaVal
         | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState' betaVal
         | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * psiVState'
         | otherwise = vValState' betaVal + xiVal * psiWState'
+          -- vValState' betaVal + xiVal * ((1 - expSmthPsi) * psiWState + expSmthPsi * (wValStateNext - vValState' alp - wValStateNew betaVal))
+
   when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftSimple $
     appendFile
@@ -165,10 +166,12 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
-      , getPsiVVal' = Just psiVState'
+      , getPsiVValState' = Just psiVState'
       , getVValState' = Just $ vValStateNew (ite (isANN v v) btaANN bta)
-      , getPsiWVal' = Just psiWState'
-      , getWValState' = Just $  wValState' (ite (isANN w w) dltANN dlt)
+      , getPsiWValState' = Just psiWState'
+      , getWValState' = Just $  wValStateNew (ite (isANN w w) dltANN dlt)
+      , getPsiW2ValState' = Just psiW2State'
+      , getW2ValState' = Just $ w2ValState' (ite (isANN w2 w2) dltANN dlt)
       , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Just psiValRho'
@@ -222,10 +225,12 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
-      , getPsiVVal' = Nothing
+      , getPsiVValState' = Nothing
       , getVValState' = Just $ vValState' (ite (isANN v v) btaANN bta)
-      , getPsiWVal' = Nothing
+      , getPsiWValState' = Nothing
       , getWValState' = Nothing
+      , getPsiW2ValState' = Nothing
+      , getW2ValState' = Nothing
       , getR0ValState' = Nothing
       , getR1ValState' = Nothing
       , getPsiValRho' = Nothing
@@ -253,10 +258,12 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
     Calculation
       { getRhoMinimumVal' = Nothing
       , getRhoVal' = Nothing
-      , getPsiVVal' = Nothing
+      , getPsiVValState' = Nothing
       , getVValState' = Nothing
-      , getPsiWVal' = Nothing
+      , getPsiWValState' = Nothing
       , getWValState' = Nothing
+      , getPsiW2ValState' = Nothing
+      , getW2ValState' = Nothing
       , getR0ValState' = Nothing
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Nothing
@@ -322,7 +329,7 @@ vValueWith lkTp addPsiV borl state a = do
       else return 0
   return (vVal + psiV)
 
-vStateValue :: (MonadBorl' m, Ord s) => Bool -> BORL s -> (StateFeatures, [ActionIndex]) -> m Double
+vStateValue :: (MonadBorl' m) => Bool -> BORL s -> (StateFeatures, [ActionIndex]) -> m Double
 vStateValue addPsiV borl (state, asIdxes) = maximum <$> mapM (vValueWith Target addPsiV borl state) asIdxes
 
 
@@ -340,6 +347,21 @@ wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^
 
 wStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m Double
 wStateValue borl (state, asIdxes) = maximum <$> mapM (wValueWith Target borl state) asIdxes
+
+
+w2Value :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Double
+w2Value borl state a = w2ValueWith Worker borl (ftExt state) a
+  where
+    ftExt = borl ^. featureExtractor
+
+w2ValueFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Double
+w2ValueFeat = w2ValueWith Worker
+
+w2ValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Double
+w2ValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . w2)
+
+w2StateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m Double
+w2StateValue borl (state, asIdxes) = maximum <$> mapM (w2ValueWith Target borl state) asIdxes
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).

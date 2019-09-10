@@ -69,7 +69,7 @@ insert ::
   -> ReplMemFun s
   -> Proxies
   -> m (Proxies, Calculation)
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing) = do
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing) = do
   let 
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
@@ -82,11 +82,13 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
     pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
     pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
-    pPsiV' <- mInsertProxy (getPsiVVal' calc) pPsiV `using` rpar
-    pPsiW' <- mInsertProxy (getPsiWVal' calc) pPsiW `using` rpar
+    pW2' <- mInsertProxy (getW2ValState' calc) pW2 `using` rpar
+    pPsiV' <- mInsertProxy (getPsiVValState' calc) pPsiV `using` rpar
+    pPsiW' <- mInsertProxy (getPsiWValState' calc) pPsiW `using` rpar
+    pPsiW2' <- mInsertProxy (getPsiW2ValState' calc) pPsiW2 `using` rpar
     pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
     pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
+    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' Nothing, calc)
   where
     sActIdxes = map fst $ actionsIndexed borl state
     sNextActIdxes = map fst $ actionsIndexed borl stateNext
@@ -95,8 +97,8 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     stateNextFeat = (borl ^. featureExtractor) stateNext
     stateActs = (stateFeat, sActIdxes)
     stateNextActs = (stateNextFeat, sNextActIdxes)
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
-  | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 (Just replMem))
+  | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
@@ -131,11 +133,13 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
             else mInsertProxy (getRhoVal' calc) pRho `using` rpar
         pV' <- mTrainBatch getVValState' calcs pV `using` rpar
         pW' <- mTrainBatch getWValState' calcs pW `using` rpar
-        pPsiV' <- mTrainBatch getPsiVVal' calcs pPsiV `using` rpar
-        pPsiW' <- mTrainBatch getPsiWVal' calcs pPsiW `using` rpar
+        pW2' <- mTrainBatch getW2ValState' calcs pW2 `using` rpar
+        pPsiV' <- mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
+        pPsiW' <- mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
+        pPsiW2' <- mTrainBatch getPsiW2ValState' calcs pPsiW2 `using` rpar
         pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
         pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
-        return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
+        return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' (Just replMem'), calc)
   where
     sActIdxes = map fst $ actionsIndexed borl state
     sNextActIdxes = map fst $ actionsIndexed borl stateNext
@@ -315,10 +319,12 @@ getMinMaxVal Table{} = error "getMinMaxVal called for Table"
 getMinMaxVal p  = case p ^?! proxyType of
   VTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
   WTable  -> (p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
+  W2Table  -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinWValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxWValue)
   R0Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR0Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR0Value)
   R1Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinR1Value, p ^?! proxyNNConfig.scaleParameters.scaleMaxR1Value)
-  PsiVTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
-  PsiWTable -> (2*p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, 2*p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiVTable -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiWTable -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
+  PsiW2Table -> (p ^?! proxyNNConfig.scaleParameters.scaleMinVValue, p ^?! proxyNNConfig.scaleParameters.scaleMaxVValue)
 
 
 -- | This function loads the model from the checkpoint file and finds then retrieves the data.
