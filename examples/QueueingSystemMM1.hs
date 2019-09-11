@@ -71,7 +71,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 20
+maxQueueSize = 5
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -171,8 +171,9 @@ policy maxAdmit (St s incoming) act
     rejectAct = head actions
 
 
-instance ExperimentDef (BORL St) where
+instance ExperimentDef (BORL St)
   -- type ExpM (BORL St) = TF.SessionT IO
+                                          where
   type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
@@ -202,7 +203,11 @@ instance ExperimentDef (BORL St) where
         (set algorithm)
         (view algorithm)
         (Just $ const $
-         return [AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False, AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True, AlgBORLVOnly (ByMovAvg 3000)])
+         return
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True Nothing
+           , AlgBORLVOnly (ByMovAvg 3000) Nothing
+           ])
         Nothing
         Nothing
         Nothing
@@ -220,9 +225,9 @@ params =
     , _deltaANN           = 1
     , _gamma              = 0.01
     , _gammaANN           = 1
-    , _epsilon            = 1.0
-    , _exploration        = 1.0
-    , _learnRandomAbove   = 0.1
+    , _epsilon            = 0.2
+    , _exploration        = 0.8
+    , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
     , _xi                 = 0.1
     , _disableAllLearning = False
@@ -230,24 +235,23 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues)
-          0.50 300000 t
+decay t = exponentialDecay (Just minValues) 0.50 300000 t
   where
     minValues =
       Parameters
         { _alpha = 0.001
         , _alphaANN = 0.5
-        , _beta = 0.005
+        , _beta = 0.05
         , _betaANN = 1.0
-        , _delta = 0.0001
+        , _delta = 0.01
         , _deltaANN = 1.0
-        , _gamma = 0.0001
+        , _gamma = 0.01
         , _gammaANN = 1.0
-        , _epsilon = 0.0
-        , _exploration = 0.001
-        , _learnRandomAbove = 0.1
+        , _epsilon = 0.2
+        , _exploration = 0.01
+        , _learnRandomAbove = 0.0
         , _zeta = 0.0
-        , _xi = 0.01
+        , _xi = 0.8
         , _disableAllLearning = False
         }
 
@@ -293,9 +297,9 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
-        -- AlgBORLVOnly (ByMovAvg 5000)
+        -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
-        AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False
+        AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False Nothing -- (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)

@@ -80,8 +80,8 @@ data BORL s = BORL
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
   -- define algorithm to use
-  , _algorithm        :: !Algorithm -- ^ What algorithm to use.
-  , _phase            :: !Phase     -- ^ Current phase for scaling by `StateValueHandling`.
+  , _algorithm        :: !(Algorithm s) -- ^ What algorithm to use.
+  , _phase            :: !Phase         -- ^ Current phase for scaling by `StateValueHandling`.
 
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
@@ -126,7 +126,7 @@ defInitValues = InitValues 0 0 0 0 0
 
 -- Tabular representations
 
-mkUnichainTabular :: Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
     (zip [idxStart ..] as)
@@ -154,7 +154,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
 
 mkUnichainTensorflowM ::
      forall s m. (NFData s, MonadBorl' m)
-  => Algorithm
+  => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
@@ -225,7 +225,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
 
 mkUnichainTensorflow ::
      forall s m. (NFData s)
-  => Algorithm
+  => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
@@ -239,7 +239,7 @@ mkUnichainTensorflow ::
 mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
   runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
-mkMultichainTabular :: Algorithm -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
   BORL
     (zip [0 ..] as)
@@ -270,7 +270,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
 
 mkUnichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
-  => Algorithm
+  => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
@@ -316,7 +316,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
 
 mkMultichainGrenade ::
      forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
-  => Algorithm
+  => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]

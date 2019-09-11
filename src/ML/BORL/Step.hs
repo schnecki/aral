@@ -108,7 +108,7 @@ nextAction borl
         r <- liftSimple $ randomRIO (0, length as - 1)
         return (borl, True, as !! r)
       else case borl ^. algorithm of
-             AlgBORL _ _ _ _ decideVPlusPsi -> do
+             AlgBORL _ _ _ _ decideVPlusPsi _ -> do
                bestRho <-
                  if isUnichain borl
                    then return as
@@ -145,9 +145,9 @@ nextAction borl
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"
     headDqn (x:_) = x
     gamma0 = case borl ^. algorithm of
-      AlgBORL g0 _ _ _ _ -> g0
-      AlgDQN g0          -> g0
-      AlgBORLVOnly _     -> 1
+      AlgBORL g0 _ _ _ _ _ -> g0
+      AlgDQN g0            -> g0
+      AlgBORLVOnly _ _     -> 1
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration
@@ -205,7 +205,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
       divideAfterGrowth :: BORL s -> BORL s
       divideAfterGrowth borl =
         case borl ^. algorithm of
-          AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _
+          AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _ _
             | period > maxPeriod -> borl
             | length lastVsLst == nr && endOfIncreasedStateValues ->
               trace ("multiply in period " ++ show period ++ " by " ++ show val) $
@@ -217,7 +217,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
       setCurrentPhase :: BORL s -> BORL s
       setCurrentPhase borl =
         case borl ^. algorithm of
-          AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _
+          AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _ _
             | length lastVsLst == nr && increasingStateValue -> trace ("period: " ++ show period) $ trace (show IncreasingStateValues) $ set phase IncreasingStateValues borl
             where increasingStateValue =
                     borl ^. phase /= IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr > 0.20

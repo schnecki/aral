@@ -116,10 +116,25 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           P.Grenade _ _ p _ cfg _         -> P.Table p 0
           P.TensorflowProxy _ _ p _ cfg _ -> P.Table p 0
 
-prettyAlgorithm :: Algorithm -> Doc
-prettyAlgorithm (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV) = text "BORL with gammas " <+> text (show (ga0, ga1)) <> text ";" <+> prettyAvgRewardType avgRewType <+> text "for rho" <> text ";" <+> prettyStateValueHandling stValHand <+> text "Deciding on" <+> text (if vPlusPsiV then "V + PsiV" else "V")
-prettyAlgorithm (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm (AlgBORLVOnly avgRewType)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType
+prettyAlgorithm ::  (Show k') => BORL s -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> Algorithm s -> Doc
+prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV mRefState) =
+  text "BORL with gammas " <+>
+  text (show (ga0, ga1)) <> text ";" <+>
+  prettyAvgRewardType avgRewType <+>
+  text "for rho" <> text ";" <+>
+  prettyStateValueHandling stValHand <+>
+  text "Deciding on" <+>
+  text
+    (if vPlusPsiV
+       then "V + PsiV"
+       else "V") <+>
+  prettyRefState borl prettyState prettyAction mRefState
+prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
+
+prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
+prettyRefState _ _ _ Nothing = mempty
+prettyRefState borl prettyState prettyAction (Just (st,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState $ (borl ^. featureExtractor) st) <> " - " <> prettyAction aNr
 
 prettyStateValueHandling :: StateValueHandling -> Doc
 prettyStateValueHandling Normal = empty
@@ -183,6 +198,9 @@ prettyBORLTables t1 t2 t3 borl = do
 
 prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> BORL s -> m Doc
 prettyBORLHead printRho borl = do
+  let prettyAction st = st
+      prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
+
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
@@ -208,7 +226,7 @@ prettyBORLHead printRho borl = do
     nnLearningParams $+$
     text "Algorithm" <>
     colon $$
-    nest 45 (prettyAlgorithm (borl ^. algorithm)) $+$
+    nest 45 (prettyAlgorithm borl prettyAction prettyActionIdx (borl ^. algorithm)) $+$
     algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloat $ params' ^. zeta)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
     (case borl ^. algorithm of

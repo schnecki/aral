@@ -111,7 +111,7 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   let algorithm =
-        AlgBORLVOnly (ByMovAvg 1000)
+        AlgBORLVOnly (ByMovAvg 1000) Nothing
 
         -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
 

@@ -5,6 +5,7 @@ module ML.BORL.Algorithm where
 
 import           ML.BORL.Types
 
+import           Control.Arrow   (first)
 import           Control.DeepSeq
 import           Data.Serialize
 import           GHC.Generics
@@ -23,27 +24,34 @@ data StateValueHandling
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
 
-data Algorithm
+data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
             AvgReward
             StateValueHandling
             DecideOnVPlusPsi
-  | AlgBORLVOnly AvgReward -- ^ DQN algorithm but subtracts average reward in every state
+            (Maybe (s, ActionIndex))
+  | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN Gamma
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
-isAlgBorl :: Algorithm -> Bool
+mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
+mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
+mapAlgorithm f (AlgBORL g0 g1 avg st dec mSA) = AlgBORL g0 g1 avg st dec (first f <$> mSA)
+mapAlgorithm _ (AlgDQN ga)                = AlgDQN ga
+
+
+isAlgBorl :: Algorithm s -> Bool
 isAlgBorl AlgBORL{} = True
 isAlgBorl _         = False
 
 
-isAlgDqn :: Algorithm -> Bool
+isAlgDqn :: Algorithm s -> Bool
 isAlgDqn AlgDQN{} = True
 isAlgDqn _        = False
 
-isAlgBorlVOnly :: Algorithm -> Bool
+isAlgBorlVOnly :: Algorithm s -> Bool
 isAlgBorlVOnly AlgBORLVOnly{} = True
 isAlgBorlVOnly _              = False
 
@@ -55,13 +63,13 @@ defaultGammaDQN = 0.99
 
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
-algBORL :: Algorithm
-algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False
+algBORL :: Algorithm s
+algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False Nothing
 
   -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 
 
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.
 -- "Human-level control through deep reinforcement learning." Nature 518.7540 (2015): 529.
-algDQN :: Algorithm
+algDQN :: Algorithm s
 algDQN = AlgDQN defaultGammaDQN

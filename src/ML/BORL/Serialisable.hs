@@ -17,6 +17,7 @@ import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
+import           Control.Arrow         (first)
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad         (void, zipWithM, zipWithM_)
@@ -44,7 +45,7 @@ data BORLSerialisable s = BORLSerialisable
   , serRewardFutures  :: [RewardFutureData s]
 
   -- define algorithm to use
-  , serAlgorithm      :: !Algorithm
+  , serAlgorithm      :: !(Algorithm s)
   , serPhase          :: !Phase
 
   -- Values:
@@ -59,23 +60,35 @@ toSerialisable = toSerialisableWith id id
 
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _  s _ t eNr par _ _ alg ph v rew psis prS) = do
+toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg ph v rew psis prS) = do
   BORL _ _ s _ t eNr par _ future alg ph v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) alg ph v rew psis prS
+  return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) (mapAlgorithm f alg) ph v rew psis prS
 
 
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
-fromSerialisableWith :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => (s' -> s) -> (StoreType s' -> StoreType s) -> [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith ::
+     (MonadBorl' m, Ord s, NFData s, RewardFuture s)
+  => (s' -> s)
+  -> (StoreType s' -> StoreType s)
+  -> [Action s]
+  -> ActionFilter s
+  -> Decay
+  -> FeatureExtractor s
+  -> ProxyNetInput s
+  -> TensorflowModelBuilder
+  -> BORLSerialisable s'
+  -> m (BORL s)
 fromSerialisableWith f g as aF decay ftExt inp builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg ph lastV rew psis prS
+      borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) (mapAlgorithm f alg) ph lastV rew psis prS
       borl' =
         flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] $
         flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] borl
   restoreTensorflowModels False borl'
   return $ force borl'
+
 
 instance Serialize Proxies
 

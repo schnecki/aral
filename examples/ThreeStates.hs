@@ -117,7 +117,7 @@ main :: IO ()
 main = do
   let algorithm =
         algBORL
-        -- AlgBORLVOnly (Fixed 1) -- (ByMovAvg 10000)
+        -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
 
   runBorlLp policy >>= print

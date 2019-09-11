@@ -168,7 +168,11 @@ instance ExperimentDef (BORL St) where
         (set algorithm)
         (view algorithm)
         (Just $ const $
-         return [AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False, AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True, AlgBORLVOnly (ByMovAvg 3000)])
+         return
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True Nothing
+           , AlgBORLVOnly (ByMovAvg 3000) Nothing
+           ])
         Nothing
         Nothing
         Nothing
@@ -257,13 +261,13 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
-        AlgBORLVOnly (ByMovAvg 10000)
+        AlgBORLVOnly (ByMovAvg 10000) Nothing
 
         -- AlgBORL 0.5 0.8
         -- (ByMovAvg 1000)
         -- -- ByStateValues
         -- -- (Fixed 5.4285)
-        -- Normal False
+        -- Normal False Nothing
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
