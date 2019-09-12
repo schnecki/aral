@@ -44,6 +44,7 @@ class (Monad m) => MonadBorl' m where
   liftTf :: TF.SessionT IO a -> m a
   liftSimple :: IO a -> m a
 
+
 instance (MonadBorl' (TF.SessionT IO)) where
   liftTf = id
   liftSimple = lift

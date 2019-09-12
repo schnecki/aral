@@ -31,3 +31,5 @@ results/
 /test/psiValues
 /test/reward
 queueLength
+/stateValuesAllStates
+/stateValuesAllStatesCount

@@ -20,6 +20,7 @@ import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Fork
+import           ML.BORL.NeuralNetwork.NNConfig
 import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
                                                    restoreModelWithLastIO,
                                                    saveModelWithLastIO)
@@ -40,14 +41,22 @@ import           Control.Monad
 import           Control.Monad.IO.Class           (MonadIO, liftIO)
 import           Control.Parallel.Strategies      hiding (r0)
 import           Data.Function                    (on)
-import           Data.List                        (find, groupBy, partition, sortBy)
+import           Data.List                        (find, groupBy, intercalate, partition,
+                                                   sortBy)
 import qualified Data.Map.Strict                  as M
 import           Data.Maybe                       (fromMaybe, isJust)
 import           System.Directory
 import           System.IO
 import           System.Random
+import           Text.Printf
 
 import           Debug.Trace
+
+fileDebugStateValues :: FilePath
+fileDebugStateValues = "stateValuesAllStates"
+
+fileDebugStateValuesNrStates :: FilePath
+fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
 
 
 fileStateValues :: FilePath
@@ -175,12 +184,15 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
       applyToReward r                        = r
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
-  (dropLen,_, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
-  -- let dropLen = fromIntegral $ borlNew ^. t + length (borlNew ^. futureRewards) - period
+  (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
   return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
 
-stepExecuteMaterialisedFutures :: forall m s . (MonadBorl' m, NFData s, Ord s) => (Int, Bool, BORL s) -> RewardFutureData s -> m (Int, Bool, BORL s)
+stepExecuteMaterialisedFutures ::
+     forall m s. (MonadBorl' m, NFData s, Ord s, RewardFuture s)
+  => (Int, Bool, BORL s)
+  -> RewardFutureData s
+  -> m (Int, Bool, BORL s)
 stepExecuteMaterialisedFutures (nr, True, borl) _ = return (nr, True, borl)
 stepExecuteMaterialisedFutures (nr, _, borl) dt =
   case view futureReward dt of
@@ -188,8 +200,15 @@ stepExecuteMaterialisedFutures (nr, _, borl) dt =
     RewardFuture {} -> return (nr, True, borl)
     Reward {}       -> (nr+1, False, ) <$> execute borl dt
 
-execute :: (MonadBorl' m, NFData s, Ord s) => BORL s -> RewardFutureData s -> m (BORL s)
+
+execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+#ifdef DEBUG
+  borl <- liftSimple $ writeDebugFiles borl
+#else
+  liftSimple $ removeFile fileDebugStateValues
+  liftSimple $ removeFile fileDebugStateValuesNrStates
+#endif
   (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
   -- File IO Operations
@@ -237,3 +256,45 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
     divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
+execute _ _ = error "Exectue on invalid data structure. This is a bug!"
+
+writeDebugFiles :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
+writeDebugFiles borl = do
+  borl' <-
+    if borl ^. t > 0
+      then return borl
+      else do
+        writeFile fileDebugStateValues ""
+        writeFile fileDebugStateValuesNrStates "-1"
+        borl' <-
+          if isNeuralNetwork (borl ^. proxies . v)
+            then return borl
+            else steps (set t 1 borl) debugStepsCount -- run steps to fill the table with (hopefully) all states
+        let stateFeats = getStateFeatList (borl' ^. proxies . v)
+        writeFile fileDebugStateValues ("Period\t" <> mkListStr show stateFeats <> "\n")
+        writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
+        if isNeuralNetwork (borl ^. proxies . v)
+          then return borl
+          else do
+            putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
+            return $ putStateFeatList borl stateFeats
+  let stateFeats = getStateFeatList (borl' ^. proxies . v)
+  len <- read <$> readFile fileDebugStateValuesNrStates
+  when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
+    ". Increase debugStepsCount count in Step.hs!"
+  stateValues <- liftSimple $ mapM (\xs -> vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
+  appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
+  return borl'
+  where
+    getStateFeatList Scalar {}   = []
+    getStateFeatList (Table t _) = map (\(xs, y) -> xs ++ [fromIntegral y]) (M.keys t)
+    getStateFeatList nn          = nn ^. proxyNNConfig . prettyPrintElems
+    mkListStr :: (a -> String) -> [a] -> String
+    mkListStr f = intercalate "\t" . map f -- (map show) -- (printf "%.2f"))
+    putStateFeatList borl xs = setAllProxies proxyTable xs' borl
+      where
+        xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) [0 ..]
+
+
+debugStepsCount :: Integer
+debugStepsCount = 4000

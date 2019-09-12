@@ -39,7 +39,7 @@ data ProxyType
 
 data LookupType = Target | Worker
 
-data Proxy = Scalar           -- ^ Combines multiple proxies in one for performance benefits.
+data Proxy = Scalar             -- ^ Combines multiple proxies in one for performance benefits.
                { _proxyScalar :: !Double
                }
              | Table            -- ^ Representation using a table.
