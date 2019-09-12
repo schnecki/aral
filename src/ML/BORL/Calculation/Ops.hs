@@ -37,7 +37,7 @@ data RSize
 
 
 expSmthPsi :: Double
-expSmthPsi = 0.03
+expSmthPsi = 0.001
 
 keepXLastValues :: Int
 keepXLastValues = 100
@@ -123,7 +123,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- V
   let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
       psiV = reward - rhoVal' alp - vValState' bta + vValStateNext -- should converge to 0
-      psiVState' = (1 - expSmthPsi) * psiVState + expSmthPsi * psiV
+      psiVState' = (1 - alp) * psiVState + alp * psiV
 
   -- LastVs
   let lastVs' =
@@ -131,23 +131,25 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           Normal -> take keepXLastValues $ vValState' bta : borl ^. lastVValues
           DivideValuesAfterGrowth nr _ -> take nr $ vValState' bta : borl ^. lastVValues
   -- W
-  let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta -- randAct * psiVState'
+  let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta
+                                                                    -- + randAct * psiVState'
                                                                      + epsEnd * wValStateNext)
       psiW = wValStateNext - vValState' alp - wValState' dlt
-      psiWState' = (1 - expSmthPsi) * psiWState + expSmthPsi * psiW
+      psiWState' = (1 - dlt) * psiWState + dlt * psiW
 
   -- W2
-  let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta -- randAct * psiWState'
+  let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta
+                                                                      -- + randAct * psiWState'
                                                                        + epsEnd * w2ValStateNext)
       psiW2 = w2ValStateNext - wValState' alp - w2ValState' (0.5 * dlt)
-      psiW2State' = (1 - expSmthPsi) * psiW2State + expSmthPsi * psiW2
+      psiW2State' = (1 - dlt) * psiW2State + dlt * psiW2
 
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
   let r0ValState' = (1 - gamR0) * r0ValState + gamR0 * (reward + epsEnd * ga0 * rSmall)
   let r1ValState' = (1 - gamR1) * r1ValState + gamR1 * (reward + epsEnd * ga1 * rBig)
-  -- Psis
+  -- Psis Scalar calues for output only
   let expSmth = randAct * expSmthPsi
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
@@ -156,13 +158,15 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- enforce values
   let wValStateNew betaVal
         | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = wValState' betaVal
-        | otherwise = wValState' betaVal + xiVal * psiW2State'
+        | otherwise = wValState' betaVal -- + xiVal * psiW2State'
   let vValStateNew betaVal
         | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState' betaVal
-        | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * psiVState'
+        | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
+           (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiVState')
         | otherwise =
-           wValStateNext - wValStateNew betaVal + psiWState' + psiVState'
-           -- vValState' betaVal + xiVal * psiWState' -- original !!!
+           (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiWState') -- original !!!
+
+           -- wValStateNext - wValStateNew betaVal + psiWState' + psiVState'
           -- vValState' betaVal + xiVal * ((1 - expSmthPsi) * psiWState' + expSmthPsi * (wValStateNext - vValState' alp - wValStateNew betaVal))
   when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftSimple $
