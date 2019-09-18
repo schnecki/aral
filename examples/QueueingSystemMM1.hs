@@ -235,7 +235,7 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.05 300000 t
+decay t = exponentialDecay (Just minValues) 0.50 300000 t
   where
     minValues =
       Parameters
@@ -247,11 +247,11 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
         , _deltaANN = 1.0
         , _gamma = 0.001
         , _gammaANN = 1.0
-        , _epsilon = 0.2
+        , _epsilon = 10
         , _exploration = 0.01
         , _learnRandomAbove = 0.0
         , _zeta = 0.0
-        , _xi = 0.01 -- 0.8
+        , _xi = 0.05
         , _disableAllLearning = False
         }
 

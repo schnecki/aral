@@ -79,6 +79,10 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       randAct
         | randomAction = 0
         | otherwise = 1
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+  let expSmth | learnFromRandom = expSmthPsi
+              | otherwise = randAct * expSmthPsi
+
 
   let lastRews' =
         case avgRewardType of
@@ -122,8 +126,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   psiRho <- ite (isUnichain borl) (return $ rhoVal' alp - rhoVal) (subtract (rhoVal' alp) <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
   let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
-      psiV = reward - rhoVal' alp - vValState' bta + vValStateNext -- should converge to 0
-      psiVState' = (1 - alp) * psiVState + alp * psiV
+      psiV = reward  + vValStateNext - rhoVal' alp - vValState' bta -- should converge to 0
+      psiVState' = (1 - expSmth) * psiVState + expSmth * psiV
 
   -- LastVs
   let lastVs' =
@@ -135,14 +139,14 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
                                                                     -- + randAct * psiVState'
                                                                      + epsEnd * wValStateNext)
       psiW = wValStateNext - vValState' alp - wValState' dlt
-      psiWState' = (1 - dlt) * psiWState + dlt * psiW
+      psiWState' = (1 - expSmth) * psiWState + expSmth * psiW
 
   -- W2
   let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta
                                                                       -- + randAct * psiWState'
                                                                        + epsEnd * w2ValStateNext)
       psiW2 = w2ValStateNext - wValState' alp - w2ValState' (0.5 * dlt)
-      psiW2State' = (1 - dlt) * psiW2State + dlt * psiW2
+      psiW2State' = (1 - expSmth) * psiW2State + expSmth * psiW2
 
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
@@ -150,17 +154,16 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let r0ValState' = (1 - gamR0) * r0ValState + gamR0 * (reward + epsEnd * ga0 * rSmall)
   let r1ValState' = (1 - gamR1) * r1ValState + gamR1 * (reward + epsEnd * ga1 * rBig)
   -- Psis Scalar calues for output only
-  let expSmth = randAct * expSmthPsi
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
   -- let psiValW2' = (1 - expSmth) * psiValW2 + expSmth * abs psiW2State'
   -- enforce values
   let wValStateNew betaVal
-        | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = wValState' betaVal
+        | randomAction && not learnFromRandom = wValState' betaVal
         | otherwise = wValState' betaVal -- + xiVal * psiW2State'
   let vValStateNew betaVal
-        | randomAction && params' ^. exploration <= params' ^. learnRandomAbove = vValState' betaVal
+        | randomAction && not learnFromRandom = vValState' betaVal
         | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
            (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiVState')
         | otherwise =

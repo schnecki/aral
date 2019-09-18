@@ -55,6 +55,13 @@ import           Debug.Trace
 fileDebugStateValues :: FilePath
 fileDebugStateValues = "stateValuesAllStates"
 
+fileDebugPsiVValues :: FilePath
+fileDebugPsiVValues = "statePsiVAllStates"
+
+fileDebugPsiWValues :: FilePath
+fileDebugPsiWValues = "statePsiWAllStates"
+
+
 fileDebugStateValuesNrStates :: FilePath
 fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
 
@@ -265,13 +272,15 @@ writeDebugFiles borl = do
       then return borl
       else do
         writeFile fileDebugStateValues ""
+        writeFile fileDebugPsiVValues ""
+        writeFile fileDebugPsiWValues ""
         writeFile fileDebugStateValuesNrStates "-1"
         borl' <-
           if isNeuralNetwork (borl ^. proxies . v)
             then return borl
             else steps (set t 1 borl) debugStepsCount -- run steps to fill the table with (hopefully) all states
         let stateFeats = getStateFeatList (borl' ^. proxies . v)
-        writeFile fileDebugStateValues ("Period\t" <> mkListStr show stateFeats <> "\n")
+        forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
         writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
@@ -283,7 +292,11 @@ writeDebugFiles borl = do
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
   stateValues <- liftSimple $ mapM (\xs -> vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
+  psiVValues <- liftSimple $ mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
+  psiWValues <- liftSimple $ mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
   appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
+  appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
+  appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
   return borl'
   where
     getStateFeatList Scalar {}   = []
@@ -294,7 +307,8 @@ writeDebugFiles borl = do
     putStateFeatList borl xs = setAllProxies proxyTable xs' borl
       where
         xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) [0 ..]
-
+    psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
+    psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 
 debugStepsCount :: Integer
 debugStepsCount = 4000
