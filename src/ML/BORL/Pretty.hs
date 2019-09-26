@@ -220,7 +220,7 @@ prettyBORLHead printRho borl = do
     text "Exploration" <>
     colon $$
     nest 45 (printFloat $ params' ^. exploration) $+$
-    -- text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ params' ^. learnRandomAbove) $+$
+    text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ params' ^. learnRandomAbove) $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$

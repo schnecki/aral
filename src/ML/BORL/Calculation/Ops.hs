@@ -181,11 +181,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
       , getPsiVValState' = Just psiVState'
-      , getVValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (vValStateNew (ite (isANN v v) btaANN bta))
-      , getPsiWValState' = Just psiWState'
+      , getVValState' = Just $ vValStateNew (ite (isANN v v) btaANN bta)
+      , getPsiWValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (psiWState')
       , getWValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (wValStateNew (ite (isANN w w) dltANN dlt))
-      , getPsiW2ValState' = Just psiW2State'
-      , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (w2ValState' (ite (isANN w2 w2) (0.5 * dltANN) (0.5 * dlt)))
+      , getPsiW2ValState' = Nothing -- Just psiW2State'
+      , getW2ValState' = Nothing -- Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (w2ValState' (ite (isANN w2 w2) (0.5 * dltANN) (0.5 * dlt)))
       , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Just psiValRho'

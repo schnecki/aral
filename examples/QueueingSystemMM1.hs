@@ -235,20 +235,20 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.50 300000 t
+decay t = exponentialDecay (Just minValues) 0.50 100000 t
   where
     minValues =
       Parameters
-        { _alpha = 0.001
+        { _alpha = 0.0001
         , _alphaANN = 0.5
-        , _beta = 0.001
+        , _beta = 0.0001
         , _betaANN = 1.0
-        , _delta = 0.001
+        , _delta = 0.0001
         , _deltaANN = 1.0
         , _gamma = 0.001
         , _gammaANN = 1.0
-        , _epsilon = 10
-        , _exploration = 0.01
+        , _epsilon = 5
+        , _exploration = 0.005
         , _learnRandomAbove = 0.0
         , _zeta = 0.0
         , _xi = 0.05
@@ -299,7 +299,7 @@ usermode = do
         -- AlgDQN 0.50             -- does work
         -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
-        AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False Nothing -- (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
+        AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
