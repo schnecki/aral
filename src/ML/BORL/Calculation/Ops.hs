@@ -26,6 +26,7 @@ import           Control.Monad                  (when)
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Function                  (on)
 import           Data.List                      (maximumBy, minimumBy, sortBy)
+import           System.Random                  (randomRIO)
 
 import           Debug.Trace
 
@@ -255,7 +256,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getEpisodeEnd = episodeEnd
       }
 
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga False) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
       gam
@@ -266,12 +267,61 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         | otherwise = 1
   let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
-  rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * rBig)
+  r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
+  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * r1StateNext)
   return $
     Calculation
       { getRhoMinimumVal' = Nothing
       , getRhoVal' = Nothing
+      , getPsiVValState' = Nothing
+      , getVValState' = Nothing
+      , getPsiWValState' = Nothing
+      , getWValState' = Nothing
+      , getPsiW2ValState' = Nothing
+      , getW2ValState' = Nothing
+      , getR0ValState' = Nothing
+      , getR1ValState' = Just r1ValState'
+      , getPsiValRho' = Nothing
+      , getPsiValV' = Nothing
+      , getPsiValW' = Nothing
+      , getLastVs' = Nothing
+      , getLastRews' = lastRews'
+      , getEpisodeEnd = episodeEnd
+      }
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga True) = do
+  rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
+  rhoVal <- rhoValueFeat borl state aNr `using` rpar
+  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  let isANN = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
+      gam
+        | isANN = params' ^. gammaANN
+        | otherwise = params' ^. gamma
+      alp
+        | isANN = params' ^. alpha
+        | otherwise = params' ^. alphaANN
+  let epsEnd
+        | episodeEnd = 0
+        | otherwise = 1
+  let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
+  -- Rho
+  rhoState <-
+    if isUnichain borl
+      then return $ sum lastRews' / fromIntegral keepXLastValues
+      else do
+        rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
+        return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
+  let rhoVal' = max rhoMinimumState $ (1 - alp) * rhoVal + alp * rhoState
+  -- RhoMin
+  let rhoMinimumVal'
+        | rhoState < rhoMinimumState = rhoMinimumState
+        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' -- rhoState
+  r1ValState <- rValueFeat borl RBig state aNr `using` rpar
+  r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
+  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * r1StateNext + ga * rhoVal' / (1 - ga) - rhoVal' / (1 - ga))
+  return $
+    Calculation
+      { getRhoMinimumVal' = Just rhoMinimumVal'
+      , getRhoVal' = Just rhoVal'
       , getPsiVValState' = Nothing
       , getVValState' = Nothing
       , getPsiWValState' = Nothing

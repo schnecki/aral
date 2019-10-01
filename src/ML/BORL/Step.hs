@@ -162,7 +162,7 @@ nextAction borl
     headDqn (x:_) = x
     gamma0 = case borl ^. algorithm of
       AlgBORL g0 _ _ _ _ _ -> g0
-      AlgDQN g0            -> g0
+      AlgDQN g0 _          -> g0
       AlgBORLVOnly _ _     -> 1
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
@@ -190,7 +190,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let applyToReward r@(RewardFuture storage) = applyState storage state
       applyToReward r                        = r
       updateFutures = map (over futureReward applyToReward)
-  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
+  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext (episodeEnd)])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
   return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 

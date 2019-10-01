@@ -1,0 +1,42 @@
+For L=3 (which is the Blackwell-optimal policy)
+
+Inferred Rewards:                            W values:                               
+--------------------                         --------------------                    
+((St 0 False,"reject"),0.0)                  ((St 0 False,"reject"),-485.00          
+((St 0 True,"reject"),0.0)                   ((St 0 True,"reject"),-485.00           
+((St 0 True,"admit "),110.0)                 ((St 0 True,"admit "),-325.00           
+((St 1 False,"reject"),-10.0)                ((St 1 False,"reject"),-205.00          
+((St 1 True,"reject"),-10.0)                 ((St 1 True,"reject"),-205.00           
+((St 1 True,"admit "),100.0)                 ((St 1 True,"admit "),115.00            
+((St 2 False,"reject"),-20.0)                ((St 2 False,"reject"),235.00           
+((St 2 True,"reject"),-20.0)                 ((St 2 True,"reject"),235.00            
+((St 2 True,"admit "),90.0)                  ((St 2 True,"admit "),515.00            
+((St 3 False,"reject"),-30.0)                ((St 3 False,"reject"),635.00           
+((St 3 True,"reject"),-30.0)                 ((St 3 True,"reject"),635.00            
+((St 3 True,"admit "),80.0)                  ((St 3 True,"admit "),1195.00           
+((St 4 False,"reject"),-40.0)                ((St 4 False,"reject"),1315.00          
+((St 4 True,"reject"),-40.0)                 ((St 4 True,"reject"),1315.00           
+((St 4 True,"admit "),70.0)                  ((St 4 True,"admit "),2195.00           
+((St 5 False,"reject"),-50.0)                ((St 5 False,"reject"),2315.00          
+((St 5 True,"reject"),-50.0)                 ((St 5 True,"reject"),2315.00           
+                                                                                     
+Gain: 29.999999999997954                     
+Bias values:                                 W2 values:                               
+--------------------                         --------------------                     
+((St 0 False,"reject"),80.00                 ((St 0 False,"reject"),0.0)              
+((St 0 True,"reject"),80.00                  ((St 0 True,"reject"),0.0)               
+((St 0 True,"admit "),140.00                 ((St 0 True,"admit "),-970.00            
+((St 1 False,"reject"),20.00                 ((St 1 False,"reject"),-1090.00          
+((St 1 True,"reject"),20.00                  ((St 1 True,"reject"),-1090.00           
+((St 1 True,"admit "),40.00)                 ((St 1 True,"admit "),-2590.00           
+((St 2 False,"reject"),-80.00                ((St 2 False,"reject"),-2710.00          
+((St 2 True,"reject"),-80.00                 ((St 2 True,"reject"),-2710.00           
+((St 2 True,"admit "),-80.00                 ((St 2 True,"admit "),-3860.00           
+((St 3 False,"reject"),-200.00               ((St 3 False,"reject"),-3980.00          
+((St 3 True,"reject"),-200.00                ((St 3 True,"reject"),-3980.00           
+((St 3 True,"admit "),-220.00)               ((St 3 True,"admit "),-6490.00           
+((St 4 False,"reject"),-340.00               ((St 4 False,"reject"),-6610.00          
+((St 4 True,"reject"),-340.00                ((St 4 True,"reject"),-6610.00           
+((St 4 True,"admit "),-380.00)               ((St 4 True,"admit "),-11120.00          
+((St 5 False,"reject"),-500.00)              ((St 5 False,"reject"),-11240.00         
+((St 5 True,"reject"),-500.00)               ((St 5 True,"reject"),-11240.00          

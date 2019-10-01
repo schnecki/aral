@@ -24,6 +24,8 @@ data StateValueHandling
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
 
+type BalanceRho = Bool    -- ^ Probability of an episode end
+
 data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
@@ -32,14 +34,14 @@ data Algorithm s
             DecideOnVPlusPsi
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
-  | AlgDQN Gamma
+  | AlgDQN Gamma BalanceRho
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
 mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
 mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
 mapAlgorithm f (AlgBORL g0 g1 avg st dec mSA) = AlgBORL g0 g1 avg st dec (first f <$> mSA)
-mapAlgorithm _ (AlgDQN ga)                = AlgDQN ga
+mapAlgorithm _ (AlgDQN ga x)           = AlgDQN ga x
 
 
 isAlgBorl :: Algorithm s -> Bool
@@ -72,4 +74,4 @@ algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False Nothing
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.
 -- "Human-level control through deep reinforcement learning." Nature 518.7540 (2015): 529.
 algDQN :: Algorithm s
-algDQN = AlgDQN defaultGammaDQN
+algDQN = AlgDQN defaultGammaDQN False

@@ -129,7 +129,8 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValH
        then "V + PsiV"
        else "V") <+>
   prettyRefState borl prettyState prettyAction mRefState
-prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm _ _ _ (AlgDQN ga1 False)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm _ _ _ (AlgDQN ga1 True)      = text "DQN with gamma" <+> text (show ga1) <+> "and balancing to V(s)+e(s) by adding (gamma-1)*rho/(1-gamma)"
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
 
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
@@ -154,7 +155,7 @@ prettyBORLTables t1 t2 t3 borl = do
         | otherwise = empty
       algDocRho doc =
         case borl ^. algorithm of
-          AlgDQN {} -> empty
+          AlgDQN {} -> doc
           _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
@@ -208,7 +209,7 @@ prettyBORLHead printRho borl = do
         Scalar val -> text "Rho" <> colon $$ nest 45 (printFloat val)
         _          -> empty
   return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (int $ borl ^. t) $+$
-    algDoc (text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha)) $+$
+    text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha) $+$
     algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ params' ^. beta)) $+$
     algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ params' ^. delta)) $+$
     text "Gamma" <>

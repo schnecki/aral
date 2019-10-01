@@ -111,7 +111,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   let algorithm =
-        AlgBORLVOnly (ByMovAvg 1000) Nothing
+        -- AlgDQN 0.8027 (Just 0.01)
+        AlgDQN 0.99 True
+        -- AlgBORLVOnly (ByMovAvg 1000) Nothing
 
         -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
 
@@ -141,7 +143,7 @@ params = Parameters
   , _gammaANN = 1
   , _epsilon          = 1.0
   , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
+  , _learnRandomAbove = 0.0
   , _zeta             = 0.0
   , _xi               = 0.0075
   , _disableAllLearning = False
@@ -163,7 +165,7 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
         , _gammaANN = 1.0
         , _epsilon = 0.05
         , _exploration = 0.01
-        , _learnRandomAbove = 0.1
+        , _learnRandomAbove = 0.0
         , _zeta = 0.0
         , _xi = 0.0075
         , _disableAllLearning = False
