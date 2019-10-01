@@ -129,8 +129,8 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValH
        then "V + PsiV"
        else "V") <+>
   prettyRefState borl prettyState prettyAction mRefState
-prettyAlgorithm _ _ _ (AlgDQN ga1 False)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm _ _ _ (AlgDQN ga1 True)      = text "DQN with gamma" <+> text (show ga1) <+> "and balancing to V(s)+e(s) by adding (gamma-1)*rho/(1-gamma)"
+prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm _ _ _ (AlgDQNAvgRewardFree ga1 avgRewType)      = text "DQN with gamma" <+> text (show ga1) <+> "and balancing to V(s)+e(s) by adding (gamma-1)*rho/(1-gamma). Rho by" <+> prettyAvgRewardType avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
 
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc

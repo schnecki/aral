@@ -298,9 +298,9 @@ usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
   let algorithm =
-        -- AlgDQN 0.99 False            -- does not work
-        -- AlgDQN 0.50 False            -- does work
-        AlgDQN 0.99 True
+        -- AlgDQN 0.99            -- does not work
+        -- AlgDQN 0.50            -- does work
+        AlgDQNAvgRewardFree 0.99 (ByMovAvg 5000)
         -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
         -- AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))

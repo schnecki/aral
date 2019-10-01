@@ -111,8 +111,8 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   let algorithm =
-        -- AlgDQN 0.8027 (Just 0.01)
-        AlgDQN 0.99 True
+        -- AlgDQN 0.8027
+        AlgDQNAvgRewardFree 0.99 (ByMovAvg 1000)
         -- AlgBORLVOnly (ByMovAvg 1000) Nothing
 
         -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False

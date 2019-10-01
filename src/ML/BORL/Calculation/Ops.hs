@@ -256,7 +256,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getEpisodeEnd = episodeEnd
       }
 
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga False) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
       gam
@@ -288,7 +288,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga True) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
@@ -302,15 +302,26 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
-  let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
+  let lastRews' =
+        case avgRewardType of
+          ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
+          _                  -> take keepXLastValues $ reward : borl ^. lastRewards
   -- Rho
   rhoState <-
     if isUnichain borl
-      then return $ sum lastRews' / fromIntegral keepXLastValues
+      then case avgRewardType of
+             Fixed x       -> return x
+             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
+             ByReward      -> return reward
+             ByStateValues -> error "ByStateValues average reward option not availalbe for AlgDQNAvgRewardFree"
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-  let rhoVal' = max rhoMinimumState $ (1 - alp) * rhoVal + alp * rhoState
+  let rhoVal' = max rhoMinimumState $
+        case avgRewardType of
+          ByMovAvg _ -> rhoState
+          Fixed x    -> x
+          _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState

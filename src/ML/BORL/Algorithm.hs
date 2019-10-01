@@ -34,14 +34,16 @@ data Algorithm s
             DecideOnVPlusPsi
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
-  | AlgDQN Gamma BalanceRho
+  | AlgDQN Gamma
+  | AlgDQNAvgRewardFree Gamma AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
 mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
 mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
 mapAlgorithm f (AlgBORL g0 g1 avg st dec mSA) = AlgBORL g0 g1 avg st dec (first f <$> mSA)
-mapAlgorithm _ (AlgDQN ga x)           = AlgDQN ga x
+mapAlgorithm _ (AlgDQN ga)                  = AlgDQN ga
+mapAlgorithm _ (AlgDQNAvgRewardFree ga avg) = AlgDQNAvgRewardFree ga avg
 
 
 isAlgBorl :: Algorithm s -> Bool
@@ -74,4 +76,8 @@ algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False Nothing
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.
 -- "Human-level control through deep reinforcement learning." Nature 518.7540 (2015): 529.
 algDQN :: Algorithm s
-algDQN = AlgDQN defaultGammaDQN False
+algDQN = AlgDQN defaultGammaDQN
+
+
+algDQNAvgRewardFree :: Algorithm s
+algDQNAvgRewardFree = AlgDQNAvgRewardFree defaultGammaDQN (ByMovAvg 5000)

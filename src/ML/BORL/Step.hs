@@ -151,6 +151,7 @@ nextAction borl
                         else return (borl, False, headE bestE)
              AlgBORLVOnly {} -> singleValueNextAction (vValue False borl state . fst)
              AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
+             AlgDQNAvgRewardFree {} -> singleValueNextAction (rValue borl RBig state . fst)
   where
     headRho []    = error "head: empty input data in nextAction on Rho value"
     headRho (x:_) = x
@@ -161,9 +162,10 @@ nextAction borl
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"
     headDqn (x:_) = x
     gamma0 = case borl ^. algorithm of
-      AlgBORL g0 _ _ _ _ _ -> g0
-      AlgDQN g0 _          -> g0
-      AlgBORLVOnly _ _     -> 1
+      AlgBORL g0 _ _ _ _ _     -> g0
+      AlgDQN g0                -> g0
+      AlgDQNAvgRewardFree g0 _ -> g0
+      AlgBORLVOnly _ _         -> 1
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration
