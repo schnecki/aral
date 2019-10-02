@@ -288,7 +288,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga avgRewardType) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
@@ -326,9 +326,12 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
         | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' -- rhoState
+  r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
+  r0StateNext <- rStateValue borl RSmall (stateNext, stateNextActIdxes) `using` rpar
+  let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext + (ga0 - 1) * rhoVal' / (1 - ga0))
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * r1StateNext + ga * rhoVal' / (1 - ga) - rhoVal' / (1 - ga))
+  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext + (ga1 - 1) * rhoVal' / (1 - ga1))
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
@@ -339,7 +342,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getWValState' = Nothing
       , getPsiW2ValState' = Nothing
       , getW2ValState' = Nothing
-      , getR0ValState' = Nothing
+      , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Nothing
       , getPsiValV' = Nothing

@@ -228,8 +228,8 @@ params =
     , _deltaANN           = 1
     , _gamma              = 0.01
     , _gammaANN           = 1
-    , _epsilon            = 0.2
-    , _exploration        = 0.8
+    , _epsilon            = 0.1
+    , _exploration        = 0.1
     , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
     , _xi                 = 0.05 -- 75 -- 0.1
@@ -238,19 +238,20 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.50 100000 t
+decay _ x = x
+decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.0001
+        { _alpha = 0.000
         , _alphaANN = 0.5
-        , _beta = 0.0001
+        , _beta = 0.000
         , _betaANN = 1.0
-        , _delta = 0.0001
+        , _delta = 0.001
         , _deltaANN = 1.0
-        , _gamma = 0.0001
+        , _gamma = 0.000
         , _gammaANN = 1.0
-        , _epsilon = 0.0
+        , _epsilon = 0.1
         , _exploration = 0.005
         , _learnRandomAbove = 0.0
         , _zeta = 0.0
@@ -300,7 +301,7 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.99            -- does not work
         -- AlgDQN 0.50            -- does work
-        AlgDQNAvgRewardFree 0.99 (ByMovAvg 5000)
+        AlgDQNAvgRewardFree 0.8 0.999 (Fixed 30)
         -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
         -- AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))

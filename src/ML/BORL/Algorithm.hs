@@ -35,7 +35,7 @@ data Algorithm s
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN Gamma
-  | AlgDQNAvgRewardFree Gamma AvgReward
+  | AlgDQNAvgRewardFree GammaLow GammaHigh AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
@@ -43,7 +43,7 @@ mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
 mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
 mapAlgorithm f (AlgBORL g0 g1 avg st dec mSA) = AlgBORL g0 g1 avg st dec (first f <$> mSA)
 mapAlgorithm _ (AlgDQN ga)                  = AlgDQN ga
-mapAlgorithm _ (AlgDQNAvgRewardFree ga avg) = AlgDQNAvgRewardFree ga avg
+mapAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avg) = AlgDQNAvgRewardFree ga0 ga1 avg
 
 
 isAlgBorl :: Algorithm s -> Bool
@@ -80,4 +80,4 @@ algDQN = AlgDQN defaultGammaDQN
 
 
 algDQNAvgRewardFree :: Algorithm s
-algDQNAvgRewardFree = AlgDQNAvgRewardFree defaultGammaDQN (ByMovAvg 5000)
+algDQNAvgRewardFree = AlgDQNAvgRewardFree defaultGamma0 defaultGammaDQN (ByMovAvg 5000)

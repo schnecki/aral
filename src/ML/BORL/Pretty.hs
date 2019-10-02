@@ -130,7 +130,7 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValH
        else "V") <+>
   prettyRefState borl prettyState prettyAction mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm _ _ _ (AlgDQNAvgRewardFree ga1 avgRewType)      = text "DQN with gamma" <+> text (show ga1) <+> "and balancing to V(s)+e(s) by adding (gamma-1)*rho/(1-gamma). Rho by" <+> prettyAvgRewardType avgRewType
+prettyAlgorithm _ _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType)      = text "DQN with gammas" <+> text (show (ga0, ga1)) <+> "and balancing to V(s)+e(s) by adding (gamma-1)*rho/(1-gamma). Rho by" <+> prettyAvgRewardType avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
 
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
@@ -155,7 +155,7 @@ prettyBORLTables t1 t2 t3 borl = do
         | otherwise = empty
       algDocRho doc =
         case borl ^. algorithm of
-          AlgDQN {} -> doc
+          AlgDQN {} -> mempty
           _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyAction prettyActionIdx m1 prettyAction m2
       prBoolTblsStateAction False _ _ _ = return empty
@@ -184,13 +184,20 @@ prettyBORLTables t1 t2 t3 borl = do
       prW2s <- prBoolTblsStateAction t1 (text "W2" $$ nest 40 (text "PsiW2")) (borl ^. proxies . w2) (borl ^. proxies . psiW2)
       prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest 40 (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ -- prVW $+$ prR0R1 $+$ psis $+$ prWW2
-        prVs $+$ prWs $+$ prW2s $+$ prR0R1
+        prVs $+$
+        prWs $+$
+        prW2s $+$
+        prR0R1
     AlgBORLVOnly {} -> do
       prV <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
+    AlgDQNAvgRewardFree {} -> do
+      -- prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest 40 (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
     prettyAction st = st
@@ -234,6 +241,7 @@ prettyBORLHead printRho borl = do
        AlgBORL{} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest 45 scalingText
        AlgBORLVOnly{} -> text "Scaling BorlVOnly by V config" <> colon $$ nest 45 scalingTextBorlVOnly
        AlgDQN{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
+       AlgDQNAvgRewardFree{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
     ) $+$
     algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
     (if printRho then prettyRhoVal else empty)

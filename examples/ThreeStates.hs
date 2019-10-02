@@ -116,9 +116,11 @@ policy s a
 main :: IO ()
 main = do
   let algorithm =
-        algBORL
+        -- algBORL
+        algDQNAvgRewardFree
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
+
 
   runBorlLp policy >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."

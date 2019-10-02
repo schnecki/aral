@@ -151,7 +151,24 @@ nextAction borl
                         else return (borl, False, headE bestE)
              AlgBORLVOnly {} -> singleValueNextAction (vValue False borl state . fst)
              AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
-             AlgDQNAvgRewardFree {} -> singleValueNextAction (rValue borl RBig state . fst)
+             AlgDQNAvgRewardFree {} -> do
+               r1Values <- mapM (rValue borl RBig state . fst) as
+               let bestR1ValueActions = headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
+                   bestR1 = map snd bestR1ValueActions
+               r0Values <- mapM (rValue borl RSmall state . fst) bestR1
+               let r1Value = fst $ headR1 bestR1ValueActions
+                   group = groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
+                   (posErr,negErr) = (group *** group) $ partition ((r1Value<) . fst) (zip r0Values bestR1)
+               let bestE = map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (headR0 $ if null posErr then negErr else posErr)
+               if length bestR1 == 1
+                 then return (borl, False, head bestR1)
+                 else if length bestE > 1
+                        then do
+                          r <- liftSimple $ randomRIO (0, length bestE - 1)
+                          return (borl, False, bestE !! r)
+                        else return (borl, False, headDqnAvgRewFree bestE)
+
+               -- singleValueNextAction
   where
     headRho []    = error "head: empty input data in nextAction on Rho value"
     headRho (x:_) = x
@@ -159,13 +176,19 @@ nextAction borl
     headV (x:_) = x
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
+    headR0 []    = error "head: empty input data in nextAction on R0 Value"
+    headR0 (x:_) = x
+    headR1 []    = error "head: empty input data in nextAction on R1 Value"
+    headR1 (x:_) = x
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"
     headDqn (x:_) = x
+    headDqnAvgRewFree []    = error "head: empty input data in nextAction on DqnAvgRewFree Value"
+    headDqnAvgRewFree (x:_) = x
     gamma0 = case borl ^. algorithm of
-      AlgBORL g0 _ _ _ _ _     -> g0
-      AlgDQN g0                -> g0
-      AlgDQNAvgRewardFree g0 _ -> g0
-      AlgBORLVOnly _ _         -> 1
+      AlgBORL g0 _ _ _ _ _       -> g0
+      AlgDQN g0                  -> g0
+      AlgDQNAvgRewardFree g0 _ _ -> g0
+      AlgBORLVOnly _ _           -> 1
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
     explore = params' ^. exploration
@@ -175,7 +198,6 @@ nextAction borl
     singleValueNextAction f = do
       rValues <- mapM f as
       let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-               -- liftSimple $ putStrLn ("bestR: " ++ show bestR)
       return (borl, False, snd $ headDqn bestR)
 
 epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
