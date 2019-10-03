@@ -117,7 +117,8 @@ main :: IO ()
 main = do
   let algorithm =
         -- algBORL
-        algDQNAvgRewardFree
+        -- algDQNAvgRewardFree
+        AlgDQNAvgRewardFree 0.8 0.98 (ByMovAvg 1000)
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
 

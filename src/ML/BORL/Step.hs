@@ -159,14 +159,16 @@ nextAction borl
                let r1Value = fst $ headR1 bestR1ValueActions
                    group = groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
                    (posErr,negErr) = (group *** group) $ partition ((r1Value<) . fst) (zip r0Values bestR1)
-               let bestE = map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (headR0 $ if null posErr then negErr else posErr)
+               let bestR0 = map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (headR0 $ if null posErr then negErr else posErr)
+               -- trace ("bestR1: " ++ show bestR1) $
+               --  trace ("bestR0: " ++ show bestR0) $
                if length bestR1 == 1
                  then return (borl, False, head bestR1)
-                 else if length bestE > 1
+                 else if length bestR0 > 1
                         then do
-                          r <- liftSimple $ randomRIO (0, length bestE - 1)
-                          return (borl, False, bestE !! r)
-                        else return (borl, False, headDqnAvgRewFree bestE)
+                          r <- liftSimple $ randomRIO (0, length bestR0 - 1)
+                          return (borl, False, bestR0 !! r)
+                        else return (borl, False, headDqnAvgRewFree bestR0)
 
                -- singleValueNextAction
   where
