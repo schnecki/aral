@@ -91,17 +91,15 @@ costFunctionF j = c * fromIntegral j -- holding cost function
 type CurrentQueueSize = Int
 type OrderArrival = Bool
 
-data St = AbsorbingState Int | St CurrentQueueSize OrderArrival deriving (Show, Ord, Eq, NFData, Generic, Serialize)
+data St = St CurrentQueueSize OrderArrival deriving (Show, Ord, Eq, NFData, Generic, Serialize)
 
 instance Enum St where
-  fromEnum AbsorbingState{} = 0
-  fromEnum (St sz arr)      = 1 + 2*sz + fromEnum arr
-  toEnum 0 = AbsorbingState 0
-  toEnum x = St ((x-1) `div` 2) (toEnum $ (x-1) `mod` 2)
+  fromEnum (St sz arr)      = 2*sz + fromEnum arr
+  toEnum x = St (x `div` 2) (toEnum $ x `mod` 2)
 
 instance Bounded St where
   minBound = toEnum 0
-  maxBound = toEnum (2*maxQueueSize + 2)
+  maxBound = toEnum (2 * maxQueueSize + 1)
 
 
 expSetup :: BORL St -> ExperimentSetting
@@ -149,7 +147,6 @@ instance BorlLp St where
   lpActionFilter = actFilter
 
 policy :: Int -> Policy St
-policy _ AbsorbingState{} _ = [((AbsorbingState 0, head actions), 1)]
 policy maxAdmit (St s incoming) act
   | not incoming && act == rejectAct =
     [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
@@ -294,13 +291,15 @@ lpMode = do
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
+-- TODO: make reward function more stochastic (motivation: production system afterwards)
+
 usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
   let algorithm =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.99 (ByMovAvg 3000)
+        AlgDQNAvgRewardFree 0.8 0.95 (ByMovAvg 3000)
         -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
         -- AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
@@ -339,7 +338,6 @@ netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromInteg
 
 tblInp :: St -> [Double]
 tblInp (St len arr)        = [fromIntegral len, fromIntegral $ fromEnum arr]
-tblInp (AbsorbingState nr) = [fromIntegral maxQueueSize+1, fromIntegral 0]
 
 
 names :: [Text]
@@ -353,27 +351,19 @@ queueLenFilePath = "queueLength"
 
 -- Actions
 actions :: [Action St]
-actions = zipWith Action (map (appendQueueLenFile -- . absorbingStateTrans
-                              ) [reject, admit]) names
+actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
 
   where appendQueueLenFile f st@(St len _) = do
           appendFile queueLenFilePath (show len ++ "\n")
           f st
-        appendQueueLenFile f st@AbsorbingState{} = f st
-        -- absorbingStateTrans f (AbsorbingState nr) = f (AbsorbingState nr)
-        -- absorbingStateTrans f st                  = do
-        --   r <- randomRIO (0 :: Double, 1)
-        --   (if (r >= 0.01) then id else (\(rew, st, epsEnd) -> (0, AbsorbingState 0, epsEnd))) <$> f st
 
 
 actFilter :: St -> [Bool]
-actFilter (St _ False)     = [True, False]
-actFilter (St len True)    | len >= maxQueueSize = [True, False]
-actFilter AbsorbingState{} = [True, False]
-actFilter _                = [True, True]
+actFilter (St _ False)  = [True, False]
+actFilter (St len True) | len >= maxQueueSize = [True, False]
+actFilter _             = [True, True]
 
 rewardFunction :: St -> ChosenAction -> Reward  St
-rewardFunction AbsorbingState{} _ = Reward 0
 rewardFunction (St 0 _) Reject = Reward 0
 rewardFunction (St s True) Admit = Reward $ (fixedPayoffR - costFunctionF (s + 1)) * (lambda + mu)
 rewardFunction (St s _) Reject = Reward ((0 - costFunctionF(s)) * (lambda + mu))
@@ -395,10 +385,6 @@ reject st@(St len False) = do
   return $ if r <= lambda / (lambda + mu)
     then (reward,St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward,St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
-reject (AbsorbingState nr) =
-  return $ if nr >= 399
-  then  (0, initState, True)
-  else (0, AbsorbingState (nr+1), False)
 
 
 admit :: St -> IO (Reward St, St, EpisodeEnd)
@@ -408,5 +394,4 @@ admit st@(St len True) = do
   return $ if r <= lambda / (lambda + mu)
     then (reward, St (len+1) True, False) -- admit + new arrival
     else (reward, St len False, False)    -- admit + no new arrival
-admit (AbsorbingState nr) = error "should not be called"
 admit _ = error "admit function called with no arrival available. This function is only to be called when an order arrived."
