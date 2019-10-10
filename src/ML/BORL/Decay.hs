@@ -23,7 +23,7 @@ exponentialDecay (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mG
     (max mGaANN gaANN)          -- no decay
     (max mEps $ decay * eps)
     (max mExp $ decay * exp)
-    (max mRand $ decay * rand)
+    (max mRand rand)
     (max mZeta $ decay * zeta)
     (max mXi $ decay * xi)
     disable

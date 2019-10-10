@@ -37,13 +37,17 @@ import           Text.Printf
 import           Debug.Trace
 
 commas :: Int
-commas = 6
+commas = 3
 
 wideStyle :: Style
 wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
 
 printFloat :: Double -> Doc
 printFloat x = text $ printf ("%." ++ show commas ++ "f") x
+
+printFloatWith :: Int -> Double -> Doc
+printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
+
 
 prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
@@ -176,7 +180,7 @@ prettyBORLTables t1 t2 t3 borl = do
   vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies . v)
   prettyRhoVal <-
     case borl ^. proxies . rho of
-      Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloat val)
+      Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloatWith 8 val)
       m -> do
         prAct <- prettyTable borl prettyAction prettyActionIdx m
         return $ text "Rho" $+$ prAct
@@ -217,37 +221,37 @@ prettyBORLHead printRho borl = do
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
   let prettyRhoVal = case borl ^. proxies . rho of
-        Scalar val -> text "Rho" <> colon $$ nest 45 (printFloat val)
+        Scalar val -> text "Rho" <> colon $$ nest 45 (printFloatWith 8 val)
         _          -> empty
   return $ text "\n" $+$ text "Current state" <> colon $$ nest 45 (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest 45 (int $ borl ^. t) $+$
-    text "Alpha" <> colon $$ nest 45 (printFloat $ params' ^. alpha) $+$
-    algDoc (text "Beta" <> colon $$ nest 45 (printFloat $ params' ^. beta)) $+$
-    algDoc (text "Delta" <> colon $$ nest 45 (printFloat $ params' ^. delta)) $+$
+    text "Alpha" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. alpha) $+$
+    algDoc (text "Beta" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. beta)) $+$
+    algDoc (text "Delta" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. delta)) $+$
     text "Gamma" <>
     colon $$
-    nest 45 (printFloat $ params' ^. gamma) $+$
+    nest 45 (printFloatWith 8 $ params' ^. gamma) $+$
     text "Epsilon" <>
     colon $$
-    nest 45 (printFloat $ params' ^. epsilon) $+$
+    nest 45 (printFloatWith 8 $ params' ^. epsilon) $+$
     text "Exploration" <>
     colon $$
-    nest 45 (printFloat $ params' ^. exploration) $+$
-    text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloat $ params' ^. learnRandomAbove) $+$
+    nest 45 (printFloatWith 8 $ params' ^. exploration) $+$
+    text "Learn From Random Actions until Expl. hits" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$
     text "Algorithm" <>
     colon $$
     nest 45 (prettyAlgorithm borl prettyAction prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloat $ params' ^. zeta)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloat $ params' ^. xi)) $+$
+    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. zeta)) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. xi)) $+$
     (case borl ^. algorithm of
        AlgBORL{} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest 45 scalingText
        AlgBORLVOnly{} -> text "Scaling BorlVOnly by V config" <> colon $$ nest 45 scalingTextBorlVOnly
        AlgDQN{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
        AlgDQNAvgRewardFree{} -> text "Scaling R1 by V Config" <> colon $$ nest 45 scalingTextDqn
     ) $+$
-    algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloat $ borl ^. psis . _1, printFloat $ borl ^. psis . _2, printFloat $ borl ^. psis . _3)))) $+$
+    algDoc (text "Psi Rho/Psi V/Psi W" <> colon $$ nest 45 (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
     (if printRho then prettyRhoVal else empty)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
@@ -257,27 +261,27 @@ prettyBORLHead printRho borl = do
         P.Grenade _ _ _ _ conf _ ->
           text
             (show
-               ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
-               , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
-               , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
-               , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinWValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxWValue)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
         P.TensorflowProxy _ _ _ _ conf _ ->
           text
             (show
-               ( (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue)
-               , (printFloat $ conf ^. scaleParameters . scaleMinWValue, printFloat $ conf ^. scaleParameters . scaleMaxWValue)
-               , (printFloat $ conf ^. scaleParameters . scaleMinR0Value, printFloat $ conf ^. scaleParameters . scaleMaxR0Value)
-               , (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value)))
+               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinWValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxWValue)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextDqn =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
-        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinR1Value, printFloat $ conf ^. scaleParameters . scaleMaxR1Value))
+        P.Grenade _ _ _ _ conf _ -> text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        P.Grenade _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue))
-        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloat $ conf ^. scaleParameters . scaleMinVValue, printFloat $ conf ^. scaleParameters . scaleMaxVValue))
+        P.Grenade _ _ _ _ conf _ -> text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
+        P.TensorflowProxy _ _ _ _ conf _ -> text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty
@@ -293,7 +297,7 @@ prettyBORLHead printRho borl = do
         P.Table {} -> empty
         P.Grenade _ _ _ _ conf _ ->
           let LearningParameters l m l2 = conf ^. grenadeLearningParams
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloat l, printFloat m, printFloat l2)))
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text (show (printFloatWith 8 l, printFloatWith 8 m, printFloatWith 8 l2)))
         P.TensorflowProxy _ _ _ _ conf _ ->
           let LearningParameters l m l2 = conf ^. grenadeLearningParams
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
