@@ -71,7 +71,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 5
+maxQueueSize = 10
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -150,25 +150,14 @@ instance BorlLp St where
 
 policy :: Int -> Policy St
 policy maxAdmit (St s incoming) act
-  | not incoming && act == rejectAct =
-    [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
-  | incoming && act == rejectAct = [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, rejectAct), pReject s * pLambda)] ++ [((St (max 0 (s - 1)) False, rejectAct), pMu)]
-  | incoming && act == admitAct =
-    [((St (s + 1) True, condAdmit (s + 1)), pAdmit (s + 1) * pLambda), ((St (s + 1) True, rejectAct), pReject (s + 1) * pLambda)] ++ [((St s False, rejectAct), pMu)]
+  | not incoming = [((St (max 0 (s - 1)) False, contAct), pMu)] ++ [((St s True, admitAct), pLambda) | s < maxAdmit] ++ [((St s True, rejectAct), pLambda) | s >= maxAdmit]
+  | incoming && act == rejectAct = [((St s False, contAct), 1)]
+  | incoming && act == admitAct = [((St (s + 1) False, contAct), 1)]
   | otherwise = error "unexpected case in policy"
   where
-    pAdmit s
-      | s >= maxAdmit = 0
-      | otherwise = 1
-    pReject s
-      | pAdmit s == 1 = 0
-      | otherwise = 1
     pMu = mu / (lambda + mu)
     pLambda = lambda / (lambda + mu)
-    condAdmit s =
-      if pAdmit s == 1
-        then admitAct
-        else rejectAct
+    contAct = actions !! 2
     admitAct = actions !! 1
     rejectAct = head actions
 
@@ -219,13 +208,13 @@ instance ExperimentDef (BORL St)
 params :: Parameters
 params =
   Parameters
-    { _alpha              = 0.03
+    { _alpha              = 0.005
     , _alphaANN           = 0.5
     , _beta               = 0.01
     , _betaANN            = 1
     , _delta              = 0.01
     , _deltaANN           = 1
-    , _gamma              = 0.03
+    , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 2
     , _exploration        = 0.8
@@ -237,7 +226,7 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecay (Just minValues) 0.50 150000 t p
+decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters
@@ -247,7 +236,7 @@ decay t p = exponentialDecay (Just minValues) 0.50 150000 t p
         , _betaANN = 1.0
         , _delta = 0.000
         , _deltaANN = 1.0
-        , _gamma = 0.000
+        , _gamma = 0.005
         , _gammaANN = 1.0
         , _epsilon = 2
         , _exploration = 0.005
@@ -299,12 +288,9 @@ usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
   let algorithm =
-        -- AlgDQN 0.99
+        -- AlgDQN 0.975
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.99 ByReward -- ByStateValues -- (ByMovAvg 15000) -- (Fixed 30)
-        -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
-
-        -- AlgBORL 0.5 0.8 (ByMovAvg 5000) Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
+        AlgDQNAvgRewardFree 0.8 0.995 (Fixed 22.66)
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
@@ -343,7 +329,7 @@ tblInp (St len arr)        = [fromIntegral len, fromIntegral $ fromEnum arr]
 
 
 names :: [Text]
-names = ["reject", "admit "]
+names = ["reject", "admit ", "cont."]
 
 initState :: St
 initState = St 0 False
@@ -353,7 +339,7 @@ queueLenFilePath = "queueLength"
 
 -- Actions
 actions :: [Action St]
-actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
+actions = zipWith Action (map appendQueueLenFile [reject, admit, reject]) names
 
   where appendQueueLenFile f st@(St len _) = do
           appendFile queueLenFilePath (show len ++ "\n")
@@ -361,16 +347,16 @@ actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
 
 
 actFilter :: St -> [Bool]
-actFilter (St _ False)  = [True, False]
-actFilter (St len True) | len >= maxQueueSize = [True, False]
-actFilter _             = [True, True]
+actFilter (St _ False)  = [False, False, True]
+actFilter (St len True) | len >= maxQueueSize = [True, False, False]
+                        | otherwise = [True, True, False]
 
 rewardFunction :: St -> ChosenAction -> IO (Reward  St)
-rewardFunction (St 0 _) Reject = return $ Reward 0
+rewardFunction (St _ False) Reject = return $ Reward 0
 rewardFunction (St s True) Admit = do
   costFunRes <- costFunctionF (s + 1)
   return $ Reward $ (fixedPayoffR - costFunRes) * (lambda + mu)
-rewardFunction (St s _) Reject = do
+rewardFunction (St s True) Reject = do
   costFunRes <- costFunctionF s
   return $ Reward ((0 - costFunRes) * (lambda + mu))
 
@@ -381,23 +367,17 @@ data ChosenAction = Reject | Admit
 reject :: St -> IO (Reward St, St, EpisodeEnd)
 reject st@(St len True) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Double)
-  return $ if r <= lambda / (lambda + mu)
-    then (reward, St len True, False)              -- new arrival with probability lambda/(lambda+mu)
-    else (reward, St (max 0 (len-1)) False, False) -- no new arrival with probability: mu / (lambda+mu)
+  return (reward, St len False, False)
 reject st@(St len False) = do
   reward <- rewardFunction st Reject
   r <- randomRIO (0, 1 :: Double) -- case for continue (only the reject action is allowed)
   return $ if r <= lambda / (lambda + mu)
-    then (reward,St len True, False)              -- new arrival with probability lambda/(lambda+mu)
-    else (reward,St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
+    then (reward, St len True, False)              -- new arrival with probability lambda/(lambda+mu)
+    else (reward, St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
 
 
 admit :: St -> IO (Reward St, St, EpisodeEnd)
 admit st@(St len True) = do
   reward <- rewardFunction st Admit
-  r <- randomRIO (0, 1 :: Double)
-  return $ if r <= lambda / (lambda + mu)
-    then (reward, St (len+1) True, False) -- admit + new arrival
-    else (reward, St len False, False)    -- admit + no new arrival
+  return (reward, St (len+1) False, False) -- admit + new arrival
 admit _ = error "admit function called with no arrival available. This function is only to be called when an order arrived."

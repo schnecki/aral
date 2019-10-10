@@ -37,7 +37,7 @@ import           Text.Printf
 import           Debug.Trace
 
 commas :: Int
-commas = 4
+commas = 6
 
 wideStyle :: Style
 wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }

@@ -288,10 +288,11 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType)
   -- let decay = 0.5 ** (fromIntegral (borl ^. t) / 100000)
   --     ga1Diff = 1 - ga1
   --     ga1' = ga1 + ga1Diff - (ga1Diff * decay)
+ = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
@@ -304,8 +305,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         | isANN = params' ^. gammaANN
         | otherwise = params' ^. gamma
       alp
-        | isANN = params' ^. alpha
-        | otherwise = params' ^. alphaANN
+        | isANN = params' ^. alphaANN
+        | otherwise = params' ^. alpha
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -316,15 +317,16 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   -- Rho
   rhoState <-
     if isUnichain borl
-    then case avgRewardType of
-           Fixed x       -> return x
-           ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
-           ByReward      -> return reward
-           ByStateValues -> return $ reward + r1StateNext - r1ValState
-    else do
+      then case avgRewardType of
+             Fixed x       -> return x
+             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
+             ByReward      -> return reward
+             ByStateValues -> return $ reward + r1StateNext - r1ValState
+      else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-  let rhoVal' = max rhoMinimumState $
+  let rhoVal' =
+        max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
@@ -332,7 +334,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' -- rhoState
+        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $
@@ -354,12 +356,6 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-
-
--- TODO maybe integrate learnRandomAbove, etc.:
-  -- let borl'
-  --       | randomAction && params' ^. exploration <= borl ^. parameters . learnRandomAbove = borl -- multichain ?
-  --       | otherwise = set v mv' $ set w mw' $ set rho rhoNew $ set r0 mr0' $ set r1 mr1' borl
 
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
