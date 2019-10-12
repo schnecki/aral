@@ -219,7 +219,7 @@ instance ExperimentDef (BORL St)
 params :: Parameters
 params =
   Parameters
-    { _alpha              = 0.01
+    { _alpha              = 0.001
     , _alphaANN           = 0.5
     , _beta               = 0.01
     , _betaANN            = 1
@@ -237,17 +237,17 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecay (Just minValues) 0.50 150000 t p
+decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.00001
+        { _alpha = 0.0000
         , _alphaANN = 0.5
         , _beta = 0.000
         , _betaANN = 1.0
         , _delta = 0.000
         , _deltaANN = 1.0
-        , _gamma = 0.005
+        , _gamma = 0.0000
         , _gammaANN = 1.0
         , _epsilon = 2
         , _exploration = 0.01
@@ -301,10 +301,10 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.999 ByStateValues -- ByReward -- (Fixed 30)
+        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
-        -- AlgBORL 0.5 0.8 ByReward Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
+        AlgBORL 0.5 0.8 ByStateValues Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
