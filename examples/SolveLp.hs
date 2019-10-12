@@ -4,6 +4,7 @@
 module SolveLp
     ( runBorlLp
     , runBorlLpInferWithRewardRepet
+    , EpisodeEnd
     , BorlLp (..)
     , Policy
     , LpResult (..)
@@ -16,10 +17,13 @@ import           Control.Monad
 import           Data.Function             (on)
 import           Data.List
 import qualified Data.Map.Strict           as M
+import           Data.Maybe                (fromMaybe)
 import qualified Data.Text                 as T
 import           Numeric.LinearProgramming
+import           System.IO                 (hFlush, stdout)
 
-type EpisodeEnd = Bool
+import           Debug.Trace
+
 type Probability = Double
 type NextState st = st
 
@@ -45,7 +49,8 @@ instance (Show st) => Show (LpResult st) where
     "\nBias values:\n--------------------\n" <> unlines (map show b) <>
     "\nW values:\n--------------------\n" <> unlines (map show w) <>
     "\nW2 values:\n--------------------\n" <> unlines (map show w2)
-    where showPol (sa, sa') = show sa <> ": " <> show sa'
+
+showPol (sa, sa') = show sa <> ": " <> show sa'
 
 type Policy st = State st -> Action st -> [((NextState st, Action st), Probability)]
 
@@ -54,50 +59,91 @@ runBorlLp = runBorlLpInferWithRewardRepet 80000
 
 runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> IO (LpResult st)
 runBorlLpInferWithRewardRepet repetitionsReward policy = do
+  let mkPol s a =
+        case policy s a of
+          [] -> [((s, a), 0)]
+          xs -> filter ((>= 0.001) . snd) xs
   let transitionProbs =
         map (\xs@(x:_) -> (fst x, map snd xs)) $
         groupBy ((==) `on` second actionName . fst) $
-        sortBy (compare `on` second actionName . fst) $
-        filter ((>= 0.001) . snd . snd) $ concat [map ((s, a), ) (policy s a) | s <- states, a <- map snd $ filter fst $ zip (lpActionFilter s) lpActions]
-  -- print transitionProbs
+        sortBy (compare `on` second actionName . fst) $ concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (lpActionFilter s) lpActions]
   let stateActions = map fst transitionProbs
   let stateActionIndices = M.fromList $ zip (map (second actionName . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
   let obj = Maximize (1 : replicate (3 * length transitionProbs) 0)
+  putStr ("Inferring rewards using " <> show repetitionsReward <> " replications ...") >> hFlush stdout
   rewards <- concat <$> mapM (makeReward repetitionsReward) states
-  let rewards' = map (first (second actionName)) rewards
+  putStrLn "\t[Done]"
+  let rewards' = map (\(x, y, _) -> (second actionName x, y)) rewards
   let constr = map (makeConstraints stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
   let bounds = map Free [1 .. (3 * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
   let transProbs = map (second (map (first (second actionName))) . first (second actionName)) transitionProbs
-  case sol of
-    Optimal (g, vals) ->
-      return $
-      LpResult
-        transProbs
-        rewards'
-        g
-        (zipWith mkResult stateActions (tail vals))
-        (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
-        (zipWith mkResult stateActions (drop (2 * length stateActions) (tail vals)))
+  let mkSol (g, vals) =
+        LpResult
+          transProbs
+          rewards'
+          g
+          (zipWith mkResult stateActions (tail vals))
+          (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
+          (zipWith mkResult stateActions (drop (2 * length stateActions) (tail vals)))
+  let parseSol mBound sol =
+        case sol of
+          Optimal xs -> return $ mkSol xs
+          Feasible xs -> return $ mkSol xs
+          Infeasible xs -> return $ mkSol xs
+          _ ->
+            case (sol, mBound) of
+              (Unbounded, Nothing) -> do
+                let initBounds = 1
+                putStrLn $
+                  "\n\nProvided Policy:\n--------------------\n" <> unlines (map showPol transProbs) <> "\n\nSolver returned: Unbounded! Introducing bound of " <> show initBounds <>
+                  " and retrying..."
+                let bounds = map (\x -> x :<=: 10) [1 .. (3 * length transitionProbs + 1)]
+                parseSol (Just initBounds) (simplex obj constraints bounds)
+              (res, Just bound) -> do
+                let bound' = bound + 1
+                putStrLn $ "Solver returned: " <> show res <> " for bound " <> show bound <> ". Increasing bound to " <> show bound' <> " and retrying..."
+                let mkBounds b = map (\x -> x :<=: b) [1 .. (3 * length transitionProbs + 1)]
+                let list = [bound,bound + 0.05 .. bound']
+                sol <-
+                  case simplex obj constraints (mkBounds bound') of
+                    Optimal {} -> do
+                      putStrLn $ "Found a solution with bound " <> show bound' <> ". Trying to find a smaller bound..."
+                      let (b', res) = head $ filter (isOptimal . snd) $ zip list $ map (simplex obj constraints . mkBounds) list
+                      putStrLn $ "Smallest bound I could find a solution for was " <> show b' <> "."
+                      return res
+                    x -> return x
+                parseSol (Just bound') sol
+              (Undefined, _) -> error $ unlines (map showPol transProbs) <> "\n\nSolver returned: Undefined"
+              (NoFeasible, _) -> error $ unlines (map showPol transProbs) <> "\n\nSolver returned: NoFeasible"
+  parseSol Nothing sol
   where
     states = [minBound .. maxBound] :: [st]
     mkResult (s, a) v = ((s, actionName a), v)
+    isOptimal r =
+      case r of
+        Optimal {} -> True
+        _          -> False
 
-
-makeConstraints :: (BorlLp s) => M.Map (s, T.Text) Int -> [((State s, Action s), Double)] -> ((State s, Action s), [((State s, Action s), Probability)]) -> [Bound [(Double, Int)]]
+makeConstraints :: (BorlLp s) => M.Map (s, T.Text) Int -> [((State s, Action s), Double, EpisodeEnd)] -> ((State s, Action s), [((State s, Action s), Probability)]) -> [Bound [(Double, Int)]]
 makeConstraints stateActionIndices rewards (stAct, xs)
-  | stAct `elem` map fst xs =
-    [ ([1 # 1] ++ map (\(stateAction, prob) -> (ite (stAct == stateAction) (1 - prob) (-prob)) # stateIndex stateAction) xs) :==: rewardValue stAct
-    , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1-prob) (-prob) # wIndex stateAction) xs) :==: 0
-    , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1-prob) (-prob) # w2Index stateAction) xs) :==: 0
+  | stAct `elem` map fst xs -- double occurance of variable is not allowed!
+   =
+    [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: rewardValue stAct
+    , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wIndex stateAction) xs') :==: 0
+    , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
     ]
   | otherwise =
-    [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs) :==: rewardValue stAct
-    , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs) :==: 0
-    , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs) :==: 0
+    [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: rewardValue stAct
+    , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs') :==: 0
+    , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
     ]
   where
+    xs' =
+      case find ((== stAct) . fst) episodeEnds of
+        Just (_, True) -> xs
+        _              -> xs
     ite True x _  = x
     ite False _ y = y
     stateIndex state =
@@ -107,24 +153,29 @@ makeConstraints stateActionIndices rewards (stAct, xs)
         stateActionIndices
     stateCount = M.size stateActionIndices
     wIndex state = stateCount + stateIndex state
-    w2Index state = 2*stateCount + stateIndex state
+    w2Index state = 2 * stateCount + stateIndex state
+    episodeEnds = map (fst3 &&& thd3) rewards
     rewardValue k =
-      case find ((== second actionName k) . second actionName . fst) rewards of
+      case find ((== second actionName k) . second actionName . fst3) rewards of
         Nothing -> error $ "Could not find reward for: " <> show (second actionName k)
-        Just (_, r) -> r
+        Just (_, r, _) -> r
 
-makeReward :: (BorlLp s) => Int -> s -> IO [((State s, Action s), Double)]
+fst3 (x,_,_) = x
+thd3 (_,_,x) = x
+
+
+makeReward :: (BorlLp s) => Int -> s -> IO [((State s, Action s), Double, EpisodeEnd)]
 makeReward repetitionsReward s = do
   xss <- mapM ((\a -> replicateM repetitionsReward (a s)) . actionFunction) acts
-  return $ zipWith (\a xs -> ((s, a),sum (map (fromReward . fst3) xs) / fromIntegral (length xs)) ) acts xss
+  return $ zipWith (\a xs -> ((s, a), round' $ sum (map (fromReward . fst3) xs) / fromIntegral (length xs), getEpsEnd (map thd3 xs))) acts xss
   where
-    fst3 (x,_,_) = x
+    round' x = (/100) . fromIntegral $ round (x * 100)
     acts = map snd $ filter fst $ zip (lpActionFilter s) lpActions
+    getEpsEnd xs
+      | length trues >= length false = True
+      | otherwise = False
+      where
+        trues = filter id xs
+        false = filter not xs
     fromReward (Reward x) = x
     fromReward _ = error "Non materialised reward in makeReward. You must specify a scalar reward!"
-    -- snd3 (_,x,_) = x
-    -- mkList :: [(Reward s, NextState s, Bool)] -> Double
-    -- mkList [] = error "policy defines a transition which could not be inferred using the given actions! Aborting."
-    -- mkList xs@((_,s',_):_) = sum (map (fromReward . fst3) xs) / fromIntegral (length xs)
-
-

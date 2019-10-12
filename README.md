@@ -9,7 +9,7 @@ Blackwell Optimal Reinforcement Learning
 You need git, stack (for Haskell, GHC) and tensorflow version 1.09 and gym (see gym-haskell folder).
 For ArchLinux using `sudo` and `yay`:
 
-    sudo pacman -S protobuf snappy
+    sudo pacman -S postgresql-libs snappy blas lapack protobuf glpk
     cd /tmp
     # wget https://archive.archlinux.org/packages/t/tensorflow/tensorflow-1.9.0-3-x86_64.pkg.tar.xz
     # sudo pacman -U tensorflow-1.9.0-3-x86_64.pkg.tar.xz
@@ -39,8 +39,7 @@ Ensure to clone all submodules:
     # cd tensorflow-haskell
 
 
-To build in debug mode use (this keeps tracks of the number of visits of the states, thus use with
-care):
+To build in debug mode use (this writes several files, thus use with care):
 
     stack build --ghc-options "-DDEBUG"
 

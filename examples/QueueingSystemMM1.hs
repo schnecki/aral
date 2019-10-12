@@ -172,6 +172,30 @@ policy maxAdmit (St s incoming) act
     admitAct = actions !! 1
     rejectAct = head actions
 
+-- policy :: Int -> Policy St
+-- policy maxAdmit (St s incoming) act
+--   | not incoming && act == rejectAct =
+--     [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
+--   | incoming && act == rejectAct = [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, rejectAct), pReject s * pLambda)] ++ [((St (max 0 (s - 1)) False, rejectAct), pMu)]
+--   | incoming && act == admitAct =
+--     [((St (s + 1) True, condAdmit (s + 1)), pAdmit (s + 1) * pLambda), ((St (s + 1) True, rejectAct), pReject (s + 1) * pLambda)] ++ [((St s False, rejectAct), pMu)]
+--   | otherwise = error "unexpected case in policy"
+--   where
+--     pAdmit s
+--       | s >= maxAdmit = 0
+--       | otherwise = 1
+--     pReject s
+--       | pAdmit s == 1 = 0
+--       | otherwise = 1
+--     pMu = mu / (lambda + mu)
+--     pLambda = lambda / (lambda + mu)
+--     condAdmit s =
+--       if pAdmit s == 1
+--         then admitAct
+--         else rejectAct
+--     admitAct = actions !! 1
+--     rejectAct = head actions
+
 
 instance ExperimentDef (BORL St)
   -- type ExpM (BORL St) = TF.SessionT IO

@@ -17,13 +17,14 @@ import           Experimenter
 
 import           Helper
 
-import           Control.Arrow          (first, second)
+import           Control.Arrow          (first, second, (***))
 import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
-import           Data.List              (genericLength)
+import           Data.Function          (on)
+import           Data.List              (genericLength, groupBy, sortBy)
 import           Data.Serialize
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
@@ -103,16 +104,20 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == fromIdx (0, 2) && a == actRand = map (, 1 / fromIntegral (length stateActions)) stateActions
+  | s == fromIdx (0, 2) && a == actRand = map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
   | s == fromIdx (0, 2) = []
   | a == actRand = []
-  | otherwise = mkProbability $ filter filterActRand $ filter filterColumn $ filter filterRow [(st', actUp), (st', actLeft), (st', actRight), (st', actRand)]
+  | otherwise =
+    mkProbability $ -- filter filterColumn $
+    filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
   where
-    st'
+    sa' = ((row, col), a)
+    step ((row, col), a)
       | a == actUp = (max 0 $ row - 1, col)
       | a == actDown = (min 4 $ row + 1, col)
       | a == actLeft = (row, max 0 $ col - 1)
       | a == actRight = (row, min 4 $ col + 1)
+      | a == actRand = (row, col)
     row = fst $ getCurrentIdx s
     col = snd $ getCurrentIdx s
     actRand = head actions
@@ -121,7 +126,8 @@ policy s a
     actLeft = actions !! 3
     actRight = actions !! 4
     states = [minBound .. maxBound] :: [St]
-    stateActions = [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
+    stateActions =
+      ((0, 2), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
     filterActRand ((r, c), a)
       | r == 0 && c == 2 = actionName a == actionName actRand
       | otherwise = actionName a /= actionName actRand
@@ -132,9 +138,11 @@ policy s a
       | c > 2 = actionName x == actionName actLeft
         -- actionName x /= actionName actRight
       | otherwise = True
-    filterRow ((r, c), a)
-      | r == 0 = actionName a /= actionName actUp
-      | otherwise = True
+    filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
+      where
+        dist :: [Int]
+        dist = map (mkDistance . step) xs
+    mkDistance (r, c) = r + abs (c - 2)
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
 instance ExperimentDef (BORL St) where
@@ -182,7 +190,7 @@ instance ExperimentDef (BORL St) where
 params :: Parameters
 params =
   Parameters
-    { _alpha              = 0.05
+    { _alpha              = 0.01
     , _alphaANN           = 0.5
     , _beta               = 0.01
     , _betaANN            = 1
@@ -192,7 +200,7 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 1.0
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.1
+    , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
     , _xi                 = 0.0075
     , _disableAllLearning = False
@@ -213,8 +221,8 @@ decay t = exponentialDecay (Just minValues) 0.05 300000 t
         , _gamma              = 0.005
         , _gammaANN           = 1.0
         , _epsilon            = 0.05
-        , _exploration        = 0.01
-        , _learnRandomAbove   = 0.1
+        , _exploration        = 0.001
+        , _learnRandomAbove   = 0.0
         , _zeta               = 0.0
         , _xi                 = 0.0075
         , _disableAllLearning = False
@@ -250,8 +258,8 @@ experimentMode = do
 
 lpMode :: IO ()
 lpMode = do
-  putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
-  runBorlLp policy >>= print
+  putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
+  runBorlLpInferWithRewardRepet 100000 policy >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
@@ -259,9 +267,10 @@ usermode :: IO ()
 usermode = do
 
   let algorithm =
-        -- AlgDQN 0.99             -- does not work
+         -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
-        AlgBORLVOnly (ByMovAvg 10000) Nothing
+        -- algDQNAvgRewardFree
+        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
 
         -- AlgBORL 0.5 0.8
         -- (ByMovAvg 1000)
@@ -270,9 +279,9 @@ usermode = do
         -- Normal False Nothing
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
+  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
@@ -344,7 +353,8 @@ actions = zipWith Action
   names
 
 actFilter :: St -> [Bool]
-actFilter st | st == fromIdx (0,2) = True : repeat False
+actFilter st
+  | st == fromIdx (0, 2) = True : repeat False
 actFilter _  = False : repeat True
 
 
@@ -357,10 +367,9 @@ goalState f st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
-  let stepRew (Reward re,s,e) = (Reward $ re + r, s ,e)
-
+  let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
-    (0, 2) ->  return (Reward 10, fromIdx (x,y), True)
+    (0, 2) -> return (Reward 10, fromIdx (x, y), True)
     _      -> stepRew <$> f st
 
 
