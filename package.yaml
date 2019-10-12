@@ -54,8 +54,8 @@ dependencies:
   - tensorflow
   - tensorflow-core-ops
   # - tensorflow-logging
-  # - tensorflow-mnist-input-data
-  # - tensorflow-mnist
+  - tensorflow-mnist-input-data
+  - tensorflow-mnist
   # - tensorflow-opgen
   - tensorflow-ops
   - tensorflow-proto
