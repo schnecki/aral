@@ -80,4 +80,4 @@ algDQN = AlgDQN defaultGammaDQN
 
 
 algDQNAvgRewardFree :: Algorithm s
-algDQNAvgRewardFree = AlgDQNAvgRewardFree defaultGamma0 defaultGammaDQN (ByMovAvg 5000)
+algDQNAvgRewardFree = AlgDQNAvgRewardFree defaultGamma0 defaultGammaDQN ByStateValues
