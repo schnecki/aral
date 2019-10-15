@@ -255,7 +255,7 @@ params =
     , _exploration        = 0.8
     , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
-    , _xi                 = 0.05 -- 75 -- 0.1
+    , _xi                 = 0.01 -- 75 -- 0.1
     , _disableAllLearning = False
     }
 
@@ -265,19 +265,19 @@ decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.0000
+        { _alpha = 0.0001
         , _alphaANN = 0.5
-        , _beta = 0.000
+        , _beta = 0.0005
         , _betaANN = 1.0
-        , _delta = 0.000
+        , _delta = 0.0005
         , _deltaANN = 1.0
-        , _gamma = 0.0000
+        , _gamma = 0.0005
         , _gammaANN = 1.0
         , _epsilon = 2
         , _exploration = 0.01
-        , _learnRandomAbove = 0.0
+        , _learnRandomAbove = 0.01
         , _zeta = 0.0
-        , _xi = 0.05
+        , _xi = 0.0
         , _disableAllLearning = False
         }
 

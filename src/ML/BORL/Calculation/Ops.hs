@@ -163,12 +163,13 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let wValStateNew betaVal
         | randomAction && not learnFromRandom = wValState' betaVal
         | otherwise = wValState' betaVal -- + xiVal * psiW2State'
-  let vValStateNew betaVal
-        | randomAction && not learnFromRandom = vValState' betaVal
-        | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
-           (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiVState')
-        | otherwise =
-           (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiWState') -- original !!!
+  -- let vValStateNew betaVal
+  --       | randomAction && not learnFromRandom = vValState' betaVal
+  --       | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
+  --          (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiVState')
+  --       | otherwise =
+  --          (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiWState') -- original !!!
+  let vValStateNew betaVal                                                                                                                                              | randomAction && not learnFromRandom = vValState' betaVal                                                                                                   | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * signum psiVState' * sqrt (psiVState'^2)                          | otherwise = vValState' betaVal + xiVal * signum psiWState' * sqrt (psiWState' ^ 2) -- original !!!    
 
            -- wValStateNext - wValStateNew betaVal + psiWState' + psiVState'
           -- vValState' betaVal + xiVal * ((1 - expSmthPsi) * psiWState' + expSmthPsi * (wValStateNext - vValState' alp - wValStateNew betaVal))
