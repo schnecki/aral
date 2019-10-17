@@ -259,9 +259,11 @@ experimentMode = do
 lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  runBorlLpInferWithRewardRepet 100000 policy >>= print
+  runBorlLpInferWithRewardRepet 100000 policy mRefState >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
+mRefState :: Maybe (St, ActionIndex)
+mRefState = Just (fromIdx (0,2), 0)
 
 usermode :: IO ()
 usermode = do
@@ -271,12 +273,7 @@ usermode = do
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
         AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-
-        -- AlgBORL 0.5 0.8
-        -- (ByMovAvg 1000)
-        -- -- ByStateValues
-        -- -- (Fixed 5.4285)
-        -- Normal False Nothing
+        -- AlgBORL 0.5 0.8 ByStateValues Normal False mRefState
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)

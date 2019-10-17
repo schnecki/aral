@@ -50,15 +50,16 @@ instance (Show st) => Show (LpResult st) where
     "\nW values:\n--------------------\n" <> unlines (map show w) <>
     "\nW2 values:\n--------------------\n" <> unlines (map show w2)
 
+showPol :: (Show a, Show a1) => (a, a1) -> String
 showPol (sa, sa') = show sa <> ": " <> show sa'
 
 type Policy st = State st -> Action st -> [((NextState st, Action st), Probability)]
 
-runBorlLp :: forall st . (BorlLp st) => Policy st -> IO (LpResult st)
+runBorlLp :: forall st . (BorlLp st) => Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
 runBorlLp = runBorlLpInferWithRewardRepet 80000
 
-runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> IO (LpResult st)
-runBorlLpInferWithRewardRepet repetitionsReward policy = do
+runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
+runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
   let mkPol s a =
         case policy s a of
           [] -> [((s, a), 0)]
@@ -74,7 +75,8 @@ runBorlLpInferWithRewardRepet repetitionsReward policy = do
   rewards <- concat <$> mapM (makeReward repetitionsReward) states
   putStrLn "\t[Done]"
   let rewards' = map (\(x, y, _) -> (second actionName x, y)) rewards
-  let constr = map (makeConstraints stateActionIndices rewards) transitionProbs
+  let mRefStAct' = second (lpActions!!) <$> mRefStAct :: Maybe (st, Action st)
+  let constr = map (makeConstraints mRefStAct' stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
   let bounds = map Free [1 .. (3 * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
@@ -126,20 +128,29 @@ runBorlLpInferWithRewardRepet repetitionsReward policy = do
         Optimal {} -> True
         _          -> False
 
-makeConstraints :: (BorlLp s) => M.Map (s, T.Text) Int -> [((State s, Action s), Double, EpisodeEnd)] -> ((State s, Action s), [((State s, Action s), Probability)]) -> [Bound [(Double, Int)]]
-makeConstraints stateActionIndices rewards (stAct, xs)
+makeConstraints ::
+     (BorlLp s)
+  => Maybe (State s, Action s)
+  -> M.Map (s, T.Text) Int
+  -> [((State s, Action s), Double, EpisodeEnd)]
+  -> ((State s, Action s), [((State s, Action s), Probability)])
+  -> [Bound [(Double, Int)]]
+makeConstraints mRefStAct stateActionIndices rewards (stAct, xs)
   | stAct `elem` map fst xs -- double occurance of variable is not allowed!
    =
     [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wIndex stateAction) xs') :==: 0
-    , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
-    ]
+    -- , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
+    ] ++
+    stActCtr
   | otherwise =
     [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs') :==: 0
-    , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
-    ]
+    -- , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
+    ] ++
+    stActCtr
   where
+    stActCtr = [[1 # wIndex stAct] :==: 0 | Just stAct == mRefStAct]
     xs' =
       case find ((== stAct) . fst) episodeEnds of
         Just (_, True) -> xs

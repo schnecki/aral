@@ -245,17 +245,17 @@ params =
   Parameters
     { _alpha              = 0.001
     , _alphaANN           = 0.5
-    , _beta               = 0.01
+    , _beta               = 0.001
     , _betaANN            = 1
-    , _delta              = 0.01
+    , _delta              = 0.001
     , _deltaANN           = 1
-    , _gamma              = 0.01
+    , _gamma              = 0.001
     , _gammaANN           = 1
-    , _epsilon            = 2
+    , _epsilon            = 5
     , _exploration        = 0.8
-    , _learnRandomAbove   = 0.0
+    , _learnRandomAbove   = 0.1
     , _zeta               = 0.0
-    , _xi                 = 0.01 -- 75 -- 0.1
+    , _xi                 = 0.01
     , _disableAllLearning = False
     }
 
@@ -265,19 +265,19 @@ decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.0001
+        { _alpha = 0.000
         , _alphaANN = 0.5
-        , _beta = 0.0005
+        , _beta = 0.00001
         , _betaANN = 1.0
-        , _delta = 0.0005
+        , _delta = 0.00001
         , _deltaANN = 1.0
-        , _gamma = 0.0005
+        , _gamma = 0.00001
         , _gammaANN = 1.0
-        , _epsilon = 2
+        , _epsilon = 5
         , _exploration = 0.01
         , _learnRandomAbove = 0.01
         , _zeta = 0.0
-        , _xi = 0.0
+        , _xi = 0.01
         , _disableAllLearning = False
         }
 
@@ -313,11 +313,13 @@ lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
   l <- putStr "Enter integer! L=" >> hFlush stdout >> read <$> getLine
-  runBorlLpInferWithRewardRepet 1000 (policy l) >>= print
+  runBorlLpInferWithRewardRepet 1000 (policy l) mRefStateAct >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
--- TODO: make reward function more stochastic (motivation: production system afterwards)
+mRefStateAct :: Maybe (St, ActionIndex)
+-- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
+mRefStateAct = Nothing
 
 usermode :: IO ()
 usermode = do
@@ -326,9 +328,9 @@ usermode = do
         -- AlgDQN 0.99
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues -- ByReward -- (Fixed 30)
-        -- AlgBORLVOnly (ByMovAvg 5000) (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
-
-        AlgBORL 0.5 0.8 ByStateValues Normal False (Just (initState, fst $ head $ zip [0..] (actFilter initState)))
+        -- AlgBORLVOnly (ByMovAvg 5000) mRefStateAct
+        AlgBORL 0.5 0.8 ByStateValues
+        Normal False mRefStateAct
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)

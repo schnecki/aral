@@ -1,9 +1,20 @@
 #!/bin/bash
 
+
 USER=schnecki
 PC=c437-pc169
 DIR=`pwd`
-BUILDARGS=--ghc-options -DDEBUG --fast
+SYNC_TIMEOUT=8
+BUILDARGS=--flag=borl:debug
+
+
+function syncLoop() {
+    while true; do
+        rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,psiValues,reward,costs,episodeLength,queueLength} . 2>/dev/null
+        sleep $SYNC_TIMEOUT;
+        wait $!
+    done
+}
 
 
 # Sync & Run
@@ -15,13 +26,16 @@ if [ $? -ne 0 ]; then
 fi
 echo "Synced data via rsync. Result $?"
 if [ $? -eq 0 ]; then
+    printf "Starting file sync fork"
+    syncLoop &
+    rsync -tarz $USER@$PC:$DIR/{state*,psiValues,episodeLength,queueLength} . &
     printf "Building and running code on $PC...\n----------------------------------------\n"
     ssh -t $USER@$PC "source ~/.bashrc; cd $DIR; stack build $BUILDARGS && stack exec $@ 1>&1; wait" || true
     printf "Execution stopped...\n----------------------------------------\n"
-    scp $USER@$PC:$DIR/state* .
-    scp $USER@$PC:$DIR/psiValues .
-    scp $USER@$PC:$DIR/episodeLength .
-    scp $USER@$PC:$DIR/queueLength .
+
 else
     echo "Something went wrong while syncing. Check the connection"
 fi
+
+# Kill all childs
+pkill -P $$

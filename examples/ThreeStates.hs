@@ -113,17 +113,21 @@ policy s a
   | (s, a) == (C, left)  = [((A, left), 1.0)]
   | otherwise = []
 
+mRefState :: Maybe (St, ActionIndex)
+mRefState = Nothing
+-- mRefState = Just (initState, 0)
+
 main :: IO ()
 main = do
   let algorithm =
-        -- algBORL
+        AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
 
 
-  runBorlLp policy >>= print
+  runBorlLp policy mRefState >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
@@ -176,7 +180,7 @@ decay = exponentialDecay (Just minValues) 0.05 100000
         , _gammaANN = 1
         , _epsilon = 0.05
         , _exploration = 0.01
-        , _learnRandomAbove = 0.0
+        , _learnRandomAbove = 0.1
         , _zeta = 1.0
         , _xi = 0.2
         , _disableAllLearning = False

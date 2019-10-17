@@ -273,12 +273,14 @@ experimentMode = do
      -- print (view evalsResults evalRes)
   writeAndCompileLatex evalRes
 
+mRefStateAct :: Maybe (St, ActionIndex)
+mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
 
 lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
   l <- putStr "Enter integer! L=" >> hFlush stdout >> read <$> getLine
-  runBorlLpInferWithRewardRepet 1000 (policy l) >>= print
+  runBorlLpInferWithRewardRepet 1000 (policy l) mRefStateAct >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
