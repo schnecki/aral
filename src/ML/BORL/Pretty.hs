@@ -150,10 +150,11 @@ prettyStateValueHandling Normal = empty
 prettyStateValueHandling (DivideValuesAfterGrowth nr max) = text "Divide values after growth " <> parens (int nr <> text "," <+> int max) <> text ";"
 
 prettyAvgRewardType :: AvgReward -> Doc
-prettyAvgRewardType (ByMovAvg nr) = "moving average" <> parens (int nr)
-prettyAvgRewardType ByReward      = "reward"
-prettyAvgRewardType ByStateValues = "state values"
-prettyAvgRewardType (Fixed x)     = "fixed value of " <> double x
+prettyAvgRewardType (ByMovAvg nr)          = "moving average" <> parens (int nr)
+prettyAvgRewardType ByReward               = "reward"
+prettyAvgRewardType ByStateValues          = "state values"
+prettyAvgRewardType ByStateValuesAndReward = "0.5*state values + 0.5*reward"
+prettyAvgRewardType (Fixed x)              = "fixed value of " <> double x
 
 
 prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> m Doc

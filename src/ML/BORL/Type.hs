@@ -143,7 +143,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar defRho) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (Scalar 0) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -202,7 +202,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) psiV v psiW w psiW2 w2 r0 r1 repMem)
+      (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w psiW2 w2 r0 r1 repMem)
   where
     mkModel tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (name tp <> scope) <$> liftTensorflow modelBuilderFun
@@ -256,7 +256,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (tabSA defRho) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (tabSA 0) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -309,7 +309,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRho) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
+      (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 

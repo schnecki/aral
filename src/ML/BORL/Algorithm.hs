@@ -14,6 +14,7 @@ data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
+  | ByStateValuesAndReward
   | Fixed Double
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 

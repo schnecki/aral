@@ -249,11 +249,11 @@ params =
     , _betaANN            = 1
     , _delta              = 0.001
     , _deltaANN           = 1
-    , _gamma              = 0.001
+    , _gamma              = 0.0005
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 0.8
-    , _learnRandomAbove   = 0.05
+    , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
     , _xi                 = 0.01
     , _disableAllLearning = False
@@ -261,23 +261,28 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
+decay t p = exponentialDecayValue alpha (Just 0) 0.25 100000 t $
+            exponentialDecayValue alpha (Just 0) 0.25 300000 t $
+            exponentialDecayValue gamma (Just 0) 0.25 500000 t $
+            exponentialDecayValue xi (Just 0) 0.25 500000 t $
+            exponentialDecayValue exploration (Just 0.01) 0.50 200000 t $
+            exponentialDecay (Just minValues) 0.50 300000 t p
   where
     minValues =
       Parameters
         { _alpha = 0.000
         , _alphaANN = 0.5
-        , _beta = 0.00
+        , _beta = 0.001
         , _betaANN = 1.0
-        , _delta = 0.00
+        , _delta = 0.001
         , _deltaANN = 1.0
-        , _gamma = 0.00
+        , _gamma = 0.0005
         , _gammaANN = 1.0
-        , _epsilon = 5
+        , _epsilon = 2
         , _exploration = 0.01
-        , _learnRandomAbove = 0.05
+        , _learnRandomAbove = 0.00
         , _zeta = 0.0
-        , _xi = 0.0
+        , _xi = 0.001
         , _disableAllLearning = False
         }
 

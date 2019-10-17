@@ -105,10 +105,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   rhoState <-
     if isUnichain borl
       then case avgRewardType of
-             Fixed x       -> return x
-             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
-             ByReward      -> return reward
+             Fixed x -> return x
+             ByMovAvg l -> return $ sum lastRews' / fromIntegral l
+             ByReward -> return reward
              ByStateValues -> return $ reward + vValStateNext - vValState
+             ByStateValuesAndReward -> return $ 0.5 * (reward + vValStateNext - vValState) + 0.5 * reward
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
@@ -127,28 +128,24 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- V
   let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
       psiV = reward + vValStateNext - rhoVal' alp - vValState' bta -- should converge to 0
-      psiVState' = (1 - alp) * psiVState + alp * psiV
+      psiVState' = (1 - bta) * psiVState + bta * psiV
   -- LastVs
   let lastVs' =
         case stValHandling of
           Normal -> take keepXLastValues $ vValState' bta : borl ^. lastVValues
           DivideValuesAfterGrowth nr _ -> take nr $ vValState' bta : borl ^. lastVValues
   -- W
-  let wValState' deltaVal =
-        (1 - deltaVal) * wValState + deltaVal *
-        (-vValState' bta
-                                                                     -- randAct * psiVState'
-          +
-         epsEnd *
-         wValStateNext)
+  let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta
+                                                                    -- (1-randAct) * psiVState'
+                                                                      + epsEnd * wValStateNext)
       psiW = wValStateNext - vValState' bta - wValState' dlt
       psiWState' = (1 - dlt) * psiWState + dlt * psiW
   -- W2
-  -- let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta
-  --                                                                     -- + randAct * psiWState'
-  --                                                                      + epsEnd * w2ValStateNext)
-  --     psiW2 = w2ValStateNext - wValState' alp - w2ValState' (0.5 * dlt)
-  --     psiW2State' = (1 - 0.5*dlt) * psiW2State + 0.5*dlt * psiW2
+  let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta
+                                                                      -- (1-randAct) * psiWState'
+                                                                       + epsEnd * w2ValStateNext)
+      psiW2 = w2ValStateNext - wValState' dlt - w2ValState' dlt
+      psiW2State' = (1 - 0.5*dlt) * psiW2State + 0.5*dlt * psiW2
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
@@ -162,7 +159,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- enforce values
   let wValStateNew betaVal
         | randomAction && not learnFromRandom = wValState' betaVal
-        | otherwise = wValState' betaVal -- + xiVal * psiW2State'
+        | otherwise = wValState' betaVal
+          -- (1-xiVal) * wValState' betaVal + xiVal * (wValState' betaVal + psiWState' + 0.01 * psiW2State')
   -- let vValStateNew betaVal
   --       | randomAction && not learnFromRandom = vValState' betaVal
   --       | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
@@ -171,10 +169,10 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   --          (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiWState') -- original !!!
   let vValStateNew betaVal
         | randomAction && not learnFromRandom = vValState' betaVal
-        -- | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
-        --   (1 - xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + signum psiVState' * psiVState' ^ 2)
-        | otherwise =
-          (1 - xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + psiVState' + 0.01 * psiWState')
+        --  | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
+        --    (1 - xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + signum psiVState' * psiVState' ^ 2)
+        | otherwise = (1 - xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + err)
+        where err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
         -- vValState' betaVal
            -- wValStateNext - wValStateNew betaVal + psiWState' + psiVState'
           -- vValState' betaVal + xiVal * ((1 - expSmthPsi) * psiWState' + expSmthPsi * (wValStateNext - vValState' alp - wValStateNew betaVal))
@@ -191,8 +189,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getVValState' = Just $ vValStateNew (ite (isANN v v) btaANN bta)
       , getPsiWValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (psiWState')
       , getWValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (wValStateNew (ite (isANN w w) dltANN dlt))
-      , getPsiW2ValState' = Nothing -- Just psiW2State'
-      , getW2ValState' = Nothing -- Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (w2ValState' (ite (isANN w2 w2) (0.5 * dltANN) (0.5 * dlt)))
+      , getPsiW2ValState' = Just psiW2State'
+      , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (w2ValState' (ite (isANN w2 w2) (0.5 * dltANN) (0.5 * dlt)))
       , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Just psiValRho'
@@ -226,6 +224,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
              ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
              ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgBORLVOnly"
+             ByStateValuesAndReward -> error "Average reward using `ByStateValuesAndReward` not supported for AlgBORLVOnly"
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
@@ -328,6 +327,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
              ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
              ByReward      -> return reward
              ByStateValues -> return $ reward + r1StateNext - r1ValState
+             ByStateValuesAndReward -> return $ 0.5 * (reward + r1StateNext - r1ValState) + 0.5 * reward
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
