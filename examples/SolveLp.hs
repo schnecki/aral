@@ -150,7 +150,7 @@ makeConstraints mRefStAct stateActionIndices rewards (stAct, xs)
     ] ++
     stActCtr
   where
-    stActCtr = [[1 # wIndex stAct] :==: 0 | Just stAct == mRefStAct]
+    stActCtr = [[1 # w2Index stAct] :==: 0 | Just stAct == mRefStAct]
     xs' =
       case find ((== stAct) . fst) episodeEnds of
         Just (_, True) -> xs

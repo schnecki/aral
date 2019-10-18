@@ -54,7 +54,7 @@ askUser showHelp addUsage cmds ql = do
           putStr "How often shall I repeat this? [1] " >> hFlush stdout
           l <- getLine
           case reads l :: [(Integer, String)] of
-            [(often, _)] -> foldM (\q _ -> time (steps q nr) >>= (\q' ->prettyBORL q >>= print >> return q') ) ql [1 .. often] >>= askUser False addUsage cmds
+            [(often, _)] -> foldM (\q _ -> time (steps q nr) >>= (\q' ->prettyBORL q' >>= print >> hFlush stdout >> return q') ) ql [1 .. often] >>= askUser False addUsage cmds
             _ -> time (steps ql nr) >>= askUser False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"

@@ -270,19 +270,19 @@ decay t p = exponentialDecayValue alpha (Just 0) 0.25 100000 t $
   where
     minValues =
       Parameters
-        { _alpha = 0.000
+        { _alpha = 0.00001
         , _alphaANN = 0.5
-        , _beta = 0.001
+        , _beta = 0.00
         , _betaANN = 1.0
-        , _delta = 0.001
+        , _delta = 0.00
         , _deltaANN = 1.0
-        , _gamma = 0.0005
+        , _gamma = 0.00
         , _gammaANN = 1.0
         , _epsilon = 2
         , _exploration = 0.01
-        , _learnRandomAbove = 0.00
+        , _learnRandomAbove = 0.0
         , _zeta = 0.0
-        , _xi = 0.001
+        , _xi = 0.01
         , _disableAllLearning = False
         }
 

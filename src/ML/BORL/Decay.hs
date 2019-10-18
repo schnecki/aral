@@ -12,6 +12,21 @@ type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the dec
 type DecayRate = Double
 type DecaySteps = Integer
 
+
+-- data MinimumValues = MinimumValues
+--   { minAlpha :: Double
+--   , minAlphaANN :: Double
+--   , minBeta :: Double
+--   , minBetaANN :: Double
+--   , minDelta :: Double
+--   , minDeltaANN :: Double
+--   , minGamma :: Double
+--   , minGammaANN :: Double
+--   , minEpsilon :: Double
+--   , min
+--   }
+
+
 -- | Exponential Decay with possible minimum values. All ANN parameters and the minimum learning rate for random actions
 -- are not decayed!
 exponentialDecay :: Maybe Parameters -> DecayRate -> DecaySteps -> Decay
