@@ -56,6 +56,11 @@ isAlgDqn :: Algorithm s -> Bool
 isAlgDqn AlgDQN{} = True
 isAlgDqn _        = False
 
+isAlgDqnAvgRewardFree :: Algorithm s -> Bool
+isAlgDqnAvgRewardFree AlgDQNAvgRewardFree{} = True
+isAlgDqnAvgRewardFree _                     = False
+
+
 isAlgBorlVOnly :: Algorithm s -> Bool
 isAlgBorlVOnly AlgBORLVOnly{} = True
 isAlgBorlVOnly _              = False

@@ -6,6 +6,7 @@ module ML.BORL.Calculation.Ops
     , eValue
     , vValue
     , vValueFeat
+    , rValueFeat
     , rhoValue
     , RSize (..)
     ) where

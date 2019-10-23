@@ -305,7 +305,11 @@ writeDebugFiles borl = do
           if isNeuralNetwork (borl ^. proxies . v)
             then return borl
             else steps (set t 1 borl) debugStepsCount -- run steps to fill the table with (hopefully) all states
-        let stateFeats = getStateFeatList (borl' ^. proxies . v)
+        let stateFeats =
+              case borl' ^. algorithm of
+                AlgDQNAvgRewardFree {} -> getStateFeatList (borl' ^. proxies . r1)
+                AlgDQN {}              -> getStateFeatList (borl' ^. proxies . r1)
+                _                      -> getStateFeatList (borl' ^. proxies . v)
         forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
         writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
@@ -313,11 +317,21 @@ writeDebugFiles borl = do
           else do
             putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
             return $ putStateFeatList borl stateFeats
-  let stateFeats = getStateFeatList (borl' ^. proxies . v)
+  let dqn = isAlgDqn (borl' ^. algorithm) || isAlgDqnAvgRewardFree (borl' ^. algorithm)
+  let stateFeats
+        | dqn = getStateFeatList (borl' ^. proxies . r1)
+        | otherwise = getStateFeatList (borl' ^. proxies . v)
   len <- read <$> readFile fileDebugStateValuesNrStates
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
-  stateValues <- liftSimple $ mapM (\xs -> vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
+  stateValues <-
+    liftSimple $
+    mapM
+      (\xs ->
+         if dqn
+           then rValueFeat borl' RBig (init xs) (round $ last xs)
+           else vValueFeat False borl' (init xs) (round $ last xs))
+      stateFeats
   psiVValues <- liftSimple $ mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
   psiWValues <- liftSimple $ mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
   appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
