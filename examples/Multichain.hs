@@ -43,6 +43,7 @@ main :: IO ()
 main = do
 
   let rl = mkMultichainTabular algBORL initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
+  -- let rl = mkUnichainTabular algBORL initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -53,42 +54,46 @@ initState = St 5
 
 -- | BORL Parameters.
 params :: Parameters
-params = Parameters
-  { _alpha            = 0.05
-  , _alphaANN = 1
-  , _beta             = 0.01
-  , _betaANN = 1
-  , _delta            = 0.005
-  , _deltaANN = 1
-  , _gamma            = 0.01
-  , _gammaANN = 1
-  , _epsilon          = 1.0
-  , _exploration      = 1.0
-  , _learnRandomAbove = 0.1
-  , _zeta             = 0.0
-  , _xi               = 0.0075
-  , _disableAllLearning = False
-  }
+params =
+  Parameters
+    { _alpha              = 0.001
+    , _alphaANN           = 0.5
+    , _beta               = 0.001
+    , _betaANN            = 1
+    , _delta              = 0.001
+    , _deltaANN           = 1
+    , _gamma              = 0.0005
+    , _gammaANN           = 1
+    , _epsilon            = 5
+    , _exploration        = 0.8
+    , _learnRandomAbove   = 0.0
+    , _zeta               = 0.0
+    , _xi                 = 0.01
+    , _disableAllLearning = False
+    }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.05 300000 t
+decay t p = exponentialDecay (Just minValues) 0.50 300000 t $
+            exponentialDecayValue alpha Nothing 0.25 300000 t $
+            exponentialDecayValue gamma Nothing 0.25 500000 t $
+            exponentialDecayValue xi Nothing 0.25 500000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.000
-        , _alphaANN = 1.0
-        , _beta =  0.005
+        { _alpha = 0.0001
+        , _alphaANN = 0.5
+        , _beta = 0.0001
         , _betaANN = 1.0
-        , _delta = 0.005
+        , _delta = 0.0001
         , _deltaANN = 1.0
-        , _gamma = 0.005
+        , _gamma = 0.0001
         , _gammaANN = 1.0
-        , _epsilon = 0.05
+        , _epsilon = 2
         , _exploration = 0.01
-        , _learnRandomAbove = 0.1
+        , _learnRandomAbove = 0.05
         , _zeta = 0.0
-        , _xi = 0.0075
+        , _xi = 0.01
         , _disableAllLearning = False
         }
 

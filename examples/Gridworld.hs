@@ -263,7 +263,8 @@ lpMode = do
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 mRefState :: Maybe (St, ActionIndex)
-mRefState = Just (fromIdx (0,2), 0)
+mRefState = Nothing
+-- mRefState = Just (fromIdx (0,2), 0)
 
 usermode :: IO ()
 usermode = do
@@ -272,8 +273,8 @@ usermode = do
          -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-        -- AlgBORL 0.5 0.8 ByStateValues Normal False mRefState
+        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+        AlgBORL 0.5 0.8 ByStateValues Normal False mRefState
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)

@@ -103,17 +103,15 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW) `using` rpar
   psiW2State <- P.lookupProxy period Worker label (borl ^. proxies . psiW2) `using` rpar
   -- Rho
-  rhoState <-
-    if isUnichain borl
-      then case avgRewardType of
-             Fixed x -> return x
-             ByMovAvg l -> return $ sum lastRews' / fromIntegral l
-             ByReward -> return reward
-             ByStateValues -> return $ reward + vValStateNext - vValState
-             ByStateValuesAndReward -> return $ 0.5 * (reward + vValStateNext - vValState) + 0.5 * reward
-      else do
-        rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
-        return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
+  let rhoState =
+        case avgRewardType of
+          Fixed x -> x
+          ByMovAvg l
+            | isUnichain borl -> sum lastRews' / fromIntegral l
+          ByMovAvg _ -> error "ByMovAvg is not allowed in multichain setups"
+          ByReward -> reward
+          ByStateValues -> reward + vValStateNext - vValState
+          ByStateValuesAndReward -> 0.5 * (reward + vValStateNext - vValState) + 0.5 * reward
   let rhoVal' alphaVal =
         max rhoMinimumState $
         case avgRewardType of
@@ -142,7 +140,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- W2
   let w2ValState' deltaVal = (1 - deltaVal) * w2ValState + deltaVal * (-wValState' bta + epsEnd * w2ValStateNext)
       psiW2 = w2ValStateNext - wValState' dlt - w2ValState' dlt
-      psiW2State' = (1 - 0.5*dlt) * psiW2State + 0.5*dlt * psiW2
+      psiW2State' = (1 - 0.5 * dlt) * psiW2State + 0.5 * dlt * psiW2
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
@@ -171,7 +169,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let vValStateNew betaVal
         | randomAction && not learnFromRandom = vValState' betaVal
         | otherwise = vValState' betaVal + xiVal * err
-        where err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
+        where
+          err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
   -- let vValStateNew betaVal
   --       | randomAction && not learnFromRandom = vValState' betaVal
   --       -- | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * psiVState'
