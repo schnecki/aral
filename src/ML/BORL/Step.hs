@@ -332,7 +332,7 @@ writeDebugFiles borl = do
     mkListStr f = intercalate "\t" . map f -- (map show) -- (printf "%.2f"))
     putStateFeatList borl xs = setAllProxies proxyTable xs' borl
       where
-        xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) [0 ..]
+        xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) (repeat 0)
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 
