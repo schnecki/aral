@@ -120,9 +120,9 @@ mRefState = Nothing
 main :: IO ()
 main = do
   let algorithm =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False mRefState
+        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False mRefState
         -- algDQNAvgRewardFree
-        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
 

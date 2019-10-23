@@ -7,7 +7,6 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
-{-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -71,7 +70,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 5
+maxQueueSize = 10
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -259,18 +258,43 @@ params =
     , _disableAllLearning = False
     }
 
+-- | BORL Parameters.
+paramsV :: Parameters
+paramsV =
+  Parameters
+    { _alpha              = 0.01
+    , _alphaANN           = 0.5
+    , _beta               = 0.05
+    , _betaANN            = 1
+    , _delta              = 0.05
+    , _deltaANN           = 1
+    , _gamma              = 0.05
+    , _gammaANN           = 1
+    , _epsilon            = 2
+    , _exploration        = 0.8
+    , _learnRandomAbove   = 0.0
+    , _zeta               = 0.0
+    , _xi                 = 0.01
+    , _disableAllLearning = False
+    }
+
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecayValue alpha (Just 0) 0.25 100000 t $
-            exponentialDecayValue alpha (Just 0) 0.25 300000 t $
-            exponentialDecayValue gamma (Just 0) 0.25 500000 t $
-            exponentialDecayValue xi (Just 0) 0.25 500000 t $
-            exponentialDecayValue exploration (Just 0.01) 0.50 200000 t $
-            exponentialDecay (Just minValues) 0.50 300000 t p
+decay t p
+  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg =
+    foldl
+      (\p (f, rate, minVal) -> exponentialDecayValue f (Just minVal) rate 30000 t p)
+      paramsV
+      [(alpha, 0.5, 0.00001), (beta, 0.5, 0.0001), (delta, 0.5, 0.0001), (gamma, 0.5, 0.0001), (exploration, 0.5, 0.01)]
+  | otherwise =
+    exponentialDecay (Just minValues) 0.50 300000 t $
+    exponentialDecayValue alpha (Just 0) 0.25 100000 t $
+    exponentialDecayValue alpha (Just 0) 0.25 300000 t $
+    exponentialDecayValue gamma (Just 0) 0.25 500000 t $ exponentialDecayValue xi (Just 0) 0.25 500000 t $ exponentialDecayValue exploration (Just 0.01) 0.50 200000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.00001
+        { _alpha = 0.0001
         , _alphaANN = 0.5
         , _beta = 0.0001
         , _betaANN = 1.0
@@ -287,7 +311,7 @@ decay t p = exponentialDecayValue alpha (Just 0) 0.25 100000 t $
         }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 (-200)
+initVals = InitValues 100 0 0 0 0
 
 main :: IO ()
 main = do
@@ -326,21 +350,23 @@ mRefStateAct :: Maybe (St, ActionIndex)
 -- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
 mRefStateAct = Nothing
 
+alg :: Algorithm St
+alg =
+        -- AlgDQN 0.99
+        -- AlgDQN 0.50
+        AlgDQNAvgRewardFree 0.8 1.0 ByStateValues -- ByReward -- (Fixed 30)
+        -- AlgBORLVOnly ByStateValues mRefStateAct
+        -- AlgBORL 0.5 0.8 ByStateValues Normal False mRefStateAct
+
+
 usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
-  let algorithm =
-        -- AlgDQN 0.99
-        -- AlgDQN 0.50
-        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues -- ByReward -- (Fixed 30)
-        -- AlgBORLVOnly (ByMovAvg 5000) mRefStateAct
-        AlgBORL 0.5 0.8 ByStateValues
-        Normal False mRefStateAct
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []
         usage = []

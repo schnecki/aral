@@ -111,7 +111,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           ByMovAvg _ -> error "ByMovAvg is not allowed in multichain setups"
           ByReward -> reward
           ByStateValues -> reward + vValStateNext - vValState
-          ByStateValuesAndReward -> 0.5 * (reward + vValStateNext - vValState) + 0.5 * reward
+          ByStateValuesAndReward ratio -> ratio * (reward + vValStateNext - vValState) + (1-ratio) * reward
   let rhoVal' alphaVal =
         max rhoMinimumState $
         case avgRewardType of
@@ -220,6 +220,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | episodeEnd = 0
         | otherwise = 1
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
+  vValState <- vValueFeat False borl state aNr `using` rpar
+  vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
   let lastRews' =
         case avgRewardType of
           ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
@@ -231,8 +233,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
              Fixed x -> return x
              ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
-             ByStateValues -> error "Average reward using `ByStateValues` not supported for AlgBORLVOnly"
-             ByStateValuesAndReward -> error "Average reward using `ByStateValuesAndReward` not supported for AlgBORLVOnly"
+             ByStateValues -> return $ reward + vValStateNext - vValState
+             ByStateValuesAndReward  ratio -> return $ ratio * (reward + vValStateNext - vValState) + (1-ratio) * reward
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
@@ -244,9 +246,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           _          -> (1 - alpVal) * rhoVal + alpVal * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoState
-  vValState <- vValueFeat False borl state aNr `using` rpar
-  vValStateNext <- vStateValue False borl (stateNext, stateNextActIdxes) `using` rpar
+        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' alp
   let vValState' btaVal = (1 - btaVal) * vValState + btaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' bta : borl ^. lastVValues
   return $
@@ -301,11 +301,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType)
-  -- let decay = 0.5 ** (fromIntegral (borl ^. t) / 100000)
-  --     ga1Diff = 1 - ga1
-  --     ga1' = ga1 + ga1Diff - (ga1Diff * decay)
- = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
@@ -331,11 +327,11 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   rhoState <-
     if isUnichain borl
       then case avgRewardType of
-             Fixed x       -> return x
-             ByMovAvg l    -> return $ sum lastRews' / fromIntegral l
-             ByReward      -> return reward
+             Fixed x -> return x
+             ByMovAvg l -> return $ sum lastRews' / fromIntegral l
+             ByReward -> return reward
              ByStateValues -> return $ reward + r1StateNext - r1ValState
-             ByStateValuesAndReward -> return $ 0.5 * (reward + r1StateNext - r1ValState) + 0.5 * reward
+             ByStateValuesAndReward ratio -> return $ ratio * (reward + r1StateNext - r1ValState) + (1 - ratio) * reward
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation

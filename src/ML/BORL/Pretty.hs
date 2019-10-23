@@ -153,7 +153,7 @@ prettyAvgRewardType :: AvgReward -> Doc
 prettyAvgRewardType (ByMovAvg nr)          = "moving average" <> parens (int nr)
 prettyAvgRewardType ByReward               = "reward"
 prettyAvgRewardType ByStateValues          = "state values"
-prettyAvgRewardType ByStateValuesAndReward = "0.5*state values + 0.5*reward"
+prettyAvgRewardType (ByStateValuesAndReward ratio) = printFloat ratio <> "*state values + " <> printFloat (1-ratio) <> "*reward"
 prettyAvgRewardType (Fixed x)              = "fixed value of " <> double x
 
 

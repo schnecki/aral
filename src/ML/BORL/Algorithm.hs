@@ -10,11 +10,13 @@ import           Control.DeepSeq
 import           Data.Serialize
 import           GHC.Generics
 
+type RatioStateValue = Double
+
 data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
-  | ByStateValuesAndReward
+  | ByStateValuesAndReward RatioStateValue
   | Fixed Double
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 

@@ -351,5 +351,5 @@ writeDebugFiles borl = do
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 
 debugStepsCount :: Integer
-debugStepsCount = 4000
+debugStepsCount = 8000
 
