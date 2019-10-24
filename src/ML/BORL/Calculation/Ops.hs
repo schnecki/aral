@@ -29,8 +29,6 @@ import           Data.Function                  (on)
 import           Data.List                      (maximumBy, minimumBy, sortBy)
 import           System.Random                  (randomRIO)
 
-import           Debug.Trace
-
 
 -- | Used to select a discount factor.
 data RSize
@@ -455,7 +453,7 @@ w2StateValue borl (state, asIdxes) =
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValue :: (MonadBorl' m) => BORL s -> RSize -> State s -> ActionIndex -> m Double
-rValue borl size s = rValueWith Worker borl size (ftExt s)
+rValue borl size s aNr = rValueWith Worker borl size (ftExt s) aNr
   where ftExt = case size of
           RSmall -> borl ^. featureExtractor
           RBig   -> borl ^. featureExtractor

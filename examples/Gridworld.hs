@@ -270,7 +270,7 @@ usermode :: IO ()
 usermode = do
 
   let algorithm =
-         -- AlgDQN 0.99             -- does not work
+        -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
         -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues

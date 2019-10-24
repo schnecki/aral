@@ -267,11 +267,12 @@ trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type 
 lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupProxy _ _ _ (Scalar x) = return x
 lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
-lookupProxy period lkType k px
+lookupProxy period lkType k@(_, aNr) px
   | period <= fromIntegral (config ^. replayMemoryMaxSize) && (config ^. trainBatchSize) /= 1 = return $ M.findWithDefault 0 k tab
   | otherwise = lookupNeuralNetwork lkType k px
-  where config = px ^?! proxyNNConfig
-        tab = px ^?! proxyNNStartup
+  where
+    config = px ^?! proxyNNConfig
+    tab = px ^?! proxyNNStartup
 
 
 -- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an
@@ -292,7 +293,7 @@ lookupActionsNeuralNetwork _ _ _ = error "lookupNeuralNetwork called on non-neur
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
-lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
+lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!! actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
 lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
 lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netW [map realToFrac st]
 lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netT [map realToFrac st]

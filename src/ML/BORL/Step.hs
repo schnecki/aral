@@ -22,6 +22,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork.NNConfig
+import           ML.BORL.NeuralNetwork.Scaling    (unscaleValue)
 import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
                                                    restoreModelWithLastIO,
                                                    saveModelWithLastIO)
@@ -291,8 +292,21 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
+
 writeDebugFiles :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
 writeDebugFiles borl = do
+  let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardFree (borl ^. algorithm)
+  let isAnn
+        | isDqn = P.isNeuralNetwork (borl ^. proxies . r1)
+        | otherwise = P.isNeuralNetwork (borl ^. proxies . v)
+      toActIdx
+        | isAnn = round . unscaleValue (0, fromIntegral $ length $ borl ^. actionList)
+        | otherwise = round
+  let putStateFeatList borl xs
+        | isAnn = borl
+        | otherwise = setAllProxies proxyTable xs' borl
+        where
+          xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) (repeat 0)
   borl' <-
     if borl ^. t > 0
       then return borl
@@ -302,14 +316,14 @@ writeDebugFiles borl = do
         writeFile fileDebugPsiWValues ""
         writeFile fileDebugStateValuesNrStates "-1"
         borl' <-
-          if isNeuralNetwork (borl ^. proxies . v)
+          if isAnn
             then return borl
-            else steps (set t 1 borl) debugStepsCount -- run steps to fill the table with (hopefully) all states
-        let stateFeats =
-              case borl' ^. algorithm of
-                AlgDQNAvgRewardFree {} -> getStateFeatList (borl' ^. proxies . r1)
-                AlgDQN {}              -> getStateFeatList (borl' ^. proxies . r1)
-                _                      -> getStateFeatList (borl' ^. proxies . v)
+            else steps
+                   (setAllProxies (proxyNNConfig . trainMSEMax) Nothing $ setAllProxies (proxyNNConfig . replayMemoryMaxSize) 1000 $ set t 1 borl)
+                   debugStepsCount -- run steps to fill the table with (hopefully) all states
+        let stateFeats
+              | isDqn = getStateFeatList (borl' ^. proxies . r1)
+              | otherwise = getStateFeatList (borl' ^. proxies . v)
         forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
         writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
@@ -317,9 +331,8 @@ writeDebugFiles borl = do
           else do
             putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
             return $ putStateFeatList borl stateFeats
-  let dqn = isAlgDqn (borl' ^. algorithm) || isAlgDqnAvgRewardFree (borl' ^. algorithm)
   let stateFeats
-        | dqn = getStateFeatList (borl' ^. proxies . r1)
+        | isDqn = getStateFeatList (borl' ^. proxies . r1)
         | otherwise = getStateFeatList (borl' ^. proxies . v)
   len <- read <$> readFile fileDebugStateValuesNrStates
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
@@ -328,12 +341,12 @@ writeDebugFiles borl = do
     liftSimple $
     mapM
       (\xs ->
-         if dqn
-           then rValueFeat borl' RBig (init xs) (round $ last xs)
-           else vValueFeat False borl' (init xs) (round $ last xs))
+         if isDqn
+           then rValueFeat borl' RBig (init xs) (toActIdx $ last xs)
+           else vValueFeat False borl' (init xs) (toActIdx $ last xs))
       stateFeats
-  psiVValues <- liftSimple $ mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
-  psiWValues <- liftSimple $ mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
+  psiVValues <- liftSimple $ mapM (\xs -> psiVFeat borl' (init xs) (toActIdx $ last xs)) stateFeats
+  psiWValues <- liftSimple $ mapM (\xs -> psiWFeat borl' (init xs) (toActIdx $ last xs)) stateFeats
   appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
   appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
   appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
@@ -344,9 +357,6 @@ writeDebugFiles borl = do
     getStateFeatList nn          = nn ^. proxyNNConfig . prettyPrintElems
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f -- (map show) -- (printf "%.2f"))
-    putStateFeatList borl xs = setAllProxies proxyTable xs' borl
-      where
-        xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) (repeat 0)
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 

@@ -40,10 +40,13 @@ commas :: Int
 commas = 3
 
 wideStyle :: Style
-wideStyle = Style { lineLength = 200, ribbonsPerLine = 1.5, mode = PageMode }
+wideStyle = Style { lineLength = 200, ribbonsPerLine = 1, mode = PageMode }
 
 printFloat :: Double -> Doc
-printFloat x = text $ printf ("%." ++ show commas ++ "f") x
+printFloat = text . showFloat
+
+showFloat :: Double -> String
+showFloat = printf ("%." ++ show commas ++ "f")
 
 printFloatWith :: Int -> Double -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
@@ -60,7 +63,7 @@ prettyTableRows ::
   -> (([Double], ActionIndex) -> Double -> m Double)
   -> P.Proxy
   -> m [Doc]
-prettyTableRows borl prettyAction prettyActionIdx modifier p =
+prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ ->
       let mkAct idx = actionName $ snd $ (borl ^. actionList) !! idx
@@ -68,7 +71,7 @@ prettyTableRows borl prettyAction prettyActionIdx modifier p =
       in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return ( mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
-      mtrue <- mkListFromNeuralNetwork borl prettyAction prettyActionIdx True pr
+      mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True pr
       let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
       return $ map printFun (unfoldActs mtrue)
@@ -86,18 +89,16 @@ mkListFromNeuralNetwork ::
   -> Bool
   -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
-mkListFromNeuralNetwork borl prettyAction prettyActionIdx scaled pr = do
-  nnList <- mkNNList borl scaled pr
+mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
   if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize
     then do
-    let inp = map fst tbl
-    let tableVals = tbl
-    workerVals <- mapM (\x -> lookupNeuralNetwork Worker x pr) inp
-    return $ finalize $ zipWith (\((feat,actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))  ) tbl workerVals
-
+      let inp = map fst tbl
+      let tableVals = tbl
+      workerVals <- mapM (\x -> lookupNeuralNetwork Worker x pr) inp
+      return $ finalize $ zipWith (\((feat, actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))) tbl workerVals
     else finalize <$> mkNNList borl scaled pr
   where
-    finalize = map (first $ prettyActionEntry prettyAction prettyActionIdx)
+    finalize = map (first $ prettyActionEntry prettyState prettyActionIdx)
     tbl =
       case pr of
         P.Table t _                     -> M.toList t
@@ -121,7 +122,7 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           P.TensorflowProxy _ _ p _ cfg _ -> P.Table p 0
 
 prettyAlgorithm ::  (Show k') => BORL s -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> Algorithm s -> Doc
-prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV mRefState) =
+prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType avgRewType <+>
@@ -132,7 +133,7 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORL ga0 ga1 avgRewType stValH
     (if vPlusPsiV
        then "V + PsiV"
        else "V") <+>
-  prettyRefState borl prettyState prettyAction mRefState
+  prettyRefState borl prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType)      = text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType avgRewType
   where decay = 0.5 ** (fromIntegral (borl ^. t) / 100000)
@@ -166,7 +167,7 @@ prettyBORLTables t1 t2 t3 borl = do
         case borl ^. algorithm of
           AlgDQN {} -> mempty
           _         -> doc
-  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyAction prettyActionIdx m1 prettyAction m2
+  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState m2
       prBoolTblsStateAction False _ _ _ = return empty
   let addPsiV k v =
         case borl ^. proxies . psiV of
@@ -178,12 +179,12 @@ prettyBORLTables t1 t2 t3 borl = do
                   else do
                     vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
                     return (v + vPsi)
-  vPlusPsiV <- prettyTableRows borl prettyAction prettyActionIdx addPsiV (borl ^. proxies . v)
+  vPlusPsiV <- prettyTableRows borl prettyState prettyActionIdx addPsiV (borl ^. proxies . v)
   prettyRhoVal <-
     case borl ^. proxies . rho of
       Scalar val -> return $ text "Rho" <> colon $$ nest 45 (printFloatWith 8 val)
       m -> do
-        prAct <- prettyTable borl prettyAction prettyActionIdx m
+        prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
   docHead <- prettyBORLHead False borl
   case borl ^. algorithm of
@@ -198,24 +199,25 @@ prettyBORLTables t1 t2 t3 borl = do
         prW2s $+$
         prR0R1
     AlgBORLVOnly {} -> do
-      prV <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
+      prV <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
     AlgDQN {} -> do
-      prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+      prR1 <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewardFree {} -> do
+    AlgDQNAvgRewardFree {}
       -- prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+     -> do
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest 40 (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    prettyAction st = st
+    prettyState st = map showFloat st
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
 
 
 prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> BORL s -> m Doc
 prettyBORLHead printRho borl = do
-  let prettyAction st = st
+  let prettyState st = map showFloat st
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx) . fst) (borl ^. actionList)))
 
   let algDoc doc
@@ -243,7 +245,7 @@ prettyBORLHead printRho borl = do
     nnLearningParams $+$
     text "Algorithm" <>
     colon $$
-    nest 45 (prettyAlgorithm borl prettyAction prettyActionIdx (borl ^. algorithm)) $+$
+    nest 45 (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
     algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. zeta)) $+$
     algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest 45 (printFloatWith 8 $ params' ^. xi)) $+$
     (case borl ^. algorithm of

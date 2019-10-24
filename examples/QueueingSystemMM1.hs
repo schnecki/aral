@@ -70,7 +70,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 10
+maxQueueSize = 5
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -243,7 +243,7 @@ params :: Parameters
 params =
   Parameters
     { _alpha              = 0.001
-    , _alphaANN           = 0.5
+    , _alphaANN           = 0.001
     , _beta               = 0.001
     , _betaANN            = 1
     , _delta              = 0.001
@@ -263,7 +263,7 @@ paramsV :: Parameters
 paramsV =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.5
+    , _alphaANN           = 0.01
     , _beta               = 0.05
     , _betaANN            = 1
     , _delta              = 0.05
@@ -295,7 +295,7 @@ decay t p
     minValues =
       Parameters
         { _alpha = 0.0001
-        , _alphaANN = 0.5
+        , _alphaANN = 0.0001
         , _beta = 0.0001
         , _betaANN = 1.0
         , _delta = 0.0001
@@ -311,7 +311,7 @@ decay t p
         }
 
 initVals :: InitValues
-initVals = InitValues 100 0 0 0 0
+initVals = InitValues 0 0 0 0 0
 
 main :: IO ()
 main = do
@@ -354,7 +354,7 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 1.0 ByStateValues -- ByReward -- (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.8 ByStateValues Normal False mRefStateAct
 
@@ -363,10 +363,10 @@ usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
-  -- nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  nn <- randomNetworkInitWith UniformInit :: IO NN
+  rl <- mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []
         usage = []
@@ -382,15 +382,16 @@ modelBuilder =
 
 
 nnConfig :: NNConfig
-nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
-  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      = scalingByMaxAbsReward False 6
-  , _updateTargetInterval = 3000
-  , _trainMSEMax          = Just 0.03
-  }
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 32
+    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = scalingByMaxAbsReward False 100
+    , _updateTargetInterval = 3000
+    , _trainMSEMax = Nothing -- Just 0.03
+    }
 
 netInp :: St -> [Double]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
