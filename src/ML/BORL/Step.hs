@@ -241,7 +241,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
 #ifdef DEBUG
   when (borl ^. t == 0) $ forM_ [fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
     liftSimple $ doesFileExist f >>= \x -> when x (removeFile f)
-  borl <- liftSimple $ writeDebugFiles borl
+  borl <- writeDebugFiles borl
 #endif
   (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
