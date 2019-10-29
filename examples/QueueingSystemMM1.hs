@@ -388,9 +388,9 @@ nnConfig =
     , _trainBatchSize = 32
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 50
+    , _scaleParameters = scalingByMaxAbsReward False 200
     , _updateTargetInterval = 3000
-    , _trainMSEMax = Just 0.05
+    , _trainMSEMax = Nothing -- Just 0.05
     }
 
 netInp :: St -> [Double]
