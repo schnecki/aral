@@ -364,8 +364,8 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  rl <- mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []

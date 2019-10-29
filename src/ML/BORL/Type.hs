@@ -181,12 +181,12 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <- liftSimple $ nnSA VTable 0
   w <- liftSimple $ nnSA WTable 2
-  w2 <- liftSimple $ nnSA WTable 4
+  w2 <- liftSimple $ nnSA W2Table 4
   r0 <- liftSimple $ nnSA R0Table 6
   r1 <- liftSimple $ nnSA R1Table 8
   psiV <- liftSimple $ nnSA PsiVTable 10
   psiW <- liftSimple $ nnSA PsiWTable 12
-  psiW2 <- liftSimple $ nnSA PsiWTable 14
+  psiW2 <- liftSimple $ nnSA PsiW2Table 14
   repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (v ^?! proxyTFTarget)
   return $
