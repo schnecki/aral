@@ -309,7 +309,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
       gam
-        | isANN = params' ^. gammaANN
+        | isANN && isMultichain borl = params' ^. gammaANN
         | otherwise = params' ^. gamma
       alp
         | isANN = params' ^. alphaANN

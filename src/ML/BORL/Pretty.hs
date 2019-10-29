@@ -40,7 +40,7 @@ commas :: Int
 commas = 3
 
 wideStyle :: Style
-wideStyle = Style { lineLength = 200, ribbonsPerLine = 1, mode = PageMode }
+wideStyle = Style { lineLength = 200, ribbonsPerLine = 100, mode = PageMode }
 
 printFloat :: Double -> Doc
 printFloat = text . showFloat
