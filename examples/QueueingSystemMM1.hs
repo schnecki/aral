@@ -229,8 +229,8 @@ instance ExperimentDef (BORL St)
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Normal True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -285,11 +285,22 @@ decay t p
     foldl
       (\p (f, rate, minVal) -> exponentialDecayValue f (Just minVal) rate 30000 t p)
       paramsV
-      [(alpha, 0.5, 0.00001), (beta, 0.5, 0.0001), (delta, 0.5, 0.0001), (gamma, 0.5, 0.0001), (exploration, 0.5, 0.01)]
+      [ (alpha, 0.5, 0.00001)
+      , (alphaANN, 0.5, 0.00001)
+      , (beta, 0.5, 0.0001)
+      , (betaANN, 0.5, 0.0001)
+      , (delta, 0.5, 0.0001)
+      , (deltaANN, 0.5, 0.0001)
+      , (gamma, 0.5, 0.0001)
+      , (gammaANN, 0.5, 0.0001)
+      , (exploration, 0.5, 0.01)
+      ]
   | otherwise =
     exponentialDecay (Just minValues) 0.50 300000 t $
     exponentialDecayValue alpha (Just 0) 0.25 100000 t $
     exponentialDecayValue alpha (Just 0) 0.25 300000 t $
+    exponentialDecayValue alphaANN (Just 0) 0.25 100000 t $
+    exponentialDecayValue alphaANN (Just 0) 0.25 300000 t $
     exponentialDecayValue gamma (Just 0) 0.25 500000 t $ exponentialDecayValue xi (Just 0) 0.25 500000 t $ exponentialDecayValue exploration (Just 0.01) 0.50 200000 t p
   where
     minValues =
@@ -354,18 +365,18 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues -- ByReward -- (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.8 ByStateValues Normal False mRefStateAct
+        -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
 
 
 usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
-  nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowSingleNet alg initState netInp actions actFilter params decay modelBuilderSingleNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []
@@ -376,8 +387,15 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected1D (5*inpLen) TF.relu' >> fullyConnected1D (3*inpLen) TF.relu' >> fullyConnected1D (2*inpLen) TF.relu' >> fullyConnected1D (genericLength actions) TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  where inpLen = genericLength (netInp initState)
+
+modelBuilderSingleNet :: (TF.MonadBuild m) => m TensorflowModel
+modelBuilderSingleNet =
+  buildModel $
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, 7] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 

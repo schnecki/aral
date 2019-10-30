@@ -83,11 +83,11 @@ modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> m TensorflowModel
 modelBuilder nrInp nrOut =
   buildModel $
   inputLayer1D (fromIntegral nrInp) >>
-  fullyConnected1D (5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)) TF.relu' >>
-  fullyConnected1D (3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))) TF.relu' >>
-  -- fullyConnected1D (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
-  fullyConnected1D (fromIntegral nrOut) TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  fullyConnected [5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)] TF.relu' >>
+  fullyConnected [3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))] TF.relu' >>
+  -- fullyConnected (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
+  fullyConnected [fromIntegral nrOut] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 nnConfig :: Gym -> Double -> NNConfig
@@ -166,7 +166,7 @@ main = do
 
       initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
-  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) Normal True Nothing
+  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) True Nothing
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
   -- rl <- mkUnichainTensorflow algorithm initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues

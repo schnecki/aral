@@ -11,6 +11,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
+import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward.Type
 import           ML.BORL.SaveRestore
@@ -64,7 +65,6 @@ toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg ph v rew psis prS) =
   BORL _ _ s _ t eNr par _ future alg ph v rew psis prS <- saveTensorflowModels borl
   return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) (mapAlgorithm f alg) ph v rew psis prS
 
-
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
@@ -83,9 +83,9 @@ fromSerialisableWith ::
 fromSerialisableWith f g as aF decay ftExt inp builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) (mapAlgorithm f alg) ph lastV rew psis prS
-      borl' =
-        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] $
-        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) [rhoMinimum, rho, psiV, v, psiW, w, r0, r1] borl
+      borl' = error "TODO Serialize"
+        -- flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) allProxies $
+        -- flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) allProxies borl
   restoreTensorflowModels False borl'
   return $ force borl'
 

@@ -126,7 +126,7 @@ nextAction borl
         r <- liftSimple $ randomRIO (0, length as - 1)
         return (borl, True, as !! r)
       else case borl ^. algorithm of
-             AlgBORL _ _ _ _ decideVPlusPsi _ -> do
+             AlgBORL _ _ _ decideVPlusPsi _ -> do
                bestRho <-
                  if isUnichain borl
                    then return as
@@ -189,7 +189,7 @@ nextAction borl
     headDqnAvgRewFree []    = error "head: empty input data in nextAction on DqnAvgRewFree Value"
     headDqnAvgRewFree (x:_) = x
     gamma0 = case borl ^. algorithm of
-      AlgBORL g0 _ _ _ _ _       -> g0
+      AlgBORL g0 _ _ _ _         -> g0
       AlgDQN g0                  -> g0
       AlgDQNAvgRewardFree g0 _ _ -> g0
       AlgBORLVOnly _ _           -> 1
@@ -255,26 +255,6 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
       strR1 = show $ getR1ValState' calc
-      divideAfterGrowth :: BORL s -> BORL s
-      divideAfterGrowth borl =
-        case borl ^. algorithm of
-          AlgBORL _ _ _ (DivideValuesAfterGrowth nr maxPeriod) _ _
-            | period > maxPeriod -> borl
-            | length lastVsLst == nr && endOfIncreasedStateValues ->
-              trace ("multiply in period " ++ show period ++ " by " ++ show val) $
-              foldl (\q f -> over (proxies . f) (multiplyProxy val) q) (set phase SteadyStateValues borl) [psiV, v, w]
-            where endOfIncreasedStateValues =
-                    borl ^. phase == IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr < 0.00
-                  val = 0.2 / (sum lastVsLst / fromIntegral nr)
-          _ -> borl
-      setCurrentPhase :: BORL s -> BORL s
-      setCurrentPhase borl =
-        case borl ^. algorithm of
-          AlgBORL _ _ _ (DivideValuesAfterGrowth nr _) _ _
-            | length lastVsLst == nr && increasingStateValue -> trace ("period: " ++ show period) $ trace (show IncreasingStateValues) $ set phase IncreasingStateValues borl
-            where increasingStateValue =
-                    borl ^. phase /= IncreasingStateValues && 2000 * (avg (take (nr `div` 2) lastVsLst) - avg (drop (nr `div` 2) lastVsLst)) / fromIntegral nr > 0.20
-          _ -> borl
       avg xs = sum xs / fromIntegral (length xs)
   liftSimple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
   let (eNr, eStart) = borl ^. episodeNrStart
@@ -286,12 +266,11 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
   return $
-    setCurrentPhase $
-    divideAfterGrowth $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
+#ifdef DEBUG
 
 writeDebugFiles :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 writeDebugFiles borl = do
@@ -361,3 +340,4 @@ debugStepsCount = 8000
 debugPrintCount :: Int
 debugPrintCount = 100
 
+#endif

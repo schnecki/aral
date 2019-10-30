@@ -93,8 +93,8 @@ numInputs = genericLength (netInp initState)
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -120,7 +120,7 @@ mRefState = Nothing
 main :: IO ()
 main = do
   let algorithm =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False mRefState
+        AlgBORL defaultGamma0 defaultGamma1 ByStateValues False mRefState
         -- algDQNAvgRewardFree
         -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing

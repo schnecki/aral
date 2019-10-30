@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
 module ML.BORL.Proxy.Ops
@@ -29,14 +30,14 @@ module ML.BORL.Proxy.Ops
 import           ML.BORL.Calculation.Type
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork
-import           ML.BORL.Proxy.Type
-import           ML.BORL.Type
-import           ML.BORL.Reward
 import           ML.BORL.Parameters
+import           ML.BORL.Proxy.Proxies
+import           ML.BORL.Proxy.Type
+import           ML.BORL.Reward
+import           ML.BORL.Type
 import           ML.BORL.Types                as T
 import           ML.BORL.Types
 
-import System.Random.Shuffle
 import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Lens
@@ -50,10 +51,21 @@ import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import           System.Random.Shuffle
 
 
 import           Control.Lens
 import qualified Data.Map.Strict              as M
+
+mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
+    where
+    sActIdxes = map fst $ actionsIndexed borl state
+    sNextActIdxes = map fst $ actionsIndexed borl stateNext
+    stateFeat = (borl ^. featureExtractor) state
+    stateNextFeat = (borl ^. featureExtractor) stateNext
+    stateActs = (stateFeat, sActIdxes)
+    stateNextActs = (stateNextFeat, sNextActIdxes)
+
 
 -- | Insert (or update) a value.
 insert ::
@@ -69,8 +81,11 @@ insert ::
   -> ReplMemFun s
   -> Proxies
   -> m (Proxies, Calculation)
+insert borl _ state aNr randAct rew stateNext episodeEnd getCalc pxs
+  | borl ^. parameters . disableAllLearning = (pxs, ) <$> getCalc stateActs aNr randAct rew stateNextActs episodeEnd
+  where
+    (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing) = do
-  let 
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftSimple $ collectForkResult forkMv'
@@ -90,13 +105,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
     return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' Nothing, calc)
   where
-    sActIdxes = map fst $ actionsIndexed borl state
-    sNextActIdxes = map fst $ actionsIndexed borl stateNext
-    period = borl ^. t
-    stateFeat = (borl ^. featureExtractor) state
-    stateNextFeat = (borl ^. featureExtractor) stateNext
-    stateActs = (stateFeat, sActIdxes)
-    stateNextActs = (stateNextFeat, sNextActIdxes)
+    (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 (Just replMem))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
@@ -141,14 +150,22 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
         return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' (Just replMem'), calc)
   where
-    sActIdxes = map fst $ actionsIndexed borl state
-    sNextActIdxes = map fst $ actionsIndexed borl stateNext
-    period = borl ^. t
-    state = borl ^. s
-    stateFeat = (borl ^. featureExtractor) state
-    stateNextFeat = (borl ^. featureExtractor) stateNext
-    stateActs = (stateFeat, sActIdxes)
-    stateNextActs = (stateNextFeat, sNextActIdxes)
+    (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy Nothing) =
+  undefined
+  where
+    (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
+  | proxy ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
+  | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
+    replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
+    return (replayMemory ?~ replMem' $ pxs', calc)
+  | otherwise = do
+      undefined
+  where
+    (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
+
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
@@ -231,7 +248,7 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     kScaled = map fst dataset
     (minV,maxV) = getMinMaxVal px
     getValue k =
-       -- unscaleValue (getMinMaxVal px) $ 
+       -- unscaleValue (getMinMaxVal px) $
        (!! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
@@ -298,7 +315,7 @@ lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = re
 lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netW [map realToFrac st]
 lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netT [map realToFrac st]
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
-  
+
 headLookup []    = error "head: empty input data in lookupNeuralNetworkUnscaled"
 headLookup (x:_) = x
 headLookupActions []    = error "head: empty input data in lookupActionsNeuralNetworkUnscaled"

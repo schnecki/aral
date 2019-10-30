@@ -4,9 +4,10 @@
 module ML.BORL.NeuralNetwork.TensorflowBuild
     ( buildModel
     , inputLayer1D
-    , fullyConnected1D
-    , trainingByAdam1D
-    , trainingByAdam1DWith
+    , inputLayer
+    , fullyConnected
+    , trainingByAdam
+    , trainingByAdamWith
     , randomParam
     ) where
 
@@ -82,14 +83,19 @@ labLayerName = "labels"
 
 
 inputLayer1D :: (TF.MonadBuild m) => Int64 -> StateT BuildInfo m ()
-inputLayer1D numInputs = do
+inputLayer1D numInputs = inputLayer [numInputs]
+
+inputLayer :: (TF.MonadBuild m) => [Int64] -> StateT BuildInfo m ()
+inputLayer shape = do
+  let numInputs = product shape
   input <- lift $ TF.placeholder' (TF.opName .~ TF.explicitName inputTensorName) [batchSize, numInputs]
   lastTensor .= Just (numInputs, input)
   nrLayers .= layerIdxStartNr
   inputName .= Just inputTensorName
 
-fullyConnected1D :: (TF.MonadBuild m) => Int64 -> (TF.OpParams -> TF.Tensor TF.Build Float -> TF.Tensor TF.Build Float) -> StateT BuildInfo m ()
-fullyConnected1D numUnits activationFunction = do
+
+fullyConnected :: (TF.MonadBuild m) => [Int64] -> (TF.OpParams -> TF.Tensor TF.Build Float -> TF.Tensor TF.Build Float) -> StateT BuildInfo m ()
+fullyConnected shape activationFunction = do
   layers <- gets (^. nrLayers)
   inputLayer <- gets (^. inputName)
   when (layers < layerIdxStartNr || isNothing inputLayer) $ error "You must start your model with an input layer"
@@ -99,8 +105,9 @@ fullyConnected1D numUnits activationFunction = do
   lastLayer <- gets (^. lastTensor)
   case lastLayer of
     Nothing -> error "No previous layer found on fullyConnected1D. Start with an input layer, see the `input1D` function"
-    Just (previousNumUnit, previousTensor) -> do
-      hiddenWeights <- lift $ TF.initializedVariable' (TF.opName .~ fromString ("weights" ++ show layerNr)) =<< randomParam (previousNumUnit * numUnits) [previousNumUnit, numUnits]
+    Just (previousNumUnits, previousTensor) -> do
+      let numUnits = product shape
+      hiddenWeights <- lift $ TF.initializedVariable' (TF.opName .~ fromString ("weights" ++ show layerNr)) =<< randomParam previousNumUnits [previousNumUnits, numUnits]
       hiddenBiases <- lift $ TF.zeroInitializedVariable' (TF.opName .~ fromString ("bias" ++ show layerNr)) [numUnits]
       let hiddenZ = (previousTensor `TF.matMul` hiddenWeights) `TF.add` hiddenBiases
       let outName = "out" <> pack (show layerNr)
@@ -109,22 +116,21 @@ fullyConnected1D numUnits activationFunction = do
       lastTensor .= Just (numUnits, hidden)
       outputName .= Just outName
       nrLayers += 1
-      nrUnitsLayer %=  (++ [[previousNumUnit, numUnits], [numUnits]])
+      nrUnitsLayer %=  (++ [[previousNumUnits, numUnits], [numUnits]])
 
-trainingByAdam1D :: (TF.MonadBuild m) => StateT BuildInfo m ()
-trainingByAdam1D = trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+trainingByAdam :: (TF.MonadBuild m) => StateT BuildInfo m ()
+trainingByAdam = trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
-trainingByAdam1DWith :: (TF.MonadBuild m) => TF.AdamConfig -> StateT BuildInfo m ()
-trainingByAdam1DWith adamConfig = do
+trainingByAdamWith :: (TF.MonadBuild m) => TF.AdamConfig -> StateT BuildInfo m ()
+trainingByAdamWith adamConfig = do
   mOutput <- gets (^. outputName)
   when (isNothing mOutput) $ error "You must specify at least one layer, e.g. fullyConnected1D."
   lastLayer <- gets (^. lastTensor)
   -- Create training action.
   case lastLayer of
     Nothing -> error "No previous layer found in trainingByAdam. Start with an input layer, followed by at least one further layer."
-    Just (previousNumUnit, previousTensor) -> do
-      -- when (previousNumUnit /= 1) $ error "Output for trainingByAdam1D must be a scalar! That is `numUnits` of last layer must be 1."
+    Just (_, previousTensor) -> do
       weights <- gets (^. nnVars)
       nrUnits <- gets (^. nrUnitsLayer)
       labels <- lift $ TF.placeholder' (TF.opName .~ TF.explicitName labLayerName) [batchSize]

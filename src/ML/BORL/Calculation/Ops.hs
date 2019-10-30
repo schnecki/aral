@@ -57,7 +57,7 @@ ite b t e
 
 
 mkCalculation' :: (MonadBorl' m, Ord s) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> Algorithm s -> m Calculation
-mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType stValHandling decideOnVPlusPsiV mRefState) = do
+mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType decideOnVPlusPsiV mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN p p2 = P.isNeuralNetwork (borl ^. proxies . p) && borl ^. t > borl ^?! proxies . p2 . proxyNNConfig . replayMemoryMaxSize
   let alp = params' ^. alpha
@@ -127,10 +127,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       psiV = reward + vValStateNext - rhoVal' alp - vValState' bta -- should converge to 0
       psiVState' = (1 - bta) * psiVState + bta * psiV
   -- LastVs
-  let lastVs' =
-        case stValHandling of
-          Normal -> take keepXLastValues $ vValState' bta : borl ^. lastVValues
-          DivideValuesAfterGrowth nr _ -> take nr $ vValState' bta : borl ^. lastVValues
+  let lastVs' = take keepXLastValues $ vValState' bta : borl ^. lastVValues
   -- W
   let wValState' deltaVal = (1 - deltaVal) * wValState + deltaVal * (-vValState' bta + epsEnd * wValStateNext)
       psiW = wValStateNext - vValState' bta - wValState' dlt

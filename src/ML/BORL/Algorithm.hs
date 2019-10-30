@@ -10,19 +10,14 @@ import           Control.DeepSeq
 import           Data.Serialize
 import           GHC.Generics
 
-type RatioStateValue = Double
+type FractionStateValue = Double
 
 data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
-  | ByStateValuesAndReward RatioStateValue
+  | ByStateValuesAndReward FractionStateValue
   | Fixed Double
-  deriving (NFData, Show, Generic, Eq, Ord, Serialize)
-
-data StateValueHandling
-  = Normal
-  | DivideValuesAfterGrowth Int Period -- ^ How many periods to track, until how many periods to perform divisions.
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
@@ -33,7 +28,6 @@ data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
             AvgReward
-            StateValueHandling
             DecideOnVPlusPsi
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
@@ -44,7 +38,7 @@ data Algorithm s
 
 mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
 mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
-mapAlgorithm f (AlgBORL g0 g1 avg st dec mSA) = AlgBORL g0 g1 avg st dec (first f <$> mSA)
+mapAlgorithm f (AlgBORL g0 g1 avg dec mSA) = AlgBORL g0 g1 avg dec (first f <$> mSA)
 mapAlgorithm _ (AlgDQN ga)                  = AlgDQN ga
 mapAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avg) = AlgDQNAvgRewardFree ga0 ga1 avg
 
@@ -76,7 +70,7 @@ defaultGammaDQN = 0.99
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
 algBORL :: Algorithm s
-algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Normal False Nothing
+algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues False Nothing
 
   -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 

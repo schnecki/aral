@@ -26,7 +26,6 @@ askUser showHelp addUsage cmds ql = do
         , ("p", "Print everything")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
-        , ("m", "Multiply all state values by X")
         -- , ("s" "Save to file save.dat (overwrites the file if it exists)")
         -- , ("l" "Load from file save.dat")
         , ("_", "Any other input starts another learning round\n")
@@ -62,14 +61,6 @@ askUser showHelp addUsage cmds ql = do
     "p" -> do
       prettyBORL ql >>= print
       askUser False addUsage cmds ql
-    "m" -> do
-      putStr "Multiply by: " >> hFlush stdout
-      l <- getLine
-      case reads l :: [(Double, String)] of
-        [(nr, _)] -> askUser False addUsage cmds (foldl (\q f -> over (proxies . f) (multiplyProxy nr) q) ql [psiV, v, w])
-        _ -> do
-          putStr "Could not read your input :( You are supposed to enter an Integer.\n"
-          askUser False addUsage cmds ql
     "v" -> do
       case find isTensorflow (allProxies $ ql ^. proxies) of
         Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print

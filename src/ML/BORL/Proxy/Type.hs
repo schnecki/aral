@@ -35,6 +35,7 @@ data ProxyType
   | PsiVTable
   | PsiWTable
   | PsiW2Table
+  | CombinedUnichain
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 data LookupType = Target | Worker
@@ -63,6 +64,10 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
                 }
+             | CombinedProxy
+                { _subproxy  :: Proxy
+                , _outputCol :: Int
+                }
 makeLenses ''Proxy
 
 
@@ -71,12 +76,7 @@ instance NFData Proxy where
   rnf (Grenade t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
-
-multiplyProxy :: Double -> Proxy -> Proxy
-multiplyProxy v (Scalar x) = Scalar (v*x)
-multiplyProxy v (Table m d) = Table (fmap (v*) m) d
-multiplyProxy v (Grenade t w s tp config nr) = Grenade t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
-multiplyProxy v (TensorflowProxy t w s tp config nr) = TensorflowProxy t w s tp (over scaleParameters (multiplyScale (1/v)) config) nr
+  rnf (CombinedProxy p nr) = rnf p `seq` rnf nr
 
 
 isNeuralNetwork :: Proxy -> Bool
@@ -94,23 +94,3 @@ isTable Table{} = True
 isTable _       = False
 
 
-data Proxies =
-  Proxies -- ^ This data type holds all data for BORL.
-    { _rhoMinimum   :: !Proxy
-    , _rho          :: !Proxy
-    , _psiV         :: !Proxy
-    , _v            :: !Proxy
-    , _psiW         :: !Proxy
-    , _w            :: !Proxy
-    , _psiW2        :: !Proxy
-    , _w2           :: !Proxy
-    , _r0           :: !Proxy
-    , _r1           :: !Proxy
-    , _replayMemory :: !(Maybe ReplayMemory)
-    }
-  deriving (Generic)
-makeLenses ''Proxies
-
-instance NFData Proxies where
-  rnf (Proxies rhoMin rho psiV v psiW w psiW2 w2 r0 r1 repMem) =
-    rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf psiW2 `seq` rnf w2 `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem

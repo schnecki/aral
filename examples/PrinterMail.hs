@@ -98,8 +98,9 @@ numInputs = genericLength (netInp initState)
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D numInputs >> fullyConnected1D 20 TF.relu' >> fullyConnected1D 10 TF.relu' >> fullyConnected1D numActions TF.tanh' >>
-  trainingByAdam1DWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -115,10 +116,10 @@ main = do
         AlgDQNAvgRewardFree 0.5 0.99 (ByMovAvg 1000)
         -- AlgBORLVOnly (ByMovAvg 1000) Nothing
 
-        -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) Normal False
+        -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) False
 
   -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues Normal) initState actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues ) initState actions actionFilter params decay modelBuilder nnConfig Nothing
   let rl = mkUnichainTabular algorithm initState tblInp actions actionFilter params decay Nothing
   askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
 

@@ -6,7 +6,7 @@ module ML.BORL.Pretty
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
-    , setPrettyPrintElems
+    -- , setPrettyPrintElems
     ) where
 
 
@@ -16,6 +16,7 @@ import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Proxy.Ops     (lookupNeuralNetwork, mkNNList)
+import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -117,17 +118,16 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
           P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
         tbl px = case px of
-          p@P.Table{}                     -> p
-          P.Grenade _ _ p _ cfg _         -> P.Table p 0
-          P.TensorflowProxy _ _ p _ cfg _ -> P.Table p 0
+          p@P.Table{}                   -> p
+          P.Grenade _ _ p _ _ _         -> P.Table p 0
+          P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
 
 prettyAlgorithm ::  (Show k') => BORL s -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> Algorithm s -> Doc
-prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType stValHand vPlusPsiV mRefState) =
+prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType avgRewType <+>
   text "for rho" <> text ";" <+>
-  prettyStateValueHandling stValHand <+>
   text "Deciding on" <+>
   text
     (if vPlusPsiV
@@ -145,10 +145,6 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
 prettyRefState _ _ _ Nothing = mempty
 prettyRefState borl prettyState prettyAction (Just (st,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState $ (borl ^. featureExtractor) st) <> " - " <> prettyAction aNr
-
-prettyStateValueHandling :: StateValueHandling -> Doc
-prettyStateValueHandling Normal = empty
-prettyStateValueHandling (DivideValuesAfterGrowth nr max) = text "Divide values after growth " <> parens (int nr <> text "," <+> int max) <> text ";"
 
 prettyAvgRewardType :: AvgReward -> Doc
 prettyAvgRewardType (ByMovAvg nr)          = "moving average" <> parens (int nr)
@@ -305,8 +301,8 @@ prettyBORLHead printRho borl = do
           let LearningParameters l m l2 = conf ^. grenadeLearningParams
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest 45 (text "Specified in tensorflow model")
 
-setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
-setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
+-- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
+-- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc

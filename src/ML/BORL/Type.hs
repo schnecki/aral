@@ -20,6 +20,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
+import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward.Type
 import           ML.BORL.Types
@@ -34,6 +35,7 @@ import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
 import           Data.Serialize
 import           Data.Singletons.Prelude.List
+import qualified Data.Text                    as T
 import qualified Data.Vector.Mutable          as V
 import           GHC.Generics
 import           GHC.TypeLits
@@ -41,6 +43,8 @@ import           Grenade
 import           System.IO
 import qualified TensorFlow.Core              as TF
 import qualified TensorFlow.Session           as TF
+
+import           Debug.Trace
 
 
 -------------------- Main RL Datatype --------------------
@@ -156,6 +160,30 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
+mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> [Double] -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
+mkTensorflowModel as tp scope netInpInitState modelBuilderFun = do
+      !model <- prependName (proxyTypeName tp <> scope) <$> liftTensorflow modelBuilderFun
+      saveModel
+        (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, replicate (length as) 0)) modelBuilderFun)
+        [map realToFrac netInpInitState]
+        [replicate (length as) 0]
+  where
+    prependName txt model =
+      model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
+
+
+proxyTypeName :: ProxyType -> T.Text
+proxyTypeName VTable           = "v"
+proxyTypeName WTable           = "w"
+proxyTypeName W2Table          = "w2"
+proxyTypeName R0Table          = "r0"
+proxyTypeName R1Table          = "r1"
+proxyTypeName PsiVTable        = "psiV"
+proxyTypeName PsiWTable        = "psiW"
+proxyTypeName PsiW2Table       = "psiW2"
+proxyTypeName CombinedUnichain = "combinedUnichain"
+
+
 mkUnichainTensorflowM ::
      forall s m. (NFData s, MonadBorl' m)
   => Algorithm s
@@ -172,12 +200,12 @@ mkUnichainTensorflowM ::
 mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nnTypes = [VTable, VTable, WTable, WTable, W2Table, W2Table, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable, PsiW2Table, PsiW2Table]
       scopes = concat $ repeat ["_target", "_worker"]
-  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (name tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
-        nnT <- runMonadBorlTF $ mkModel tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
-        nnW <- runMonadBorlTF $ mkModel tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
+        nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
+        nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <- liftSimple $ nnSA VTable 0
   w <- liftSimple $ nnSA WTable 2
@@ -208,27 +236,63 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       (0, 0, 0)
       (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w psiW2 w2 r0 r1 repMem)
   where
-    mkModel tp scope netInpInitState modelBuilderFun = do
-      !model <- prependName (name tp <> scope) <$> liftTensorflow modelBuilderFun
-      saveModel
-        (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, replicate (length as) 0)) modelBuilderFun)
-        [map realToFrac netInpInitState]
-        [replicate (length as) 0]
-    prependName txt model =
-      model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
-    name VTable     = "v"
-    name WTable     = "w"
-    name W2Table    = "w2"
-    name R0Table    = "r0"
-    name R1Table    = "r1"
-    name PsiVTable  = "psiV"
-    name PsiWTable  = "psiW"
-    name PsiW2Table = "psiW2"
+    defRho = defaultRho (fromMaybe defInitValues initValues)
+
+-- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and there must be 7
+-- columns
+mkUnichainTensorflowSingleNetM ::
+     forall s m. (NFData s, MonadBorl' m)
+  => Algorithm s
+  -> InitialState s
+  -> FeatureExtractor s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> TF.Session TensorflowModel
+  -> NNConfig
+  -> Maybe InitValues
+  -> m (BORL s)
+mkUnichainTensorflowSingleNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
+  let nrNets = 7
+  let nnTypes = [CombinedUnichain, CombinedUnichain]
+      scopes = concat $ repeat ["_target", "_worker"]
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  let netInpInitState = ftExt initialState
+      nnSA :: ProxyType -> Int -> IO Proxy
+      nnSA tp idx = do
+        nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate nrNets as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
+        nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate nrNets as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
+        return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
+  proxy <- liftSimple $ nnSA CombinedUnichain 0
+  repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  buildTensorflowModel (trace "BUILT" $ proxy ^?! proxyTFTarget)
+  return $
+    force $
+    BORL
+      (zip [idxStart ..] as)
+      asFilter
+      initialState
+      ftExt
+      0
+      (0, 0)
+      params
+      decayFun
+      mempty
+      alg
+      SteadyStateValues
+      mempty
+      mempty
+      (0, 0, 0)
+      (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) proxy repMem)
+  where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
+-- ^ Uses a single network for each value to learn. Thus the output tensor must be 1D with the number of rows
+-- corresponding to the number of actions.
 mkUnichainTensorflow ::
-     forall s m. (NFData s)
+     forall s . (NFData s)
   => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
@@ -242,6 +306,25 @@ mkUnichainTensorflow ::
   -> IO (BORL s)
 mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
   runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
+
+-- ^ Use a single network for all function approximations. Thus, the output tensor must be 2D with the number of rows
+-- corresponding to the number of actions and there must be 7 columns.
+mkUnichainTensorflowSingleNet ::
+     forall s . (NFData s)
+  => Algorithm s
+  -> InitialState s
+  -> FeatureExtractor s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> TF.Session TensorflowModel
+  -> NNConfig
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainTensorflowSingleNet alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
+  runMonadBorlTF (mkUnichainTensorflowSingleNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
+
 
 mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
@@ -405,12 +488,13 @@ checkGrenade _ nnConfig borl
     nrActs = length (borl ^. actionList)
 
 
-overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
-overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
+-- overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
+-- overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
 
-setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
-setAllProxies len = overAllProxies len . const
+-- setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
+-- setAllProxies len = overAllProxies len . const
 
 allProxies :: Proxies -> [Proxy]
 allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. psiW , pxs ^. w, pxs^.psiW2, pxs ^. w2, pxs ^. r0, pxs ^. r1]
+
 

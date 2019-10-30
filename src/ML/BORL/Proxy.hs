@@ -4,5 +4,6 @@ module ML.BORL.Proxy
     ) where
 
 
-import           ML.BORL.Proxy.Ops  as P
-import           ML.BORL.Proxy.Type as P
+import           ML.BORL.Proxy.Ops     as P
+import           ML.BORL.Proxy.Proxies as P
+import           ML.BORL.Proxy.Type    as P

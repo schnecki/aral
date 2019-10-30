@@ -3,10 +3,11 @@ module ML.BORL.Properties
     , isMultichain
     ) where
 
+import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
 
-import           Control.Lens       ((^.))
+import           Control.Lens          ((^.))
 
 -------------------- Properties --------------------
 
