@@ -26,6 +26,20 @@ import           GHC.TypeLits
 import           Grenade
 import           ML.BORL.Proxy.Type
 
+-- class Proxies' pxs where
+--   getRhoMinimum :: pxs -> Proxy
+--   getRho :: pxs -> Proxy
+--   getPsiV :: pxs -> Proxy
+--   getV :: pxs -> Proxy
+--   getPsiW :: pxs -> Proxy
+--   getW :: pxs -> Proxy
+--   getPsiW2 :: pxs -> Proxy
+--   getW2 :: pxs -> Proxy
+--   getR0 :: pxs -> Proxy
+--   getR1 :: pxs -> Proxy
+--   getReplayMemory :: pxs -> Proxy
+
+
 data Proxies =
   Proxies -- ^ This data type holds all data for BORL.
     { _rhoMinimum   :: !Proxy
@@ -74,36 +88,36 @@ rho f px@ProxiesCombinedUnichain{} = (\rho' -> px { _rho = rho' }) <$> f (_rho p
 
 psiV :: Getter Proxies Proxy
 psiV f px@Proxies{}             = (\psiV' -> px { _psiV = psiV' }) <$> f (_psiV px)
-psiV f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 0})  <$> f (_proxy px)
+psiV f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 0 []})  <$> f (_proxy px)
 
 v :: Getter Proxies Proxy
 v f px@Proxies{}  = (\v' -> px { _v = v' }) <$> f (_v px)
-v f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 1})  <$> f (_proxy px)
+v f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 1 []})  <$> f (_proxy px)
 
 psiW :: Getter Proxies Proxy
 psiW f px@Proxies{}  = (\psiW' -> px { _psiW = psiW' }) <$> f (_psiW px)
-psiW f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 2})  <$> f (_proxy px)
+psiW f px@ProxiesCombinedUnichain{} = (\x -> px { _proxy = CombinedProxy x 2 []})  <$> f (_proxy px)
 
 w :: Getter Proxies Proxy
 w f px@Proxies{}              = (\w' -> px { _w = w' }) <$> f (_w px)
-w f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 3}) <$> f (_proxy px)
+w f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 3 []}) <$> f (_proxy px)
 
 psiW2 :: Getter Proxies Proxy
 psiW2 f px@Proxies{}  = (\psiW2' -> px { _psiW2 = psiW2' }) <$> f (_psiW2 px)
-psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 4}) <$> f (_proxy px)
+psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 4 []}) <$> f (_proxy px)
 
 
 w2 :: Getter Proxies Proxy
 w2 f px@Proxies{}  = (\w2' -> px { _w2 = w2' }) <$> f (_w2 px)
-w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 5}) <$> f (_proxy px)
+w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 5 []}) <$> f (_proxy px)
 
 r0 :: Getter Proxies Proxy
 r0 f px@Proxies{}  = (\r0' -> px { _r0 = r0' }) <$> f (_r0 px)
-r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 6}) <$> f (_proxy px)
+r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 6 []}) <$> f (_proxy px)
 
 r1 :: Getter Proxies Proxy
 r1 f px@Proxies{}  = (\r1' -> px { _r1 = r1' }) <$> f (_r1 px)
-r1 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 7}) <$> f (_proxy px)
+r1 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = CombinedProxy x 7 []}) <$> f (_proxy px)
 
 replayMemory :: Lens' Proxies (Maybe ReplayMemory)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)

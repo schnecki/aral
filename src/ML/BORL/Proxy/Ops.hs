@@ -151,8 +151,24 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' (Just replMem'), calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy Nothing) =
-  undefined
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy Nothing) = do
+  calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
+  if borl ^. parameters . disableAllLearning
+    then return (pxs, calc)
+    else do
+      let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+      pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+      pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+      pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
+      pW' <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
+      pW2' <- mInsertProxy (getW2ValState' calc) (pxs ^. w2) `using` rpar
+      pPsiV' <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
+      pPsiW' <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
+      pPsiW2' <- mInsertProxy (getPsiW2ValState' calc) (pxs ^. psiW2) `using` rpar
+      pR0' <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
+      pR1' <- mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
+      proxy' <- insertCombinedProxies period [pPsiV', pV', pPsiW', pW', pPsiW2', pW2', pR0', pR1']
+      return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
@@ -179,6 +195,7 @@ insertProxyMany _ xs (Scalar _) = return $ Scalar (snd $ last xs)
 insertProxyMany _ xs (Table m def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
   where trunc x = (fromInteger $ round $ x * (10^n)) / (10.0^^n)
         n = 3
+insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)
 insertProxyMany period xs px
   | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
@@ -190,6 +207,12 @@ insertProxyMany period xs px
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
     memSize = fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize)
+
+
+insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
+insertCombinedProxies period pxs = insertProxyMany period combineProxyExpectedOuts (head pxs ^?! proxySub)
+  where combineProxyExpectedOuts = concatMap (\(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx*len + curIdx), out)) outs) pxs
+        len = length pxs
 
 
 -- | Copy the worker net to the target.

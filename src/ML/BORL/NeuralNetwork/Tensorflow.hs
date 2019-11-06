@@ -35,7 +35,7 @@ import           ML.BORL.Types
 import           Debug.Trace
 
 
-type Outputs = [[Float]]
+type Outputs = [[Float]]        -- ^ 1st level: number of input rows, 2nd level: number of actions
 type Inputs = [[Float]]
 type Labels = [[Float]]
 

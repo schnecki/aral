@@ -376,7 +376,7 @@ usermode = do
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowSingleNet alg initState netInp actions actFilter params decay modelBuilderSingleNet nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []
@@ -391,10 +391,10 @@ modelBuilder =
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
-modelBuilderSingleNet :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilderSingleNet =
+modelBuilderCombinedNet :: ModelBuilderFunction
+modelBuilderCombinedNet outColumns =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, 7] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, outColumns] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 

@@ -40,6 +40,16 @@ data ProxyType
 
 data LookupType = Target | Worker
 
+
+-- class Proxy p where
+--   isNeuralNetwork :: p -> Bool
+--   isNeuralNetwork = not . isTable
+--   isTable :: p -> Bool
+--   isTable = not . isNeuralNetwork
+--   insertValuesProxy :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> p -> m p
+--   updateTarget :: (MonadBorl' m) => Bool -> Period -> p -> m p
+
+
 data Proxy = Scalar             -- ^ Combines multiple proxies in one for performance benefits.
                { _proxyScalar :: !Double
                }
@@ -65,8 +75,9 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 , _proxyNrActions :: !Int
                 }
              | CombinedProxy
-                { _subproxy  :: Proxy
-                , _outputCol :: Int
+                { _proxySub            :: Proxy
+                , _proxyOutCol         :: Int
+                , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Double)]
                 }
 makeLenses ''Proxy
 
@@ -76,7 +87,7 @@ instance NFData Proxy where
   rnf (Grenade t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
-  rnf (CombinedProxy p nr) = rnf p `seq` rnf nr
+  rnf (CombinedProxy p nr xs) = rnf p `seq` rnf nr `seq` rnf xs
 
 
 isNeuralNetwork :: Proxy -> Bool

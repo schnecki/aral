@@ -1,8 +1,13 @@
+{-# LANGUAGE ExplicitForAll    #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Rank2Types        #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
 module ML.BORL.NeuralNetwork.TensorflowBuild
-    ( buildModel
+    ( ModelBuilderFunction
+    , OutputLayerColumns
+    , buildModel
     , inputLayer1D
     , inputLayer
     , fullyConnected
@@ -52,6 +57,9 @@ import qualified TensorFlow.Ops                   as TF (initializedVariable,
 import qualified TensorFlow.Tensor                as TF (Ref (..), collectAllSummaries,
                                                          tensorNodeName, tensorRefFromName,
                                                          tensorValueFromName)
+
+type OutputLayerColumns = Int64
+type ModelBuilderFunction = forall m . (TF.MonadBuild m) => OutputLayerColumns -> m TensorflowModel
 
 
 data BuildInfo = BuildInfo

@@ -7,6 +7,8 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TupleSections        #-}
@@ -240,7 +242,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
 
 -- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and there must be 7
 -- columns
-mkUnichainTensorflowSingleNetM ::
+mkUnichainTensorflowCombinedNetM ::
      forall s m. (NFData s, MonadBorl' m)
   => Algorithm s
   -> InitialState s
@@ -249,20 +251,20 @@ mkUnichainTensorflowSingleNetM ::
   -> (s -> [Bool])
   -> Parameters
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
-mkUnichainTensorflowSingleNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
+mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nrNets = 7
   let nnTypes = [CombinedUnichain, CombinedUnichain]
       scopes = concat $ repeat ["_target", "_worker"]
-  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat (modelBuilder nrNets)))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
-        nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate nrNets as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
-        nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate nrNets as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
+        nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
+        nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   proxy <- liftSimple $ nnSA CombinedUnichain 0
   repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
@@ -309,7 +311,7 @@ mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBui
 
 -- ^ Use a single network for all function approximations. Thus, the output tensor must be 2D with the number of rows
 -- corresponding to the number of actions and there must be 7 columns.
-mkUnichainTensorflowSingleNet ::
+mkUnichainTensorflowCombinedNet ::
      forall s . (NFData s)
   => Algorithm s
   -> InitialState s
@@ -318,12 +320,12 @@ mkUnichainTensorflowSingleNet ::
   -> (s -> [Bool])
   -> Parameters
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainTensorflowSingleNet alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
-  runMonadBorlTF (mkUnichainTensorflowSingleNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
+mkUnichainTensorflowCombinedNet alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues =
+  runMonadBorlTF (mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 
 mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
