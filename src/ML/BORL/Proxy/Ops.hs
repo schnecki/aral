@@ -26,6 +26,22 @@ module ML.BORL.Proxy.Ops
     ,
     ) where
 
+import           Control.Arrow
+import           Control.DeepSeq
+import           Control.Lens
+import           Control.Lens
+import           Control.Monad
+import           Control.Parallel.Strategies  hiding (r0)
+import           Data.List                    (foldl')
+import qualified Data.Map.Strict              as M
+import qualified Data.Map.Strict              as M
+import           Data.Maybe                   (fromJust, isNothing)
+import qualified Data.Set                     as S
+import           Data.Singletons.Prelude.List
+import           GHC.Generics
+import           GHC.TypeLits
+import           Grenade
+import           System.Random.Shuffle
 
 import           ML.BORL.Calculation.Type
 import           ML.BORL.Fork
@@ -36,26 +52,8 @@ import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward
 import           ML.BORL.Type
 import           ML.BORL.Types                as T
-import           ML.BORL.Types
 
-import           Control.Arrow
-import           Control.DeepSeq
-import           Control.Lens
-import           Control.Monad
-import           Control.Parallel.Strategies  hiding (r0)
-import           Data.List                    (foldl')
-import qualified Data.Map.Strict              as M
-import           Data.Maybe                   (fromJust, isNothing)
-import qualified Data.Set                     as S
-import           Data.Singletons.Prelude.List
-import           GHC.Generics
-import           GHC.TypeLits
-import           Grenade
-import           System.Random.Shuffle
-
-
-import           Control.Lens
-import qualified Data.Map.Strict              as M
+import           Debug.Trace
 
 mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
     where
@@ -162,7 +160,9 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
       pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
       pW' <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
       pW2' <- mInsertProxy (getW2ValState' calc) (pxs ^. w2) `using` rpar
-      pPsiV' <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
+      pPsiV' <-
+        trace ("pxs ^. psiV: " ++ show (pxs ^. psiV))
+        mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
       pPsiW' <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
       pPsiW2' <- mInsertProxy (getPsiW2ValState' calc) (pxs ^. psiW2) `using` rpar
       pR0' <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
@@ -210,7 +210,9 @@ insertProxyMany period xs px
 
 
 insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
-insertCombinedProxies period pxs = insertProxyMany period combineProxyExpectedOuts (head pxs ^?! proxySub)
+insertCombinedProxies period pxs =
+  trace ("head pxs: " ++ show (head pxs)) $
+  insertProxyMany period combineProxyExpectedOuts (head pxs ^?! proxySub)
   where combineProxyExpectedOuts = concatMap (\(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx*len + curIdx), out)) outs) pxs
         len = length pxs
 

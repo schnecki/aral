@@ -490,13 +490,16 @@ checkGrenade _ nnConfig borl
     nrActs = length (borl ^. actionList)
 
 
--- overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
--- overAllProxies len f borl = foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
+overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
+overAllProxies len f borl =
+  error "overAllProxies not yet implemented"
+  -- foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
 
--- setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
--- setAllProxies len = overAllProxies len . const
+setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
+setAllProxies len = overAllProxies len . const
 
 allProxies :: Proxies -> [Proxy]
-allProxies pxs = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^. psiV, pxs ^. v, pxs ^. psiW , pxs ^. w, pxs^.psiW2, pxs ^. w2, pxs ^. r0, pxs ^. r1]
+allProxies pxs@Proxies{} = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^?! psiV, pxs ^?! v, pxs ^?! psiW , pxs ^?! w, pxs^?!psiW2, pxs ^?! w2, pxs ^?! r0, pxs ^?! r1]
+allProxies pxs@ProxiesCombinedUnichain{} = [pxs ^. rhoMinimum, pxs ^. rho, _proxy pxs]
 
 

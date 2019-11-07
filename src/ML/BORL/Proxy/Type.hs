@@ -54,22 +54,22 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                { _proxyScalar :: !Double
                }
              | Table            -- ^ Representation using a table.
-               { _proxyTable   :: !(M.Map ([Double],ActionIndex) Double)
+               { _proxyTable   :: !(M.Map ([Double], ActionIndex) Double)
                , _proxyDefault :: !Double
                }
              | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)
-                , _proxyNNStartup :: !(M.Map ([Double],ActionIndex) Double)
+                , _proxyNNStartup :: !(M.Map ([Double], ActionIndex) Double)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
                 }
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
-                { _proxyTFTarget  :: TensorflowModel'
-                , _proxyTFWorker  :: TensorflowModel'
-                , _proxyNNStartup :: !(M.Map ([Double],ActionIndex) Double)
+                { _proxyTFTarget  :: !TensorflowModel'
+                , _proxyTFWorker  :: !TensorflowModel'
+                , _proxyNNStartup :: !(M.Map ([Double], ActionIndex) Double)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
@@ -79,7 +79,75 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 , _proxyOutCol         :: Int
                 , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Double)]
                 }
-makeLenses ''Proxy
+-- makeLenses ''Proxy
+
+-- y :: 'Traversal'' FooBar 'Int'
+-- y f (Foo a b) = (\\b\' -> Foo a  b\') \<$\> f b
+-- y _ c\@(Bar _) = pure c
+
+proxyScalar :: Traversal' Proxy Double
+proxyScalar f (Scalar x) = Scalar <$> f x
+proxyScalar _ _          = error "proxyScalar"
+
+proxyTable :: Traversal' Proxy (M.Map ([Double], ActionIndex) Double)
+proxyTable f (Table m d) = (\m' -> Table m' d) <$> f m
+proxyTable  _ _          = error "proxyTable"
+
+proxyDefault :: Traversal' Proxy Double
+proxyDefault f (Table m d) = (\d' -> Table m d') <$> f d
+proxyDefault _ _           = error "proxyDefault"
+
+proxyTFTarget :: Traversal' Proxy TensorflowModel'
+proxyTFTarget f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
+proxyTFTarget _ _ = error "proxyTFTarget"
+
+proxyTFWorker :: Traversal' Proxy TensorflowModel'
+proxyTFWorker f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
+proxyTFWorker _ _ = error "proxyTFWorker"
+
+proxyNNStartup :: Traversal' Proxy (M.Map ([Double], ActionIndex) Double)
+proxyNNStartup f (Grenade t w s tp conf acts) = (\s' -> Grenade t w s' tp conf acts) <$> f s
+proxyNNStartup f (TensorflowProxy t w s tp conf acts) = (\s' -> TensorflowProxy t w s' tp conf acts) <$> f s
+proxyNNStartup f (CombinedProxy p c out) = (\s' -> CombinedProxy (p { _proxyNNStartup = s'}) c out) <$> f (_proxyNNStartup p)
+proxyNNStartup  _ _ = error "proxyNNStartup"
+
+proxyType :: Traversal' Proxy ProxyType
+proxyType f (Grenade t w s tp conf acts) = (\tp' -> Grenade t w s tp' conf acts) <$> f tp
+proxyType f (TensorflowProxy t w s tp conf acts) = (\tp' -> TensorflowProxy t w s tp' conf acts) <$> f tp
+proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy (p { _proxyType = tp'}) c out) <$> f (_proxyType p)
+proxyType  _ _ = error "proxyType"
+
+proxyNNConfig :: Traversal' Proxy NNConfig
+proxyNNConfig f (Grenade t w s tp conf acts) = (\conf' -> Grenade t w s tp conf' acts) <$> f conf
+proxyNNConfig f (TensorflowProxy t w s tp conf acts) = (\conf' -> TensorflowProxy t w s tp conf' acts) <$> f conf
+proxyNNConfig f (CombinedProxy p c out) = (\conf' -> CombinedProxy (p { _proxyNNConfig = conf'}) c out) <$> f (_proxyNNConfig p)
+proxyNNConfig  _ _ = error "proxyNNConfig"
+
+proxyNrActions :: Traversal' Proxy Int
+proxyNrActions f (Grenade t w s tp conf acts) = (\acts' -> Grenade t w s tp conf acts') <$> f acts
+proxyNrActions f (TensorflowProxy t w s tp conf acts) = (\acts' -> TensorflowProxy t w s tp conf acts') <$> f acts
+proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
+proxyNrActions  _ _ = error "proxyNrActions"
+
+proxySub :: Traversal' Proxy Proxy
+proxySub f (CombinedProxy p c out) = (\p' -> CombinedProxy p' c out) <$> f p
+proxySub _ p                       = error ("proxySub: " ++ show p)
+
+proxyOutCol :: Traversal' Proxy Int
+proxyOutCol f (CombinedProxy p c out) = (\c' -> CombinedProxy p c' out) <$> f c
+proxyOutCol _ _                       = error "proxyOutCol"
+
+proxyExpectedOutput :: Traversal' Proxy [((StateFeatures, ActionIndex), Double)]
+proxyExpectedOutput f (CombinedProxy p c out) = (\out' -> CombinedProxy p c out') <$> f out
+proxyExpectedOutput _ _ = error "proxyExpectedOutput"
+
+
+instance Show Proxy where
+  show (Scalar x)        = "Scalar: " ++ show x
+  show Table{}           = "Table"
+  show Grenade{}         = "Grenade"
+  show TensorflowProxy{} = "TensorflowProxy"
+  show CombinedProxy{}   = "CombinedProxy"
 
 
 instance NFData Proxy where

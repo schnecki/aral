@@ -402,8 +402,8 @@ modelBuilderCombinedNet outColumns =
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
-    , _trainBatchSize = 32
+    { _replayMemoryMaxSize = 1
+    , _trainBatchSize = 1
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 200
