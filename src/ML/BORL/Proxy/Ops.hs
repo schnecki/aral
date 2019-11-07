@@ -218,7 +218,7 @@ insertCombinedProxies period pxs =
   trace ("head pxs: " ++ show (head pxs)) $
   trace ("pxLearn: " ++ show pxLearn) $
   trace ("pxLearnType: " ++ show (pxLearn ^?! proxyType)) $
-  (\p -> trace ("out proxy: " <> show p) $ set proxyType (pxLearn ^?! proxyType) p) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
+  (\p -> trace ("out proxy: " <> show p ++ " type: " ++ show (pxLearn ^?! proxyType, head pxs ^?! proxyType)) $ set proxyType (head pxs ^?! proxyType) p) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
   where
     pxLearn = set proxyType NoScaling $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
