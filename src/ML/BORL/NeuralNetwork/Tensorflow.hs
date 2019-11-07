@@ -144,12 +144,15 @@ forwardRun model inp =
       inpT = encodeInputBatch inp
       nrOuts = length inp
    in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
-         return $ separate (length res `div` nrOuts) res []
+         return $
+           -- trace ("res: " ++ show res)
+           -- trace ("output: " ++ show (separate (length res `div` nrOuts) res []))
+           separateInputRows (length res `div` nrOuts) res []
   where
-    separate _ [] acc = reverse acc
-    separate len xs acc
+    separateInputRows _ [] acc = reverse acc
+    separateInputRows len xs acc
       | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
-      | otherwise = separate len (drop len xs) (take len xs : acc)
+      | otherwise = separateInputRows len (drop len xs) (take len xs : acc)
 
 backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Double], ActionIndex), Double)] -> m ()
 backwardRunRepMemData model values = do

@@ -75,6 +75,7 @@ data Proxies =
 -- x f (Foo a b) = (\a' -> Foo a' b) <$> f a
 -- x f (Bar a)   = Bar <$> f a
 
+
 rhoMinimum :: Lens' Proxies Proxy
 rhoMinimum f px@Proxies{}  = (\rhoMinimum' -> px { _rhoMinimum = rhoMinimum' }) <$> f (_rhoMinimum px)
 rhoMinimum f px@ProxiesCombinedUnichain{}  = (\rhoMinimum' -> px { _rhoMinimum = rhoMinimum' }) <$> f (_rhoMinimum px)
@@ -83,38 +84,40 @@ rho :: Lens' Proxies Proxy
 rho f px@Proxies{}                 = (\rho' -> px { _rho = rho' }) <$> f (_rho px)
 rho f px@ProxiesCombinedUnichain{} = (\rho' -> px { _rho = rho' }) <$> f (_rho px)
 
+r1 :: Lens' Proxies Proxy
+r1 f px@Proxies{}  = (\r1' -> px { _r1 = r1' }) <$> f (_r1 px)
+r1 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 0 [])
+
+r0 :: Lens' Proxies Proxy
+r0 f px@Proxies{}  = (\r0' -> px { _r0 = r0' }) <$> f (_r0 px)
+r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 1 [])
+
+
 psiV :: Lens' Proxies Proxy
 psiV f px@Proxies{}                  = (\psiV' -> px { _psiV = psiV' }) <$> f (_psiV px)
-psiV f px@ProxiesCombinedUnichain {} = (\x -> trace ("inner") px {_proxy = x}) <$> f (trace ("outer") CombinedProxy (_proxy px) 0 [])
+psiV f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 2 [])
 
 v :: Lens' Proxies Proxy
 v f px@Proxies{}  = (\v' -> px { _v = v' }) <$> f (_v px)
-v f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 1 [])
+v f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 3 [])
 
 psiW :: Lens' Proxies Proxy
 psiW f px@Proxies{}  = (\psiW' -> px { _psiW = psiW' }) <$> f (_psiW px)
-psiW f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 2 [])
+psiW f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 4 [])
 
 w :: Lens' Proxies Proxy
 w f px@Proxies{}              = (\w' -> px { _w = w' }) <$> f (_w px)
-w f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 3 [])
+w f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 5 [])
 
 psiW2 :: Lens' Proxies Proxy
 psiW2 f px@Proxies{}  = (\psiW2' -> px { _psiW2 = psiW2' }) <$> f (_psiW2 px)
-psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 4 [])
+psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 6 [])
 
 
 w2 :: Lens' Proxies Proxy
 w2 f px@Proxies{}  = (\w2' -> px { _w2 = w2' }) <$> f (_w2 px)
-w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 5 [])
+w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 7 [])
 
-r0 :: Lens' Proxies Proxy
-r0 f px@Proxies{}  = (\r0' -> px { _r0 = r0' }) <$> f (_r0 px)
-r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 6 [])
-
-r1 :: Lens' Proxies Proxy
-r1 f px@Proxies{}  = (\r1' -> px { _r1 = r1' }) <$> f (_r1 px)
-r1 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 7 [])
 
 replayMemory :: Lens' Proxies (Maybe ReplayMemory)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)

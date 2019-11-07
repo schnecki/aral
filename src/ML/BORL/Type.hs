@@ -240,7 +240,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
--- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and there must be 7
+-- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and there must be 8
 -- columns
 mkUnichainTensorflowCombinedNetM ::
      forall s m. (NFData s, MonadBorl' m)
@@ -256,7 +256,9 @@ mkUnichainTensorflowCombinedNetM ::
   -> Maybe InitValues
   -> m (BORL s)
 mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
-  let nrNets = 7
+  let nrNets | isAlgDqn alg = 1
+             | isAlgDqnAvgRewardFree alg = 2
+             | otherwise = 8
   let nnTypes = [CombinedUnichain, CombinedUnichain]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat (modelBuilder nrNets)))
@@ -268,7 +270,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   proxy <- liftSimple $ nnSA CombinedUnichain 0
   repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
-  buildTensorflowModel (trace "BUILT" $ proxy ^?! proxyTFTarget)
+  buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
     BORL
@@ -310,7 +312,7 @@ mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBui
   runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 -- ^ Use a single network for all function approximations. Thus, the output tensor must be 2D with the number of rows
--- corresponding to the number of actions and there must be 7 columns.
+-- corresponding to the number of actions and there must be 8 columns.
 mkUnichainTensorflowCombinedNet ::
      forall s . (NFData s)
   => Algorithm s

@@ -7,7 +7,28 @@
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 
-module ML.BORL.Proxy.Type where
+module ML.BORL.Proxy.Type
+  ( ProxyType (..)
+  , Proxy (Scalar, Table, Grenade, TensorflowProxy, CombinedProxy)
+  , proxyScalar
+  , proxyTable
+  , proxyDefault
+  , proxyTFTarget
+  , proxyTFWorker
+  , proxyNNStartup
+  , proxyType
+  , proxyNNConfig
+  , proxyNrActions
+  , proxySub
+  , proxyOutCol
+  , proxyExpectedOutput
+  , _proxyNNTarget
+  , _proxyNNWorker
+  , isNeuralNetwork
+  , isTensorflow
+  , isTable
+  )
+where
 
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Types                as T
@@ -36,10 +57,8 @@ data ProxyType
   | PsiWTable
   | PsiW2Table
   | CombinedUnichain
+  | NoScaling
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
-
-data LookupType = Target | Worker
-
 
 -- class Proxy p where
 --   isNeuralNetwork :: p -> Bool
@@ -103,31 +122,31 @@ proxyTFTarget _ _ = error "proxyTFTarget"
 
 proxyTFWorker :: Traversal' Proxy TensorflowModel'
 proxyTFWorker f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
-proxyTFWorker _ _ = error "proxyTFWorker"
+proxyTFWorker _ p = error ("proxyTFWorker: " ++ show p)
 
 proxyNNStartup :: Traversal' Proxy (M.Map ([Double], ActionIndex) Double)
 proxyNNStartup f (Grenade t w s tp conf acts) = (\s' -> Grenade t w s' tp conf acts) <$> f s
 proxyNNStartup f (TensorflowProxy t w s tp conf acts) = (\s' -> TensorflowProxy t w s' tp conf acts) <$> f s
 proxyNNStartup f (CombinedProxy p c out) = (\s' -> CombinedProxy (p { _proxyNNStartup = s'}) c out) <$> f (_proxyNNStartup p)
-proxyNNStartup  _ _ = error "proxyNNStartup"
+proxyNNStartup  _ p = error ("proxyNNStartup: " ++ show p)
 
 proxyType :: Traversal' Proxy ProxyType
 proxyType f (Grenade t w s tp conf acts) = (\tp' -> Grenade t w s tp' conf acts) <$> f tp
 proxyType f (TensorflowProxy t w s tp conf acts) = (\tp' -> TensorflowProxy t w s tp' conf acts) <$> f tp
 proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy (p { _proxyType = tp'}) c out) <$> f (_proxyType p)
-proxyType  _ _ = error "proxyType"
+proxyType  _ p = error ("proxyType: " ++ show p)
 
 proxyNNConfig :: Traversal' Proxy NNConfig
 proxyNNConfig f (Grenade t w s tp conf acts) = (\conf' -> Grenade t w s tp conf' acts) <$> f conf
 proxyNNConfig f (TensorflowProxy t w s tp conf acts) = (\conf' -> TensorflowProxy t w s tp conf' acts) <$> f conf
 proxyNNConfig f (CombinedProxy p c out) = (\conf' -> CombinedProxy (p { _proxyNNConfig = conf'}) c out) <$> f (_proxyNNConfig p)
-proxyNNConfig  _ _ = error "proxyNNConfig"
+proxyNNConfig  _ p = error ("proxyNNConfig: " ++ show p)
 
 proxyNrActions :: Traversal' Proxy Int
 proxyNrActions f (Grenade t w s tp conf acts) = (\acts' -> Grenade t w s tp conf acts') <$> f acts
 proxyNrActions f (TensorflowProxy t w s tp conf acts) = (\acts' -> TensorflowProxy t w s tp conf acts') <$> f acts
 proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
-proxyNrActions  _ _ = error "proxyNrActions"
+proxyNrActions  _ p = error ("proxyNrActions: " ++ show p)
 
 proxySub :: Traversal' Proxy Proxy
 proxySub f (CombinedProxy p c out) = (\p' -> CombinedProxy p' c out) <$> f p
@@ -135,11 +154,11 @@ proxySub _ p                       = error ("proxySub: " ++ show p)
 
 proxyOutCol :: Traversal' Proxy Int
 proxyOutCol f (CombinedProxy p c out) = (\c' -> CombinedProxy p c' out) <$> f c
-proxyOutCol _ _                       = error "proxyOutCol"
+proxyOutCol _ p                       = error ("proxyOutCol: " ++ show p)
 
 proxyExpectedOutput :: Traversal' Proxy [((StateFeatures, ActionIndex), Double)]
 proxyExpectedOutput f (CombinedProxy p c out) = (\out' -> CombinedProxy p c out') <$> f out
-proxyExpectedOutput _ _ = error "proxyExpectedOutput"
+proxyExpectedOutput _ p = error ("proxyExpectedOutput: " ++ show p)
 
 
 instance Show Proxy where

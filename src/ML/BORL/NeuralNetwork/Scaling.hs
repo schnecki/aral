@@ -28,11 +28,11 @@ multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minR0 maxR0 minR1 m
   ScalingNetOutParameters (v*minV)  (v*maxV) (v*minW) (v*maxW) (v*minR0) (v*maxR0) (v*minR1) (v*maxR1)
 
 
-scaleValue :: (MinValue,MaxValue) -> Double -> Double
-scaleValue = scaleNegPosOne
+scaleValue :: Maybe (MinValue,MaxValue) -> Double -> Double
+scaleValue = maybe id scaleNegPosOne
 
-unscaleValue :: (MinValue,MaxValue) -> Double -> Double
-unscaleValue = unscaleNegPosOne
+unscaleValue :: Maybe (MinValue,MaxValue) -> Double -> Double
+unscaleValue = maybe id unscaleNegPosOne
 
 scaleZeroOneValue :: (MinValue,MaxValue) -> Double -> Double
 scaleZeroOneValue (mn,mx) val = (val - mn) / (mx-mn)
