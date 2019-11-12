@@ -118,10 +118,12 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           P.Table{}                       -> -1
           P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
           P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
+          P.CombinedProxy{}               -> m1 ^?! proxyNNConfig.replayMemoryMaxSize
         tbl px = case px of
           p@P.Table{}                   -> p
           P.Grenade _ _ p _ _ _         -> P.Table p 0
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
+          P.CombinedProxy p _ _-> tbl p
 
 prettyAlgorithm ::  (Show k') => BORL s -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> Algorithm s -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =

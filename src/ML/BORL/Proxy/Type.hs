@@ -26,6 +26,7 @@ module ML.BORL.Proxy.Type
   , _proxyNNWorker
   , isNeuralNetwork
   , isTensorflow
+  , isCombinedProxy
   , isTable
   )
 where
@@ -99,10 +100,6 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Double)]
                 }
 -- makeLenses ''Proxy
-
--- y :: 'Traversal'' FooBar 'Int'
--- y f (Foo a b) = (\\b\' -> Foo a  b\') \<$\> f b
--- y _ c\@(Bar _) = pure c
 
 proxyScalar :: Traversal' Proxy Double
 proxyScalar f (Scalar x) = Scalar <$> f x
@@ -186,6 +183,9 @@ isTensorflow :: Proxy -> Bool
 isTensorflow TensorflowProxy{} = True
 isTensorflow _                 = False
 
+isCombinedProxy :: Proxy -> Bool
+isCombinedProxy CombinedProxy{} = True
+isCombinedProxy _               = False
 
 isTable :: Proxy -> Bool
 isTable Table{} = True

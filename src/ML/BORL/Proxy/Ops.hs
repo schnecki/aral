@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
@@ -35,7 +36,7 @@ import           Data.Function                (on)
 import           Data.List                    (foldl', sortBy, transpose)
 import qualified Data.Map.Strict              as M
 import qualified Data.Map.Strict              as M
-import           Data.Maybe                   (fromJust, isNothing)
+import           Data.Maybe                   (fromJust, isJust, isNothing)
 import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
 import           GHC.Generics
@@ -158,9 +159,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   if borl ^. parameters . disableAllLearning
     then return (pxs, calc)
     else do
-      let mInsertProxy mVal px =
-            trace ("mInsertProxy px: " ++ show (px, mVal)) $
-            maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+      let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
       pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
       pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
       pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
@@ -214,20 +213,16 @@ insertProxyMany period xs px
 
 
 insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
-insertCombinedProxies period pxs =
-  trace ("head pxs: " ++ show (head pxs)) $
-  trace ("pxLearn: " ++ show pxLearn) $
-  trace ("pxLearnType: " ++ show (pxLearn ^?! proxyType)) $
-  (\p -> trace ("out proxy: " <> show p ++ " type: " ++ show (pxLearn ^?! proxyType, head pxs ^?! proxyType)) $ set proxyType (head pxs ^?! proxyType) p) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
+insertCombinedProxies period pxs = set proxyType (head pxs ^?! proxyType) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
   where
     pxLearn = set proxyType NoScaling $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
       concat $
       transpose $
       map
-        (\(CombinedProxy px idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue (getMinMaxVal px) out)) outs)
+        (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue (getMinMaxVal px) out)) outs)
         (sortBy (compare `on` (^?! proxyOutCol)) pxs)
-    len = length pxs
+    len = pxLearn ^?! proxyNrActions
 
 
 -- | Copy the worker net to the target.
@@ -247,6 +242,7 @@ updateNNTargetNet forceReset period px
         (TensorflowProxy netT' netW' tab' tp' config' nrActs) -> do
           copyValuesFromTo netW' netT'
           return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
+        CombinedProxy{} -> error "Combined proxy in updateNNTargetNet. Should not happen!"
         Table {} -> error "not possible"
         Scalar {} -> error "not possible"
 
@@ -260,9 +256,8 @@ trainBatch trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
 trainBatch trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   return $ TensorflowProxy netT netW tab tp config nrActs
-  where trainingInstances' =
-          trace ("trainBatch - getMinMaxVal: " ++ show px ++ " type: " ++ show (px ^?! proxyType))
-          map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+  where
+    trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
 
 trainBatch _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
@@ -284,8 +279,8 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     mseMax = fromJust (config ^. trainMSEMax)
     -- net' = trainGrenade lp netSGD (zip kScaled vScaled)
     vScaled = map (scaleValue (getMinMaxVal px) . snd) dataset
-    vUnscaled = map snd dataset
-    kScaled = map fst dataset
+    -- vUnscaled = map snd dataset
+    -- kScaled = map fst dataset
     -- (minV,maxV) = getMinMaxVal px
     getValue k =
        -- unscaleValue (getMinMaxVal px) $
@@ -302,8 +297,8 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
         -- (minV,maxV) = getMinMaxVal px
         vScaledDbl = map (scaleValue (getMinMaxVal px) . snd) datasetShuffled
         vScaled = map realToFrac vScaledDbl
-        vUnscaled = map (realToFrac . snd) dataset
-        datasetRepMem = map (first (first (map realToFrac))) dataset
+        -- vUnscaled = map (realToFrac . snd) dataset
+        -- datasetRepMem = map (first (first (map realToFrac))) dataset
     current <- forwardRun netW kScaled
     zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith3 replace actIdxs vScaled current)
     -- backwardRunRepMemData netW datasetRepMem
@@ -349,12 +344,7 @@ lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = re
 lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
 lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netW [map realToFrac st]
 lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netT [map realToFrac st]
-lookupNeuralNetworkUnscaled tp (st, actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st,
-                                                                                                      trace ("row nr: " ++ show nr)
-                                                                                                      trace ("actIdx: " ++ show actIdx)
-                                                                                                      trace ("px ^?! proxyNrActions: " ++ show (px ^?! proxyNrActions))
-                                                                                                      trace ("nr * px ^?! proxyNrActions + actIdx: " ++ show (nr * px ^?! proxyNrActions + actIdx))
-                                                                                                      nr * px ^?! proxyNrActions + actIdx) px
+lookupNeuralNetworkUnscaled tp (st, actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 headLookup []    = error "head: empty input data in lookupNeuralNetworkUnscaled"
@@ -377,7 +367,7 @@ lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled ca
 -- | Finds the correct value for scaling.
 getMinMaxVal :: Proxy -> Maybe (MinValue, MaxValue)
 getMinMaxVal Table{} = error "getMinMaxVal called for Table"
-getMinMaxVal p = trace ("getMinMaxVal proxy type: " ++ show (p ^?! proxyType)) $
+getMinMaxVal p =
   case unCombine (p ^?! proxyType) of
     VTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     WTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
@@ -390,17 +380,18 @@ getMinMaxVal p = trace ("getMinMaxVal proxy type: " ++ show (p ^?! proxyType)) $
     NoScaling -> Nothing
     CombinedUnichain -> error "should not happend"
   where
-    unCombine CombinedUnichain =
-      case p ^?! proxyOutCol of
-        0 -> R0Table
-        1 -> R1Table
-        2 -> PsiVTable
-        3 -> VTable
-        4 -> PsiWTable
-        5 -> WTable
-        6 -> PsiW2Table
-        7 -> W2Table
-        _ -> error "Proxy/Ops.hs getMinMaxVal"
+    unCombine CombinedUnichain
+      | isCombinedProxy p =
+        case p ^?! proxyOutCol of
+          0 -> R0Table
+          1 -> R1Table
+          2 -> PsiVTable
+          3 -> VTable
+          4 -> PsiWTable
+          5 -> WTable
+          6 -> PsiW2Table
+          7 -> W2Table
+          _ -> error "Proxy/Ops.hs getMinMaxVal"
     unCombine x = x
 
 
@@ -422,13 +413,9 @@ mkNNList borl scaled pr =
        return (st, (zip [0..] t,zip [0..] w)))
     (conf ^. prettyPrintElems)
   where
-    conf =
-      case pr of
-        Grenade _ _ _ _ conf _         -> conf
-        TensorflowProxy _ _ _ _ conf _ -> conf
-        _                              -> error "mkNNList called on non-neural network"
-    actIdxs = [0 .. pr ^?! proxyNrActions]
-    actFilt = borl ^. actionFilter
+    conf = pr ^?! proxyNNConfig
+    -- actIdxs = [0 .. pr ^?! proxyNrActions]
+    -- actFilt = borl ^. actionFilter
     useTable = borl ^. t == fromIntegral (pr ^?! proxyNNConfig.replayMemoryMaxSize) && (pr ^?! proxyNNConfig.trainBatchSize) /= 1
     lookupTable :: Bool -> [Double] -> [Double]
     lookupTable scale st
