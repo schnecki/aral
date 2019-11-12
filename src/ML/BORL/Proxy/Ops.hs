@@ -27,6 +27,7 @@ module ML.BORL.Proxy.Ops
     ) where
 
 import           Control.Arrow
+import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Lens
@@ -42,6 +43,7 @@ import           Data.Singletons.Prelude.List
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import           System.IO.Unsafe             (unsafePerformIO)
 import           System.Random.Shuffle
 
 import           ML.BORL.Calculation.Type
@@ -60,6 +62,7 @@ import           Debug.Trace
 data LookupType = Target | Worker
 
 
+mkStateActs :: BORL s -> s -> s -> ([Double], ([Double], [ActionIndex]), ([Double], [ActionIndex]))
 mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
     where
     sActIdxes = map fst $ actionsIndexed borl state
@@ -181,9 +184,23 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
+
       undefined
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
+
+cacheMVar :: MVar (M.Map (ProxyType, StateFeatures) [Double])
+cacheMVar = unsafePerformIO $ newMVar mempty
+{-# NOINLINE cacheMVar #-}
+
+emptyCache :: MonadBorl' m => m ()
+emptyCache = liftSimple $ modifyMVar_ cacheMVar (const mempty)
+
+addCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> [Double] -> m ()
+addCache k v = liftSimple $ modifyMVar_ cacheMVar (return . M.insert k v)
+
+lookupCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> m (Maybe [Double])
+lookupCache k = liftSimple $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
@@ -196,15 +213,15 @@ insertProxy p st aNr val = insertProxyMany p [((st, aNr), val)]
 insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
 insertProxyMany _ xs (Scalar _) = return $ Scalar (snd $ last xs)
 insertProxyMany _ xs (Table m def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
-  where trunc x = (fromInteger $ round $ x * (10^n)) / (10.0^^n)
+  where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
         n = 3
 insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)
 insertProxyMany period xs px
   | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
-  | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = updateNNTargetNet False period px
-  | period == memSize - 1 = liftSimple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> netInit px >>= updateNNTargetNet True period
-  | otherwise = trainBatch xs px >>= updateNNTargetNet False period
+  | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet False period px
+  | period == memSize - 1 = liftSimple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
+  | otherwise = emptyCache >> trainBatch xs px >>= updateNNTargetNet False period
   where
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams)
     config = px ^?! proxyNNConfig
@@ -340,25 +357,31 @@ lookupActionsNeuralNetwork tp k px = map (unscaleValue (getMinMaxVal px)) <$> lo
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
-lookupNeuralNetworkUnscaled Worker (st, actIdx) (Grenade _ netW _ _ conf _) = return $ (!! actIdx) $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
-lookupNeuralNetworkUnscaled Target (st, actIdx) (Grenade netT _ _ _ conf _) = return $ (!!actIdx) $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
-lookupNeuralNetworkUnscaled Worker (st, actIdx) (TensorflowProxy _ netW _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netW [map realToFrac st]
-lookupNeuralNetworkUnscaled Target (st, actIdx) (TensorflowProxy netT _ _ _ conf _) = realToFrac . (!!actIdx) . headLookup <$> forwardRun netT [map realToFrac st]
+lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled tp (st, actIdx) px@TensorflowProxy{} = (!!actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
-headLookup []    = error "head: empty input data in lookupNeuralNetworkUnscaled"
-headLookup (x:_) = x
+headLookupActions :: [p] -> p
 headLookupActions []    = error "head: empty input data in lookupActionsNeuralNetworkUnscaled"
 headLookupActions (x:_) = x
 
+cached :: (MonadBorl' m) => (ProxyType, StateFeatures) -> m [Double] -> m [Double]
+cached st f = do
+  c <- lookupCache st
+  case c of
+    Nothing -> do
+      res <- f
+      addCache st res
+      return res
+    Just res -> return res
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
-lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => forall k . LookupType -> [Double] -> Proxy -> m [Double]
-lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ _ conf _) = return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st)
-lookupActionsNeuralNetworkUnscaled Target st (Grenade netT _ _ _ conf _) = return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st)
-lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ _ conf _) = map realToFrac . headLookupActions <$> forwardRun netW [map realToFrac st]
-lookupActionsNeuralNetworkUnscaled Target st (TensorflowProxy netT _ _ _ conf _) = map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st]
+lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
+lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
+lookupActionsNeuralNetworkUnscaled Target st (Grenade netT _ _ tp _ _) = cached (tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
+lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netW [map realToFrac st])
+lookupActionsNeuralNetworkUnscaled Target st (TensorflowProxy netT _ _ tp _ _) = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st])
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = take nrActs . drop (nr*nrActs) <$> lookupActionsNeuralNetworkUnscaled tp st px
   where nrActs = px ^?! proxyNrActions
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"

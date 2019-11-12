@@ -363,11 +363,11 @@ mRefStateAct = Nothing
 
 alg :: Algorithm St
 alg =
-        AlgDQN 0.99
+        -- AlgDQN 0.99
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+        AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
 
 
 usermode :: IO ()

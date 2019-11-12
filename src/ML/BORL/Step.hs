@@ -254,7 +254,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
       strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
-      strR1 = show $ getR1ValState' calc
+      strR1 = show $ fromMaybe 0 (getR1ValState' calc)
       avg xs = sum xs / fromIntegral (length xs)
   liftSimple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
   let (eNr, eStart) = borl ^. episodeNrStart
