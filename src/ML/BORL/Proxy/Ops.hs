@@ -257,9 +257,7 @@ insertCombinedProxies period pxs = set proxyType (head pxs ^?! proxyType) <$> in
   where
     pxLearn = set proxyType NoScaling $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
-      concat $
-      transpose $
-      map
+      concatMap
         (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue (getMinMaxVal px) out)) outs)
         (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     len = pxLearn ^?! proxyNrActions
@@ -269,7 +267,7 @@ insertCombinedProxies period pxs = set proxyType (head pxs ^?! proxyType) <$> in
 updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
 updateNNTargetNet forceReset period px
-  | forceReset || config ^. trainBatchSize <= 1 = copyValues
+  | forceReset = copyValues
   | period <= memSize = return px
   | ((period - memSize - 1) `mod` config ^. updateTargetInterval) == 0 = copyValues
   | otherwise = return px
@@ -282,7 +280,7 @@ updateNNTargetNet forceReset period px
         (TensorflowProxy netT' netW' tab' tp' config' nrActs) -> do
           copyValuesFromTo netW' netT'
           return $ TensorflowProxy netT' netW' tab' tp' config' nrActs
-        CombinedProxy{} -> error "Combined proxy in updateNNTargetNet. Should not happen!"
+        CombinedProxy {} -> error "Combined proxy in updateNNTargetNet. Should not happen!"
         Table {} -> error "not possible"
         Scalar {} -> error "not possible"
 
@@ -298,7 +296,6 @@ trainBatch trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs)
   return $ TensorflowProxy netT netW tab tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
-
 trainBatch _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 

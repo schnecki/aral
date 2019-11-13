@@ -166,7 +166,7 @@ backwardRunRepMemData model values = do
 -- | Train tensorflow model with checks.
 backwardRun :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m ()
 backwardRun model inp lab
-  | null inp || any null inp || null lab = error $ "Empty input in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
+  | null inp || any null inp || null lab = error $ "Empty parameters in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
   | otherwise =
     let inRef = getRef (inputLayerName $ tensorflowModel model)
         labRef = getRef (labelLayerName $ tensorflowModel model)
