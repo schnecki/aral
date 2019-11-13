@@ -384,7 +384,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   let nnPsiW2 = nnSA PsiW2Table
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
-    checkGrenade net nnConfig $
+    checkGrenade net 1 nnConfig $
     BORL
       (zip [idxStart ..] as)
       asFilter
@@ -401,6 +401,47 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       mempty
       (0, 0, 0)
       (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
+  where
+    defRho = defaultRho (fromMaybe defInitValues initValues)
+
+mkUnichainGrenadeCombinedNet ::
+     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
+  => Algorithm s
+  -> InitialState s
+  -> FeatureExtractor s
+  -> [Action s]
+  -> (s -> [Bool])
+  -> Parameters
+  -> Decay
+  -> Network layers shapes
+  -> NNConfig
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun net nnConfig initValues = do
+  let nrNets | isAlgDqn alg = 1
+             | isAlgDqnAvgRewardFree alg = 2
+             | otherwise = 8
+  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nn = nnSA CombinedUnichain
+  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  return $
+    checkGrenade net nrNets nnConfig $
+    BORL
+      (zip [idxStart ..] as)
+      asFilter
+      initialState
+      ftExt
+      0
+      (0, 0)
+      params
+      decayFun
+      []
+      alg
+      SteadyStateValues
+      mempty
+      mempty
+      (0, 0, 0)
+      (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) nn repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
@@ -431,7 +472,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   let nnPsiW2 = nnSA PsiW2Table
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
-    checkGrenade net nnConfig $
+    checkGrenade net 1 nnConfig $
     BORL
       (zip [0 ..] as)
       asFilter
@@ -478,12 +519,13 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 checkGrenade ::
      forall layers shapes nrH nrL s. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
   => Network layers shapes
+  -> Integer
   -> NNConfig
   -> BORL s
   -> BORL s
-checkGrenade _ nnConfig borl
+checkGrenade _ mult nnConfig borl
   | nnInpNodes /= stInp = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show stInp
-  | nnOutNodes /= fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show nrActs
+  | nnOutNodes /= mult * fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show (fromIntegral mult * nrActs)
   | otherwise = borl
   where
     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
@@ -493,12 +535,12 @@ checkGrenade _ nnConfig borl
 
 
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
-overAllProxies len f borl =
-  error "overAllProxies not yet implemented"
-  -- foldl' (\b p -> over (proxies . p . len) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
+overAllProxies l f borl
+  -- | isCombinedProxy (borl ^. proxies . r0) = foldl' (\b p -> over (proxies . p . l) f b) borl [rhoMinimum, rho, r0]
+  | otherwise = foldl' (\b p -> over (proxies . p . l) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
 
 setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
-setAllProxies len = overAllProxies len . const
+setAllProxies l = overAllProxies l . const
 
 allProxies :: Proxies -> [Proxy]
 allProxies pxs@Proxies{} = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^?! psiV, pxs ^?! v, pxs ^?! psiW , pxs ^?! w, pxs^?!psiW2, pxs ^?! w2, pxs ^?! r0, pxs ^?! r1]

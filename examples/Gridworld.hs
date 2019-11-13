@@ -17,47 +17,50 @@ import           Experimenter
 
 import           Helper
 
-import           Control.Arrow          (first, second, (***))
-import           Control.DeepSeq        (NFData)
+import           Control.Arrow            (first, second, (***))
+import           Control.DeepSeq          (NFData)
 import           Control.Lens
-import           Control.Lens           (set, (^.))
-import           Control.Monad          (foldM, liftM, unless, when)
-import           Control.Monad.IO.Class (liftIO)
-import           Data.Function          (on)
-import           Data.List              (genericLength, groupBy, sortBy)
+import           Control.Lens             (set, (^.))
+import           Control.Monad            (foldM, liftM, unless, when)
+import           Control.Monad.IO.Class   (liftIO)
+import           Data.Function            (on)
+import           Data.List                (genericLength, groupBy, sortBy)
 import           Data.Serialize
+import           Data.Singletons.TypeLits hiding (natVal)
 import           GHC.Generics
-import           GHC.Int                (Int32, Int64)
+import           GHC.Int                  (Int32, Int64)
+import           GHC.TypeLits
 import           Grenade
 import           System.IO
 import           System.Random
 
 
-import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
-                                               opDefWithName, opType, runBuildT, summaries)
-import qualified TensorFlow.Core        as TF hiding (value)
+import qualified TensorFlow.Build         as TF (addNewOp, evalBuildT, explicitName, opDef,
+                                                 opDefWithName, opType, runBuildT,
+                                                 summaries)
+import qualified TensorFlow.Core          as TF hiding (value)
 -- import qualified TensorFlow.GenOps.Core                         as TF (square)
-import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
-                                               approximateEqual, assign, cast,
-                                               getSessionHandle, getSessionTensor,
-                                               identity', lessEqual, matMul, mul,
-                                               readerSerializeState, relu, relu', shape,
-                                               square, sub, tanh, tanh', truncatedNormal)
-import qualified TensorFlow.Minimize    as TF
+import qualified TensorFlow.GenOps.Core   as TF (abs, add, approximateEqual,
+                                                 approximateEqual, assign, cast,
+                                                 getSessionHandle, getSessionTensor,
+                                                 identity', lessEqual, matMul, mul,
+                                                 readerSerializeState, relu, relu', shape,
+                                                 square, sub, tanh, tanh', truncatedNormal)
+import qualified TensorFlow.Minimize      as TF
 -- import qualified TensorFlow.Ops                                 as TF (abs, add, assign,
 --                                                                        cast, identity',
 --                                                                        matMul, mul, relu,
 --                                                                        sub,
 --                                                                        truncatedNormal)
-import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
-                                               placeholder, placeholder', reduceMean,
-                                               reduceSum, restore, save, scalar, vector,
-                                               zeroInitializedVariable,
-                                               zeroInitializedVariable')
-import qualified TensorFlow.Session     as TF
-import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
-                                               tensorNodeName, tensorRefFromName,
-                                               tensorValueFromName)
+import qualified TensorFlow.Ops           as TF (initializedVariable, initializedVariable',
+                                                 placeholder, placeholder', reduceMean,
+                                                 reduceSum, restore, save, scalar, vector,
+                                                 zeroInitializedVariable,
+                                                 zeroInitializedVariable')
+import qualified TensorFlow.Session       as TF
+import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
+                                                 tensorNodeName, tensorRefFromName,
+                                                 tensorValueFromName)
 
 
 import           Debug.Trace
@@ -266,24 +269,42 @@ mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (0,2), 0)
 
-usermode :: IO ()
-usermode = do
-
-  let algorithm =
+alg :: Algorithm St
+alg =
         -- AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
-        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-        AlgBORL 0.5 0.8 ByStateValues False mRefState
+  -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
 
-  nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
-  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  AlgBORL 0.5 0.8 ByStateValues False mRefState
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..] [("i",goalState moveUp),("j",goalState moveDown), ("k",goalState moveLeft), ("l", goalState moveRight) ] (tail names)
-        usage = [("i","Move up") , ("j","Move left") , ("k","Move down") , ("l","Move right")]
+usermode :: IO ()
+usermode = do
+
+  -- Approximate all fucntions using a single neural network
+  rl <-
+    case alg of
+      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+
+  -- Use an own neural network for every function to approximate
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
+
+  -- Use a table to approximate the function (tabular version)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+
+  askUser True usage cmds rl -- maybe increase learning by setting estimate of rho
+  where
+    cmds =
+      zipWith3
+        (\n (s, a) na -> (s, (n, Action a na)))
+        [0 ..]
+        [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
+        (tail names)
+    usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
@@ -291,11 +312,16 @@ maxY = 4                        -- [0..maxY]
 
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
+type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 40, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 40, 'D1 40]
+type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
+modelBuilder = modelBuilderCombined 1
+
+modelBuilderCombined :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilderCombined colOut =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
@@ -303,12 +329,12 @@ modelBuilder =
 nnConfig :: NNConfig
 nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
+  , _trainBatchSize       = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = scalingByMaxAbsReward False 6
   , _updateTargetInterval = 3000
-  , _trainMSEMax          = Just 0.03
+  , _trainMSEMax          = Nothing -- Just 0.03
   }
 
 netInp :: St -> [Double]

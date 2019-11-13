@@ -17,3 +17,6 @@ fi
 # set term wxt 1
 # plot for [col=2:6] 'stateValues' using 0:col with lines
 # pause mouse close
+
+
+# watch 'tail -n 10000 queueLength | awk "{ sum += \$1; n++ } END { if (n > 0) print sum / n ; }"'

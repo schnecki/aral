@@ -318,12 +318,19 @@ writeDebugFiles borl = do
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValues <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
-    psiVValues <-  mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
-    psiWValues <-  mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
+    stateValues <-
+      mapM
+        (\xs ->
+           if isDqn
+             then rValueFeat borl' RBig (init xs) (round $ last xs)
+             else vValueFeat False borl' (init xs) (round $ last xs))
+        stateFeats
     liftSimple $ appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
-    liftSimple $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
-    liftSimple $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
+    when (isAlgBorl (borl ^. algorithm)) $ do
+      psiVValues <- mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
+      liftSimple $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
+      psiWValues <- mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
+      liftSimple $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
   return borl'
   where
     getStateFeatList Scalar {} = []
