@@ -285,7 +285,7 @@ updateNNTargetNet forceReset period px
         Scalar {} -> error "not possible"
 
 
--- | Train the neural network from a given batch. The training instances are Unscaled.
+-- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadBorl' m) => [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
 trainBatch trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
   let netW' = foldl' (trainGrenade (config ^. grenadeLearningParams)) netW (map return trainingInstances')

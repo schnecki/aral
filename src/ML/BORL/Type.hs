@@ -360,7 +360,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
 -- Neural network approximations
 
 mkUnichainGrenade ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
+     forall nrH nrL s layers shapes. (GNum (Gradients layers), KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
@@ -405,7 +405,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
 mkUnichainGrenadeCombinedNet ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
+     forall nrH nrL s layers shapes. (GNum (Gradients layers), KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
   => Algorithm s
   -> InitialState s
   -> FeatureExtractor s
@@ -447,7 +447,17 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
 
 
 mkMultichainGrenade ::
-     forall nrH nrL s layers shapes. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
+     forall nrH nrL s layers shapes.
+     ( GNum (Gradients layers)
+     , KnownNat nrH
+     , Head shapes ~ 'D1 nrH
+     , KnownNat nrL
+     , Last shapes ~ 'D1 nrL
+     , Ord s
+     , NFData (Tapes layers shapes)
+     , NFData (Network layers shapes)
+     , Serialize (Network layers shapes)
+     )
   => Algorithm s
   -> InitialState s
   -> FeatureExtractor s

@@ -12,7 +12,7 @@ import           ML.BORL.Types
 
 
 import           Control.Parallel.Strategies
-import           Data.List                        (foldl')
+import           Data.List                        (foldl', foldl1)
 import           Data.Singletons.Prelude.List
 import           GHC.TypeLits
 import           Grenade
@@ -23,12 +23,12 @@ trainMaxVal :: Double
 trainMaxVal = 0.98
 
 trainGrenade ::
-     (NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
+     (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
   => LearningParameters
   -> Network layers shapes
   -> [(([Double], ActionIndex), Double)]
   -> Network layers shapes
-trainGrenade lp net chs = foldl' (applyUpdate lp) net $ zipWith mkGradients chs $ tapesAndActual chs
+trainGrenade lp net chs = applyUpdate lp net $ foldl1 (|+) $ zipWith mkGradients chs $ tapesAndActual chs
   where
     tapesAndActual = parMap rdeepseq runForward
     runForward ((inp, _), _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)
