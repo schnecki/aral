@@ -365,7 +365,7 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues --(ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
 
@@ -381,8 +381,10 @@ usermode = do
       AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
+  rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser True usage cmds rl
   where cmds = []
@@ -411,12 +413,12 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
-    , _trainBatchSize = 8
+    , _trainBatchSize = 32
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 200
     , _updateTargetInterval = 3000
-    , _trainMSEMax = Nothing -- Just 0.05
+    , _trainMSEMax = Just 0.05
     }
 
 netInp :: St -> [Double]

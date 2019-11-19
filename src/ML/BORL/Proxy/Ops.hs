@@ -21,6 +21,7 @@ module ML.BORL.Proxy.Ops
     , lookupActionsNeuralNetwork
     , lookupActionsNeuralNetworkUnscaled
     , mkNNList
+    , getMinMaxVal
     , StateFeatures
     , StateNextFeatures
     , LookupType (..)
@@ -243,7 +244,8 @@ insertProxyMany period xs px
   | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
   | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet False period px
-  | period == memSize - 1 = liftSimple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
+  | period == memSize - 1 =
+    liftSimple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
   | otherwise = emptyCache >> trainBatch xs px >>= updateNNTargetNet False period
   where
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams)
@@ -302,7 +304,7 @@ trainBatch _ _ = error "called trainBatch on non-neural network proxy (programmi
 -- | Train until MSE hits the value given in NNConfig.
 trainMSE :: (MonadBorl' m) => Maybe Int -> [(([Double], ActionIndex), Double)] -> LearningParameters -> Proxy -> m Proxy
 trainMSE _ _ _ px@Table{} = return px
-trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
+trainMSE mIteration dataset lp px@(Grenade _ netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | mse < mseMax = do
     liftSimple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
@@ -310,8 +312,8 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
   | otherwise = do
     datasetShuffled <- liftSimple $ shuffleM dataset
     let net' = foldl' (trainGrenade lp) netW (zipWith (curry return) (map fst datasetShuffled) (map snd datasetShuffled))
-    when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-    fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
+    when (maybe False ((== 0) . (`mod` 5)) mIteration) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+    fmap force <$> trainMSE ((+ 1) <$> mIteration) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = fromJust (config ^. trainMSEMax)
     -- net' = trainGrenade lp netSGD (zip kScaled vScaled)
@@ -321,9 +323,9 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
     -- (minV,maxV) = getMinMaxVal px
     getValue k =
        -- unscaleValue (getMinMaxVal px) $
-       (\x -> x !! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
+     (\x -> x !! snd k) $ snd $ fromLastShapes netW $ runNetwork netW ((toHeadShapes netW . fst) k)
     mse = 1 / fromIntegral (length dataset) * sum (zipWith (\k v -> (v - getValue k) ** 2) (map fst dataset) (map (min 1 . max (-1)) vScaled)) -- scaled or unscaled ones?
-trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
+trainMSE mIteration dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | otherwise = do
     datasetShuffled <- liftSimple $ shuffleM dataset
@@ -347,9 +349,9 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
       void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
       return px
       else do
-      when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ do
+      when (maybe False ((== 0) . (`mod` 5)) mIteration) $ do
         liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
-      trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
+      trainMSE ((+ 1) <$> mIteration) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
 
 -- | Retrieve a value.
@@ -377,8 +379,9 @@ lookupActionsNeuralNetwork tp k px = map (unscaleValue (getMinMaxVal px)) <$> lo
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
-lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} = (\x -> x !! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
-lookupNeuralNetworkUnscaled tp (st, actIdx) px@TensorflowProxy{} = (!!actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} =
+   (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled tp (st, actIdx) px@TensorflowProxy {} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) p@(CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
@@ -443,22 +446,21 @@ mkNNList :: (MonadBorl' m) => BORL k -> Bool -> Proxy -> m [(NetInput, ([(Action
 mkNNList borl scaled pr =
   mapM
     (\st -> do
-       t <-
+       target <-
          if useTable
            then return $ lookupTable scaled st
            else if scaled
                   then lookupActionsNeuralNetwork Target st pr
                   else lookupActionsNeuralNetworkUnscaled Target st pr
-       w <-
+       worker <-
          if scaled
            then lookupActionsNeuralNetwork Worker st pr
            else lookupActionsNeuralNetworkUnscaled Worker st pr
-       return (st, (zip [0 .. (pr ^?! proxyNrActions - 1)] t, zip [0 .. (pr ^?! proxyNrActions - 1)] w)))
+       return (st, (zip actIdxs target, zip actIdxs worker)))
     (conf ^. prettyPrintElems)
   where
     conf = pr ^?! proxyNNConfig
-    -- actIdxs = [0 .. pr ^?! proxyNrActions]
-    -- actFilt = borl ^. actionFilter
+    actIdxs = [0 .. (pr ^?! proxyNrActions - 1)]
     useTable = borl ^. t == fromIntegral (pr ^?! proxyNNConfig . replayMemoryMaxSize) && (pr ^?! proxyNNConfig . trainBatchSize) /= 1
     lookupTable :: Bool -> [Double] -> [Double]
     lookupTable scale st

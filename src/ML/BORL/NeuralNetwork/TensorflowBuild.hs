@@ -130,6 +130,11 @@ trainingByAdam :: (TF.MonadBuild m) => StateT BuildInfo m ()
 trainingByAdam = trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
+-- TODO: let the user decide the loss function
+
+-- L1: Least absolut deviation LAD
+-- L2: Least square error LSE
+
 trainingByAdamWith :: (TF.MonadBuild m) => TF.AdamConfig -> StateT BuildInfo m ()
 trainingByAdamWith adamConfig = do
   mOutput <- gets (^. outputName)

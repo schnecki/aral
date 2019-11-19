@@ -15,7 +15,8 @@ import           ML.BORL.Algorithm
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
-import           ML.BORL.Proxy.Ops     (LookupType (..), lookupNeuralNetwork, mkNNList)
+import           ML.BORL.Proxy.Ops     (LookupType (..), getMinMaxVal, lookupNeuralNetwork,
+                                        mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Type
@@ -94,11 +95,14 @@ mkListFromNeuralNetwork ::
   -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
 mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
+  let subPr
+        | isCombinedProxy pr = pr ^?! proxySub
+        | otherwise = pr
   if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize
     then do
       let inp = map fst tbl
       let tableVals = tbl
-      workerVals <- mapM (\x -> lookupNeuralNetwork Worker x pr) inp
+      workerVals <- mapM (\x -> unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType NoScaling subPr)) inp
       return $ finalize $ zipWith (\((feat, actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))) tbl workerVals
     else finalize <$> mkNNList borl scaled pr
   where
@@ -109,6 +113,7 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
         P.Grenade _ _ p _ cfg _         -> M.toList p
         P.TensorflowProxy _ _ p _ cfg _ -> M.toList p
         P.CombinedProxy p _ _           -> M.toList (p ^?! proxyNNStartup)
+        _                               -> error "should not happen"
 
 prettyTablesState :: (MonadBorl' m, Show k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> k') -> P.Proxy -> m Doc
 prettyTablesState borl p1 pIdx m1 p2 m2 = do
@@ -174,17 +179,6 @@ prettyBORLTables t1 t2 t3 borl = do
           _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState m2
       prBoolTblsStateAction False _ _ _ = return empty
-  let addPsiV k v =
-        case borl ^. proxies . psiV of
-          P.Table m def -> return $ M.findWithDefault def k m
-          px ->
-            let config = px ^?! proxyNNConfig
-             in if borl ^. t <= config ^. replayMemoryMaxSize && (config ^. trainBatchSize) /= 1
-                  then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
-                  else do
-                    vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
-                    return (v + vPsi)
-  vPlusPsiV <- prettyTableRows borl prettyState prettyActionIdx addPsiV (borl ^. proxies . v)
   prettyRhoVal <-
     case borl ^. proxies . rho of
       Scalar val -> return $ text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
@@ -193,7 +187,19 @@ prettyBORLTables t1 t2 t3 borl = do
         return $ text "Rho" $+$ prAct
   docHead <- prettyBORLHead False borl
   case borl ^. algorithm of
-    AlgBORL {} -> do
+    AlgBORL {}
+      -- let addPsiV k v =
+      --       case borl ^. proxies . psiV of
+      --         P.Table m def -> return $ M.findWithDefault def k m
+      --         px ->
+      --           let config = px ^?! proxyNNConfig
+      --            in if borl ^. t <= config ^. replayMemoryMaxSize && (config ^. trainBatchSize) /= 1
+      --                 then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
+      --                 else do
+      --                   vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
+      --                   return (v + vPsi)
+      -- vPlusPsiV <- prettyTableRows borl prettyState prettyActionIdx addPsiV (borl ^. proxies . v)
+     -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
       prWs <- prBoolTblsStateAction t1 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
       prW2s <- prBoolTblsStateAction t1 (text "W2" $$ nest nestCols (text "PsiW2")) (borl ^. proxies . w2) (borl ^. proxies . psiW2)
