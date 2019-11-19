@@ -174,18 +174,6 @@ mkTensorflowModel as tp scope netInpInitState modelBuilderFun = do
       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
 
 
-proxyTypeName :: ProxyType -> T.Text
-proxyTypeName VTable           = "v"
-proxyTypeName WTable           = "w"
-proxyTypeName W2Table          = "w2"
-proxyTypeName R0Table          = "r0"
-proxyTypeName R1Table          = "r1"
-proxyTypeName PsiVTable        = "psiV"
-proxyTypeName PsiWTable        = "psiW"
-proxyTypeName PsiW2Table       = "psiW2"
-proxyTypeName CombinedUnichain = "combinedUnichain"
-
-
 mkUnichainTensorflowM ::
      forall s m. (NFData s, MonadBorl' m)
   => Algorithm s

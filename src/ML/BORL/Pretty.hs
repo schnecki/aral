@@ -31,6 +31,7 @@ import           Control.Monad         (when)
 import           Data.Function         (on)
 import           Data.List             (find, foldl', sort, sortBy)
 import qualified Data.Map.Strict       as M
+import           Data.Maybe            (fromMaybe)
 import qualified Data.Set              as S
 import qualified Data.Text             as T
 import           Grenade
@@ -60,13 +61,13 @@ printFloatWith :: Int -> Double -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
 
-prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> Maybe k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
 
 prettyTableRows ::
      (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k')
   => BORL k
-  -> (NetInputWoAction -> k')
+  -> (NetInputWoAction -> Maybe k')
   -> (ActionIndex -> Doc)
   -> (([Double], ActionIndex) -> Double -> m Double)
   -> P.Proxy
@@ -92,7 +93,7 @@ prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> 
 mkListFromNeuralNetwork ::
      (MonadBorl' m, Show k, Ord k, Eq k, Show k')
   => BORL k
-  -> (NetInputWoAction -> k')
+  -> (NetInputWoAction -> Maybe k')
   -> (ActionIndex -> Doc)
   -> Bool
   -> P.Proxy
@@ -118,7 +119,7 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
         P.CombinedProxy p _ _           -> M.toList (p ^?! proxyNNStartup)
         _                               -> error "should not happen"
 
-prettyTablesState :: (MonadBorl' m, Show k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> k') -> P.Proxy -> m Doc
+prettyTablesState :: (MonadBorl' m, Show k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> Maybe k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> Maybe k') -> P.Proxy -> m Doc
 prettyTablesState borl p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
   rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
@@ -139,7 +140,7 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
                   minKey = nr * nrActs
                   maxKey = minKey + nrActs - 1
 
-prettyAlgorithm ::  (Show k') => BORL s -> (NetInputWoAction -> k') -> (ActionIndex -> Doc) -> Algorithm s -> Doc
+prettyAlgorithm ::  BORL s -> (NetInputWoAction -> Maybe [String]) -> (ActionIndex -> Doc) -> Algorithm s -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
@@ -171,7 +172,7 @@ prettyAvgRewardType (ByStateValuesAndReward ratio) = printFloat ratio <> "*state
 prettyAvgRewardType (Fixed x)              = "fixed value of " <> double x
 
 
-prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> s) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> Bool -> Bool -> Bool -> BORL s -> m Doc
 prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -188,7 +189,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       m -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
-  docHead <- prettyBORLHead False borl
+  docHead <- prettyBORLHead False prettyState borl
   case borl ^. algorithm of
     AlgBORL {}
       -- let addPsiV k v =
@@ -225,13 +226,15 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    prettyState st = map showFloat st
+    prettyState st = case mStInverse of
+      Nothing  -> Just $ map showFloat st
+      Just inv -> return . show <$> (inv st)
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
 
-prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> BORL s -> m Doc
-prettyBORLHead printRho borl = do
-  let prettyState st = map showFloat st
+prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> ([Double] -> Maybe [String]) -> BORL s -> m Doc
+prettyBORLHead printRho prettyStateFun borl = do
+  let prettyState st = fromMaybe ["unkown state"] (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -333,7 +336,7 @@ prettyBORL = prettyBORLWithStInverse Nothing
 prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> s) -> BORL s -> m Doc
+prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
 prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
 
 

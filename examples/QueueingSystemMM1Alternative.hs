@@ -298,7 +298,7 @@ usermode = do
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
-  askUser True usage cmds rl
+  askUser Nothing True usage cmds rl
   where cmds = []
         usage = []
 
