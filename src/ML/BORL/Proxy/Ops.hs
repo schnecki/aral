@@ -256,7 +256,7 @@ insertProxyMany period xs px
 insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
 insertCombinedProxies period pxs = set proxyType (head pxs ^?! proxyType) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
   where
-    pxLearn = set proxyType NoScaling $ head pxs ^?! proxySub
+    pxLearn = set proxyType (NoScaling $ head pxs ^?! proxyType) $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
       concatMap
         (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue (getMinMaxVal px) out)) outs)
@@ -421,7 +421,7 @@ getMinMaxVal p =
     PsiVTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     PsiWTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     PsiW2Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
-    NoScaling -> Nothing
+    NoScaling{} -> Nothing
     CombinedUnichain -> error "should not happend"
   where
     unCombine CombinedUnichain

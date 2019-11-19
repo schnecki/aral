@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 
@@ -28,25 +29,23 @@ module ML.BORL.Proxy.Type
   , isTensorflow
   , isCombinedProxy
   , isTable
+  , proxyTypeName
   )
 where
 
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Types                as T
 
-import           Control.Arrow                (first, second)
 import           Control.DeepSeq
 import           Control.Lens
-import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
 import           Data.Serialize
-import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
+import qualified Data.Text                    as Text
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 
-import           Debug.Trace
 
 -- | Type of approximation (needed for scaling of values).
 data ProxyType
@@ -59,8 +58,21 @@ data ProxyType
   | PsiWTable
   | PsiW2Table
   | CombinedUnichain
-  | NoScaling
+  | NoScaling ProxyType
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
+
+proxyTypeName :: ProxyType -> Text.Text
+proxyTypeName VTable           = "v"
+proxyTypeName WTable           = "w"
+proxyTypeName W2Table          = "w2"
+proxyTypeName R0Table          = "r0"
+proxyTypeName R1Table          = "r1"
+proxyTypeName PsiVTable        = "psiV"
+proxyTypeName PsiWTable        = "psiW"
+proxyTypeName PsiW2Table       = "psiW2"
+proxyTypeName CombinedUnichain = "combinedUnichain"
+proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
+
 
 -- class Proxy p where
 --   isNeuralNetwork :: p -> Bool

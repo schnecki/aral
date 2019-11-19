@@ -26,6 +26,7 @@ import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.List              (genericLength)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
 import           Data.Text              (Text)
 import           GHC.Generics
@@ -365,9 +366,14 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+        -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+allStateInputs :: M.Map [Double] St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+stInverse :: [NetInputWoAction] -> St
+stInverse xs = M.lookup xs allStateInputs
 
 usermode :: IO ()
 usermode = do
@@ -380,10 +386,10 @@ usermode = do
       AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
-  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
-  askUser True usage cmds rl
+  askUser Nothing True usage cmds rl
   where cmds = []
         usage = []
 

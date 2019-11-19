@@ -172,7 +172,7 @@ main = do
   -- rl <- mkUnichainTensorflow algorithm initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
   -- let rl = mkUnichainTabular algorithm initState (netInp gym) (stGen ranges) actions actFilter params decay initValues
   let rl = mkUnichainTabular algorithm initState (netInp gym) actions actFilter params decay initValues
-  askUser True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []

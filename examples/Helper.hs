@@ -19,8 +19,8 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
-askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
-askUser showHelp addUsage cmds ql = do
+askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Maybe (NetInputWoAction -> s) -> Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
+askUser mInverse showHelp addUsage cmds ql = do
   let usage =
         sortBy (compare `on` fst) $
         [ ("v", "Print V+W tables")
@@ -37,8 +37,8 @@ askUser showHelp addUsage cmds ql = do
   putStr "Enter value (h for help): " >> hFlush stdout
   c <- getLine
   case c of
-    "h" -> askUser True addUsage cmds ql
-    "?" -> askUser True addUsage cmds ql
+    "h" -> askUser mInverse True addUsage cmds ql
+    "?" -> askUser mInverse True addUsage cmds ql
     -- "s" -> do
     --   saveQL ql "save.dat"
     --   askUser ql addUsage cmds
@@ -74,20 +74,20 @@ askUser showHelp addUsage cmds ql = do
                         liftIO $ prettyBORL q' >>= print >> hFlush stdout
                         return q'
                     ) ql [1 .. often]
-              askUser False addUsage cmds ql'
+              askUser mInverse False addUsage cmds ql'
 
-            _ -> time (steps ql nr) >>= askUser False addUsage cmds
+            _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
-          askUser False addUsage cmds ql
+          askUser mInverse False addUsage cmds ql
     "p" -> do
       prettyBORLM ql >>= print
-      askUser False addUsage cmds ql
+      askUser mInverse False addUsage cmds ql
     "v" -> do
       case find isTensorflow (allProxies $ ql ^. proxies) of
-        Nothing -> runMonadBorlIO $ prettyBORLTables True False False ql >>= print
-        Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> prettyBORLTables True False False ql) >>= print
-      askUser False addUsage cmds ql
+        Nothing -> runMonadBorlIO $ prettyBORLTables Nothing True False False ql >>= print
+        Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> prettyBORLTables Nothing True False False ql) >>= print
+      askUser mInverse False addUsage cmds ql
     _ ->
       case find ((== c) . fst) cmds of
         Nothing ->
@@ -95,12 +95,12 @@ askUser showHelp addUsage cmds ql = do
             (c == "q")
             (step ql >>= \x ->
                case find isTensorflow (allProxies $ ql ^. proxies) of
-                 Nothing -> runMonadBorlIO $ prettyBORLTables True False False x >>= print >> askUser False addUsage cmds x
-                 Just _ -> runMonadBorlTF (restoreTensorflowModels True x >> prettyBORLTables True False True x) >>= print >> askUser False addUsage cmds x)
+                 Nothing -> runMonadBorlIO $ prettyBORLTables Nothing True False False x >>= print >> askUser mInverse False addUsage cmds x
+                 Just _ -> runMonadBorlTF (restoreTensorflowModels True x >> prettyBORLTables Nothing True False True x) >>= print >> askUser mInverse False addUsage cmds x)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
-            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser False addUsage cmds
-            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser False addUsage cmds
+            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds
+            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser mInverse False addUsage cmds
 
 
 time :: NFData t => IO t -> IO t
