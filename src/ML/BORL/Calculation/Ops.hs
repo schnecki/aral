@@ -24,6 +24,7 @@ import           ML.BORL.Types
 import           Control.Arrow                  (first)
 import           Control.Lens
 import           Control.Monad                  (when)
+import           Control.Monad.IO.Class         (liftIO)
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Function                  (on)
 import           Data.List                      (maximumBy, minimumBy, sortBy)
@@ -177,8 +178,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   --       where
   --       --   err = signum psiWState' * psiWState'^2
   --         err = psiVState' + 0.03 * psiWState' -- 0.01 * psiW2State'
-  when (period == 0) $ liftSimple $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
-  liftSimple $
+  when (period == 0) $ liftIO $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
+  liftIO $
     appendFile
       "psiValues"
       (show period ++ "\t" ++ show (ite randomAction 0 psiVState') ++ "\t" ++ show (ite randomAction 0 psiWState') ++ "\t" ++ show zetaVal ++ "\t" ++ show (-zetaVal) ++ "\n")

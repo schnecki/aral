@@ -210,7 +210,7 @@ instance ExperimentDef (BORL St)
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftSimple $ prettyBORLHead True rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -365,10 +365,9 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 ByStateValues --(ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
-
+        AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
 
 usermode :: IO ()
 usermode = do
@@ -417,7 +416,7 @@ nnConfig =
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 200
-    , _updateTargetInterval = 3000
+    , _updateTargetInterval = 100 -- 3000
     , _trainMSEMax = Just 0.05
     }
 
@@ -440,10 +439,10 @@ queueLenFilePath = "queueLength"
 -- Actions
 actions :: [Action St]
 actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
-
-  where appendQueueLenFile f st@(St len _) = do
-          appendFile queueLenFilePath (show len ++ "\n")
-          f st
+  where
+    appendQueueLenFile f st@(St len _) = do
+      appendFile queueLenFilePath (show len ++ "\n")
+      f st
 
 
 actFilter :: St -> [Bool]

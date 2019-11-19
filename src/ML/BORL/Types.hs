@@ -5,6 +5,8 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
+import           Control.Monad.IO.Class    (liftIO)
+import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Trans.Class (lift)
 import qualified TensorFlow.Core           as TF
@@ -39,19 +41,19 @@ type MinValue = Double
 replace :: Int -> a -> [a] -> [a]
 replace idx val ls = take idx ls ++ val : drop (idx+1) ls
 
-
-class (Monad m) => MonadBorl' m where
+class (MonadIO m) => MonadBorl' m where
   liftTf :: TF.SessionT IO a -> m a
-  liftSimple :: IO a -> m a
 
 
 instance (MonadBorl' (TF.SessionT IO)) where
   liftTf = id
-  liftSimple = lift
 
+instance MonadUnliftIO (TF.SessionT IO) where
+  askUnliftIO = return $ UnliftIO runMonadBorlTF
+
+-- | This is to ensure that Tensorflow code stays seperated from non TF Code w/o rquiering huge type inference runs.
 instance (MonadBorl' IO) where
   liftTf _ = error "You are using the wrong type: IO instead of Tensorflow's SessionT!"
-  liftSimple = id
 
 liftTensorflow :: (MonadBorl' m) => TF.SessionT IO a -> m a
 liftTensorflow = liftTf
@@ -61,56 +63,5 @@ runMonadBorlIO = id
 
 runMonadBorlTF :: TF.SessionT IO a -> IO a
 runMonadBorlTF = TF.runSession
-
-
--- runMonadBorl (Tensorflow action) = TF.runSession action
--- runMonadBorl (Simple action)     = action
-
-
--- -- ^ Monad that distinguished between Simple (Grenade, Table) methods and Tensorflow sessions.
--- data MonadBorl a where
---   Tensorflow :: TF.SessionT IO a -> MonadBorl a
---   Simple :: IO a -> MonadBorl a
-
--- instance Functor MonadBorl where
---   fmap :: (a->b) -> MonadBorl a -> MonadBorl b
---   fmap f (Tensorflow action) = Tensorflow (fmap f action)
---   fmap f (Simple action)     = Simple (fmap f action)
-
--- instance Applicative MonadBorl where
---   pure = Simple . pure
---   (<*>) :: forall a b . MonadBorl (a -> b) -> MonadBorl a -> MonadBorl b
---   (<*>) (Tensorflow fM) (Tensorflow x) = Tensorflow (do f <- fM
---                                                         f <$> x)
---   (<*>) (Simple f) (Simple x) = Simple (f <*> x)
---   (<*>) (Tensorflow fM) (Simple aM) = Tensorflow $ do f <- fM
---                                                       lift $ f <$> aM
---   (<*>) (Simple fM) (Tensorflow action) = Tensorflow $ do a <- action
---                                                           lift $ fM >>= \f -> return $ f a
-
-
--- instance Monad MonadBorl where
---   (>>=) :: forall a b. MonadBorl a -> (a -> MonadBorl b) -> MonadBorl b
---   Tensorflow a >>= action = Tensorflow $ do !aval <- a
---                                             case action aval of
---                                               Simple !x    -> lift x
---                                               Tensorflow !y-> y
---   Simple !a >>= (!action) = unsafePerformIO $ fmap action a
---   {-# NOINLINE (>>=) #-}
-
-
--- runMonadBorl :: MonadBorl a -> IO a
--- runMonadBorl (Tensorflow action) = TF.runSession action
--- runMonadBorl (Simple action)     = action
-
-
--- instance MonadIO MonadBorl where
---   liftIO = Simple
-
--- instance MonadUnliftIO MonadBorl where
---   askUnliftIO = return $ UnliftIO runMonadBorl
-
-instance MonadUnliftIO (TF.SessionT IO) where
-  askUnliftIO = return $ UnliftIO runMonadBorlTF
 
 

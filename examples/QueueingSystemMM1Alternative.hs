@@ -176,7 +176,7 @@ instance ExperimentDef (BORL St)
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftSimple $ prettyBORLHead True rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =

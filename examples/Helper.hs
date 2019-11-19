@@ -7,11 +7,12 @@ module Helper
 import           ML.BORL
 
 import           Control.Arrow
-import           Control.DeepSeq (NFData, force)
-import           Control.Lens    (over, set, traversed, (^.))
-import           Control.Monad   (foldM, unless, when)
-import           Data.Function   (on)
-import           Data.List       (find, sortBy)
+import           Control.DeepSeq        (NFData, force)
+import           Control.Lens           (over, set, traversed, (^.))
+import           Control.Monad          (foldM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
+import           Data.Function          (on)
+import           Data.List              (find, sortBy)
 import           Data.Time.Clock
 import           System.CPUTime
 import           System.IO
@@ -53,13 +54,34 @@ askUser showHelp addUsage cmds ql = do
           putStr "How often shall I repeat this? [1] " >> hFlush stdout
           l <- getLine
           case reads l :: [(Integer, String)] of
-            [(often, _)] -> foldM (\q _ -> time (steps q nr) >>= (\q' ->prettyBORL q' >>= print >> hFlush stdout >> return q') ) ql [1 .. often] >>= askUser False addUsage cmds
+            [(often, _)] -> do
+              -- ql' <-
+              --   runMonadBorlTF $ do
+              --     restoreTensorflowModels True ql
+              --     borl' <-
+              --       foldM
+              --         (\q _ -> do
+              --            q' <- stepsM q nr
+              --            output <- prettyBORLM q'
+              --            liftIO $ print output >> hFlush stdout
+              --            return q')
+              --         ql
+              --         [1 .. often]
+              --     saveTensorflowModels borl'
+              -- askUser False addUsage cmds ql'
+              ql' <- foldM (\q _ -> do
+                        q' <- time (steps q nr)
+                        liftIO $ prettyBORL q' >>= print >> hFlush stdout
+                        return q'
+                    ) ql [1 .. often]
+              askUser False addUsage cmds ql'
+
             _ -> time (steps ql nr) >>= askUser False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser False addUsage cmds ql
     "p" -> do
-      prettyBORL ql >>= print
+      prettyBORLM ql >>= print
       askUser False addUsage cmds ql
     "v" -> do
       case find isTensorflow (allProxies $ ql ^. proxies) of
