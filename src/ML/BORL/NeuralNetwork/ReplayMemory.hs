@@ -16,8 +16,8 @@ import           System.Random
 
 data ReplayMemory = ReplayMemory
   { _replayMemoryVector :: V.IOVector ((StateFeatures, [ActionIndex]), ActionIndex, Bool, Double, (StateNextFeatures, [ActionIndex]), EpisodeEnd)
-  , _replayMemorySize   :: Int
-  , _replayMemoryMaxIdx :: Int
+  , _replayMemorySize   :: Int  -- size
+  , _replayMemoryMaxIdx :: Int  -- in {0,..,size-1}
   }
 makeLenses ''ReplayMemory
 

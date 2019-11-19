@@ -22,31 +22,28 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork.NNConfig
-import           ML.BORL.NeuralNetwork.Scaling    (unscaleValue)
-import           ML.BORL.NeuralNetwork.Tensorflow (buildTensorflowModel,
-                                                   restoreModelWithLastIO,
-                                                   saveModelWithLastIO)
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
-import           ML.BORL.Proxy                    as P
+import           ML.BORL.Proxy                  as P
 import           ML.BORL.Reward
 import           ML.BORL.SaveRestore
 import           ML.BORL.Serialisable
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Applicative              ((<|>))
-import           Control.Arrow                    ((&&&), (***))
-import           Control.DeepSeq                  (NFData, force)
+import           Control.Applicative            ((<|>))
+import           Control.Arrow                  ((&&&), (***))
+import           Control.DeepSeq                (NFData, force)
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.IO.Class           (MonadIO, liftIO)
-import           Control.Parallel.Strategies      hiding (r0)
-import           Data.Function                    (on)
-import           Data.List                        (find, groupBy, intercalate, partition,
-                                                   sortBy)
-import qualified Data.Map.Strict                  as M
-import           Data.Maybe                       (fromMaybe, isJust)
+import           Control.Monad.IO.Class         (liftIO)
+import           Control.Monad.IO.Class         (MonadIO, liftIO)
+import           Control.Parallel.Strategies    hiding (r0)
+import           Data.Function                  (on)
+import           Data.List                      (find, groupBy, intercalate, partition,
+                                                 sortBy)
+import qualified Data.Map.Strict                as M
+import           Data.Maybe                     (fromMaybe, isJust)
 import           System.Directory
 import           System.IO
 import           System.Random
@@ -120,10 +117,10 @@ nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
   | otherwise = do
-    rand <- liftSimple $ randomRIO (0, 1)
+    rand <- liftIO $ randomRIO (0, 1)
     if rand < explore
       then do
-        r <- liftSimple $ randomRIO (0, length as - 1)
+        r <- liftIO $ randomRIO (0, length as - 1)
         return (borl, True, as !! r)
       else case borl ^. algorithm of
              AlgBORL _ _ _ decideVPlusPsi _ -> do
@@ -148,7 +145,7 @@ nextAction borl
                  then return (borl, False, head bestV)
                  else if length bestE > 1
                         then do
-                          r <- liftSimple $ randomRIO (0, length bestE - 1)
+                          r <- liftIO $ randomRIO (0, length bestE - 1)
                           return (borl, False, bestE !! r)
                         else return (borl, False, headE bestE)
              AlgBORLVOnly {} -> singleValueNextAction (vValue False borl state . fst)
@@ -168,7 +165,7 @@ nextAction borl
                  then return (borl, False, head bestR1)
                  else if length bestR0 > 1
                         then do
-                          r <- liftSimple $ randomRIO (0, length bestR0 - 1)
+                          r <- liftIO $ randomRIO (0, length bestR0 - 1)
                           return (borl, False, bestR0 !! r)
                         else return (borl, False, headDqnAvgRewFree bestR0)
 
@@ -214,7 +211,7 @@ stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
-  (reward, stateNext, episodeEnd) <- liftSimple $ action state
+  (reward, stateNext, episodeEnd) <- liftIO $ action state
   let applyToReward r@(RewardFuture storage) = applyState storage state
       applyToReward r                        = r
       updateFutures = map (over futureReward applyToReward)
@@ -240,27 +237,27 @@ execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFu
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   when (borl ^. t == 0) $ forM_ [fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
-    liftSimple $ doesFileExist f >>= \x -> when x (removeFile f)
+    liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
   borl <- writeDebugFiles borl
 #endif
   (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
   -- File IO Operations
   when (period == 0) $ do
-    liftSimple $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
-    liftSimple $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
-    liftSimple $ writeFile fileReward "Period\tReward\n"
+    liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
+    liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
+    liftIO $ writeFile fileReward "Period\tReward\n"
   let strRho = show (fromMaybe 0 (getRhoVal' calc))
       strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
       strR1 = show $ fromMaybe 0 (getR1ValState' calc)
       avg xs = sum xs / fromIntegral (length xs)
-  liftSimple $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+  liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
   let (eNr, eStart) = borl ^. episodeNrStart
       eLength = borl ^. t - eStart
-  when (getEpisodeEnd calc) $ liftSimple $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
-  liftSimple $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
+  when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
+  liftIO $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
   -- update values
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
@@ -287,10 +284,10 @@ writeDebugFiles borl = do
     if borl ^. t > 0
       then return borl
       else do
-        liftSimple $ writeFile fileDebugStateValues ""
-        liftSimple $ writeFile fileDebugPsiVValues ""
-        liftSimple $ writeFile fileDebugPsiWValues ""
-        liftSimple $ writeFile fileDebugStateValuesNrStates "-1"
+        liftIO $ writeFile fileDebugStateValues ""
+        liftIO $ writeFile fileDebugPsiVValues ""
+        liftIO $ writeFile fileDebugPsiWValues ""
+        liftIO $ writeFile fileDebugStateValuesNrStates "-1"
         borl' <-
           if isAnn
             then return borl
@@ -300,12 +297,12 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        liftSimple $ forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
-        liftSimple $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
+        liftIO $ forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
+        liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
           else do
-            liftSimple $ putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
+            liftIO $ putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
             return $ putStateFeatList borl stateFeats
   let stateFeats
         | isDqn = getStateFeatList (borl' ^. proxies . r1)
@@ -314,7 +311,7 @@ writeDebugFiles borl = do
         | isDqn && isTensorflow (borl' ^. proxies . r1) = True
         | isTensorflow (borl' ^. proxies . v) = True
         | otherwise = False
-  len <- liftSimple $ read <$> readFile fileDebugStateValuesNrStates
+  len <- liftIO $ read <$> readFile fileDebugStateValuesNrStates
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
@@ -325,12 +322,12 @@ writeDebugFiles borl = do
              then rValueFeat borl' RBig (init xs) (round $ last xs)
              else vValueFeat False borl' (init xs) (round $ last xs))
         stateFeats
-    liftSimple $ appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
+    liftIO $ appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
       psiVValues <- mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
-      liftSimple $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
+      liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
       psiWValues <- mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
-      liftSimple $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
+      liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
   return borl'
   where
     getStateFeatList Scalar {} = []

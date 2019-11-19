@@ -8,26 +8,31 @@
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
-import           Control.Monad         (unless, void, zipWithM)
-import qualified Data.ByteString       as BS
-import qualified Data.ByteString.Char8 as B8
-import           Data.List             (genericLength)
-import           Data.Maybe            (fromMaybe, isJust)
+import           Control.Monad          (unless, void, zipWithM)
+import           Control.Monad          (zipWithM_)
+import           Control.Monad.IO.Class
+import           Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString        as BS
+import qualified Data.ByteString.Char8  as B8
+import           Data.Function          (on)
+import           Data.List              (foldl', genericLength, groupBy, sortBy)
+import qualified Data.Map.Strict        as M
+import           Data.Maybe             (fromMaybe, isJust)
 import           Data.Serialize
-import           Data.Serialize.Text   ()
-import           Data.Text             (Text)
-import qualified Data.Vector           as V
+import           Data.Serialize.Text    ()
+import           Data.Text              (Text)
+import qualified Data.Vector            as V
 import           System.Directory
 import           System.IO.Temp
 import           System.IO.Unsafe
 import           System.Random
 
 
-import qualified TensorFlow.Core       as TF
-import qualified TensorFlow.Ops        as TF hiding (initializedVariable,
-                                              zeroInitializedVariable)
-import qualified TensorFlow.Output     as TF (ControlNode (..), NodeName (..))
-import qualified TensorFlow.Tensor     as TF (tensorNodeName, tensorRefFromName)
+import qualified TensorFlow.Core        as TF
+import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
+                                               zeroInitializedVariable)
+import qualified TensorFlow.Output      as TF (ControlNode (..), NodeName (..))
+import qualified TensorFlow.Tensor      as TF (tensorNodeName, tensorRefFromName)
 
 
 import           ML.BORL.Types
@@ -69,8 +74,8 @@ instance Serialize TensorflowModel' where
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName
-            bModel <- liftSimple $ BS.readFile pathModel
-            bTrain <- liftSimple $ BS.readFile pathTrain
+            bModel <- liftIO $ BS.readFile pathModel
+            bTrain <- liftIO $ BS.readFile pathTrain
             return (checkpointBaseFileName tf, bModel, bTrain)
     put mBasePath
     put bytesModel
@@ -154,13 +159,21 @@ forwardRun model inp =
       | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
       | otherwise = separateInputRows len (drop len xs) (take len xs : acc)
 
+
 backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Double], ActionIndex), Double)] -> m ()
 backwardRunRepMemData model values = do
-  let inputs = map (map realToFrac.fst.fst) values
+  let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) (map realToFrac inp) [(act, realToFrac out)] m) mempty values
+  let inputs = M.keys valueMap
+        -- map (map realToFrac.fst.fst) values
   outputs <- forwardRun model inputs
   let minmax = max (-trainMaxVal) . min trainMaxVal
-  let labels = zipWith (\((_,idx), val) outp -> replace idx (minmax $ realToFrac val) outp) values outputs
-  -- Simple $ zipWithM_ (\(((_,idx),val), o) (inp,l) -> putStrLn $ show idx ++ ": " ++ show inp ++ " \tout: " ++ show o ++ " l: " ++ show l ++ " val: " ++ show val) (zip values outputs) (zip inputs labels)
+  -- let labels = zipWith (\((_,idx), val) outp -> replace idx (minmax $ realToFrac val) outp) values outputs
+  let labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> replace idx (minmax groundTruth) vec))) (M.elems valueMap) outputs
+  -- liftIO $
+  --   zipWithM_
+  --     (\(((_, idx), val), o) (inp, l) -> putStrLn $ show idx ++ ": " ++ show inp ++ " \tout: " ++ show o ++ " l: " ++ show l ++ " val: " ++ show val)
+  --     (zip values outputs)
+  --     (zip inputs labels)
   backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.
@@ -195,7 +208,7 @@ saveModelWithLastIO model =
 saveModel :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m TensorflowModel'
 saveModel model inp lab = do
   let tempDir = getCanonicalTemporaryDirectory >>= flip createTempDirectory ""
-  basePath <- maybe (liftSimple tempDir) return (checkpointBaseFileName model)
+  basePath <- maybe (liftIO tempDir) return (checkpointBaseFileName model)
   let pathModel = B8.pack $ basePath ++ "/" ++ modelName
       pathTrain = B8.pack $ basePath ++ "/" ++ trainName
   let inRef = getRef (inputLayerName $ tensorflowModel model)

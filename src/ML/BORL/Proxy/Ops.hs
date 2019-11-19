@@ -32,6 +32,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Lens
 import           Control.Monad
+import           Control.Monad.IO.Class       (liftIO)
 import           Control.Parallel.Strategies  hiding (r0)
 import           Data.Function                (on)
 import           Data.List                    (foldl', sortBy, transpose)
@@ -93,8 +94,8 @@ insert borl _ state aNr randAct rew stateNext episodeEnd getCalc pxs
     (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing) = do
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
-  -- forkMv' <- liftSimple $ doFork $ P.insert period label vValStateNew mv
-  -- mv' <- liftSimple $ collectForkResult forkMv'
+  -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
+  -- mv' <- liftIO $ collectForkResult forkMv'
   let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
   pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
@@ -112,14 +113,14 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 (Just replMem))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = pV ^?! proxyNNConfig
-    mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
+    mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -171,14 +172,14 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
   | proxy ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftSimple $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = proxy ^?! proxyNNConfig
-    mems <- liftSimple $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
+    mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -217,13 +218,13 @@ cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}
 
 emptyCache :: MonadBorl' m => m ()
-emptyCache = liftSimple $ modifyMVar_ cacheMVar (const mempty)
+emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
 
 addCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> [Double] -> m ()
-addCache k v = liftSimple $ modifyMVar_ cacheMVar (return . M.insert k v)
+addCache k v = liftIO $ modifyMVar_ cacheMVar (return . M.insert k v)
 
 lookupCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> m (Maybe [Double])
-lookupCache k = liftSimple $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
+lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
@@ -243,7 +244,7 @@ insertProxyMany period xs px
   | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
   | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet False period px
-  | period == memSize - 1 = liftSimple (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
+  | period == memSize - 1 = liftIO (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
   | otherwise = emptyCache >> trainBatch xs px >>= updateNNTargetNet False period
   where
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams)
@@ -305,12 +306,12 @@ trainMSE _ _ _ px@Table{} = return px
 trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | mse < mseMax = do
-    liftSimple $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
+    liftIO $ putStrLn $ "Final MSE for " ++ show tp ++ ": " ++ show mse
     return px
   | otherwise = do
-    datasetShuffled <- liftSimple $ shuffleM dataset
+    datasetShuffled <- liftIO $ shuffleM dataset
     let net' = foldl' (trainGrenade lp) netW (zipWith (curry return) (map fst datasetShuffled) (map snd datasetShuffled))
-    when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+    when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
     fmap force <$> trainMSE ((+ 1) <$> mPeriod) dataset lp $ Grenade net' net' tab tp config nrActs
   where
     mseMax = fromJust (config ^. trainMSEMax)
@@ -326,7 +327,7 @@ trainMSE mPeriod dataset lp px@(Grenade _ netW tab tp config nrActs)
 trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
   | otherwise = do
-    datasetShuffled <- liftSimple $ shuffleM dataset
+    datasetShuffled <- liftIO $ shuffleM dataset
     let mseMax = fromJust (config ^. trainMSEMax)
         kFullScaled = map (first (map realToFrac) . fst) dataset :: [([Float], ActionIndex)]
         kScaled = map fst kFullScaled
@@ -343,12 +344,12 @@ trainMSE mPeriod dataset lp px@(TensorflowProxy netT netW tab tp config nrActs)
     mse <- (1 / fromIntegral (length dataset) *) . sum <$> zipWithM (\k vU -> (** 2) . (vU -) <$> forward k) (map fst dataset) (map (min 1 . max (-1)) vScaledDbl) -- scaled or unscaled ones?
     if realToFrac mse < mseMax
       then do
-      liftSimple $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse)
+      liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse)
       void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
       return px
       else do
       when (maybe False ((== 0) . (`mod` 5)) mPeriod) $ do
-        liftSimple $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
+        liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
       trainMSE ((+ 1) <$> mPeriod) dataset lp (TensorflowProxy netT netW tab tp config nrActs)
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
 
@@ -414,7 +415,7 @@ getMinMaxVal p =
   case unCombine (p ^?! proxyType) of
     VTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     WTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
-    W2Table -> Just (5 * p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, 5 * p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
+    W2Table -> Just (50 * p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, 50 * p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
     R0Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR0Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR0Value)
     R1Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR1Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR1Value)
     PsiVTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)

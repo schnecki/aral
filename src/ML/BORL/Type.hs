@@ -209,15 +209,15 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
-  v <- liftSimple $ nnSA VTable 0
-  w <- liftSimple $ nnSA WTable 2
-  w2 <- liftSimple $ nnSA W2Table 4
-  r0 <- liftSimple $ nnSA R0Table 6
-  r1 <- liftSimple $ nnSA R1Table 8
-  psiV <- liftSimple $ nnSA PsiVTable 10
-  psiW <- liftSimple $ nnSA PsiWTable 12
-  psiW2 <- liftSimple $ nnSA PsiW2Table 14
-  repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  v <- liftIO $ nnSA VTable 0
+  w <- liftIO $ nnSA WTable 2
+  w2 <- liftIO $ nnSA W2Table 4
+  r0 <- liftIO $ nnSA R0Table 6
+  r1 <- liftIO $ nnSA R1Table 8
+  psiV <- liftIO $ nnSA PsiVTable 10
+  psiW <- liftIO $ nnSA PsiWTable 12
+  psiW2 <- liftIO $ nnSA PsiW2Table 14
+  repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (v ^?! proxyTFTarget)
   return $
     force $
@@ -268,8 +268,8 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
         nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
-  proxy <- liftSimple $ nnSA CombinedUnichain 0
-  repMem <- liftSimple $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  proxy <- liftIO $ nnSA CombinedUnichain 0
+  repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $

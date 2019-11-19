@@ -3,6 +3,8 @@
 module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
+    , prettyBORLM
+    , prettyBORLMWithStateInverse
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
@@ -18,6 +20,7 @@ import qualified ML.BORL.Proxy         as P
 import           ML.BORL.Proxy.Ops     (LookupType (..), lookupNeuralNetwork, mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
+import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
@@ -163,8 +166,8 @@ prettyAvgRewardType (ByStateValuesAndReward ratio) = printFloat ratio <> "*state
 prettyAvgRewardType (Fixed x)              = "fixed value of " <> double x
 
 
-prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Bool -> Bool -> Bool -> BORL s -> m Doc
-prettyBORLTables t1 t2 t3 borl = do
+prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> s) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
@@ -318,30 +321,27 @@ prettyBORLHead printRho borl = do
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
 -- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 
-
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
-prettyBORL borl =
+prettyBORL = prettyBORLWithStInverse Nothing
+
+prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
+prettyBORLM = prettyBORLTables Nothing True True True
+
+prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> s) -> BORL s -> m Doc
+prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
+
+
+prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> s) -> BORL s -> IO Doc
+prettyBORLWithStInverse mStInverse borl =
   case find isTensorflowProxy (allProxies $ borl ^. proxies) of
-    Nothing -> runMonadBorlIO $ prettyBORLTables True True True borl
+    Nothing -> prettyBORLTables mStInverse True True True borl
     Just _ ->
       runMonadBorlTF $ do
-        buildModels
-        reloadNets (borl ^. proxies . v)
-        reloadNets (borl ^. proxies . w)
-        reloadNets (borl ^. proxies . r0)
-        reloadNets (borl ^. proxies . r1)
-        prettyBORLTables True True True borl
+        restoreTensorflowModels True borl
+        prettyBORLTables mStInverse True True True borl
   where
-    reloadNets px =
-      case px of
-        P.TensorflowProxy netT netW _ _ _ _ -> restoreModelWithLastIO netT >> restoreModelWithLastIO netW
-        _ -> return ()
     isTensorflowProxy P.TensorflowProxy {} = True
     isTensorflowProxy _                    = False
-    buildModels =
-      case find isTensorflowProxy (allProxies $ borl ^. proxies) of
-        Just (P.TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
-        _                                       -> return ()
 
 instance (Ord s, Show s) => Show (BORL s) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyBORL borl
