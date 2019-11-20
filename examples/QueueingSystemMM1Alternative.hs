@@ -27,6 +27,7 @@ import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.List              (genericLength)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
 import           Data.Text              (Text)
 import           GHC.Generics
@@ -162,6 +163,13 @@ policy maxAdmit (St s incoming) act
     rejectAct = head actions
 
 
+allStateInputs :: M.Map [Double] St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+mInverseSt :: NetInputWoAction -> Maybe St
+mInverseSt xs = M.lookup xs allStateInputs
+
+
 instance ExperimentDef (BORL St)
   -- type ExpM (BORL St) = TF.SessionT IO
                                           where
@@ -176,7 +184,7 @@ instance ExperimentDef (BORL St)
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -298,7 +306,7 @@ usermode = do
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   let rl = mkUnichainTabular algorithm initState tblInp actions actFilter params decay (Just initVals)
-  askUser Nothing True usage cmds rl
+  askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
 

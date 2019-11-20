@@ -5,10 +5,10 @@ module ML.BORL.Pretty
     , prettyBORL
     , prettyBORLM
     , prettyBORLMWithStateInverse
+    , prettyBORLWithStInverse
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
-    -- , setPrettyPrintElems
     ) where
 
 
@@ -25,7 +25,7 @@ import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Arrow         (first, second, (&&&))
+import           Control.Arrow         (first, second, (&&&), (***))
 import           Control.Lens
 import           Control.Monad         (when)
 import           Data.Function         (on)
@@ -61,13 +61,13 @@ printFloatWith :: Int -> Double -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
 
-prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> Maybe k') -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
 
 prettyTableRows ::
-     (MonadBorl' m, Show k, Ord k, Eq k, Ord k', Show k')
+     (MonadBorl' m, Show k, Ord k, Eq k)
   => BORL k
-  -> (NetInputWoAction -> Maybe k')
+  -> (NetInputWoAction -> Maybe (Maybe k, String))
   -> (ActionIndex -> Doc)
   -> (([Double], ActionIndex) -> Double -> m Double)
   -> P.Proxy
@@ -77,23 +77,20 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
     P.Table m _ ->
       let mkAct idx = actionName $ snd $ (borl ^. actionList) !! (idx `mod` length (borl ^. actionList))
           mkInput k = text (filter (/= '"') $ show $ map (\x -> if x < 0 then printFloat x else "+" <> printFloat x) k)
-      in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return ( mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
+      in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return (mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True pr
-      let printFun (kDoc, (valT, valW)) = kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW
+      let printFun (kDoc, (valT, valW)) | isEmpty kDoc = []
+                                        | otherwise = [kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW]
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
-      return $ map printFun (unfoldActs mtrue)
-
-
-prettyActionEntry :: (Show k') => (k -> k') -> (ActionIndex -> Doc) -> k -> ActionIndex -> Doc
-prettyActionEntry pAct pActIdx act actIdx = text (show $ pAct act) <> colon <+> pActIdx actIdx
+      return $ concatMap printFun (unfoldActs mtrue)
 
 
 mkListFromNeuralNetwork ::
-     (MonadBorl' m, Show k, Ord k, Eq k, Show k')
+     (MonadBorl' m, Show k, Ord k, Eq k)
   => BORL k
-  -> (NetInputWoAction -> Maybe k')
+  -> (NetInputWoAction -> Maybe (Maybe k, String))
   -> (ActionIndex -> Doc)
   -> Bool
   -> P.Proxy
@@ -106,20 +103,29 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
     then do
       let inp = map fst tbl
       let tableVals = tbl
-      workerVals <- mapM (\x -> unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType NoScaling subPr)) inp
+      workerVals <- mapM (\x -> unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType (NoScaling $ subPr ^?! proxyType) subPr)) inp
       return $ finalize $ zipWith (\((feat, actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))) tbl workerVals
     else finalize <$> mkNNList borl scaled pr
   where
-    finalize = map (first $ prettyActionEntry prettyState prettyActionIdx)
+    finalize = map (first $ prettyStateActionEntry borl prettyState prettyActionIdx)
     tbl =
       case pr of
-        P.Table t _                     -> M.toList t
-        P.Grenade _ _ p _ cfg _         -> M.toList p
-        P.TensorflowProxy _ _ p _ cfg _ -> M.toList p
-        P.CombinedProxy p _ _           -> M.toList (p ^?! proxyNNStartup)
-        _                               -> error "should not happen"
+        P.Table t _                   -> M.toList t
+        P.Grenade _ _ p _ _ _         -> M.toList p
+        P.TensorflowProxy _ _ p _ _ _ -> M.toList p
+        P.CombinedProxy p _ _         -> M.toList (p ^?! proxyNNStartup)
+        _                             -> error "should not happen"
 
-prettyTablesState :: (MonadBorl' m, Show k, Ord k, Ord k', Show k') => BORL k -> (NetInputWoAction -> Maybe k') -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> Maybe k') -> P.Proxy -> m Doc
+prettyStateActionEntry :: BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
+prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
+  Nothing -> mempty
+  Just (Just st, stRep) | actIdx < length bools && bools !! actIdx -> text stRep <> colon <+> pActIdx actIdx
+                        | otherwise -> mempty
+    where bools = (borl ^. actionFilter) st
+  Just (_, stRep) -> text stRep <> colon <+> pActIdx actIdx
+
+
+prettyTablesState :: (MonadBorl' m, Show s, Ord s) => BORL s -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> Maybe (Maybe s, String)) -> P.Proxy -> m Doc
 prettyTablesState borl p1 pIdx m1 p2 m2 = do
   rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
   rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
@@ -135,12 +141,13 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           p@P.Table{}                   -> p
           P.Grenade _ _ p _ _ _         -> P.Table p 0
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
-          P.CombinedProxy p nr _        -> P.Table (M.filterWithKey (\(_,aIdx) _ -> aIdx >= minKey && aIdx <= maxKey) (p ^?! proxyNNStartup)) 0
+          P.CombinedProxy p nr _        ->
+            P.Table (M.filterWithKey (\(_,aIdx) _ -> aIdx >= minKey && aIdx <= maxKey) (p ^?! proxyNNStartup)) 0
             where nrActs = p ^?! proxyNrActions
                   minKey = nr * nrActs
                   maxKey = minKey + nrActs - 1
 
-prettyAlgorithm ::  BORL s -> (NetInputWoAction -> Maybe [String]) -> (ActionIndex -> Doc) -> Algorithm s -> Doc
+prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm s -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
@@ -189,7 +196,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       m -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
-  docHead <- prettyBORLHead False prettyState borl
+  docHead <- prettyBORLHead' False prettyState borl
   case borl ^. algorithm of
     AlgBORL {}
       -- let addPsiV k v =
@@ -226,15 +233,22 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     subtr (k, v1) (_, v2) = (k, v1 - v2)
-    prettyState st = case mStInverse of
-      Nothing  -> Just $ map showFloat st
-      Just inv -> return . show <$> (inv st)
+    prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
+mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe st) -> [Double] -> Maybe (Maybe st, String)
+mkPrettyState mStInverse st = case mStInverse of
+      Nothing  -> Just (Nothing, unlines $ map showFloat st)
+      Just inv -> (Just . id &&& show) <$> inv st
 
-prettyBORLHead :: (MonadBorl' m, Show s) => Bool -> ([Double] -> Maybe [String]) -> BORL s -> m Doc
-prettyBORLHead printRho prettyStateFun borl = do
-  let prettyState st = fromMaybe ["unkown state"] (prettyStateFun st)
+
+prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
+prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
+
+
+prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> ([Double] -> Maybe (Maybe s, String)) -> BORL s -> m Doc
+prettyBORLHead' printRho prettyStateFun borl = do
+  let prettyState st = fromMaybe ("unkown state: " ++ show st) (snd <$> prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -270,8 +284,8 @@ prettyBORLHead printRho prettyStateFun borl = do
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgDQN {} -> text "Scaling R1 by V Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewardFree {} -> text "Scaling R1 by V Config" <> colon $$ nest nestCols scalingTextDqn) $+$
+       AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
+       AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
@@ -293,11 +307,18 @@ prettyBORLHead printRho prettyStateFun borl = do
                , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
                , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextDqn =
-      case borl ^. proxies . v of
+      case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
+    scalingTextAvgRewardFreeDqn =
+      case borl ^. proxies . r1 of
+        P.Table {} -> text "Tabular representation (no scaling needed)"
+        px         -> textNNConf (px ^?! proxyNNConfig)
+      where
+        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value),
+                                      (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -323,12 +344,15 @@ prettyBORLHead printRho prettyStateFun borl = do
         P.TensorflowProxy {} -> text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Specified in tensorflow model")
         P.CombinedProxy P.TensorflowProxy {} _ _ -> text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Specified in tensorflow model")
         P.CombinedProxy (P.Grenade _ _ _ _ conf _) _ _ -> textGrenadeConf conf
+        _ -> error "nnLearningParams in Pretty.hs"
       where
         textGrenadeConf conf =
           let LearningParameters l m l2 = conf ^. grenadeLearningParams
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 l, printFloatWith 8 m, printFloatWith 8 l2)))
+
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
 -- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
+
 
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
 prettyBORL = prettyBORLWithStInverse Nothing
@@ -340,7 +364,7 @@ prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputW
 prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
-prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> s) -> BORL s -> IO Doc
+prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> IO Doc
 prettyBORLWithStInverse mStInverse borl =
   case find isTensorflowProxy (allProxies $ borl ^. proxies) of
     Nothing -> prettyBORLTables mStInverse True True True borl

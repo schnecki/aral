@@ -508,7 +508,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
         maxV = 1.0 * maxR
         maxW = 150 * maxR
         maxR0 = 2 * maxDiscount defaultGamma0
-        maxR1 = 0.8 * maxDiscount defaultGamma1
+        maxR1 = 1.0 * maxDiscount defaultGamma1
 
 
 -------------------- Helpers --------------------

@@ -211,7 +211,7 @@ instance ExperimentDef (BORL St)
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -372,8 +372,8 @@ alg =
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-stInverse :: [NetInputWoAction] -> St
-stInverse xs = M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe St
+mInverseSt xs = M.lookup xs allStateInputs
 
 usermode :: IO ()
 usermode = do
@@ -386,10 +386,10 @@ usermode = do
       AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
-  askUser Nothing True usage cmds rl
+  askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
 
@@ -400,14 +400,14 @@ type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 2
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet outColumns =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions * outColumns] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions * outColumns] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
@@ -419,7 +419,7 @@ nnConfig =
     , _trainBatchSize = 32
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 200
+    , _scaleParameters = scalingByMaxAbsReward False 120 -- 200
     , _updateTargetInterval = 100 -- 3000
     , _trainMSEMax = Just 0.05
     }

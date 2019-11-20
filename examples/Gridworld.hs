@@ -25,6 +25,7 @@ import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Function            (on)
 import           Data.List                (genericLength, groupBy, sortBy)
+import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import           GHC.Generics
@@ -161,7 +162,7 @@ instance ExperimentDef (BORL St) where
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -296,7 +297,7 @@ usermode = do
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
-  askUser Nothing True usage cmds rl -- maybe increase learning by setting estimate of rho
+  askUser (Just mInverseSt) True usage cmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds =
       zipWith3
@@ -428,6 +429,12 @@ fromIdx :: (Int, Int) -> St
 fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
   where base = replicate 5 [0,0,0,0,0]
 
+
+allStateInputs :: M.Map [Double] St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+mInverseSt :: NetInputWoAction -> Maybe St
+mInverseSt xs = M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) =
