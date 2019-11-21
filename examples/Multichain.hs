@@ -74,10 +74,10 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecay (Just minValues) 0.50 300000 t $
-            exponentialDecayValue alpha Nothing 0.25 300000 t $
-            exponentialDecayValue gamma Nothing 0.25 500000 t $
-            exponentialDecayValue xi Nothing 0.25 500000 t p
+decay t p = exponentialDecayParameters (Just minValues) 0.50 300000 t $
+            exponentialDecayParametersValue alpha Nothing 0.25 300000 t $
+            exponentialDecayParametersValue gamma Nothing 0.25 500000 t $
+            exponentialDecayParametersValue xi Nothing 0.25 500000 t p
   where
     minValues =
       Parameters

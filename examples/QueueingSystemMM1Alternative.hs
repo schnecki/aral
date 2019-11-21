@@ -234,7 +234,7 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecay (Just minValues) 0.50 200000 t p
+decay t p = exponentialDecayParameters (Just minValues) 0.50 200000 t p
   where
     minValues =
       Parameters

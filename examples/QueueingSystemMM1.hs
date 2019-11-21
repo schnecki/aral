@@ -254,7 +254,7 @@ params =
     , _epsilon            = 5
     , _exploration        = 0.8
     , _learnRandomAbove   = 0.0
-    , _zeta               = 0.0
+    , _zeta               = 0.03
     , _xi                 = 0.01
     , _disableAllLearning = False
     }
@@ -284,7 +284,7 @@ decay :: Decay
 decay t p
   | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg =
     foldl
-      (\p (f, rate, minVal) -> exponentialDecayValue f (Just minVal) rate 30000 t p)
+      (\p (f, rate, minVal) -> exponentialDecayParametersValue f (Just minVal) rate 30000 t p)
       paramsV
       [ (alpha, 0.5, 0.00001)
       , (alphaANN, 0.5, 0.00001)
@@ -297,12 +297,12 @@ decay t p
       , (exploration, 0.5, 0.01)
       ]
   | otherwise =
-    exponentialDecay (Just minValues) 0.50 300000 t $
-    exponentialDecayValue alpha (Just 0) 0.25 100000 t $
-    exponentialDecayValue alpha (Just 0) 0.25 300000 t $
-    exponentialDecayValue alphaANN (Just 0) 0.25 100000 t $
-    exponentialDecayValue alphaANN (Just 0) 0.25 300000 t $
-    exponentialDecayValue gamma (Just 0) 0.25 500000 t $ exponentialDecayValue xi (Just 0) 0.25 500000 t $ exponentialDecayValue exploration (Just 0.01) 0.50 200000 t p
+    exponentialDecayParameters (Just minValues) 0.50 300000 t $
+    exponentialDecayParametersValue alpha (Just 0) 0.25 100000 t $
+    exponentialDecayParametersValue alpha (Just 0) 0.25 300000 t $
+    exponentialDecayParametersValue alphaANN (Just 0) 0.25 100000 t $
+    exponentialDecayParametersValue alphaANN (Just 0) 0.25 300000 t $
+    exponentialDecayParametersValue gamma (Just 0) 0.25 500000 t $ exponentialDecayParametersValue xi (Just 0) 0.25 500000 t $ exponentialDecayParametersValue exploration (Just 0.01) 0.50 200000 t p
   where
     minValues =
       Parameters
@@ -366,9 +366,10 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+        AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
@@ -387,8 +388,8 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
@@ -419,9 +420,9 @@ nnConfig =
     , _trainBatchSize = 32
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 120 -- 200
+    , _scaleParameters = scalingByMaxAbsReward False 70 -- 200
     , _updateTargetInterval = 100 -- 3000
-    , _trainMSEMax = Just 0.05
+    , _trainMSEMax = Nothing -- Just 0.05
     }
 
 netInp :: St -> [Double]

@@ -112,7 +112,7 @@ policy s a
   | s == fromIdx (0, 2) = []
   | a == actRand = []
   | otherwise =
-    mkProbability $ -- filter filterColumn $
+    mkProbability $ -- map head $
     filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
   where
     sa' = ((row, col), a)
@@ -162,7 +162,7 @@ instance ExperimentDef (BORL St) where
   runStep rl _ _ =
     liftIO $ do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           results =
@@ -205,24 +205,24 @@ params =
     , _epsilon            = 1.0
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.0
-    , _zeta               = 0.0
+    , _zeta               = 0.15
     , _xi                 = 0.0075
     , _disableAllLearning = False
     }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecay (Just minValues) 0.05 300000 t
+decay t = exponentialDecayParameters (Just minValues) 0.05 300000 t
   where
     minValues =
       Parameters
         { _alpha              = 0.000
         , _alphaANN           = 0.5
-        , _beta               = 0.005
+        , _beta               = 0.0005
         , _betaANN            = 1.0
-        , _delta              = 0.005
+        , _delta              = 0.0005
         , _deltaANN           = 1.0
-        , _gamma              = 0.005
+        , _gamma              = 0.0005
         , _gammaANN           = 1.0
         , _epsilon            = 0.05
         , _exploration        = 0.001
@@ -292,12 +292,12 @@ usermode = do
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
-  askUser (Just mInverseSt) True usage cmds rl -- maybe increase learning by setting estimate of rho
+  askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds =
       zipWith3
@@ -331,12 +331,16 @@ nnConfig :: NNConfig
 nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
-  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+  , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      = scalingByMaxAbsReward False 6
+  , _scaleParameters      =
+    -- ScalingNetOutParameters (-10) 10 (-25) 25 (-15) 15 (-25) 25
+    -- scalingByMaxAbsReward False 6
+    scalingByMaxAbsReward False 6
   , _updateTargetInterval = 100 -- 3000
   , _trainMSEMax          = Nothing -- Just 0.03
   }
+
 
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
@@ -344,9 +348,7 @@ netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurr
 tblInp :: St -> [Double]
 tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
-
 names = ["random", "up   ", "down ", "left ", "right"]
-
 
 initState :: St
 initState = fromIdx (2,2)
@@ -433,8 +435,8 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: NetInputWoAction -> Maybe St
-mInverseSt xs = M.lookup xs allStateInputs
+mInverseSt :: Maybe (NetInputWoAction -> Maybe St)
+mInverseSt = Just $ \xs -> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) =

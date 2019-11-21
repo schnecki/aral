@@ -506,7 +506,7 @@ scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
-        maxW = 150 * maxR
+        maxW = 50 * maxR
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
 

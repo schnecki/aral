@@ -118,11 +118,11 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
 
 prettyStateActionEntry :: BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
 prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
-  Nothing -> mempty
+  Nothing               -> mempty
   Just (Just st, stRep) | actIdx < length bools && bools !! actIdx -> text stRep <> colon <+> pActIdx actIdx
                         | otherwise -> mempty
-    where bools = (borl ^. actionFilter) st
-  Just (_, stRep) -> text stRep <> colon <+> pActIdx actIdx
+    where bools = take (length $ borl ^. actionList) $ (borl ^. actionFilter) st
+  Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
 
 
 prettyTablesState :: (MonadBorl' m, Show s, Ord s) => BORL s -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> Maybe (Maybe s, String)) -> P.Proxy -> m Doc
@@ -141,8 +141,7 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
           p@P.Table{}                   -> p
           P.Grenade _ _ p _ _ _         -> P.Table p 0
           P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
-          P.CombinedProxy p nr _        ->
-            P.Table (M.filterWithKey (\(_,aIdx) _ -> aIdx >= minKey && aIdx <= maxKey) (p ^?! proxyNNStartup)) 0
+          P.CombinedProxy p nr _        -> P.Table (M.filterWithKey (\(_,aIdx) _ -> aIdx >= minKey && aIdx <= maxKey) (p ^?! proxyNNStartup)) 0
             where nrActs = p ^?! proxyNrActions
                   minKey = nr * nrActs
                   maxKey = minKey + nrActs - 1
@@ -237,9 +236,10 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
 mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe st) -> [Double] -> Maybe (Maybe st, String)
-mkPrettyState mStInverse st = case mStInverse of
-      Nothing  -> Just (Nothing, unlines $ map showFloat st)
-      Just inv -> (Just . id &&& show) <$> inv st
+mkPrettyState mStInverse netinp =
+  case mStInverse of
+    Nothing  -> Just (Nothing, show $ map showFloat netinp)
+    Just inv -> (Just &&& show) <$> inv netinp
 
 
 prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
@@ -273,6 +273,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Learn From Random Actions until Expl. hits" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
+    nnTargetUpdate $+$
     nnBatchSize $+$
     nnReplMemSize $+$
     nnLearningParams $+$
@@ -325,6 +326,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
+    nnTargetUpdate =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        px         -> textTargetUpdate (px ^?! proxyNNConfig)
+      where
+        textTargetUpdate conf = text "NN Target Replacment Interval" <> colon $$ nest nestCols (int $ conf ^. updateTargetInterval)
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty

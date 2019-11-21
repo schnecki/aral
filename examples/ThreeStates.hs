@@ -166,7 +166,7 @@ params =
     }
 
 decay :: Decay
-decay = exponentialDecay (Just minValues) 0.05 100000
+decay = exponentialDecayParameters (Just minValues) 0.05 100000
   where
     minValues =
       Parameters
@@ -181,7 +181,7 @@ decay = exponentialDecay (Just minValues) 0.05 100000
         , _epsilon = 0.05
         , _exploration = 0.01
         , _learnRandomAbove = 0.1
-        , _zeta = 1.0
+        , _zeta = 0.15
         , _xi = 0.2
         , _disableAllLearning = False
         }

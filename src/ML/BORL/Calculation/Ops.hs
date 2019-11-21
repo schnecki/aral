@@ -13,6 +13,7 @@ module ML.BORL.Calculation.Ops
 
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
+import           ML.BORL.Decay                  (exponentialDecayValue)
 import           ML.BORL.NeuralNetwork.NNConfig
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
@@ -110,7 +111,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           ByMovAvg _ -> error "ByMovAvg is not allowed in multichain setups"
           ByReward -> reward
           ByStateValues -> reward + vValStateNext - vValState
-          ByStateValuesAndReward ratio -> ratio * (reward + vValStateNext - vValState) + (1-ratio) * reward
+          ByStateValuesAndReward ratio -> ratio * (reward + vValStateNext - vValState) + (1 - ratio) * reward
   let rhoVal' alphaVal =
         max rhoMinimumState $
         case avgRewardType of
@@ -120,7 +121,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' alp -- rhoState
+        | otherwise = (1 - expSmthPsi / 100) * rhoMinimumState + expSmthPsi / 100 * rhoVal' alp -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' alp - rhoVal) (subtract (rhoVal' alp) <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -147,37 +148,13 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
   -- enforce values
-  let loss x = 0.5 * signum x * x ^ 2
-  let wValStateNew betaVal
-        | randomAction && not learnFromRandom = wValState' betaVal
-        | otherwise = wValState' betaVal -- + xiVal * loss psiW2State'
-        -- | randomAction && not learnFromRandom = wValState' betaVal
-        -- | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
-        --    (1-xiVal) * wValState' dlt + xiVal * (wValState' dlt + loss psiWState')
-        -- | otherwise =
-        --    (1-xiVal) * wValState' dlt + xiVal * (wValState' dlt + loss psiW2State') -- original !!!
-        -- let vValStateNew betaVal
-        -- | randomAction && not learnFromRandom = vValState' betaVal
-        -- | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 =
-        --    (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + loss psiVState')
-        -- | otherwise =
-        --    (1-xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + loss psiWState') -- original !!!
   let vValStateNew betaVal
-        | randomAction && not learnFromRandom = vValState' betaVal
+        | randomAction -- && not learnFromRandom
+         = vValState' betaVal
         | otherwise = vValState' betaVal + xiVal * err
         where
-          err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
-  -- let vValStateNew betaVal
-  --       | randomAction && not learnFromRandom = vValState' betaVal
-  --       -- | abs psiVState' > params' ^. epsilon && period `mod` 2 == 0 = vValState' betaVal + xiVal * psiVState'
-  --       | otherwise = vValState' betaVal + xiVal * loss err
-  --         -- psiWState'
-  --       -- | randomAction && not learnFromRandom = vValState' betaVal
-  --       -- | otherwise =
-  --       --    (1 - xiVal) * vValState' betaVal + xiVal * (vValState' betaVal + err)
-  --       where
-  --       --   err = signum psiWState' * psiWState'^2
-  --         err = psiVState' + 0.03 * psiWState' -- 0.01 * psiW2State'
+          err = psiVState' + zetaVal * psiWState' - zetaVal^(2::Int) * psiW2State'
+          -- decay = exponentialDecayValue Nothing 0.5 30000 period
   when (period == 0) $ liftIO $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftIO $
     appendFile
@@ -189,10 +166,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getRhoVal' = Just $ rhoVal' (ite (isANN rho rho) alpANN alp)
       , getPsiVValState' = Just psiVState'
       , getVValState' = Just $ vValStateNew (ite (isANN v v) btaANN bta)
-      , getPsiWValState' -- Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (psiWState')
-         = Just psiWState'
-      , getWValState' -- Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (wValStateNew (ite (isANN w w) dltANN dlt))
-         = Just (wValStateNew (ite (isANN w w) dltANN dlt))
+      , getPsiWValState' = Just psiWState'
+      , getWValState' = Just (wValState' (ite (isANN w w) dltANN dlt))
       , getPsiW2ValState' = Just psiW2State'
       , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (w2ValState' (ite (isANN w2 w2) (0.5 * dltANN) (0.5 * dlt)))
       , getR0ValState' = Just r0ValState'

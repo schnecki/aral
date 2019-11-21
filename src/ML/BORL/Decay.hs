@@ -27,11 +27,11 @@ type DecaySteps = Integer
 --   }
 
 
--- | Exponential Decay with possible minimum values. All ANN parameters and the minimum learning rate for random actions
--- are not decayed!
-exponentialDecay :: Maybe Parameters -> DecayRate -> DecaySteps -> Decay
-exponentialDecay Nothing rate steps t p = exponentialDecay (Just (Parameters 0 0 0 0 0 0 0 0 0 0 0 0 0 False)) rate steps t p
-exponentialDecay (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mGaANN mEps mExp mRand mZeta mXi _)) rate steps t (Parameters alp alpANN bet betANN del delANN ga gaANN eps exp rand zeta xi disable) =
+-- | Exponential Decay with possible minimum values. All ANN parameters, the minimum learning rate for random actions,
+-- and zeta are not decayed!
+exponentialDecayParameters :: Maybe Parameters -> DecayRate -> DecaySteps -> Decay
+exponentialDecayParameters Nothing rate steps t p = exponentialDecayParameters (Just (Parameters 0 0 0 0 0 0 0 0 0 0 0 0 0 False)) rate steps t p
+exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mGaANN mEps mExp mRand mZeta mXi _)) rate steps t (Parameters alp alpANN bet betANN del delANN ga gaANN eps exp rand zeta xi disable) =
   Parameters
     (max mAlp $ decay * alp)
     (max mAlpANN alpANN)        -- no decay
@@ -44,15 +44,20 @@ exponentialDecay (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mG
     (max mEps $ decay * eps)
     (max mExp $ decay * exp)
     (max mRand rand)            -- no decay
-    (max mZeta $ decay * zeta)
+    (max mZeta zeta)  -- no decay
     (max mXi $ decay * xi)
     disable
   where
     decay = rate ** (fromIntegral t / fromIntegral steps)
 
 
-exponentialDecayValue :: ASetter Parameters Parameters Double Double -> Maybe Double -> DecayRate -> DecaySteps -> Decay
-exponentialDecayValue alpha mMin rate steps t = over alpha (\v -> max (fromMaybe 0 mMin) $ decay * v)
+exponentialDecayParametersValue :: ASetter Parameters Parameters Double Double -> Maybe Double -> DecayRate -> DecaySteps -> Decay
+exponentialDecayParametersValue accessor mMin rate steps t = over accessor (\v -> max (fromMaybe 0 mMin) $ decay * v)
+  where decay = rate ** (fromIntegral t / fromIntegral steps)
+
+
+exponentialDecayValue :: Maybe Double -> DecayRate -> DecaySteps -> Period -> Double -> Double
+exponentialDecayValue mMin rate steps t v = max (fromMaybe 0 mMin) (decay * v)
   where decay = rate ** (fromIntegral t / fromIntegral steps)
 
 

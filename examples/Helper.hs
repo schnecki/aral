@@ -55,26 +55,26 @@ askUser mInverse showHelp addUsage cmds ql = do
           l <- getLine
           case reads l :: [(Integer, String)] of
             [(often, _)] -> do
-              ql' <-
-                runMonadBorlTF $ do
-                  restoreTensorflowModels True ql
-                  borl' <-
-                    foldM
-                      (\q _ -> do
-                         q' <- stepsM q nr
-                         output <- prettyBORLMWithStateInverse mInverse q'
-                         liftIO $ print output >> hFlush stdout
-                         return q')
-                      ql
-                      [1 .. often]
-                  saveTensorflowModels borl'
-              askUser mInverse False addUsage cmds ql'
-              -- ql' <- foldM (\q _ -> do
-              --           q' <- time (steps q nr)
-              --           liftIO $ prettyBORLWithStInverse mInverse q' >>= print >> hFlush stdout
-              --           return q'
-              --       ) ql [1 .. often]
+              -- ql' <-
+              --   runMonadBorlTF $ do
+              --     restoreTensorflowModels True ql
+              --     borl' <-
+              --       foldM
+              --         (\q _ -> do
+              --            q' <- stepsM q nr
+              --            output <- prettyBORLMWithStateInverse mInverse q'
+              --            liftIO $ print output >> hFlush stdout
+              --            return q')
+              --         ql
+              --         [1 .. often]
+              --     saveTensorflowModels borl'
               -- askUser mInverse False addUsage cmds ql'
+              ql' <- foldM (\q _ -> do
+                        q' <- time (steps q nr)
+                        liftIO $ prettyBORLWithStInverse mInverse q' >>= print >> hFlush stdout
+                        return q'
+                    ) ql [1 .. often]
+              askUser mInverse False addUsage cmds ql'
 
             _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds
         _ -> do
