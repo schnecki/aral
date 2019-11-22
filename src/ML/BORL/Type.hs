@@ -92,7 +92,7 @@ data BORL s = BORL
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
   , _lastRewards      :: ![Double]                 -- ^ List of X last rewards (head is last received reward)
-  , _psis             :: !(Double, Double, Double) -- ^ Exponentially smoothed psi values.
+  , _psis             :: !(Double, Double, Double, Double) -- ^ Exponentially smoothed psi values.
   , _proxies          :: Proxies                   -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
@@ -152,7 +152,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     SteadyStateValues
     mempty
     mempty
-    (0, 0, 0)
+    (0, 0, 0, 0)
     (Proxies (Scalar 0) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
@@ -223,7 +223,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0)
+      (0, 0, 0, 0)
       (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w psiW2 w2 r0 r1 repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -275,7 +275,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0)
+      (0, 0, 0, 0)
       (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) proxy repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -334,7 +334,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     SteadyStateValues
     mempty
     mempty
-    (0, 0, 0)
+    (0, 0, 0, 0)
     (Proxies (tabSA 0) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
@@ -387,7 +387,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0)
+      (0, 0, 0, 0)
       (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -428,7 +428,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0)
+      (0, 0, 0, 0)
       (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) nn repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -485,7 +485,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0)
+      (0, 0, 0, 0)
       (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
 
 
@@ -503,10 +503,11 @@ mkReplayMemory sz = do
 
 -- | Infer scaling by maximum reward.
 scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
-scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
+scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (-maxW2) (maxW2) (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
         maxW = 50 * maxR
+        maxW2 = 20 * maxW
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
 
@@ -531,17 +532,13 @@ checkGrenade _ mult nnConfig borl
     stInp = length ((borl ^. featureExtractor) (borl ^. s))
     nrActs = length (borl ^. actionList)
 
-
+-- | Perform an action over all proxies (combined proxies are seen once only).
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
-overAllProxies l f borl
-  -- | isCombinedProxy (borl ^. proxies . r0) = foldl' (\b p -> over (proxies . p . l) f b) borl [rhoMinimum, rho, r0]
-  | otherwise = foldl' (\b p -> over (proxies . p . l) f b) borl [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w, r0, r1]
+overAllProxies l f borl = foldl' (\b p -> over (proxies . p . l) f b) borl (allProxiesLenses (borl ^. proxies))
 
 setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
 setAllProxies l = overAllProxies l . const
 
 allProxies :: Proxies -> [Proxy]
-allProxies pxs@Proxies{} = [pxs ^. rhoMinimum, pxs ^. rho, pxs ^?! psiV, pxs ^?! v, pxs ^?! psiW , pxs ^?! w, pxs^?!psiW2, pxs ^?! w2, pxs ^?! r0, pxs ^?! r1]
-allProxies pxs@ProxiesCombinedUnichain{} = [pxs ^. rhoMinimum, pxs ^. rho, _proxy pxs]
-
+allProxies pxs = map (pxs ^. ) (allProxiesLenses pxs)
 

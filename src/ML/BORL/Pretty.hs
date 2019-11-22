@@ -288,8 +288,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
        AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
-      (text "Psi Rho/Psi V/Psi W" <> colon $$
-       nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
+      (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
+       nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
     (if printRho
        then prettyRhoVal
        else empty)

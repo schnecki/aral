@@ -52,7 +52,7 @@ data BORLSerialisable s = BORLSerialisable
   -- Values:
   , serLastVValues    :: ![Double] -- ^ List of X last V values
   , serLastRewards    :: ![Double] -- ^ List of X last rewards
-  , serPsis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
+  , serPsis           :: !(Double, Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
@@ -83,9 +83,10 @@ fromSerialisableWith ::
 fromSerialisableWith f g as aF decay ftExt inp builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) (mapAlgorithm f alg) ph lastV rew psis prS
-      borl' = error "fromSerialisableWith"
-        -- flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) allProxies $
-        -- flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) allProxies borl
+      pxs = borl ^. proxies
+      borl' =
+        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) (allProxiesLenses pxs) $
+        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) (allProxiesLenses pxs) borl
   restoreTensorflowModels False borl'
   return $ force borl'
 

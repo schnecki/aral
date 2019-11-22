@@ -22,6 +22,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork.NNConfig
+import           ML.BORL.NeuralNetwork.Scaling
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                  as P
@@ -265,7 +266,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
   return $
-    set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
+    set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc), fromMaybe 0 (getPsiValW2' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
@@ -337,7 +338,8 @@ writeDebugFiles borl = do
   where
     getStateFeatList Scalar {} = []
     getStateFeatList (Table t _) = map (\(xs, y) -> xs ++ [fromIntegral y]) (M.keys t)
-    getStateFeatList nn = concatMap (\xs -> map (\(idx, _) -> xs ++ [fromIntegral idx]) (borl ^. actionList)) (nn ^. proxyNNConfig . prettyPrintElems)
+    getStateFeatList nn = concatMap (\xs -> map (\(idx, _) -> xs ++ [fromIntegral idx]) acts) (nn ^. proxyNNConfig . prettyPrintElems)
+    acts = borl ^. actionList
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)

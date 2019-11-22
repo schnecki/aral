@@ -49,6 +49,7 @@ import           System.IO.Unsafe             (unsafePerformIO)
 import           System.Random.Shuffle
 
 import           ML.BORL.Calculation.Type
+import           ML.BORL.Decay
 import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
@@ -246,7 +247,7 @@ insertProxyMany period xs px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
   | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet False period px
   | period == memSize - 1 = liftIO (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
-  | otherwise = emptyCache >> trainBatch xs px >>= updateNNTargetNet False period
+  | otherwise = emptyCache >> trainBatch period xs px >>= updateNNTargetNet False period
   where
     netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams)
     config = px ^?! proxyNNConfig
@@ -294,17 +295,20 @@ updateNNTargetNet forceReset period px
 
 
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
-trainBatch :: forall m . (MonadBorl' m) => [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
-trainBatch trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
-  let netW' = foldl' (trainGrenade (config ^. grenadeLearningParams)) netW (map return trainingInstances')
+trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
+trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
+  let netW' = foldl' (trainGrenade lp) netW (map return trainingInstances')
   return $ Grenade netT netW' tab tp config nrActs
   where trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
-trainBatch trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
+        LearningParameters rate mom l2 = config ^. grenadeLearningParams
+        decay = exponentialDecayValue Nothing 0.75 100000 period
+        lp = LearningParameters (decay rate) (decay mom) (decay l2)
+trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   return $ TensorflowProxy netT netW tab tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
-trainBatch _ _ = error "called trainBatch on non-neural network proxy (programming error)"
+trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
 -- | Train until MSE hits the value given in NNConfig.
@@ -431,7 +435,7 @@ getMinMaxVal p =
   case unCombine (p ^?! proxyType) of
     VTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     WTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
-    W2Table -> Just (50 * p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, 50 * p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
+    W2Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinW2Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxW2Value)
     R0Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR0Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR0Value)
     R1Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR1Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR1Value)
     PsiVTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)

@@ -108,12 +108,13 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == fromIdx (0, 2) && a == actRand = map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+  | s == fromIdx (0, 2) && a == actRand =
+    map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
   | s == fromIdx (0, 2) = []
   | a == actRand = []
   | otherwise =
-    mkProbability $ -- map head $
-    filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
+    mkProbability $
+    filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
   where
     sa' = ((row, col), a)
     step ((row, col), a)
@@ -142,6 +143,11 @@ policy s a
       | c > 2 = actionName x == actionName actLeft
         -- actionName x /= actionName actRight
       | otherwise = True
+    filterChance [x] = [x]
+    filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
+      where stepsToBorder :: [Int]
+            stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
+            mkStepsToBorder (r, c) = min (r `mod` 4) (c `mod` 4)
     filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
       where
         dist :: [Int]
@@ -190,6 +196,21 @@ instance ExperimentDef (BORL St) where
         Nothing
     ]
 
+nnConfig :: NNConfig
+nnConfig = NNConfig
+  { _replayMemoryMaxSize  = 10000
+  , _trainBatchSize       = 8
+  , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
+
+  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
+  , _scaleParameters      = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
+    -- scalingByMaxAbsReward False 6
+    -- scalingByMaxAbsReward False 6
+  , _updateTargetInterval = 100 -- 3000
+  , _trainMSEMax          = Nothing -- Just 0.03
+  }
+
+
 -- | BORL Parameters.
 params :: Parameters
 params =
@@ -206,29 +227,29 @@ params =
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.0
     , _zeta               = 0.15
-    , _xi                 = 0.0075
+    , _xi                 = 0.005 -- 0.0075
     , _disableAllLearning = False
     }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecayParameters (Just minValues) 0.05 300000 t
+decay = exponentialDecayParameters (Just minValues) 0.05 100000
   where
     minValues =
       Parameters
         { _alpha              = 0.000
         , _alphaANN           = 0.5
-        , _beta               = 0.0005
+        , _beta               = 0.000
         , _betaANN            = 1.0
-        , _delta              = 0.0005
+        , _delta              = 0.000
         , _deltaANN           = 1.0
-        , _gamma              = 0.0005
+        , _gamma              = 0.000
         , _gammaANN           = 1.0
         , _epsilon            = 0.05
         , _exploration        = 0.001
         , _learnRandomAbove   = 0.0
         , _zeta               = 0.0
-        , _xi                 = 0.0075
+        , _xi                 = 0.00
         , _disableAllLearning = False
         }
 
@@ -325,21 +346,6 @@ modelBuilderCombined colOut =
   inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
-
-
-nnConfig :: NNConfig
-nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 8
-  , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
-  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      =
-    -- ScalingNetOutParameters (-10) 10 (-25) 25 (-15) 15 (-25) 25
-    -- scalingByMaxAbsReward False 6
-    scalingByMaxAbsReward False 6
-  , _updateTargetInterval = 100 -- 3000
-  , _trainMSEMax          = Nothing -- Just 0.03
-  }
 
 
 netInp :: St -> [Double]

@@ -21,3 +21,4 @@ fi
 
 
 # watch 'tail -n 10000 queueLength | awk "{ sum += \$1; n++ } END { if (n > 0) print sum / n ; }"'
+# watch 'tail -n 1000 episodeLength | awk "{ sum += \$2; n++ } END { if (n > 0) print sum / n ; }"'

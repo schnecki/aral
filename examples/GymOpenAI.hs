@@ -152,6 +152,7 @@ main :: IO ()
 main = do
 
   args <- getArgs
+  putStrLn $ "args: " ++ show args
   let name | length args >= 1 = args!!0
            | otherwise = "CartPole-v0"
   let maxReward | length args >= 2  = read (args!!1)

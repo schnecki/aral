@@ -4,29 +4,19 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE TemplateHaskell           #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 
 module ML.BORL.Proxy.Proxies where
 
 import           ML.BORL.NeuralNetwork
-import           ML.BORL.Types                as T
 
-import           Control.Arrow                (first, second)
 import           Control.DeepSeq
 import           Control.Lens
-import           Data.List                    (foldl')
-import qualified Data.Map.Strict              as M
-import           Data.Serialize
-import qualified Data.Set                     as S
-import           Data.Singletons.Prelude.List
 import           GHC.Generics
-import           GHC.TypeLits
-import           Grenade
 import           ML.BORL.Proxy.Type
 
-import           Debug.Trace
 
 -- class Proxies' pxs where
 --   getRhoMinimum :: pxs -> Proxy
@@ -75,6 +65,11 @@ data Proxies =
 -- x f (Foo a b) = (\a' -> Foo a' b) <$> f a
 -- x f (Bar a)   = Bar <$> f a
 
+-- allProxiesLenses :: [(Proxies -> f Proxy) -> Proxies -> f Proxy]
+allProxiesLenses :: Functor f => Proxies -> [(Proxy -> f Proxy) -> Proxies -> f Proxies]
+allProxiesLenses pxs@Proxies {} = [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w2, r0, r1]
+allProxiesLenses pxs@ProxiesCombinedUnichain {} = [rhoMinimum, rho, proxy]
+
 
 rhoMinimum :: Lens' Proxies Proxy
 rhoMinimum f px@Proxies{}  = (\rhoMinimum' -> px { _rhoMinimum = rhoMinimum' }) <$> f (_rhoMinimum px)
@@ -113,11 +108,14 @@ psiW2 :: Lens' Proxies Proxy
 psiW2 f px@Proxies{}  = (\psiW2' -> px { _psiW2 = psiW2' }) <$> f (_psiW2 px)
 psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 6 [])
 
-
 w2 :: Lens' Proxies Proxy
 w2 f px@Proxies{}  = (\w2' -> px { _w2 = w2' }) <$> f (_w2 px)
 w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 7 [])
 
+
+proxy :: Lens' Proxies Proxy
+proxy f px@ProxiesCombinedUnichain{} = (\x -> px {_proxy = x}) <$> f (_proxy px)
+proxy f px@Proxies{} = error "calling proxy on Proxies in ML.BORL.Proxy.Proxies"
 
 replayMemory :: Lens' Proxies (Maybe ReplayMemory)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)

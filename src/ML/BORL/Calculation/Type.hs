@@ -26,9 +26,10 @@ data Calculation = Calculation
   , getW2ValState'    :: Maybe Double
   , getR0ValState'    :: Maybe Double
   , getR1ValState'    :: Maybe Double
-  , getPsiValRho'     :: Maybe Double
-  , getPsiValV'       :: Maybe Double -- ^ Scalar deviation over all states (for output only)
+  , getPsiValRho'     :: Maybe Double  -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'       :: Maybe Double  -- ^ Scalar deviation over all states (for output only)
   , getPsiValW'       :: Maybe Double -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW2'      :: Maybe Double -- ^ Scalar deviation over all states (for output only)
   , getLastVs'        :: Maybe [Double]
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
@@ -52,6 +53,7 @@ avgCalculation xs =
     (avg <$> mapM getPsiValRho' xs)
     (avg <$> mapM getPsiValV' xs)
     (avg <$> mapM getPsiValW' xs)
+    (avg <$> mapM getPsiValW2' xs)
     (mapM (fmap avg . getLastVs') xs)
     (map (avg . getLastRews') xs)
     (all getEpisodeEnd xs)

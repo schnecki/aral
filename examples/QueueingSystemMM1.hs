@@ -352,7 +352,7 @@ experimentMode = do
 
 lpMode :: IO ()
 lpMode = do
-  putStrLn "I am solving the system using linear programming to provide the optimal solution beforehand...\n"
+  putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
   l <- putStr "Enter integer! L=" >> hFlush stdout >> read <$> getLine
   runBorlLpInferWithRewardRepet 1000 (policy l) mRefStateAct >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"

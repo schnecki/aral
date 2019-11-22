@@ -73,7 +73,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
-      (psiValRho, psiValV, psiValW) = borl ^. psis -- exponentially smoothed Psis
+      (psiValRho, psiValV, psiValW, psiValW2) = borl ^. psis -- exponentially smoothed Psis
   let label = (state, aNr)
       epsEnd
         | episodeEnd = 0
@@ -121,11 +121,13 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 100) * rhoMinimumState + expSmthPsi / 100 * rhoVal' alp -- rhoState
+        | otherwise = (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoVal' alp -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' alp - rhoVal) (subtract (rhoVal' alp) <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
-  let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
+  let epsVal = exponentialDecayValue Nothing 0.05 100000 period 0.5
+        -- borl ^. parameters.epsilon
+  let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext - epsVal)
       psiV = reward + vValStateNext - rhoVal' alp - vValState' bta -- should converge to 0
       psiVState' = (1 - bta) * psiVState + bta * psiV
   -- LastVs
@@ -147,6 +149,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
+  let psiValW2' = (1 - expSmth) * psiValW2 + expSmth * abs psiW2State'
   -- enforce values
   let vValStateNew betaVal
         | randomAction -- && not learnFromRandom
@@ -175,6 +178,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiValRho' = Just psiValRho'
       , getPsiValV' = Just psiValV'
       , getPsiValW' = Just psiValW'
+      , getPsiValW2' = Just psiValW2'
       , getLastVs' = Just lastVs'
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
@@ -235,6 +239,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiValRho' = Nothing
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
+      , getPsiValW2' = Nothing
       , getLastVs' = Just lastVs'
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
@@ -268,6 +273,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getPsiValRho' = Nothing
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
+      , getPsiValW2' = Nothing
       , getLastVs' = Nothing
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
@@ -333,6 +339,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getPsiValRho' = Nothing
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
+      , getPsiValW2' = Nothing
       , getLastVs' = Nothing
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
