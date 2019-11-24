@@ -321,15 +321,19 @@ modelBuilder =
 
 
 nnConfig :: NNConfig
-nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
-  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      = scalingByMaxAbsReward False 6
-  , _updateTargetInterval = 3000
-  , _trainMSEMax          = Just 0.03
-  }
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 32
+    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = scalingByMaxAbsReward False 6
+    , _stabilizationAdditionalRho = 0.025
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _updateTargetInterval = 3000
+    , _trainMSEMax = Just 0.03
+    }
 
 netInp :: St -> [Double]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]

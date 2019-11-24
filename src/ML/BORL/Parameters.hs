@@ -8,6 +8,8 @@ import           Control.Lens
 import           Data.Serialize
 import           GHC.Generics
 
+import           ML.BORL.Decay.Type
+
 
 -- Parameters
 data Parameters = Parameters

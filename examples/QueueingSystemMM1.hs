@@ -239,23 +239,40 @@ instance ExperimentDef (BORL St)
         Nothing
     ]
 
+nnConfig :: NNConfig
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 8
+    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.001
+    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.95 100000
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
+       -- scalingByMaxAbsReward False 200
+    , _stabilizationAdditionalRho = 5 -- 0.005
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _updateTargetInterval = 100 -- 3000
+    , _trainMSEMax = Nothing -- Just 0.05
+    }
+
+
 -- | BORL Parameters.
 params :: Parameters
 params =
   Parameters
-    { _alpha              = 0.001
-    , _alphaANN           = 0.001
-    , _beta               = 0.001
+    { _alpha              = 0.01
+    , _alphaANN           = 1
+    , _beta               = 0.01
     , _betaANN            = 1
-    , _delta              = 0.001
+    , _delta              = 0.01
     , _deltaANN           = 1
-    , _gamma              = 0.0005
+    , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 5
-    , _exploration        = 0.8
-    , _learnRandomAbove   = 0.0
-    , _zeta               = 0.03
-    , _xi                 = 0.01
+    , _exploration        = 1.0
+    , _learnRandomAbove   = 0.10
+    , _zeta               = 0.05
+    , _xi                 = 0.03
     , _disableAllLearning = False
     }
 
@@ -264,7 +281,7 @@ paramsV :: Parameters
 paramsV =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.01
+    , _alphaANN           = 1
     , _beta               = 0.05
     , _betaANN            = 1
     , _delta              = 0.05
@@ -273,7 +290,7 @@ paramsV =
     , _gammaANN           = 1
     , _epsilon            = 2
     , _exploration        = 0.8
-    , _learnRandomAbove   = 0.0
+    , _learnRandomAbove   = 0.1
     , _zeta               = 0.0
     , _xi                 = 0.01
     , _disableAllLearning = False
@@ -297,17 +314,19 @@ decay t p
       , (exploration, 0.5, 0.01)
       ]
   | otherwise =
-    exponentialDecayParameters (Just minValues) 0.50 300000 t $
-    exponentialDecayParametersValue alpha (Just 0) 0.25 100000 t $
-    exponentialDecayParametersValue alpha (Just 0) 0.25 300000 t $
-    exponentialDecayParametersValue alphaANN (Just 0) 0.25 100000 t $
-    exponentialDecayParametersValue alphaANN (Just 0) 0.25 300000 t $
-    exponentialDecayParametersValue gamma (Just 0) 0.25 500000 t $ exponentialDecayParametersValue xi (Just 0) 0.25 500000 t $ exponentialDecayParametersValue exploration (Just 0.01) 0.50 200000 t p
+    -- set exploration (exponentialDecayValue (Just 0.001) 0.5 100000 t (p ^. exploration)) $
+    exponentialDecayParameters (Just minValues) 0.25 350000 t p
+    --  $
+    -- exponentialDecayParametersValue alpha (Just 0) 0.25 100000 t $
+    -- exponentialDecayParametersValue alpha (Just 0) 0.25 300000 t $
+    -- exponentialDecayParametersValue alphaANN (Just 0) 0.25 100000 t $
+    -- exponentialDecayParametersValue alphaANN (Just 0) 0.25 300000 t $
+    -- exponentialDecayParametersValue gamma (Just 0) 0.25 500000 t $ exponentialDecayParametersValue xi (Just 0) 0.25 500000 t $ exponentialDecayParametersValue exploration (Just 0.01) 0.50 200000 t p
   where
     minValues =
       Parameters
         { _alpha = 0.0001
-        , _alphaANN = 0.0001
+        , _alphaANN = 1.0
         , _beta = 0.0001
         , _betaANN = 1.0
         , _delta = 0.0001
@@ -316,9 +335,9 @@ decay t p
         , _gammaANN = 1.0
         , _epsilon = 2
         , _exploration = 0.01
-        , _learnRandomAbove = 0.05
+        , _learnRandomAbove = 0.00
         , _zeta = 0.0
-        , _xi = 0.01
+        , _xi = 0.00
         , _disableAllLearning = False
         }
 
@@ -389,7 +408,7 @@ usermode = do
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
@@ -412,18 +431,6 @@ modelBuilderCombinedNet outColumns =
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
-
-nnConfig :: NNConfig
-nnConfig =
-  NNConfig
-    { _replayMemoryMaxSize = 10000
-    , _trainBatchSize = 32
-    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 70 -- 200
-    , _updateTargetInterval = 100 -- 3000
-    , _trainMSEMax = Nothing -- Just 0.05
-    }
 
 netInp :: St -> [Double]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]

@@ -64,15 +64,19 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig
-nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 32
-  , _grenadeLearningParams       = LearningParameters 0.005 0.0 0.0000
-  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      = scalingByMaxAbsReward False 2
-  , _updateTargetInterval = 1000
-  , _trainMSEMax          = Just 0.03
-  }
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 32
+    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = scalingByMaxAbsReward False 2
+    , _stabilizationAdditionalRho = 0.025
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _updateTargetInterval = 1000
+    , _trainMSEMax = Just 0.03
+    }
 
 
 netInp :: St -> [Double]

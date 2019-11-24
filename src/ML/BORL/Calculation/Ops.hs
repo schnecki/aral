@@ -13,8 +13,9 @@ module ML.BORL.Calculation.Ops
 
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
-import           ML.BORL.Decay                  (exponentialDecayValue)
+import           ML.BORL.Decay                  (decaySetup, exponentialDecayValue)
 import           ML.BORL.NeuralNetwork.NNConfig
+import           ML.BORL.NeuralNetwork.Scaling  (scaleMaxVValue, scaleMinVValue)
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                  as P
@@ -29,6 +30,7 @@ import           Control.Monad.IO.Class         (liftIO)
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Function                  (on)
 import           Data.List                      (maximumBy, minimumBy, sortBy)
+import           Data.Maybe                     (fromMaybe)
 import           System.Random                  (randomRIO)
 
 
@@ -63,11 +65,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isANN p p2 = P.isNeuralNetwork (borl ^. proxies . p) && borl ^. t > borl ^?! proxies . p2 . proxyNNConfig . replayMemoryMaxSize
   let alp = params' ^. alpha
-      alpANN = params' ^. alphaANN
+      alpANN = 1.0 -- params' ^. alpha
       bta = params' ^. beta
-      btaANN = params' ^. betaANN
+      btaANN = 1.0 -- params' ^. beta
       dlt = params' ^. delta
-      dltANN = params' ^. deltaANN
+      dltANN = 1.0 -- params' ^. delta
       gamR0 = ite (isANN r0 r0) 1 (params' ^. gamma)
       gamR1 = ite (isANN r1 r1) 1 (params' ^. gamma)
       xiVal = params' ^. xi
@@ -121,13 +123,16 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoVal' alp -- rhoState
+        | otherwise = (1 - expSmthPsi / 100) * rhoMinimumState + expSmthPsi / 100 * rhoVal' alp -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' alp - rhoVal) (subtract (rhoVal' alp) <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
-  let epsVal = exponentialDecayValue Nothing 0.05 100000 period 0.5
-        -- borl ^. parameters.epsilon
-  let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext - epsVal)
+  let mScaleParams = borl ^? proxies . v . proxyNNConfig . scaleParameters
+      mStabVal = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRho
+      mStabValDec = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRhoDecay
+      mRange = (-) <$> (view scaleMaxVValue <$> mScaleParams) <*> (view scaleMinVValue <$> mScaleParams)
+  let stabilization = fromMaybe 0 $ decaySetup <$> mStabValDec <*> pure period <*> mStabVal
+  let vValState' betaVal = (1 - betaVal) * vValState + betaVal * (reward - rhoVal' alp + epsEnd * vValStateNext - stabilization)
       psiV = reward + vValStateNext - rhoVal' alp - vValState' bta -- should converge to 0
       psiVState' = (1 - bta) * psiVState + bta * psiV
   -- LastVs
@@ -152,12 +157,10 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValW2' = (1 - expSmth) * psiValW2 + expSmth * abs psiW2State'
   -- enforce values
   let vValStateNew betaVal
-        | randomAction -- && not learnFromRandom
-         = vValState' betaVal
+        | randomAction && not learnFromRandom = vValState' betaVal
         | otherwise = vValState' betaVal + xiVal * err
         where
-          err = psiVState' + zetaVal * psiWState' - zetaVal^(2::Int) * psiW2State'
-          -- decay = exponentialDecayValue Nothing 0.5 30000 period
+          err = psiVState' + zetaVal * psiWState' - zetaVal ^ (2 :: Int) * psiW2State'
   when (period == 0) $ liftIO $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftIO $
     appendFile

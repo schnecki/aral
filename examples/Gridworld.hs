@@ -201,11 +201,13 @@ nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
-
+  , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
     -- scalingByMaxAbsReward False 6
     -- scalingByMaxAbsReward False 6
+  , _stabilizationAdditionalRho = 0.5
+  , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
   , _updateTargetInterval = 100 -- 3000
   , _trainMSEMax          = Nothing -- Just 0.03
   }
@@ -225,9 +227,9 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 1.0
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.0
+    , _learnRandomAbove   = 0.5
     , _zeta               = 0.15
-    , _xi                 = 0.005 -- 0.0075
+    , _xi                 = 0.005
     , _disableAllLearning = False
     }
 

@@ -91,24 +91,27 @@ modelBuilder nrInp nrOut =
 
 
 nnConfig :: Gym -> Double -> NNConfig
-nnConfig gym maxRew = NNConfig
-  { _replayMemoryMaxSize   = 20000
-  , _trainBatchSize        = 8
-  , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-  , _prettyPrintElems      = ppSts
-  , _scaleParameters       =
-      scalingByMaxAbsReward False 1.5
+nnConfig gym maxRew =
+  NNConfig
+    { _replayMemoryMaxSize = 20000
+    , _trainBatchSize = 8
+    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
+    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _prettyPrintElems = ppSts
+    , _scaleParameters = scalingByMaxAbsReward False 1.5
       -- scalingByMaxAbsReward False maxRew
     -- ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
-  , _updateTargetInterval  = 5000
-  , _trainMSEMax           = Just 0.05
-  }
-
-  where range = getGymRangeFromSpace $ observationSpace gym
-        (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
-        vals = zipWith (\lo hi -> map rnd [lo, lo+(hi-lo)/3..hi]) lows highs
-        rnd x = fromIntegral (round (100*x)) / 100
-        ppSts = take 1000 $ combinations vals
+    , _stabilizationAdditionalRho = 0.025
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _updateTargetInterval = 5000
+    , _trainMSEMax = Just 0.05
+    }
+  where
+    range = getGymRangeFromSpace $ observationSpace gym
+    (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
+    vals = zipWith (\lo hi -> map rnd [lo,lo + (hi - lo) / 3 .. hi]) lows highs
+    rnd x = fromIntegral (round (100 * x)) / 100
+    ppSts = take 1000 $ combinations vals
 
 netInp :: Gym -> St -> [Double]
 netInp gym (St st) = st
