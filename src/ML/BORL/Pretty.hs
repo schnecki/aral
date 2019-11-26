@@ -249,7 +249,7 @@ prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mIn
 
 prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> ([Double] -> Maybe (Maybe s, String)) -> BORL s -> m Doc
 prettyBORLHead' printRho prettyStateFun borl = do
-  let prettyState st = fromMaybe ("unkown state: " ++ show st) (snd <$> prettyStateFun st)
+  let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -258,42 +258,46 @@ prettyBORLHead' printRho prettyStateFun borl = do
         case borl ^. proxies . rho of
           Scalar val -> text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
           _          -> empty
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <> colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. alpha) $+$
-    algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. beta)) $+$
-    algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. delta)) $+$
-    text "Gamma" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. gamma) $+$
-    text "Epsilon" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
-    text "Exploration" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. exploration) $+$
-    text "Learn From Random Actions until Expl. hits" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
-    nnTargetUpdate $+$
-    nnBatchSize $+$
-    nnReplMemSize $+$
-    nnLearningParams $+$
-    text "Algorithm" <>
-    colon $$
-    nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) $+$
-    (case borl ^. algorithm of
-       AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-       AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
-    algDoc
-      (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
-       nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
-    (if printRho
-       then prettyRhoVal
-       else empty)
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
+    if borl ^? proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1 == Just True
+      then mempty
+      else (text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. alpha) $+$ algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. beta)) $+$
+            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. delta)) $+$
+            text "Gamma" <>
+            colon $$
+            nest nestCols (printFloatWith 8 $ params' ^. gamma)) $+$
+           text "Epsilon" <>
+           colon $$
+           nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
+           text "Exploration" <>
+           colon $$
+           nest nestCols (printFloatWith 8 $ params' ^. exploration) $+$
+           text "Learn From Random Actions until Expl. hits" <>
+           colon $$
+           nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
+           nnTargetUpdate $+$
+           nnBatchSize $+$
+           nnReplMemSize $+$
+           nnLearningParams $+$
+           text "Algorithm" <>
+           colon $$
+           nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
+           algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) $+$
+           algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) $+$
+           (case borl ^. algorithm of
+              AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+              AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+              AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
+              AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
+           algDoc
+             (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
+              nest
+                nestCols
+                (text
+                   (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
+           (if printRho
+              then prettyRhoVal
+              else empty)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     scalingText =
@@ -319,8 +323,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value),
-                                      (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
+        textNNConf conf =
+          text
+            (show
+               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

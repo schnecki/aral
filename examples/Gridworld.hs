@@ -201,15 +201,15 @@ nnConfig = NNConfig
   { _replayMemoryMaxSize  = 10000
   , _trainBatchSize       = 8
   , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
-  , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+  , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.05 100000
   , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
   , _scaleParameters      = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
-    -- scalingByMaxAbsReward False 6
-    -- scalingByMaxAbsReward False 6
+                            -- scalingByMaxAbsReward False 10
   , _stabilizationAdditionalRho = 0.5
-  , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+  , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
   , _updateTargetInterval = 100 -- 3000
   , _trainMSEMax          = Nothing -- Just 0.03
+  , _setExpSmoothParamsTo1 = False
   }
 
 
@@ -228,10 +228,26 @@ params =
     , _epsilon            = 1.0
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.5
-    , _zeta               = 0.15
+    , _zeta               = 0.03
     , _xi                 = 0.005
     , _disableAllLearning = False
     }
+  -- Parameters
+  --   { _alpha              = 0.01
+  --   , _alphaANN           = 0.5
+  --   , _beta               = 0.01
+  --   , _betaANN            = 1
+  --   , _delta              = 0.005
+  --   , _deltaANN           = 1
+  --   , _gamma              = 0.01
+  --   , _gammaANN           = 1
+  --   , _epsilon            = 1.0
+  --   , _exploration        = 1.0
+  --   , _learnRandomAbove   = 0.5
+  --   , _zeta               = 0.03
+  --   , _xi                 = 0.005
+  --   , _disableAllLearning = False
+  --   }
 
 -- | Decay function of parameters.
 decay :: Decay
@@ -240,15 +256,15 @@ decay = exponentialDecayParameters (Just minValues) 0.05 100000
     minValues =
       Parameters
         { _alpha              = 0.000
-        , _alphaANN           = 0.5
+        , _alphaANN           = 0.0
         , _beta               = 0.000
-        , _betaANN            = 1.0
+        , _betaANN            = 0
         , _delta              = 0.000
-        , _deltaANN           = 1.0
+        , _deltaANN           = 0
         , _gamma              = 0.000
-        , _gammaANN           = 1.0
+        , _gammaANN           = 0
         , _epsilon            = 0.05
-        , _exploration        = 0.001
+        , _exploration        = 0.01
         , _learnRandomAbove   = 0.0
         , _zeta               = 0.0
         , _xi                 = 0.00
@@ -315,7 +331,7 @@ usermode = do
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
@@ -345,8 +361,8 @@ modelBuilder = modelBuilderCombined 1
 modelBuilderCombined :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
 modelBuilderCombined colOut =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.09, TF.adamBeta2 = 0.0999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 

@@ -102,9 +102,10 @@ nnConfig gym maxRew =
       -- scalingByMaxAbsReward False maxRew
     -- ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
     , _stabilizationAdditionalRho = 0.025
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 5000
     , _trainMSEMax = Just 0.05
+    , _setExpSmoothParamsTo1 = True
     }
   where
     range = getGymRangeFromSpace $ observationSpace gym

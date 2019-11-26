@@ -330,9 +330,10 @@ nnConfig =
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
     , _stabilizationAdditionalRho = 0.025
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 3000
     , _trainMSEMax = Just 0.03
+    , _setExpSmoothParamsTo1 = True
     }
 
 netInp :: St -> [Double]
