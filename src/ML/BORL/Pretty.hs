@@ -160,12 +160,10 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPl
        else "V") <+>
   prettyRefState borl prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType)      = text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType avgRewType
-  where decay = 0.5 ** (fromIntegral (borl ^. t) / 100000)
-        ga1Diff = 1 - ga1
-        ga1' = ga1 + ga1Diff - ga1Diff * decay
-
-prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState)      = text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
+prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =
+  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType avgRewType
+prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
+  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
 
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
 prettyRefState _ _ _ Nothing = mempty
@@ -258,14 +256,24 @@ prettyBORLHead' printRho prettyStateFun borl = do
         case borl ^. proxies . rho of
           Scalar val -> text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
           _          -> empty
+  let getExpSmthParam p paramANN param
+        | isANN && useOne = 1
+        | isANN = params' ^. paramANN
+        | otherwise = params' ^. param
+        where
+          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
+          px = borl ^. proxies . p
   return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
     (if borl ^? proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1 == Just True
-       then mempty
-       else text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. alpha) $+$ algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. beta)) $+$
-            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. delta)) $+$
-            text "Gamma" <>
-            colon $$
-            nest nestCols (printFloatWith 8 $ params' ^. gamma)) $+$
+       then text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 1) $+$
+            algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 1)) $+$
+            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 1)) $+$
+            (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 1))
+       else text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam rho alphaANN alpha) $+$
+            algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam v betaANN beta)) $+$
+            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam w deltaANN delta)) $+$
+            (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam r1 gammaANN gamma))) $+$
     text "Epsilon" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
@@ -275,9 +283,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Learn From Random Actions until Expl. hits" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
-    text "Function Approximation by R1 Config" <>
+    text "Function Approximation (inferred by R1 Config)" <>
     colon $$
-    nest nestCols (text $ show $ borl ^. proxies . r1) $+$
+    nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
     nnTargetUpdate $+$
     nnBatchSize $+$
     nnReplMemSize $+$

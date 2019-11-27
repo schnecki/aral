@@ -65,6 +65,11 @@ data OptimizerRefs
       { adamLearningRateRef :: TF.Tensor TF.Ref Float
       }
 
+prettyOptimizerNames :: OptimizerRefs -> String
+prettyOptimizerNames GradientDescentRefs{} = "Gradient Descent"
+prettyOptimizerNames AdamRefs{}            = "Adam"
+
+
 instance NFData OptimizerRefs where
   rnf (GradientDescentRefs !_) = ()
   rnf (AdamRefs !_ )           = ()

@@ -11,6 +11,7 @@
 module ML.BORL.Proxy.Type
   ( ProxyType (..)
   , Proxy (Scalar, Table, Grenade, TensorflowProxy, CombinedProxy)
+  , prettyProxyType
   , proxyScalar
   , proxyTable
   , proxyDefault
@@ -72,15 +73,6 @@ proxyTypeName PsiWTable        = "psiW"
 proxyTypeName PsiW2Table       = "psiW2"
 proxyTypeName CombinedUnichain = "combinedUnichain"
 proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
-
-
--- class Proxy p where
---   isNeuralNetwork :: p -> Bool
---   isNeuralNetwork = not . isTable
---   isTable :: p -> Bool
---   isTable = not . isNeuralNetwork
---   insertValuesProxy :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> p -> m p
---   updateTarget :: (MonadBorl' m) => Bool -> Period -> p -> m p
 
 
 data Proxy = Scalar             -- ^ Combines multiple proxies in one for performance benefits.
@@ -178,6 +170,13 @@ instance Show Proxy where
   show Grenade{}               = "Grenade"
   show TensorflowProxy{}       = "TensorflowProxy"
   show (CombinedProxy p col _) = "CombinedProxy of " ++ show p ++ " at row " ++ show col
+
+prettyProxyType :: Proxy -> String
+prettyProxyType Scalar{} = "Scalar"
+prettyProxyType Table{} = "Tabular"
+prettyProxyType Grenade{} = "Grenade with SGD (+ momentum + l2) optimizer"
+prettyProxyType (TensorflowProxy _ w _ _ _ _) = "Tensorflow with " ++ show (map prettyOptimizerNames (optimizerVariables $ tensorflowModel w)) ++ " optimizer"
+prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
 
 
 instance NFData Proxy where

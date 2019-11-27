@@ -16,11 +16,12 @@ type DecaySteps = Integer
 type Value = Double
 type DecayedValue = Double
 
-data DecaySetup  = ExponentialDecay
-  { _decayMinimum :: Maybe Double
-  , _decayExpRate :: Double
-  , _decyaSteps   :: Integer
-  } deriving (Generic, NFData, Serialize)
+data DecaySetup
+  = NoDecay
+  | ExponentialDecay { _decayMinimum :: Maybe Double
+                     , _decayExpRate :: Double
+                     , _decyaSteps   :: Integer }
+  deriving (Generic, NFData, Serialize)
 
 
 -- data MinimumValues = MinimumValues

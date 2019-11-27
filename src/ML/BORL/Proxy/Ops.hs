@@ -313,7 +313,10 @@ trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config 
       lrs <- getLearningRates netW
       return $ TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (head lrs) 0 0 $ config) nrActs
     else do
-      when (period `mod` 3000 == 0) $ setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
+      when (period `mod` 1000 == 0 && dec lRate /= lRate) $
+        setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
+      -- when (period `mod` 100 == 0) $
+      --   getLearningRates netW >>= liftIO . print
       return $ TensorflowProxy netT netW tab tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances

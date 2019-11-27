@@ -219,17 +219,16 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
-    , _grenadeLearningParams = LearningParameters 0.01 0.5 0.001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.95 300000
+    , _grenadeLearningParams = LearningParameters 0.001 0.9 0.001
+    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters =
-      ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
+    , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
-    , _stabilizationAdditionalRho = 30
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.50 100000
+    , _stabilizationAdditionalRho = 15
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1 -- 3000
-    , _trainMSEMax = Nothing -- Just 0.05
-    , _setExpSmoothParamsTo1 = True
+    , _trainMSEMax = Nothing    -- Just 0.05
+    , _setExpSmoothParamsTo1 = False
     }
 
 
@@ -302,19 +301,19 @@ decay t p
   where
     minValues =
       Parameters
-        { _alpha = 0.0001
-        , _alphaANN = 1.0
-        , _beta = 0.0001
-        , _betaANN = 1.0
-        , _delta = 0.0001
-        , _deltaANN = 1.0
-        , _gamma = 0.0001
-        , _gammaANN = 1.0
-        , _epsilon = 2
-        , _exploration = 0.01
-        , _learnRandomAbove = 0.00
-        , _zeta = 0.0
-        , _xi = 0.00
+        { _alpha              = 0.0001
+        , _alphaANN           = 0
+        , _beta               = 0.0001
+        , _betaANN            = 0
+        , _delta              = 0.0001
+        , _deltaANN           = 0
+        , _gamma              = 0.0001
+        , _gammaANN           = 0
+        , _epsilon            = 2
+        , _exploration        = 0.01
+        , _learnRandomAbove   = 0
+        , _zeta               = 0
+        , _xi                 = 0
         , _disableAllLearning = False
         }
 
@@ -384,7 +383,7 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
@@ -399,14 +398,14 @@ modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet colOut =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.identity' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
 
