@@ -44,7 +44,6 @@ replace idx val ls = take idx ls ++ val : drop (idx+1) ls
 class (MonadIO m) => MonadBorl' m where
   liftTf :: TF.SessionT IO a -> m a
 
-
 instance (MonadBorl' (TF.SessionT IO)) where
   liftTf = id
 

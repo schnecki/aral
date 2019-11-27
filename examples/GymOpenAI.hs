@@ -96,15 +96,16 @@ nnConfig gym maxRew =
     { _replayMemoryMaxSize = 20000
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = ppSts
     , _scaleParameters = scalingByMaxAbsReward False 1.5
       -- scalingByMaxAbsReward False maxRew
     -- ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
     , _stabilizationAdditionalRho = 0.025
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 5000
     , _trainMSEMax = Just 0.05
+    , _setExpSmoothParamsTo1 = True
     }
   where
     range = getGymRangeFromSpace $ observationSpace gym

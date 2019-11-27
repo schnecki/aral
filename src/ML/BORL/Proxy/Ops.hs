@@ -276,6 +276,7 @@ insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head p
 updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
 updateNNTargetNet forceReset period px
+  | config ^. updateTargetInterval <= 1 = return px
   | forceReset = copyValues
   | period <= memSize = return px
   | ((period - memSize - 1) `mod` config ^. updateTargetInterval) == 0 = copyValues
@@ -302,14 +303,22 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
-    dec = decaySetup (config ^. grenadeLearningParamsDecay) period
+    dec = decaySetup (config ^. learningParamsDecay) period
     lp = LearningParameters (dec lRate) (dec momentum) (dec l2)
 
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
-  return $ TensorflowProxy netT netW tab tp config nrActs
+  if period == 0
+    then do
+      lrs <- getLearningRates netW
+      return $ TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (head lrs) 0 0 $ config) nrActs
+    else do
+      when (period `mod` 3000 == 0) $ setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
+      return $ TensorflowProxy netT netW tab tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+    dec = decaySetup (config ^. learningParamsDecay) period
+    LearningParameters lRate _ _ = config ^. grenadeLearningParams
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
@@ -422,9 +431,13 @@ cached st f = do
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
 lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
-lookupActionsNeuralNetworkUnscaled Target st (Grenade netT _ _ tp _ _) = cached (tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
+lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ _ tp config _)
+  | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
+  | otherwise = cached (tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
 lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netW [map realToFrac st])
-lookupActionsNeuralNetworkUnscaled Target st (TensorflowProxy netT _ _ tp _ _) = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st])
+lookupActionsNeuralNetworkUnscaled Target st px@(TensorflowProxy netT _ _ tp config _)
+  | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
+  | otherwise = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st])
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = take nrActs . drop (nr*nrActs) <$> lookupActionsNeuralNetworkUnscaled tp st px
   where nrActs = px ^?! proxyNrActions
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"

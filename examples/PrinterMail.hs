@@ -70,13 +70,14 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 32
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 20
     , _stabilizationAdditionalRho = 0.025
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 100
     , _trainMSEMax = Just 0.015
+    , _setExpSmoothParamsTo1 = True
     }
 
 

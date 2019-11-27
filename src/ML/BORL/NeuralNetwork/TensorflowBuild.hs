@@ -1,9 +1,11 @@
 {-# LANGUAGE ExplicitForAll    #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types        #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 module ML.BORL.NeuralNetwork.TensorflowBuild
     ( ModelBuilderFunction
     , OutputLayerColumns
@@ -13,6 +15,7 @@ module ML.BORL.NeuralNetwork.TensorflowBuild
     , fullyConnected
     , trainingByAdam
     , trainingByAdamWith
+    , trainingByGradientDescent
     , randomParam
     ) where
 
@@ -56,7 +59,7 @@ import qualified TensorFlow.Ops                   as TF (initializedVariable,
                                                          zeroInitializedVariable')
 import qualified TensorFlow.Tensor                as TF (Ref (..), collectAllSummaries,
                                                          tensorNodeName, tensorRefFromName,
-                                                         tensorValueFromName)
+                                                         tensorValueFromName, toBuild)
 
 type OutputLayerColumns = Int64
 type ModelBuilderFunction = forall m . (TF.MonadBuild m) => OutputLayerColumns -> m TensorflowModel
@@ -69,6 +72,7 @@ data BuildInfo = BuildInfo
   , _maybeTrainingNode :: Maybe TF.ControlNode
   , _nnVars            :: [TF.Tensor TF.Ref Float]
   , _trainVars         :: [TF.Tensor TF.Ref Float]
+  , _optimizerVars     :: [OptimizerRefs]
   , _nrUnitsLayer      :: [[Int64]]
   , _lastTensor        :: Maybe (Int64, TF.Tensor TF.Value Float)
   , _nrLayers          :: Int
@@ -105,8 +109,8 @@ inputLayer shape = do
 fullyConnected :: (TF.MonadBuild m) => [Int64] -> (TF.OpParams -> TF.Tensor TF.Build Float -> TF.Tensor TF.Build Float) -> StateT BuildInfo m ()
 fullyConnected shape activationFunction = do
   layers <- gets (^. nrLayers)
-  inputLayer <- gets (^. inputName)
-  when (layers < layerIdxStartNr || isNothing inputLayer) $ error "You must start your model with an input layer"
+  inpLayer <- gets (^. inputName)
+  when (layers < layerIdxStartNr || isNothing inpLayer) $ error "You must start your model with an input layer"
   trainNode <- gets (^. maybeTrainingNode)
   when (isJust trainNode) $ error "You must create the NN before specifying the training nodes."
   let layerNr = layers + 1
@@ -136,7 +140,21 @@ trainingByAdam = trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, T
 -- L2: Least square error LSE
 
 trainingByAdamWith :: (TF.MonadBuild m) => TF.AdamConfig -> StateT BuildInfo m ()
-trainingByAdamWith adamConfig = do
+trainingByAdamWith adamConfig = trainingBy parseOptRefs (TF.adamRefs' adamConfig)
+  where parseOptRefs [lrRef] = AdamRefs lrRef
+        parseOptRefs xs = error $ "Unexpected number of returned optimizer refs: " <> show (length xs)
+
+trainingByGradientDescent  :: (TF.MonadBuild m) => Float -> StateT BuildInfo m ()
+trainingByGradientDescent lr = trainingBy parseOptRefs (TF.gradientDescentRefs lr)
+  where parseOptRefs [lrRef] = GradientDescentRefs lrRef
+        parseOptRefs xs = error $ "Unexpected number of returned optimizer refs: " <> show (length xs)
+
+trainingBy ::
+     (TF.MonadBuild m)
+  => ([TF.Tensor TF.Ref Float] -> OptimizerRefs) -- ^ How to save optimizer refs
+  -> TF.MinimizerRefs Float                      -- ^ Optimizer to use
+  -> StateT BuildInfo m ()
+trainingBy optRefFun optimizer = do
   mOutput <- gets (^. outputName)
   when (isNothing mOutput) $ error "You must specify at least one layer, e.g. fullyConnected1D."
   lastLayer <- gets (^. lastTensor)
@@ -148,27 +166,29 @@ trainingByAdamWith adamConfig = do
       nrUnits <- gets (^. nrUnitsLayer)
       labels <- lift $ TF.placeholder' (TF.opName .~ TF.explicitName labLayerName) [batchSize]
       let loss = TF.square (previousTensor `TF.sub` labels)
-            -- TF.reduceSum $ TF.square (previousTensor `TF.sub` labels)
-      (trainStep, trVars) <- lift $ TF.minimizeWithRefs (TF.adamRefs' adamConfig) loss weights (map TF.Shape nrUnits)
+      (trainStep, trVars, adamRefs) <- lift $ TF.minimizeWithRefs optimizer loss weights (map TF.Shape nrUnits)
       trainVars .= trVars
       maybeTrainingNode .= Just trainStep
       labelName .= Just labLayerName
       lastTensor .= Nothing
+      optimizerVars %= (++ [optRefFun adamRefs])
+
 
 buildModel :: (TF.MonadBuild m) => StateT BuildInfo m () -> m TensorflowModel
 buildModel builder = do
   buildInfo <- execStateT builder emptyBuildInfo
   case buildInfo of
-    BuildInfo (Just inp) (Just out) (Just lab) (Just trainN) nnV trV _ _ _ -> return $ TensorflowModel inp out lab trainN nnV trV
-    BuildInfo Nothing _ _ _ _ _ _ _ _ -> error "No input layer specified"
-    BuildInfo _ Nothing _ _ _ _ _ _ _ -> error "No output layer specified"
-    BuildInfo _ _ Nothing _ _ _ _ _ _ -> error "No training model specified"
-    BuildInfo _ _ _ Nothing _ _ _ _ _  -> error "No training node specified (programming error in training action!)"
-
-  where emptyBuildInfo = BuildInfo Nothing Nothing Nothing Nothing [] [] [] Nothing layerIdxStartNr
+    BuildInfo (Just inp) (Just out) (Just lab) (Just trainN) nnV trV optRefs _ _ _ -> return $ TensorflowModel inp out lab trainN nnV trV optRefs
+    BuildInfo Nothing _ _ _ _ _ _ _ _ _ -> error "No input layer specified"
+    BuildInfo _ Nothing _ _ _ _ _ _ _ _ -> error "No output layer specified"
+    BuildInfo _ _ Nothing _ _ _ _ _ _ _ -> error "No training model specified"
+    BuildInfo _ _ _ Nothing _ _ _ _ _ _ -> error "No training node specified (programming error in training action!)"
+  where
+    emptyBuildInfo = BuildInfo Nothing Nothing Nothing Nothing [] [] [] [] Nothing layerIdxStartNr
 
 -- | Create tensor with random values where the stddev depends on the width.
 randomParam :: (TF.MonadBuild m) => Int64 -> TF.Shape -> m (TF.Tensor TF.Build Float)
 randomParam width (TF.Shape shape) = (`TF.mul` stddev) <$> TF.truncatedNormal (TF.vector shape)
   where
     stddev = TF.scalar (1 / sqrt (fromIntegral width))
+

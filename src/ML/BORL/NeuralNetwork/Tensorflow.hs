@@ -9,13 +9,10 @@ module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
 import           Control.Monad          (unless, void, zipWithM)
-import           Control.Monad          (zipWithM_)
-import           Control.Monad.IO.Class
 import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Char8  as B8
-import           Data.Function          (on)
-import           Data.List              (foldl', genericLength, groupBy, sortBy)
+import           Data.List              (foldl', genericLength)
 import qualified Data.Map.Strict        as M
 import           Data.Maybe             (fromMaybe, isJust)
 import           Data.Serialize
@@ -25,24 +22,25 @@ import qualified Data.Vector            as V
 import           System.Directory
 import           System.IO.Temp
 import           System.IO.Unsafe
-import           System.Random
-
 
 import qualified TensorFlow.Core        as TF
+import qualified TensorFlow.Nodes       as TF (nodesUnion)
 import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
 import qualified TensorFlow.Output      as TF (ControlNode (..), NodeName (..))
-import qualified TensorFlow.Tensor      as TF (tensorNodeName, tensorRefFromName)
+import qualified TensorFlow.Tensor      as TF (Tensor (..), tensorNodeName,
+                                               tensorRefFromName)
 
 
 import           ML.BORL.Types
-
-import           Debug.Trace
 
 
 type Outputs = [[Float]]        -- ^ 1st level: number of input rows, 2nd level: number of actions
 type Inputs = [[Float]]
 type Labels = [[Float]]
+
+trainMaxVal :: Float
+trainMaxVal = 0.95
 
 
 data TensorflowModel = TensorflowModel
@@ -52,10 +50,49 @@ data TensorflowModel = TensorflowModel
   , trainingNode           :: TF.ControlNode           -- ^ Training node.
   , neuralNetworkVariables :: [TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
   , trainingVariables      :: [TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
+  , optimizerVariables     :: [OptimizerRefs]
   }
 
 instance NFData TensorflowModel where
-  rnf (TensorflowModel i o l !_ !_ !_) = rnf i `seq` rnf o `seq` rnf l
+  rnf (TensorflowModel i o l !_ !_ !_ !_) = rnf i `seq` rnf o `seq` rnf l
+
+
+data OptimizerRefs
+  = GradientDescentRefs
+      { gradientDescentLearningRateRef :: TF.Tensor TF.Ref Float
+      }
+  | AdamRefs
+      { adamLearningRateRef :: TF.Tensor TF.Ref Float
+      }
+
+instance NFData OptimizerRefs where
+  rnf (GradientDescentRefs !_) = ()
+  rnf (AdamRefs !_ )           = ()
+
+
+optimizerRefsList :: OptimizerRefs -> [TF.Tensor TF.Ref Float]
+optimizerRefsList (GradientDescentRefs lr) = [lr]
+optimizerRefsList (AdamRefs lr)            = [lr]
+
+getLearningRateRef :: OptimizerRefs -> [TF.Tensor TF.Ref Float]
+getLearningRateRef (GradientDescentRefs lr) = [lr]
+getLearningRateRef (AdamRefs lr)            = [lr]
+
+
+instance Serialize OptimizerRefs where
+  put (GradientDescentRefs lr) = put (0 :: Int) >> put (getTensorRefNodeName lr)
+  put (AdamRefs lr)            = put (1 :: Int) >> put (getTensorRefNodeName lr)
+  get = do
+    nr <- get
+    case (nr :: Int) of
+      0 -> do
+        lr <- getRefTensorFromName <$> get
+        return $ GradientDescentRefs lr
+      1 -> do
+        lr <- getRefTensorFromName <$> get
+        return $ AdamRefs lr
+      x -> error $ "Could not deserialise optimizer refs with key: " <> show x
+
 
 data TensorflowModel' = TensorflowModel'
   { tensorflowModel        :: TensorflowModel
@@ -65,12 +102,14 @@ data TensorflowModel' = TensorflowModel'
   }
 
 instance Serialize TensorflowModel' where
-  put tf@(TensorflowModel' (TensorflowModel inp out label train nnVars trVars) _ lastIO builder) = do
+  put tf@(TensorflowModel' (TensorflowModel inp out label train nnVars trVars optRefs) _ lastIO builder) = do
     put inp >> put out >> put label >> put (getTensorControlNodeName train) >> put lastIO
     put $ map getTensorRefNodeName nnVars
     put $ map getTensorRefNodeName trVars
+    put optRefs
     let (mBasePath, bytesModel, bytesTrain) =
           unsafePerformIO $ do
+            void $ liftTf $ saveModelWithLastIO tf
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName
@@ -88,6 +127,7 @@ instance Serialize TensorflowModel' where
     lastIO <- get
     nnVars <- map getRefTensorFromName <$> get
     trVars <- map getRefTensorFromName <$> get
+    optRefs <- get
     mBasePath <- get
     bytesModel <- get
     bytesTrain <- get
@@ -98,16 +138,13 @@ instance Serialize TensorflowModel' where
             pathTrain = basePath ++ "/" ++ trainName
         BS.writeFile pathModel bytesModel
         BS.writeFile pathTrain bytesTrain
-        let fakeBuilder = TF.runSession $ return $ TensorflowModel inp out label train nnVars trVars
-        return $ TensorflowModel' (TensorflowModel inp out label train nnVars trVars) (Just basePath) lastIO fakeBuilder
+        let fakeBuilder = TF.runSession $ return $ TensorflowModel inp out label train nnVars trVars optRefs
+        return $ TensorflowModel' (TensorflowModel inp out label train nnVars trVars optRefs) (Just basePath) lastIO fakeBuilder
 
 
 instance NFData TensorflowModel' where
   rnf (TensorflowModel' m f l !_) = rnf m `seq` rnf f `seq` rnf l
 
-
-trainMaxVal :: Float
-trainMaxVal = 0.98
 
 getRef :: Text -> TF.Tensor TF.Ref Float
 getRef = TF.tensorFromName
@@ -129,6 +166,20 @@ getRefTensorFromName = TF.tensorRefFromName
 
 getControlNodeTensorFromName :: Text -> TF.ControlNode
 getControlNodeTensorFromName = TF.ControlNode . TF.NodeName
+
+setLearningRates :: (MonadBorl' m) => [Double] -> TensorflowModel' -> m ()
+setLearningRates learningRates model = liftTf $ zipWithM TF.assign lrRefs (map (TF.scalar . realToFrac) learningRates) >>= TF.run_
+  where
+    lrRefs = concatMap getLearningRateRef (optimizerVariables $ tensorflowModel model)
+
+getLearningRates :: (MonadBorl' m) => TensorflowModel' -> m [Double]
+getLearningRates model =
+  liftTf $ do
+    lrValues <- TF.run lrRefs
+    return $ map (realToFrac . V.head) (lrValues :: [V.Vector Float])
+  where
+    lrRefs = concatMap getLearningRateRef (optimizerVariables $ tensorflowModel model)
+
 
 encodeInputBatch :: Inputs -> TF.TensorData Float
 encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head' xs)] (V.fromList $ mconcat xs)
@@ -184,7 +235,7 @@ backwardRun model inp lab
     let inRef = getRef (inputLayerName $ tensorflowModel model)
         labRef = getRef (labelLayerName $ tensorflowModel model)
         inpT = encodeInputBatch inp
-        labT = encodeLabelBatch lab
+        labT = encodeLabelBatch $ map (map (max (-trainMaxVal) . min trainMaxVal)) lab
     in liftTf $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
        -- aft <- forwardRunSession model inp
        -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft
