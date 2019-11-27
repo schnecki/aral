@@ -197,20 +197,21 @@ instance ExperimentDef (BORL St) where
     ]
 
 nnConfig :: NNConfig
-nnConfig = NNConfig
-  { _replayMemoryMaxSize  = 10000
-  , _trainBatchSize       = 8
-  , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
-  , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.05 100000
-  , _prettyPrintElems     = map netInp ([minBound .. maxBound] :: [St])
-  , _scaleParameters      = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 8
+    , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
+    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
                             -- scalingByMaxAbsReward False 10
-  , _stabilizationAdditionalRho = 0.5
-  , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-  , _updateTargetInterval = 100 -- 3000
-  , _trainMSEMax          = Nothing -- Just 0.03
-  , _setExpSmoothParamsTo1 = False
-  }
+    , _stabilizationAdditionalRho = 0.5
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _updateTargetInterval = 1
+    , _trainMSEMax = Nothing -- Just 0.03
+    , _setExpSmoothParamsTo1 = False
+    }
 
 
 -- | BORL Parameters.
@@ -232,22 +233,6 @@ params =
     , _xi                 = 0.005
     , _disableAllLearning = False
     }
-  -- Parameters
-  --   { _alpha              = 0.01
-  --   , _alphaANN           = 0.5
-  --   , _beta               = 0.01
-  --   , _betaANN            = 1
-  --   , _delta              = 0.005
-  --   , _deltaANN           = 1
-  --   , _gamma              = 0.01
-  --   , _gammaANN           = 1
-  --   , _epsilon            = 1.0
-  --   , _exploration        = 1.0
-  --   , _learnRandomAbove   = 0.5
-  --   , _zeta               = 0.03
-  --   , _xi                 = 0.005
-  --   , _disableAllLearning = False
-  --   }
 
 -- | Decay function of parameters.
 decay :: Decay
@@ -362,7 +347,8 @@ modelBuilderCombined :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
 modelBuilderCombined colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.09, TF.adamBeta2 = 0.0999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.3, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
 
 

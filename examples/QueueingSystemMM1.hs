@@ -172,35 +172,10 @@ policy maxAdmit (St s incoming) act
     admitAct = actions !! 1
     rejectAct = head actions
 
--- policy :: Int -> Policy St
--- policy maxAdmit (St s incoming) act
---   | not incoming && act == rejectAct =
---     [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
---   | incoming && act == rejectAct = [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, rejectAct), pReject s * pLambda)] ++ [((St (max 0 (s - 1)) False, rejectAct), pMu)]
---   | incoming && act == admitAct =
---     [((St (s + 1) True, condAdmit (s + 1)), pAdmit (s + 1) * pLambda), ((St (s + 1) True, rejectAct), pReject (s + 1) * pLambda)] ++ [((St s False, rejectAct), pMu)]
---   | otherwise = error "unexpected case in policy"
---   where
---     pAdmit s
---       | s >= maxAdmit = 0
---       | otherwise = 1
---     pReject s
---       | pAdmit s == 1 = 0
---       | otherwise = 1
---     pMu = mu / (lambda + mu)
---     pLambda = lambda / (lambda + mu)
---     condAdmit s =
---       if pAdmit s == 1
---         then admitAct
---         else rejectAct
---     admitAct = actions !! 1
---     rejectAct = head actions
-
-
 instance ExperimentDef (BORL St)
-  -- type ExpM (BORL St) = TF.SessionT IO
                                           where
   type ExpM (BORL St) = IO
+  -- type ExpM (BORL St) = TF.SessionT IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
@@ -245,14 +220,14 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.95 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.15 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters =
       ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
     , _stabilizationAdditionalRho = 30
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.50 100000
-    , _updateTargetInterval = 100 -- 3000
+    , _updateTargetInterval = 1 -- 3000
     , _trainMSEMax = Nothing -- Just 0.05
     , _setExpSmoothParamsTo1 = True
     }
@@ -263,7 +238,7 @@ params :: Parameters
 params =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 1
+    , _alphaANN           = 0.5
     , _beta               = 0.01
     , _betaANN            = 1
     , _delta              = 0.01
@@ -283,7 +258,7 @@ paramsV :: Parameters
 paramsV =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 1
+    , _alphaANN           = 0.5
     , _beta               = 0.05
     , _betaANN            = 1
     , _delta              = 0.05
@@ -409,14 +384,14 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
-type NNCombined = Network  '[ FullyConnected 2 24, Relu, FullyConnected 24 32, Relu, FullyConnected 32 32, Relu, FullyConnected 32 16, Tanh] '[ 'D1 2, 'D1 24, 'D1 24, 'D1 32, 'D1 32, 'D1 32, 'D1 32, 'D1 16, 'D1 16]
+type NNCombined = Network  '[ FullyConnected 2 24, Relu, FullyConnected 24 16, Relu, FullyConnected 16 16, Relu, FullyConnected 16 16, Tanh] '[ 'D1 2, 'D1 24, 'D1 24, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 16]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 4, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 4, 'D1 4]
 
 
@@ -430,8 +405,9 @@ modelBuilder =
 modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet colOut =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.identity' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
 
   -- buildModel $

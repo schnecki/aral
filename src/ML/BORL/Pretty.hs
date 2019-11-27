@@ -259,45 +259,47 @@ prettyBORLHead' printRho prettyStateFun borl = do
           Scalar val -> text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
           _          -> empty
   return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
-    if borl ^? proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1 == Just True
-      then mempty
-      else (text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. alpha) $+$ algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. beta)) $+$
+    (if borl ^? proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1 == Just True
+       then mempty
+       else text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. alpha) $+$ algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. beta)) $+$
             algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. delta)) $+$
             text "Gamma" <>
             colon $$
             nest nestCols (printFloatWith 8 $ params' ^. gamma)) $+$
-           text "Epsilon" <>
-           colon $$
-           nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
-           text "Exploration" <>
-           colon $$
-           nest nestCols (printFloatWith 8 $ params' ^. exploration) $+$
-           text "Learn From Random Actions until Expl. hits" <>
-           colon $$
-           nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
-           nnTargetUpdate $+$
-           nnBatchSize $+$
-           nnReplMemSize $+$
-           nnLearningParams $+$
-           text "Algorithm" <>
-           colon $$
-           nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-           algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) $+$
-           algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) $+$
-           (case borl ^. algorithm of
-              AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-              AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-              AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-              AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
-           algDoc
-             (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
-              nest
-                nestCols
-                (text
-                   (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
-           (if printRho
-              then prettyRhoVal
-              else empty)
+    text "Epsilon" <>
+    colon $$
+    nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
+    text "Exploration" <>
+    colon $$
+    nest nestCols (printFloatWith 8 $ params' ^. exploration) $+$
+    text "Learn From Random Actions until Expl. hits" <>
+    colon $$
+    nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
+    text "Function Approximation by R1 Config" <>
+    colon $$
+    nest nestCols (text $ show $ borl ^. proxies . r1) $+$
+    nnTargetUpdate $+$
+    nnBatchSize $+$
+    nnReplMemSize $+$
+    nnLearningParams $+$
+    text "Algorithm" <>
+    colon $$
+    nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
+    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) $+$
+    (case borl ^. algorithm of
+       AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+       AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
+       AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
+    algDoc
+      (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
+       nest
+         nestCols
+         (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
+    (if printRho
+       then prettyRhoVal
+       else empty)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     scalingText =
@@ -356,16 +358,21 @@ prettyBORLHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {} -> empty
         P.Grenade _ _ _ _ conf _ -> textGrenadeConf conf
-        P.TensorflowProxy {} -> text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Specified in tensorflow model")
-        P.CombinedProxy P.TensorflowProxy {} _ _ -> text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Specified in tensorflow model")
+        P.TensorflowProxy _ _ _ _ conf _ -> textTensorflow conf
+        P.CombinedProxy (P.TensorflowProxy _ _ _ _ conf _) _ _ -> textTensorflow conf
         P.CombinedProxy (P.Grenade _ _ _ _ conf _) _ _ -> textGrenadeConf conf
         _ -> error "nnLearningParams in Pretty.hs"
       where
         textGrenadeConf conf =
           let LearningParameters l0 m0 l20 = conf ^. grenadeLearningParams
-              dec = decaySetup (conf ^. grenadeLearningParamsDecay) (borl ^. t)
+              dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               LearningParameters l m l2 = LearningParameters (dec l0) (dec m0) (dec l20)
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 l, printFloatWith 8 m, printFloatWith 8 l2)))
+        textTensorflow conf =
+          let LearningParameters l0 _ _ = conf ^. grenadeLearningParams
+              dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
+              l = dec l0
+           in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
 
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
 -- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]

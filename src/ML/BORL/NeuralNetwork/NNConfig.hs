@@ -19,7 +19,7 @@ data NNConfig = NNConfig
   { _replayMemoryMaxSize             :: !Int                     -- ^ Maximum size of the replay memory.
   , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
   , _grenadeLearningParams           :: !LearningParameters      -- ^ Grenade (not used for Tensorflow!) learning parameters.
-  , _grenadeLearningParamsDecay      :: !DecaySetup               -- ^ Decay setup for grenade learning parameters
+  , _learningParamsDecay             :: !DecaySetup               -- ^ Decay setup for grenade learning parameters
   , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
   , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.
   , _stabilizationAdditionalRho      :: Double                   -- ^ Additional rho as a percantage of [minV, maxV] which is

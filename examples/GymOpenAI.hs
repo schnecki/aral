@@ -96,7 +96,7 @@ nnConfig gym maxRew =
     { _replayMemoryMaxSize = 20000
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.5 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = ppSts
     , _scaleParameters = scalingByMaxAbsReward False 1.5
       -- scalingByMaxAbsReward False maxRew

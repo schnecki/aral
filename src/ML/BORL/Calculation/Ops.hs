@@ -193,11 +193,16 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
 
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let useAnnLearnRateDiscount p =
-        let px = borl ^. proxies . p
-        in P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize && px ^?! proxyNNConfig . setExpSmoothParamsTo1
-      alp = params' ^. alpha
-      bta = params' ^. beta
+  let getExpSmthParam p paramANN param
+        | isANN && useOne = 1
+        | isANN = params' ^. paramANN
+        | otherwise = params' ^. param
+        where
+          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
+          px = borl ^. proxies . p
+      alp = getExpSmthParam rho alphaANN alpha
+      bta = getExpSmthParam v betaANN beta
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -216,27 +221,27 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
              ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
              ByStateValues -> return $ reward + vValStateNext - vValState
-             ByStateValuesAndReward  ratio -> return $ ratio * (reward + vValStateNext - vValState) + (1-ratio) * reward
+             ByStateValuesAndReward ratio -> return $ ratio * (reward + vValStateNext - vValState) + (1 - ratio) * reward
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
-  let rhoVal' alpVal =
+  let rhoVal' =
         max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
-          _          -> (1 - alpVal) * rhoVal + alpVal * rhoState
+          _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal' alp
-  let vValState' btaVal = (1 - btaVal) * vValState + btaVal * (reward - rhoVal' alp + epsEnd * vValStateNext)
-  let lastVs' = take keepXLastValues $ vValState' bta : borl ^. lastVValues
+        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
+  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
+  let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
-      , getRhoVal' = Just $ rhoVal' (ite (useAnnLearnRateDiscount rho) 1 alp)
+      , getRhoVal' = Just rhoVal'
       , getPsiVValState' = Nothing
-      , getVValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 (vValState' (ite (useAnnLearnRateDiscount v) 1 bta))
+      , getVValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 vValState'
       , getPsiWValState' = Nothing
       , getWValState' = Nothing
       , getPsiW2ValState' = Nothing
@@ -252,13 +257,17 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getEpisodeEnd = episodeEnd
       }
 
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
+mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let useAnnLearnRateDiscount =
-        P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize && borl ^?! proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1
-      gam
-        | useAnnLearnRateDiscount = params' ^. gammaANN
-        | otherwise = params' ^. gamma
+  let getExpSmthParam p paramANN param
+        | isANN && useOne = 1
+        | isANN = params' ^. paramANN
+        | otherwise = params' ^. param
+        where
+          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
+          px = borl ^. proxies . p
+      gam = getExpSmthParam r1 gammaANN gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -294,13 +303,16 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let useAnnLearnRateDiscount = P.isNeuralNetwork (borl ^. proxies . r1) && borl ^. t > borl ^?! proxies . r1 . proxyNNConfig . replayMemoryMaxSize
-      gam
-        | useAnnLearnRateDiscount && isMultichain borl = 1
-        | otherwise = params' ^. gamma
-      alp
-        | useAnnLearnRateDiscount = 1
-        | otherwise = params' ^. alpha
+  let getExpSmthParam p paramANN param
+        | isANN && useOne = 1
+        | isANN = params' ^. paramANN
+        | otherwise = params' ^. param
+        where
+          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
+          px = borl ^. proxies . p
+      alp = getExpSmthParam rho alphaANN alpha
+      gam = getExpSmthParam r1 gammaANN gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
