@@ -244,13 +244,13 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
-    , _grenadeLearningParams = LearningParameters 0.01 0.9 0.001
-    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.95 100000
+    , _grenadeLearningParams = LearningParameters 0.01 0.5 0.001
+    , _grenadeLearningParamsDecay = ExponentialDecay Nothing 0.95 300000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
-    , _stabilizationAdditionalRho = 5 -- 0.005
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.95 100000
+    , _stabilizationAdditionalRho = 15 -- 0.005
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.40 100000
     , _updateTargetInterval = 100 -- 3000
     , _trainMSEMax = Nothing -- Just 0.05
     }
@@ -271,8 +271,8 @@ params =
     , _epsilon            = 5
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
-    , _zeta               = 0.05
-    , _xi                 = 0.03
+    , _zeta               = 0.15
+    , _xi                 = 0.005
     , _disableAllLearning = False
     }
 
@@ -407,7 +407,7 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
@@ -428,7 +428,7 @@ modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet outColumns =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions * outColumns] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 
