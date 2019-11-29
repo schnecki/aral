@@ -261,7 +261,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
         | isANN = params' ^. paramANN
         | otherwise = params' ^. param
         where
-          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
   return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$

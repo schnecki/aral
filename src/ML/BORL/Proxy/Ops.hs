@@ -304,7 +304,7 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
     dec = decaySetup (config ^. learningParamsDecay) period
-    lp = LearningParameters (dec lRate) (dec momentum) (dec l2)
+    lp = LearningParameters (dec lRate) momentum l2 -- (dec momentum) (dec l2)
 
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'

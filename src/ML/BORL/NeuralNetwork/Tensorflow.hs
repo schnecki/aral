@@ -272,13 +272,12 @@ saveModel model inp lab = do
   let inpT = encodeInputBatch inp
       labT = encodeLabelBatch lab
   let resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
-  unless (null $ neuralNetworkVariables $ tensorflowModel model) $
-    liftTf $ TF.save pathModel (neuralNetworkVariables $ tensorflowModel model) >>= TF.run_
-  unless (null $ trainingVariables $ tensorflowModel model) $
-    liftTf $ TF.save pathTrain (trainingVariables $ tensorflowModel model) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+  let tf' = tensorflowModel model
+  unless (null $ neuralNetworkVariables tf') $ liftTf $ TF.save pathModel (neuralNetworkVariables tf') >>= TF.run_
+  unless (null $ trainingVariables tf') $
+    liftTf $ TF.save pathTrain (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
   -- res <- map V.toList <$> (Tensorflow $ TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel model))
   -- Simple $ putStrLn $ "Training variables (saveModel): " <> show res
-
   return $
     if isJust (checkpointBaseFileName model)
       then resetLastIO model
@@ -295,19 +294,18 @@ buildTensorflowModel tfModel = void $ liftTf $ tensorflowModelBuilder tfModel --
 
 
 restoreModel :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m ()
-restoreModel tfModel inp lab = liftTf $ do
-  basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
-  let pathModel = B8.pack $ basePath ++ "/" ++ modelName
-      pathTrain = B8.pack $ basePath ++ "/" ++ trainName
-  let inRef = getRef (inputLayerName $ tensorflowModel tfModel)
-      labRef = getRef (labelLayerName $ tensorflowModel tfModel)
-  let inpT = encodeInputBatch inp
-      labT = encodeLabelBatch lab
-  unless (null $ trainingVariables $ tensorflowModel tfModel) $
-    mapM (TF.restore pathTrain) (trainingVariables $ tensorflowModel tfModel) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
-  unless (null $ neuralNetworkVariables $ tensorflowModel tfModel) $ mapM (TF.restore pathModel) (neuralNetworkVariables $ tensorflowModel tfModel) >>= TF.run_
-
+restoreModel tfModel inp lab =
+  liftTf $ do
+    basePath <- maybe (error "cannot restore from unknown location: checkpointBaseFileName is Nothing") return (checkpointBaseFileName tfModel)
+    let pathModel = B8.pack $ basePath ++ "/" ++ modelName
+        pathTrain = B8.pack $ basePath ++ "/" ++ trainName
+    let inRef = getRef (inputLayerName $ tensorflowModel tfModel)
+        labRef = getRef (labelLayerName $ tensorflowModel tfModel)
+    let inpT = encodeInputBatch inp
+        labT = encodeLabelBatch lab
+    let tf' = tensorflowModel tfModel
+    unless (null $ trainingVariables tf') $
+      mapM (TF.restore pathTrain) (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+    unless (null $ neuralNetworkVariables tf') $ mapM (TF.restore pathModel) (neuralNetworkVariables tf') >>= TF.run_
   -- res <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel tfModel)
   -- liftIO $ putStrLn $ "Training variables (restoreModel): " <> show res
-
-
