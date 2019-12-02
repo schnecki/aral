@@ -14,8 +14,16 @@ fi
 function syncLoop() {
     while true; do
         rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,psiValues,reward,costs,episodeLength,queueLength} . 2>/dev/null
-        sleep $SYNC_TIMEOUT;
-        wait $!
+        size=`stat --printf="%s" stateValues`
+        i=1
+        if [ $size -ge 20000000 ]; then
+            i=7
+        fi
+        while [ $i -gt 0 ]; do
+            i=$((i-1));
+            sleep $SYNC_TIMEOUT;
+            wait $!
+        done
     done
 }
 

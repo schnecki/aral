@@ -256,33 +256,41 @@ prettyBORLHead' printRho prettyStateFun borl = do
         case borl ^. proxies . rho of
           Scalar val -> text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
           _          -> empty
-  let getExpSmthParam p paramANN param
+  let getExpSmthParam decayed p paramANN param
         | isANN && useOne = 1
-        | isANN = params' ^. paramANN
-        | otherwise = params' ^. param
+        | decayed && isANN = params' ^. paramANN
+        | decayed && otherwise = params' ^. param
+        | isANN = borl ^. parameters . paramANN
+        | otherwise = borl ^. parameters . param
         where
-          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
-    (if borl ^? proxies . r1 . proxyNNConfig . setExpSmoothParamsTo1 == Just True
-       then text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 1) $+$
-            algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 1)) $+$
-            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 1)) $+$
-            (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 1))
-       else text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam rho alphaANN alpha) $+$
-            algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam v betaANN beta)) $+$
-            algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam w deltaANN delta)) $+$
-            (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam r1 gammaANN gamma))) $+$
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
+    colon $$
+    nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alphaANN alpha)) $+$
+    algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta)) $+$
+    algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta)) $+$
+    (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gammaANN gamma)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gammaANN gamma)) $+$
     text "Epsilon" <>
     colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. epsilon) $+$
+    nest nestCols (printFloatWith 8 $ params' ^. epsilon) <>
+    colon <+>
+    printFloatWith 8 (params ^. epsilon) $+$
     text "Exploration" <>
     colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. exploration) $+$
+    nest nestCols (printFloatWith 8 $ params' ^. exploration) <>
+    colon <+>
+    printFloatWith 8 (params ^. exploration) $+$
     text "Learn From Random Actions until Expl. hits" <>
     colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) $+$
+    nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <>
+    colon <+>
+    printFloatWith 8 (params ^. learnRandomAbove) $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
@@ -293,8 +301,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) $+$
+    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <>
+    colon <+>
+    printFloatWith 8 (params ^. zeta) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <>
+    colon <+>
+    printFloatWith 8 (params ^. xi) $+$
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
@@ -309,7 +321,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
        then prettyRhoVal
        else empty)
   where
-    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    params = borl ^. parameters
+    params' = (borl ^. decayFunction) (borl ^. t) params
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
