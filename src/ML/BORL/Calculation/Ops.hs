@@ -66,7 +66,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let getExpSmthParam p paramANN param | isANN && useOne = 1
                               | isANN = params' ^. paramANN
                               | otherwise = params' ^. param
-        where isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+        where isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
               useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
               px = borl ^. proxies . p
   let alp = getExpSmthParam rho alphaANN alpha
@@ -198,7 +198,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | isANN = params' ^. paramANN
         | otherwise = params' ^. param
         where
-          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
       alp = getExpSmthParam rho alphaANN alpha
@@ -264,7 +264,7 @@ mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episo
         | isANN = params' ^. paramANN
         | otherwise = params' ^. param
         where
-          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
       gam = getExpSmthParam r1 gammaANN gamma
@@ -308,7 +308,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         | isANN = params' ^. paramANN
         | otherwise = params' ^. param
         where
-          isANN = P.isNeuralNetwork px && borl ^. t > px ^?! proxyNNConfig . replayMemoryMaxSize
+          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
       alp = getExpSmthParam rho alphaANN alpha

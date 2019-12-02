@@ -81,11 +81,11 @@ fileEpisodeLength = "episodeLength"
 steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
 steps (force -> borl) nr =
   case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
+    Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [0 .. nr - 1]
     Just _ ->
       runMonadBorlTF $ do
         void $ restoreTensorflowModels True borl
-        !borl' <- foldM (\b _ -> nextAction (force b) >>= fmap force . stepExecute) borl [0 .. nr - 1]
+        !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [0 .. nr - 1]
         force <$> saveTensorflowModels borl'
 
 
@@ -101,13 +101,13 @@ step (force -> borl) =
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
 stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
-stepM (force -> borl) = nextAction borl >>= fmap force . stepExecute
+stepM (force -> borl) = nextAction (force borl) >>= stepExecute
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
 -- evaluation of the data structure every 1000 periods.
 stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
 stepsM (force -> borl) nr = do
-  !borl' <- force <$> foldM (\b _ -> nextAction b >>= stepExecute) borl [1 .. min maxNr nr]
+  !borl' <- force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [1 .. min maxNr nr]
   if nr > maxNr
     then stepsM borl' (nr - maxNr)
     else return borl'
