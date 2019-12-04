@@ -54,7 +54,7 @@ exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDel
     (max mExp $ decay * exp)
     (max mRand rand) -- no decay
     (max mZeta zeta) -- no decay
-    (max mXi $ decay * xi)
+    (max mXi xi)
     disable
   where
     decay = rate ** (fromIntegral t / fromIntegral steps)

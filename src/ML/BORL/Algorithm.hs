@@ -5,10 +5,12 @@ module ML.BORL.Algorithm where
 
 import           ML.BORL.Types
 
-import           Control.Arrow   (first)
+import           Control.Arrow      (first)
 import           Control.DeepSeq
 import           Data.Serialize
 import           GHC.Generics
+
+import           ML.BORL.Decay.Type
 
 type FractionStateValue = Double
 
@@ -16,7 +18,7 @@ data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
-  | ByStateValuesAndReward FractionStateValue
+  | ByStateValuesAndReward FractionStateValue DecaySetup
   | Fixed Double
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 

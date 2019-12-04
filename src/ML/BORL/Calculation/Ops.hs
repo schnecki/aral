@@ -122,7 +122,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           ByMovAvg _ -> error "ByMovAvg is not allowed in multichain setups"
           ByReward -> reward
           ByStateValues -> reward + vValStateNext - vValState
-          ByStateValuesAndReward ratio -> ratio * (reward + vValStateNext - vValState) + (1 - ratio) * reward
+          ByStateValuesAndReward ratio decay -> ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
+            where ratio' = decaySetup decay period ratio
   let rhoVal' =
         max rhoMinimumState $
         case avgRewardType of
@@ -165,7 +166,18 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | randomAction && not learnFromRandom = vValState'
         | otherwise = vValState' + xiVal * err
         where
-          err = psiVState' + zetaVal * psiWState' -- zetaVal ^ (2 :: Int) * psiW2State'
+          err =
+            psiVState' +
+            zetaVal * psiWState'
+            -- -  zetaVal ^ (2 :: Int) * psiW2State'
+  let wValStateNew = wValState'
+        -- | randomAction && not learnFromRandom = wValState'
+        -- | otherwise = wValState' + xiVal * err
+        where
+          err =
+            -- - zetaVal ^ (2 :: Int) * psiW2State'
+            - zetaVal * psiW2State'
+
           -- err | period `mod` 2 == 0 = psiVState' + zetaVal * psiWState'
           --     | otherwise = psiVState' - zetaVal ^ (2 :: Int) * psiW2State'
   when (period == 0) $ liftIO $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
@@ -180,7 +192,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiVValState' = Just psiVState'
       , getVValState' = Just vValStateNew
       , getPsiWValState' = Just psiWState'
-      , getWValState' = Just wValState'
+      , getWValState' = Just wValStateNew -- wValState'
       , getPsiW2ValState' = Just psiW2State'
       , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 w2ValState'
       , getR0ValState' = Just r0ValState'
@@ -224,7 +236,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
              ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
              ByReward -> return reward
              ByStateValues -> return $ reward + vValStateNext - vValState
-             ByStateValuesAndReward ratio -> return $ ratio * (reward + vValStateNext - vValState) + (1 - ratio) * reward
+             ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
+                where ratio' = decaySetup decay (borl ^. t) ratio
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation
@@ -331,7 +344,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
              ByMovAvg l -> return $ sum lastRews' / fromIntegral l
              ByReward -> return reward
              ByStateValues -> return $ reward + r1StateNext - r1ValState
-             ByStateValuesAndReward ratio -> return $ ratio * (reward + r1StateNext - r1ValState) + (1 - ratio) * reward
+             ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + r1StateNext - r1ValState) + (1 - ratio') * reward
+                where ratio' = decaySetup decay (borl ^. t) ratio
       else do
         rhoStateValNext <- rhoStateValue borl (stateNext, stateNextActIdxes)
         return $ (epsEnd * approxAvg * rhoStateValNext + reward) / (epsEnd * approxAvg + 1) -- approximation

@@ -23,7 +23,7 @@ data DecaySetup
   | ExponentialDecay { _decayMinimum :: Maybe Double
                      , _decayExpRate :: Double
                      , _decyaSteps   :: Integer }
-  deriving (Generic, NFData, Serialize)
+  deriving (Generic, Show, Eq, Ord, NFData, Serialize)
 makeLenses ''DecaySetup
 
 

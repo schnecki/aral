@@ -165,7 +165,7 @@ params =
     , _epsilon = 0.1
     , _exploration = 1.0
     , _learnRandomAbove = 0.1
-    , _zeta = 0.3
+    , _zeta = 0.10
     , _xi = 0.01
     , _disableAllLearning = False
     }

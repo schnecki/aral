@@ -151,7 +151,7 @@ prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Do
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
-  prettyAvgRewardType avgRewType <+>
+  prettyAvgRewardType (borl ^. t) avgRewType <+>
   text "for rho" <> text ";" <+>
   text "Deciding on" <+>
   text
@@ -161,20 +161,24 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPl
   prettyRefState borl prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType avgRewType
+  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
-  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType avgRewType <> prettyRefState borl prettyState prettyAction mRefState
+  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState borl prettyState prettyAction mRefState
 
 prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
 prettyRefState _ _ _ Nothing = mempty
 prettyRefState borl prettyState prettyAction (Just (st,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState $ (borl ^. featureExtractor) st) <> " - " <> prettyAction aNr
 
-prettyAvgRewardType :: AvgReward -> Doc
-prettyAvgRewardType (ByMovAvg nr)          = "moving average" <> parens (int nr)
-prettyAvgRewardType ByReward               = "reward"
-prettyAvgRewardType ByStateValues          = "state values"
-prettyAvgRewardType (ByStateValuesAndReward ratio) = printFloat ratio <> "*state values + " <> printFloat (1-ratio) <> "*reward"
-prettyAvgRewardType (Fixed x)              = "fixed value of " <> double x
+prettyAvgRewardType :: Period -> AvgReward -> Doc
+prettyAvgRewardType _ (ByMovAvg nr)          = "moving average" <> parens (int nr)
+prettyAvgRewardType _ ByReward               = "reward"
+prettyAvgRewardType _ ByStateValues          = "state values"
+prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
+  printFloat ratio' <> "*state values + " <> printFloat (1 - ratio') <> "*reward" <+>
+  parens (text "Period 0" <> colon <+> printFloat ratio <> "*state values + " <> printFloat (1 - ratio) <> "*reward")
+  where
+    ratio' = decaySetup decay period ratio
+prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
 prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> Bool -> Bool -> Bool -> BORL s -> m Doc

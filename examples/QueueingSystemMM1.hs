@@ -246,7 +246,7 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.075
+    , _learnRandomAbove   = 0.00
     , _zeta               = 0.05
     , _xi                 = 0.03
     , _disableAllLearning = False
@@ -287,24 +287,24 @@ decay t p
   --     , (exploration, 0.5, 30000, 0.01)
   --     ] p
   | otherwise =
-    overrideDecayParameters t [(beta, beta, 0.9, 150000, 1e-30), (delta, delta, 0.9, 150000, 1e-30)] p $
+    overrideDecayParameters t [(beta, beta, 0.5, 150000, 1e-4), (delta, delta, 0.5, 150000, 1e-4)] p $
     exponentialDecayParameters (Just minValues) 0.25 150000 t p
   where
     minValues =
       Parameters
-        { _alpha = 1e-5
+        { _alpha = 0
         , _alphaANN = 0.3
-        , _beta = 0.001
+        , _beta = 0             -- set above
         , _betaANN = 0.3
-        , _delta = 0.001
+        , _delta = 0            -- set above
         , _deltaANN = 0.3
-        , _gamma = 0.001
+        , _gamma = 1e-4
         , _gammaANN = 0.3
-        , _epsilon = 2
+        , _epsilon = 5
         , _exploration = 0.01
-        , _learnRandomAbove = 0
-        , _zeta = 0 -- no decay
-        , _xi = 0.1 -- 03
+        , _learnRandomAbove = 0 -- no decay
+        , _zeta = 0             -- no decay
+        , _xi = 0               -- no decay
         , _disableAllLearning = False
         }
 
@@ -354,7 +354,9 @@ alg =
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.8 ByStateValues False mRefStateAct
+        AlgBORL 0.5 0.8 ByStateValues
+        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
+        False mRefStateAct
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
