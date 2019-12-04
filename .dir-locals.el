@@ -2,6 +2,6 @@
 ;;; For more information see (info "(emacs) Directory Variables")
 
 ((haskell-mode
-  (intero-targets "grenade:lib")))
+  (intero-targets "high-level-tensorflow:lib")))
 
 

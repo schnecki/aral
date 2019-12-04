@@ -10,3 +10,6 @@
 [submodule "experimenter"]
 	path = experimenter
 	url = git@git.uibk.ac.at:c4371143/experimenter.git
+[submodule "high-level-tensorflow"]
+	path = high-level-tensorflow
+	url = git@github.com:schnecki/high-level-tensorflow.git

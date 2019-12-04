@@ -220,11 +220,11 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.001 0.9 0.001
-    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.75 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
-    , _stabilizationAdditionalRho = 15
+    , _stabilizationAdditionalRho = 7.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1 -- 3000
     , _trainMSEMax = Nothing    -- Just 0.05
@@ -248,7 +248,7 @@ params =
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
     , _zeta               = 0.03
-    , _xi                 = 0.005
+    , _xi                 = 0.03
     , _disableAllLearning = False
     }
 
@@ -257,13 +257,13 @@ paramsV :: Parameters
 paramsV =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.5
+    , _alphaANN           = 0.1
     , _beta               = 0.05
-    , _betaANN            = 1
+    , _betaANN            = 0.1
     , _delta              = 0.05
-    , _deltaANN           = 1
+    , _deltaANN           = 0.1
     , _gamma              = 0.05
-    , _gammaANN           = 1
+    , _gammaANN           = 0.1
     , _epsilon            = 2
     , _exploration        = 0.8
     , _learnRandomAbove   = 0.1
@@ -289,31 +289,23 @@ decay t p
       , (gammaANN, 0.5, 0.0001)
       , (exploration, 0.5, 0.01)
       ]
-  | otherwise =
-    -- set exploration (exponentialDecayValue (Just 0.001) 0.5 100000 t (p ^. exploration)) $
-    exponentialDecayParameters (Just minValues) 0.25 350000 t p
-    --  $
-    -- exponentialDecayParametersValue alpha (Just 0) 0.25 100000 t $
-    -- exponentialDecayParametersValue alpha (Just 0) 0.25 300000 t $
-    -- exponentialDecayParametersValue alphaANN (Just 0) 0.25 100000 t $
-    -- exponentialDecayParametersValue alphaANN (Just 0) 0.25 300000 t $
-    -- exponentialDecayParametersValue gamma (Just 0) 0.25 500000 t $ exponentialDecayParametersValue xi (Just 0) 0.25 500000 t $ exponentialDecayParametersValue exploration (Just 0.01) 0.50 200000 t p
+  | otherwise = exponentialDecayParameters (Just minValues) 0.25 150000 t p
   where
     minValues =
       Parameters
-        { _alpha              = 0.0001
-        , _alphaANN           = 0
-        , _beta               = 0.0001
-        , _betaANN            = 0
-        , _delta              = 0.0001
-        , _deltaANN           = 0
-        , _gamma              = 0.0001
-        , _gammaANN           = 0
-        , _epsilon            = 2
-        , _exploration        = 0.01
-        , _learnRandomAbove   = 0
-        , _zeta               = 0
-        , _xi                 = 0
+        { _alpha = 0.0001
+        , _alphaANN = 0.3
+        , _beta = 0.0001
+        , _betaANN = 0.3
+        , _delta = 0.0001
+        , _deltaANN = 0.3
+        , _gamma = 0.0001
+        , _gammaANN = 0.3
+        , _epsilon = 2
+        , _exploration = 0.01
+        , _learnRandomAbove = 0
+        , _zeta = 0.03
+        , _xi = 0.03
         , _disableAllLearning = False
         }
 
@@ -383,7 +375,7 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []

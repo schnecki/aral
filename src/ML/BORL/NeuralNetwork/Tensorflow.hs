@@ -172,6 +172,7 @@ getRefTensorFromName = TF.tensorRefFromName
 getControlNodeTensorFromName :: Text -> TF.ControlNode
 getControlNodeTensorFromName = TF.ControlNode . TF.NodeName
 
+
 setLearningRates :: (MonadBorl' m) => [Double] -> TensorflowModel' -> m ()
 setLearningRates learningRates model = liftTf $ zipWithM TF.assign lrRefs (map (TF.scalar . realToFrac) learningRates) >>= TF.run_
   where
