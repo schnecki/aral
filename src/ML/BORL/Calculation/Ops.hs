@@ -132,23 +132,24 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 100) * rhoMinimumState + expSmthPsi / 100 * rhoVal' -- rhoState
+        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * rhoVal' -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal'  <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext - stabilization)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge to 0
-      psiVState' = (1 - bta) * psiVState + bta * psiV
+      psiVState' = (1 - bta/100) * psiVState + bta/100 * psiV
+
   -- LastVs
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   -- W
   let wValState' = (1 - dltW) * wValState + dltW * (-vValState' + epsEnd * wValStateNext - stabilization)
       psiW = wValStateNext - vValState' - wValState'
-      psiWState' = (1 - dltW) * psiWState + dltW * psiW
+      psiWState' = (1 - dltW/100) * psiWState + dltW/100 * psiW
   -- W2
   let w2ValState' = (1 - dltW2) * w2ValState + dltW2 * (-wValState' + epsEnd * w2ValStateNext + stabilization)
       psiW2 = w2ValStateNext - wValState' - w2ValState'
-      psiW2State' = (1 - dltW2) * psiW2State + dltW2 * psiW2
+      psiW2State' = (1 - dltW2/100) * psiW2State + dltW2/100 * psiW2
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
@@ -164,7 +165,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | randomAction && not learnFromRandom = vValState'
         | otherwise = vValState' + xiVal * err
         where
-          err = psiVState' + zetaVal * psiWState' - zetaVal ^ (2 :: Int) * psiW2State'
+          err = psiVState' + zetaVal * psiWState' -- zetaVal ^ (2 :: Int) * psiW2State'
+          -- err | period `mod` 2 == 0 = psiVState' + zetaVal * psiWState'
+          --     | otherwise = psiVState' - zetaVal ^ (2 :: Int) * psiW2State'
   when (period == 0) $ liftIO $ writeFile "psiValues" "Period\tPsiV_ExpSmth\tPsiW_ExpSmth\tZeta\t-Zeta\n"
   liftIO $
     appendFile

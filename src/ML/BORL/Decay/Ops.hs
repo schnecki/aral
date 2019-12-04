@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes     #-}
 module ML.BORL.Decay.Ops where
 
 import           Control.DeepSeq
@@ -17,6 +19,22 @@ type Decay = Period -> Parameters -> Parameters -- ^ Function specifying the dec
 decaySetup :: DecaySetup -> Period -> Value -> DecayedValue
 decaySetup NoDecay                            = const id
 decaySetup (ExponentialDecay mMin rate steps) = exponentialDecayValue mMin rate steps
+
+type ParametersAtT0 = Parameters
+
+-- | Override the decay of specified parameters.
+overrideDecayParameters :: Period -> [(ASetter Parameters Parameters Double Double, Getting Double Parameters Double, DecayRate, DecaySteps, MinimumValue)] -> ParametersAtT0 -> Parameters -> Parameters
+overrideDecayParameters t xs params0 params = foldl (\p (setter, getter, rate, steps, minVal) -> set setter (decayedVal minVal rate steps (view getter params0)) p) params xs
+  where
+    decay rate steps = rate ** (fromIntegral t / fromIntegral steps)
+    decayedVal minVal rate steps v = max minVal (v * decay rate steps)
+
+-- overrideDecayParameters :: forall (f :: * -> *) . Functor f => Period -> [((Double -> f Double) -> Parameters -> f Parameters, DecayRate, DecaySteps, MinimumValue)] -> ParametersAtT0 -> Parameters -> Parameters
+-- overrideDecayParameters t xs params0 params = foldl (\p (f, rate, steps, minVal) -> set f (decayedVal minVal rate steps (view f params0)) p) params xs
+--   where
+--     decay rate steps = rate ** (fromIntegral t / fromIntegral steps)
+--     decayedVal minVal rate steps v = max minVal (v * decay rate steps)
+
 
 -- | Exponential Decay with possible minimum values. All ANN parameters, the minimum learning rate for random actions,
 -- and zeta are not decayed!

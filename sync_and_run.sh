@@ -17,7 +17,7 @@ function syncLoop() {
         size=`stat --printf="%s" stateValues`
         i=1
         if [ $size -ge 20000000 ]; then
-            i=7
+            i=3
         fi
         while [ $i -gt 0 ]; do
             i=$((i-1));

@@ -246,8 +246,8 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.10
-    , _zeta               = 0.03
+    , _learnRandomAbove   = 0.075
+    , _zeta               = 0.05
     , _xi                 = 0.03
     , _disableAllLearning = False
     }
@@ -275,37 +275,36 @@ paramsV =
 -- | Decay function of parameters.
 decay :: Decay
 decay t p
-  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg =
-    foldl
-      (\p (f, rate, minVal) -> exponentialDecayParametersValue f (Just minVal) rate 30000 t p)
-      paramsV
-      [ (alpha, 0.5, 0.00001)
-      , (alphaANN, 0.5, 0.00001)
-      , (beta, 0.5, 0.0001)
-      , (betaANN, 0.5, 0.0001)
-      , (delta, 0.5, 0.0001)
-      , (deltaANN, 0.5, 0.0001)
-      , (gamma, 0.5, 0.0001)
-      , (gammaANN, 0.5, 0.0001)
-      , (exploration, 0.5, 0.01)
-      ]
-  | otherwise = exponentialDecayParameters (Just minValues) 0.25 150000 t p
+  -- | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
+  --     [ (alpha, 0.5, 30000, 0.00001)
+  --     , (alphaANN, 0.5, 30000, 0.00001)
+  --     , (beta, 0.5, 30000, 0.0001)
+  --     , (betaANN, 0.5, 30000, 0.0001)
+  --     , (delta, 0.5, 30000, 0.0001)
+  --     , (deltaANN, 0.5, 30000, 0.0001)
+  --     , (gamma, 0.5, 30000, 0.0001)
+  --     , (gammaANN, 0.5, 30000, 0.0001)
+  --     , (exploration, 0.5, 30000, 0.01)
+  --     ] p
+  | otherwise =
+    overrideDecayParameters t [(beta, beta, 0.9, 150000, 1e-30), (delta, delta, 0.9, 150000, 1e-30)] p $
+    exponentialDecayParameters (Just minValues) 0.25 150000 t p
   where
     minValues =
       Parameters
-        { _alpha = 0.0001
+        { _alpha = 1e-5
         , _alphaANN = 0.3
-        , _beta = 0.0001
+        , _beta = 0.001
         , _betaANN = 0.3
-        , _delta = 0.0001
+        , _delta = 0.001
         , _deltaANN = 0.3
-        , _gamma = 0.0001
+        , _gamma = 0.001
         , _gammaANN = 0.3
         , _epsilon = 2
         , _exploration = 0.01
         , _learnRandomAbove = 0
-        , _zeta = 0.03
-        , _xi = 0.03
+        , _zeta = 0 -- no decay
+        , _xi = 0.1 -- 03
         , _disableAllLearning = False
         }
 
@@ -375,8 +374,8 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []

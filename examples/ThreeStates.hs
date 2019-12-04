@@ -125,7 +125,7 @@ mRefState = Nothing
 main :: IO ()
 main = do
   let algorithm =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues False mRefState
+        AlgBORL defaultGamma0 defaultGamma1 (Fixed 1) False mRefState
         -- algDQNAvgRewardFree
         -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
@@ -156,38 +156,39 @@ params =
   Parameters
     { _alpha = 0.005
     , _alphaANN = 1
-    , _beta = 0.07
+    , _beta = 0.01
     , _betaANN = 1
-    , _delta = 0.07
+    , _delta = 0.01
     , _deltaANN = 1
-    , _gamma = 0.07
+    , _gamma = 0.01
     , _gammaANN = 1
-    , _epsilon = 1.5
+    , _epsilon = 0.1
     , _exploration = 1.0
     , _learnRandomAbove = 0.1
-    , _zeta = 0.1
-    , _xi = 0.5
+    , _zeta = 0.3
+    , _xi = 0.01
     , _disableAllLearning = False
     }
 
 decay :: Decay
-decay = exponentialDecayParameters (Just minValues) 0.05 100000
+decay = -- exponentialDecayParameters (Just minValues) 0.05 100000
+  exponentialDecayParameters Nothing 0.05 100000
   where
     minValues =
       Parameters
-        { _alpha = 0.005
-        , _alphaANN = 1
-        , _beta = 0.07
-        , _betaANN = 1
-        , _delta = 0.07
-        , _deltaANN = 1
-        , _gamma = 0.07
-        , _gammaANN = 1
-        , _epsilon = 0.05
+        { _alpha = 0
+        , _alphaANN = 0
+        , _beta = 0
+        , _betaANN = 0
+        , _delta = 0
+        , _deltaANN = 0
+        , _gamma = 0
+        , _gammaANN = 0
+        , _epsilon = 0.1
         , _exploration = 0.01
-        , _learnRandomAbove = 0.1
-        , _zeta = 0.15
-        , _xi = 0.2
+        , _learnRandomAbove = 0
+        , _zeta = 0
+        , _xi = 0
         , _disableAllLearning = False
         }
 
