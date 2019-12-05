@@ -12,11 +12,12 @@ if [ "$2" != "" ]; then
 fi
 
 function syncLoop() {
+    startup=1
     while true; do
         rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,psiValues,reward,costs,episodeLength,queueLength} . 2>/dev/null
         size=`stat --printf="%s" stateValues`
         i=1
-        if [ $size -ge 20000000 ]; then
+        if [ $startup -eq 1 ] && [ $size -ge 20000000 ]; then
             i=3
         fi
         while [ $i -gt 0 ]; do
@@ -24,6 +25,7 @@ function syncLoop() {
             sleep $SYNC_TIMEOUT;
             wait $!
         done
+        startup=1
     done
 }
 

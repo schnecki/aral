@@ -167,16 +167,21 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         | otherwise = vValState' + xiVal * err
         where
           err =
-            psiVState' +
+            - psiVState' +
             zetaVal * psiWState'
-            -- -  zetaVal ^ (2 :: Int) * psiW2State'
-  let wValStateNew = wValState'
-        -- | randomAction && not learnFromRandom = wValState'
-        -- | otherwise = wValState' + xiVal * err
+            -  zetaVal ^ (2 :: Int) * psiW2State'
+  let wValStateNew
+        | randomAction && not learnFromRandom = wValState'
+        | otherwise = wValState' + xiVal * err
         where
-          err =
+          err = 0
             -- - zetaVal ^ (2 :: Int) * psiW2State'
-            - zetaVal * psiW2State'
+            -- zetaVal * psiW2State'
+  let w2ValStateNew
+        | randomAction && not learnFromRandom = w2ValState'
+        | otherwise = w2ValState' + xiVal * err
+        where
+          err = 0 -- psiW2State'
 
           -- err | period `mod` 2 == 0 = psiVState' + zetaVal * psiWState'
           --     | otherwise = psiVState' - zetaVal ^ (2 :: Int) * psiW2State'
@@ -194,7 +199,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiWValState' = Just psiWState'
       , getWValState' = Just wValStateNew -- wValState'
       , getPsiW2ValState' = Just psiW2State'
-      , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 w2ValState'
+      , getW2ValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 w2ValStateNew -- w2ValState'
       , getR0ValState' = Just r0ValState'
       , getR1ValState' = Just r1ValState'
       , getPsiValRho' = Just psiValRho'

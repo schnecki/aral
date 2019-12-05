@@ -213,7 +213,7 @@ instance ExperimentDef (BORL St)
     ]
 
 -- | BORL Parameters.
-params :: Parameters
+params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.005

@@ -233,7 +233,7 @@ nnConfig =
 
 
 -- | BORL Parameters.
-params :: Parameters
+params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.01
@@ -247,13 +247,13 @@ params =
     , _epsilon            = 5
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.00
-    , _zeta               = 0.05
-    , _xi                 = 0.03
+    , _zeta               = 0.10
+    , _xi                 = 0.01
     , _disableAllLearning = False
     }
 
 -- | BORL Parameters.
-paramsV :: Parameters
+paramsV :: ParameterInitValues
 paramsV =
   Parameters
     { _alpha              = 0.01
@@ -304,7 +304,7 @@ decay t p
         , _exploration = 0.01
         , _learnRandomAbove = 0 -- no decay
         , _zeta = 0             -- no decay
-        , _xi = 0               -- no decay
+        , _xi = 0
         , _disableAllLearning = False
         }
 

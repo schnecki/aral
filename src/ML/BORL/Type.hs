@@ -81,7 +81,7 @@ data BORL s = BORL
   , _featureExtractor :: !(s -> [Double])      -- ^ Function that extracts the features of a state.
   , _t                :: !Int                  -- ^ Current time t.
   , _episodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
-  , _parameters       :: !Parameters           -- ^ Parameter setup.
+  , _parameters       :: !ParameterInitValues  -- ^ Parameter setup.
   , _decayFunction    :: !Decay                -- ^ Decay function at period t.
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
@@ -136,7 +136,7 @@ defInitValues = InitValues 0 0 0 0 0
 
 -- Tabular representations
 
-mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
     (zip [idxStart ..] as)
@@ -181,7 +181,7 @@ mkUnichainTensorflowM ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> TF.Session TensorflowModel
   -> NNConfig
@@ -237,7 +237,7 @@ mkUnichainTensorflowCombinedNetM ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
   -> NNConfig
@@ -290,7 +290,7 @@ mkUnichainTensorflow ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> TF.Session TensorflowModel
   -> NNConfig
@@ -308,7 +308,7 @@ mkUnichainTensorflowCombinedNet ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
   -> NNConfig
@@ -318,7 +318,7 @@ mkUnichainTensorflowCombinedNet alg initialState ftExt as asFilter params decayF
   runMonadBorlTF (mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 
-mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> Parameters -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
   BORL
     (zip [0 ..] as)
@@ -354,7 +354,7 @@ mkUnichainGrenade ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> Network layers shapes
   -> NNConfig
@@ -399,7 +399,7 @@ mkUnichainGrenadeCombinedNet ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> Network layers shapes
   -> NNConfig
@@ -451,7 +451,7 @@ mkMultichainGrenade ::
   -> FeatureExtractor s
   -> [Action s]
   -> (s -> [Bool])
-  -> Parameters
+  -> ParameterInitValues
   -> Decay
   -> Network layers shapes
   -> NNConfig

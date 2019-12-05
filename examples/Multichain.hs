@@ -53,7 +53,7 @@ initState :: St
 initState = St 5
 
 -- | BORL Parameters.
-params :: Parameters
+params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.001

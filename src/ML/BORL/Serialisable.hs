@@ -42,7 +42,7 @@ data BORLSerialisable s = BORLSerialisable
   { serS              :: !s                    -- ^ Current state.
   , serT              :: !Int                  -- ^ Current time t.
   , serEpisodeNrStart :: !(Int, Int)           -- ^ Nr of Episode and start period.
-  , serParameters     :: !Parameters           -- ^ Parameter setup.
+  , serParameters     :: !ParameterInitValues  -- ^ Parameter setup.
   , serRewardFutures  :: [RewardFutureData s]
 
   -- define algorithm to use
