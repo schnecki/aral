@@ -35,7 +35,7 @@ data Parameters a = Parameters
                                           -- or equal to this value.
   , _xi                 :: !a             -- ^ Ratio in the interval (0,1) on how much of the difference of W value
                                                -- to enforce on V values.
-  , _disableAllLearning :: !Bool               -- ^ Completely disable learning (e.g. for evaluation). Enabling
+  , _disableAllLearning :: Bool               -- ^ Completely disable learning (e.g. for evaluation). Enabling
                                                -- increases performance.
   } deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 makeLenses ''Parameters

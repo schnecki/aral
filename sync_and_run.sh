@@ -6,15 +6,29 @@ PC=c437-pc169
 DIR=~/Documents/projects/blackwell_optimal_rl/borl/ # `pwd`
 SYNC_TIMEOUT=8
 BUILDARGS=--flag=borl:debug
+FIN=0
 
 if [ "$2" != "" ]; then
     PC="$2"
 fi
 
+# exit script
+exit_script() {
+    echo "Exit Signal received. Cleaning up..."
+    trap - SIGINT SIGTERM # clear the trap
+    kill -- -$$ # Sends SIGTERM to child/sub processes
+    # pkill -P $$
+    echo "Bye!"
+}
+
+# register exit handler
+trap exit_script SIGINT SIGTERM SIGKILL
+
+# Loop function for syncing files
 function syncLoop() {
     startup=1
-    while true; do
-        rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,psiValues,reward,costs,episodeLength,queueLength} . 2>/dev/null
+    while [ $FIN -eq 0 ]; do
+        rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,reward,costs,episodeLength,queueLength} . 2>/dev/null
         size=`stat --printf="%s" stateValues`
         i=1
         if [ $startup -eq 1 ] && [ $size -ge 20000000 ]; then
@@ -25,10 +39,9 @@ function syncLoop() {
             sleep $SYNC_TIMEOUT;
             wait $!
         done
-        startup=1
+        startup=0
     done
 }
-
 
 # Sync & Run
 echo "RUNNING ON  $USER@$PC:$DIR"
@@ -44,10 +57,10 @@ if [ $? -eq 0 ]; then
     printf "Building and running code on $PC...\n----------------------------------------\n"
     ssh -t $USER@$PC "source ~/.bashrc; cd $DIR; stack build $BUILDARGS && stack exec $1 1>&1; wait" || true
     printf "Execution stopped...\n----------------------------------------\n"
-
 else
     echo "Something went wrong while syncing. Check the connection"
 fi
 
-# Kill all childs
+# Kill all childs (in case of a normal exit)
+FIN=1
 pkill -P $$

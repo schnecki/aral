@@ -110,22 +110,29 @@ modelBuilder =
 instance RewardFuture St where
   type StoreType St = ()
 
+alg :: Algorithm St
+alg =
+        -- AlgDQN 0.99
+        -- AlgDQN 0.50
+        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        -- AlgBORLVOnly ByStateValues mRefStateAct
+        AlgBORL 0.5 0.8 ByStateValues
+        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
+        False mRefStateAct
+
+mRefStateAct :: Maybe (St, ActionIndex)
+mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
+-- mRefStateAct = Nothing
+
 
 main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  let algorithm =
-        -- AlgDQN 0.8027
-        AlgDQNAvgRewardFree 0.5 0.99 (ByMovAvg 1000)
-        -- AlgBORLVOnly (ByMovAvg 1000) Nothing
-
-        -- AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 200) False
-
-  -- rl <- mkUnichainGrenade algBORL initState actions actionFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow (AlgBORL defaultGamma0 defaultGamma0 ByStateValues ) initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState tblInp actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg initState actions actionFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow alg initState actions actionFilter params decay modelBuilder nnConfig Nothing
+  let rl = mkUnichainTabular alg initState tblInp actions actionFilter params decay Nothing
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]

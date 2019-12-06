@@ -246,37 +246,35 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.00
-    , _zeta               = 0.10
-    , _xi                 = 0.01
-    , _disableAllLearning = False
-    }
-
--- | BORL Parameters.
-paramsV :: ParameterInitValues
-paramsV =
-  Parameters
-    { _alpha              = 0.01
-    , _alphaANN           = 0.1
-    , _beta               = 0.05
-    , _betaANN            = 0.1
-    , _delta              = 0.05
-    , _deltaANN           = 0.1
-    , _gamma              = 0.05
-    , _gammaANN           = 0.1
-    , _epsilon            = 2
-    , _exploration        = 0.8
-    , _learnRandomAbove   = 0.1
-    , _zeta               = 0.0
+    , _learnRandomAbove   = 0.01
+    , _zeta               = 0.05
     , _xi                 = 0.01
     , _disableAllLearning = False
     }
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p
-  -- | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
-  --     [ (alpha, 0.5, 30000, 0.00001)
+decay =
+  decaySetupParameters
+    Parameters
+      { _alpha            = ExponentialDecay (Just 1e-4) 0.25 150000
+      , _beta             = ExponentialDecay (Just 1e-3) 0.75 150000
+      , _delta            = ExponentialDecay (Just 1e-3) 0.75 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.75 150000
+      , _zeta             = NoDecay -- ExponentialDecay (Just 1e-3) 0.5 150000
+      , _xi               = ExponentialDecay (Just 1e-3) 0.95 150000
+        -- Exploration
+      , _epsilon          = NoDecay
+      , _exploration      = ExponentialDecay (Just 1e-2) 0.5 150000
+      , _learnRandomAbove = NoDecay
+      -- ANN
+      , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      , _betaANN          = ExponentialDecay (Just 0.3) 0.75 150000
+      , _deltaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      , _gammaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      }
+  --  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
+  --  -   [ (alpha, 0.5, 30000, 0.00001)
   --     , (alphaANN, 0.5, 30000, 0.00001)
   --     , (beta, 0.5, 30000, 0.0001)
   --     , (betaANN, 0.5, 30000, 0.0001)
@@ -286,27 +284,11 @@ decay t p
   --     , (gammaANN, 0.5, 30000, 0.0001)
   --     , (exploration, 0.5, 30000, 0.01)
   --     ] p
-  | otherwise =
-    overrideDecayParameters t [(beta, beta, 0.5, 150000, 1e-4), (delta, delta, 0.5, 150000, 1e-4)] p $
-    exponentialDecayParameters (Just minValues) 0.25 150000 t p
-  where
-    minValues =
-      Parameters
-        { _alpha = 0
-        , _alphaANN = 0.3
-        , _beta = 0             -- set above
-        , _betaANN = 0.3
-        , _delta = 0            -- set above
-        , _deltaANN = 0.3
-        , _gamma = 1e-4
-        , _gammaANN = 0.3
-        , _epsilon = 5
-        , _exploration = 0.01
-        , _learnRandomAbove = 0 -- no decay
-        , _zeta = 0             -- no decay
-        , _xi = 0
-        , _disableAllLearning = False
-        }
+  --   -- overrideDecayParameters t [(beta, beta, 0.5, 150000, 1e-4), (delta, delta, 0.5, 150000, 1e-4)] p $
+  --   exponentialDecayParameters (Just minValues) 0.75 150000 t p
+  -- where
+  --   m = 1e-3
+  --   minValues =
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0

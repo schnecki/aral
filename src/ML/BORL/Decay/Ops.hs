@@ -38,6 +38,25 @@ overrideDecayParameters t xs params0 params = foldl (\p (setter, getter, rate, s
 --     decay rate steps = rate ** (fromIntegral t / fromIntegral steps)
 --     decayedVal minVal rate steps v = max minVal (v * decay rate steps)
 
+decaySetupParameters :: Parameters DecaySetup -> Decay
+decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDelANN decGa decGaANN decEps decExp decRand decZeta decXi _) period (Parameters alp alpANN bet betANN del delANN ga gaANN eps exp rand zeta xi disable) =
+  Parameters
+    { _alpha = decaySetup decAlp period alp
+    , _alphaANN = decaySetup decAlpANN period alpANN
+    , _beta = decaySetup decBet period bet
+    , _betaANN = decaySetup decBetANN period betANN
+    , _delta = decaySetup decDel period del
+    , _deltaANN = decaySetup decDelANN period delANN
+    , _gamma = decaySetup decGa period ga
+    , _gammaANN = decaySetup decGaANN period gaANN
+    , _epsilon = decaySetup decEps period eps
+    , _exploration = decaySetup decExp period exp
+    , _learnRandomAbove = decaySetup decRand period rand
+    , _zeta = decaySetup decZeta period zeta
+    , _xi = decaySetup decXi period xi
+    , _disableAllLearning = disable
+    }
+
 
 -- | Exponential Decay with possible minimum values. All ANN parameters, the minimum learning rate for random actions,
 -- and zeta are not decayed!
