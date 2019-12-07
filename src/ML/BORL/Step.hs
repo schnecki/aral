@@ -52,8 +52,15 @@ import           Text.Printf
 
 import           Debug.Trace
 
-fileDebugStateValues :: FilePath
-fileDebugStateValues = "stateValuesAllStates"
+fileDebugStateV :: FilePath
+fileDebugStateV = "stateVAllStates"
+
+fileDebugStateW :: FilePath
+fileDebugStateW = "stateWAllStates"
+
+fileDebugStateW2 :: FilePath
+fileDebugStateW2 = "stateW2AllStates"
+
 
 fileDebugPsiVValues :: FilePath
 fileDebugPsiVValues = "statePsiVAllStates"
@@ -239,7 +246,7 @@ stepExecuteMaterialisedFutures (nr, _, borl) dt =
 execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
-  when (borl ^. t == 0) $ forM_ [fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values, fileDebugStateValuesNrStates] $ \f ->
+  when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugStateW2, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values, fileDebugStateValuesNrStates] $ \f ->
     liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
   borl <- writeDebugFiles borl
 #endif
@@ -287,7 +294,9 @@ writeDebugFiles borl = do
     if borl ^. t > 0
       then return borl
       else do
-        liftIO $ writeFile fileDebugStateValues ""
+        liftIO $ writeFile fileDebugStateV ""
+        liftIO $ writeFile fileDebugStateW ""
+        liftIO $ writeFile fileDebugStateW2 ""
         liftIO $ writeFile fileDebugPsiVValues ""
         liftIO $ writeFile fileDebugPsiWValues ""
         liftIO $ writeFile fileDebugPsiW2Values ""
@@ -301,7 +310,7 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        liftIO $ forM_ [fileDebugStateValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugStateW2, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
@@ -319,15 +328,13 @@ writeDebugFiles borl = do
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValues <-
-      mapM
-        (\xs ->
-           if isDqn
-             then rValueFeat borl' RBig (init xs) (round $ last xs)
-             else vValueFeat False borl' (init xs) (round $ last xs))
-        stateFeats
-    liftIO $ appendFile fileDebugStateValues (show (borl' ^. t) <> "\t" <> mkListStr show stateValues <> "\n")
+    stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
+    stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
+    stateValuesW2 <- mapM (\xs -> if isDqn then return 0 else w2ValueFeat borl' (init xs) (round $ last xs)) stateFeats
+    liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
+      liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
+      liftIO $ appendFile fileDebugStateW2 (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW2 <> "\n")
       psiVValues <- mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
       liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
       psiWValues <- mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats

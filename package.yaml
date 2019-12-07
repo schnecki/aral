@@ -160,7 +160,9 @@ executables:
 
   printer-mail:
     main:                PrinterMail.hs
-    other-modules:       Helper
+    other-modules:
+    - Helper
+    - SolveLp
     source-dirs:         examples
     ghc-options:
     - -threaded
@@ -168,6 +170,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - borl
+    - hmatrix-glpk
 
   three-states:
     main:                ThreeStates.hs

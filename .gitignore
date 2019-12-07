@@ -43,3 +43,6 @@ queueLength
 /test/statePsiW2AllStates
 .dir-locals.el
 /.stateValues*
+/stateVAllStates
+/stateW2AllStates
+/stateWAllStates

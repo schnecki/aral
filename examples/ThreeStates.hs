@@ -166,7 +166,7 @@ params =
     , _exploration = 1.0
     , _learnRandomAbove = 0.5
     , _zeta = 0.15
-    , _xi = 0.05
+    , _xi = 0.001
     , _disableAllLearning = False
     }
 
@@ -178,7 +178,7 @@ decay =
       { _alpha            = ExponentialDecay (Just 1e-3) 0.05 100000
       , _beta             = ExponentialDecay (Just 1e-3) 0.05 100000
       , _delta            = ExponentialDecay (Just 1e-3) 0.05 100000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.05 100000
+      , _gamma            = ExponentialDecay (Just 1e-4) 0.05 100000
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration

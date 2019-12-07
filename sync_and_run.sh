@@ -28,7 +28,7 @@ trap exit_script SIGINT SIGTERM SIGKILL
 function syncLoop() {
     startup=1
     while [ $FIN -eq 0 ]; do
-        rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateValuesAllStates,stateValuesAllStatesCount,reward,costs,episodeLength,queueLength} . 2>/dev/null
+        rsync -tarz $USER@$PC:$DIR/{statePsiVAllStates,statePsiWAllStates,statePsiW2AllStates,stateValues,stateVAllStates,stateWAllStates,stateW2AllStates,stateValuesAllStatesCount,reward,costs,episodeLength,queueLength} . 2>/dev/null
         size=`stat --printf="%s" stateValues`
         i=1
         if [ $startup -eq 1 ] && [ $size -ge 20000000 ]; then

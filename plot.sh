@@ -7,7 +7,9 @@ gnuplot -e "set key autotitle columnhead; plot for [col=2:2] 'reward' using 0:co
 
 NR="`head -n1 stateValuesAllStatesCount`"
 if [ $? -eq 0 ]; then
-    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateValuesAllStates' using 1:col with lines; set key title 'All Bias Values'; pause mouse close; " &
+    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
+    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateWAllStates' using 1:col with lines; set key title 'All W Values'; pause mouse close; " &
+    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateW2AllStates' using 1:col with lines; set key title 'All W2 Values'; pause mouse close; " &
     gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiVAllStates' using 1:col with lines; set key title 'All Psi V Values'; pause mouse close; " &
     gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiWAllStates' using 1:col with lines; set key title 'All Psi W Values'; pause mouse close; " &
     gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiW2AllStates' using 1:col with lines; set key title 'All Psi W2 Values'; pause mouse close; " &

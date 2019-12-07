@@ -6,6 +6,8 @@ module ML.BORL.Calculation.Ops
     , eValue
     , vValue
     , vValueFeat
+    , wValueFeat
+    , w2ValueFeat
     , rValueFeat
     , rhoValue
     , RSize (..)
@@ -136,11 +138,15 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           ByStateValues -> reward + vValStateNext - vValState
           ByStateValuesAndReward ratio decay -> ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
             where ratio' = decaySetup decay period ratio
-  let rhoVal' =
+  let rhoVal' | randomAction && not learnFromRandom = rhoVal
+              | otherwise =
         max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
+          ByReward | randomAction && not learnFromRandom -> rhoVal
+          ByStateValuesAndReward ratio decay | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
+            where ratio' = decaySetup decay period ratio
           _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'
@@ -159,9 +165,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       psiW = wValStateNext - vValState' - wValState'
       psiWState' = (1 - xiVal * dltW) * psiWState + dltW * xiVal * psiW
   -- W2
-  let w2ValState' = (1 - dltW2) * w2ValState + dltW2 * (-wValState' + epsEnd * w2ValStateNext + stabilization)
+  let w2ValState' = (1 - 0.5*dltW2) * w2ValState + 0.5*dltW2 * (-wValState' + epsEnd * w2ValStateNext + stabilization)
       psiW2 = w2ValStateNext - wValState' - w2ValState'
-      psiW2State' = (1 - xiVal * dltW2) * psiW2State + dltW2 * xiVal * psiW2
+      psiW2State' = (1 - xiVal * 0.5*dltW2) * psiW2State + 0.5*dltW2 * xiVal * psiW2
    -- R0/R1
   rSmall <- rStateValue borl RSmall (stateNext, stateNextActIdxes)
   rBig <- rStateValue borl RBig (stateNext, stateNextActIdxes)
@@ -190,16 +196,45 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   --         errW2 = trunc $ zetaVal ^ (2 :: Int) * psiW2State'
   --         trunc x = fromIntegral (truncate $ x * nr)  / nr
   --           where nr = 2
+
+  -- working:
   let eps = 0.1
   let vValStateNew
         | randomAction && not learnFromRandom = vValState'
-        | abs vValState' > eps && period `mod` 2 == 0 =
-           vValState' + bta * (psiVState' + psiWState')
-           -- (1-xiVal) * vValState' + xiVal * (vValState' + psiVState')
-        | otherwise =
-           vValState' + bta * psiWState' -- psiW2State')
-           -- (1-xiVal) * vValState' + xiVal * (vValState' + psiWState')
+        | otherwise = vValState' + bta * (- psiVState' + zetaVal * psiWState')
+  let vValStateNew
+        | randomAction && not learnFromRandom = vValState'
+        | otherwise = vValState' + bta * err
+        where
+          err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
 
+  let vValStateNew
+        -- | randomAction && not learnFromRandom = vValState'
+        | otherwise = vValState' + bta * 0.5 * signum err * err^2
+        where
+          err = psiVState' + zetaVal * psiWState' -- + zetaVal ^ 2 * psiW2State'
+
+  -- let vValStateNew
+  --       | randomAction && not learnFromRandom = vValState'
+  --       | otherwise = vValState' + 0.5 * (psiVState' + psiWState')
+  -- let wValStateNew
+  --       | randomAction && not learnFromRandom = wValState'
+  --       | otherwise = wValState' + 0.5 * (psiVState' + psiWState')
+
+  -- let vValStateNew
+  --       | randomAction && not learnFromRandom = vValState'
+  --       | abs vValState' > eps && period `mod` 2 == 0 = vValState' + bta * (psiVState' + psiWState')
+  --       | psiValW' > eps = vValState' + bta * psiWState'
+  --       | otherwise = vValState' + bta * err
+  --       where
+  --         err = psiVState' -- + psiWState'
+  --               + 0.1 * psiW2State'
+
+        -- | randomAction && not learnFromRandom = wValState'
+        -- | abs wValState' > eps = wValState' -- + bta * psiWState'
+        --    -- (1-xiVal) * vValState' + xiVal * (vValState' + psiVState')
+        -- | otherwise = wValState' -- bta * psiW2State' -- psiW2State')
+           -- (1-xiVal) * vValState' + xiVal * (vValState' + psiWState')
   -- let vValStateNew
   --       | randomAction && not learnFromRandom = vValState'
   --       | abs vValState' > eps && period `mod` 2 == 0 = vValState' + bta * psiVState'
@@ -259,6 +294,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
 
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+      period = borl ^. t
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
         | isANN = params' ^. paramANN
@@ -297,6 +334,10 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
+          ByReward | randomAction && not learnFromRandom -> rhoVal
+          ByStateValuesAndReward ratio decay | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
+            where ratio' = decaySetup decay period ratio
+
           _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
@@ -370,6 +411,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+      period = borl ^. t
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
         | isANN = params' ^. paramANN
@@ -405,6 +448,9 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
+          ByReward | randomAction && not learnFromRandom -> rhoVal
+          ByStateValuesAndReward ratio decay | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
+            where ratio' = decaySetup decay period ratio
           _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'

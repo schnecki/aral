@@ -162,6 +162,15 @@ params = Parameters
   , _disableAllLearning = False
   }
 
+-- policy :: Policy St
+-- policy s a
+--   | s == Left 5  = [((One, right), 1.0)]
+--   | s == Right 10 = [((One, left), 1.0)]
+--   | s == Left x = [((Left (x+1), moveLeft), 1.0)]
+--   | s == Right x = [((Right (x+1), moveRight), 1.0)]
+--   | otherwise = []
+
+
 -- | Decay function of parameters.
 decay :: Decay
 decay t = exponentialDecayParameters (Just minValues) 0.05 300000 t

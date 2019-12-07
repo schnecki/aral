@@ -246,9 +246,9 @@ params =
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.01
+    , _learnRandomAbove   = 0.10
     , _zeta               = 0.05
-    , _xi                 = 0.01
+    , _xi                 = 0.03
     , _disableAllLearning = False
     }
 
@@ -257,15 +257,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-4) 0.25 150000
-      , _beta             = ExponentialDecay (Just 1e-3) 0.75 150000
-      , _delta            = ExponentialDecay (Just 1e-3) 0.75 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.75 150000
-      , _zeta             = NoDecay -- ExponentialDecay (Just 1e-3) 0.5 150000
-      , _xi               = ExponentialDecay (Just 1e-3) 0.95 150000
+      { _alpha            = ExponentialDecay (Just 5e-5) 0.25 150000
+      , _beta             = ExponentialDecay (Just 1e-5) 0.75 150000
+      , _delta            = ExponentialDecay (Just 1e-5) 0.75 150000
+      , _gamma            = ExponentialDecay (Just 1e-5) 0.75 150000
+      , _zeta             = NoDecay -- ExponentialDecay (Just 1e-3) 0.75 150000
+      , _xi               = ExponentialDecay (Just 1e-2) 0.95 150000
         -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 1e-2) 0.5 150000
+      , _exploration      = ExponentialDecay (Just 1e-1) 0.25 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
@@ -334,11 +334,11 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         AlgBORL 0.5 0.8 ByStateValues
-        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
         False mRefStateAct
+        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]

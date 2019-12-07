@@ -270,14 +270,13 @@ prettyBORLHead' printRho prettyStateFun borl = do
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
+    text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alphaANN alpha)) $+$
-    algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta)) $+$
-    algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta)) $+$
+    algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta))) $+$
+    algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta))) $+$
     (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gammaANN gamma)) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gammaANN gamma)) $+$
     text "Epsilon" <>
@@ -420,7 +419,7 @@ prettyBORLWithStInverse mStInverse borl =
     Just _ ->
       runMonadBorlTF $ do
         restoreTensorflowModels True borl
-        prettyBORLTables mStInverse True True True borl
+        prettyBORLTables mStInverse True False False borl
   where
     isTensorflowProxy P.TensorflowProxy {} = True
     isTensorflowProxy _                    = False
