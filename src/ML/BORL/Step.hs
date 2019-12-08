@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE ViewPatterns        #-}
@@ -34,6 +36,7 @@ import           ML.BORL.Types
 
 import           Control.Applicative            ((<|>))
 import           Control.Arrow                  ((&&&), (***))
+import           Control.DeepSeq
 import           Control.DeepSeq                (NFData, force)
 import           Control.Lens
 import           Control.Monad
@@ -45,6 +48,8 @@ import           Data.List                      (find, groupBy, intercalate, par
                                                  sortBy)
 import qualified Data.Map.Strict                as M
 import           Data.Maybe                     (fromMaybe, isJust)
+import           Data.Serialize
+import           GHC.Generics
 import           System.Directory
 import           System.IO
 import           System.Random
@@ -120,6 +125,8 @@ stepsM (force -> borl) nr = do
     else return borl'
   where maxNr = 1000
 
+data Decision = Random | MaxRho | MaxV | MaxE
+  deriving (Show, Read, Eq, Ord, Generic, NFData, Serialize)
 
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (BORL s, Bool, ActionIndexed s)

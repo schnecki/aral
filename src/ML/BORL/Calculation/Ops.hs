@@ -141,7 +141,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
             where ratio' = decaySetup decay period ratio
   let rhoVal' | randomAction && not learnFromRandom = rhoVal
               | otherwise =
-        -- max rhoMinimumState $
+        max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
@@ -152,7 +152,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * (rhoVal' - 0.25) -- rhoState
+        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * (0.975 * rhoVal') -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -180,41 +180,23 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
   let psiValW2' = (1 - expSmth) * psiValW2 + expSmth * abs psiW2State'
   -- enforce values
+  -- working:
   -- let vValStateNew
   --       | randomAction && not learnFromRandom = vValState'
-  --       | abs (xiVal * err) > 0.1 = vValState' + xiVal * err
-  --       | otherwise = vValState' + xiVal * err
+  --       | otherwise = vValState' + bta * (- psiVState' + zetaVal * psiWState')
+  -- let vValStateNew
+  --       | randomAction && not learnFromRandom = vValState'
+  --       | otherwise = vValState' + bta * err
   --       where
-  --         two = 2 :: Int
-  --         -- err | period `mod` 2 == 0 && psiVState' < 0.1 = signum errV * errV ^ two + signum errW * errW ^ two
-  --         --     | otherwise = signum errV * errV ^ two            -- - signum errW2 * errW2 ^ two
-  --         -- err = signum errV * errV ^ two + signum errW * errW ^ two + signum errW2 * errW2 ^ two
-  --         err = errV + errW - errW2
-  --           -- | period `mod` 2 == 0 = signum errV * errV ^ two + signum errW * errW ^ two
-  --           -- | otherwise = signum errV * errV ^ two - signum errW2 * errW2 ^ two
-  --         errV = trunc $ psiVState'
-  --         errW = trunc $ zetaVal * psiWState'
-  --         errW2 = trunc $ zetaVal ^ (2 :: Int) * psiW2State'
-  --         trunc x = fromIntegral (truncate $ x * nr)  / nr
-  --           where nr = 2
+  --         err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
 
-  -- working:
-  let eps = 0.1
   let vValStateNew
         | randomAction && not learnFromRandom = vValState'
-        | otherwise = vValState' + bta * (- psiVState' + zetaVal * psiWState')
-  let vValStateNew
-        | randomAction && not learnFromRandom = vValState'
-        | otherwise = vValState' + bta * err
+        | otherwise = vValState' + 0.2 * 0.5 * signum err * err^2
         where
-          err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
+          err = psiVState' + zetaVal * psiWState' - zetaVal ^ 2 * psiW2State'
 
-  let vValStateNew = vValState'
-        -- | randomAction && not learnFromRandom = vValState'
-        -- | otherwise = vValState' + (1-xiVal) * 0.5 * signum err * err^2
-        -- where
-        --   err = psiVState' + zetaVal * psiWState' -- + zetaVal ^ 2 * psiW2State'
-
+  -- ideas:
   -- let vValStateNew
   --       | randomAction && not learnFromRandom = vValState'
   --       | otherwise = vValState' + 0.5 * (psiVState' + psiWState')

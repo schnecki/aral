@@ -71,7 +71,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 4
+maxQueueSize = 5
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -220,7 +220,7 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.001 0.9 0.001
-    , _learningParamsDecay = ExponentialDecay Nothing 0.75 100000
+    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
@@ -228,7 +228,7 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1 -- 3000
     , _trainMSEMax = Nothing    -- Just 0.05
-    , _setExpSmoothParamsTo1 = False
+    , _setExpSmoothParamsTo1 = False -- True
     }
 
 
@@ -265,13 +265,13 @@ decay =
       , _xi               = ExponentialDecay (Just 1e-3) 0.75 150000
         -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 0.01) 0.25 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.75 150000
       , _learnRandomAbove = NoDecay
       -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
-      , _betaANN          = ExponentialDecay (Just 0.3) 0.75 150000
-      , _deltaANN         = ExponentialDecay (Just 0.3) 0.75 150000
-      , _gammaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 150000
+      , _betaANN          = ExponentialDecay (Just 0.01) 0.75 150000
+      , _deltaANN         = ExponentialDecay (Just 0.01) 0.75 150000
+      , _gammaANN         = ExponentialDecay (Just 0.01) 0.75 150000
       }
   --  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
   --  -   [ (alpha, 0.5, 30000, 0.00001)
@@ -358,8 +358,8 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
