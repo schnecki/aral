@@ -71,7 +71,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 5
+maxQueueSize = 4
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -151,7 +151,7 @@ instance BorlLp St where
 policy :: Int -> Policy St
 policy maxAdmit (St s incoming) act
   | not incoming && act == rejectAct =
-    [((St (max 0 (s - 1)) False, rejectAct), pMu)] ++ [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
+    [((St (max 0 (s - 1)) False, rejectAct), pMu), ((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
   | incoming && act == rejectAct = [((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, rejectAct), pReject s * pLambda)] ++ [((St (max 0 (s - 1)) False, rejectAct), pMu)]
   | incoming && act == admitAct =
     [((St (s + 1) True, condAdmit (s + 1)), pAdmit (s + 1) * pLambda), ((St (s + 1) True, rejectAct), pReject (s + 1) * pLambda)] ++ [((St s False, rejectAct), pMu)]
@@ -257,15 +257,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 5e-5) 0.25 150000
+      { _alpha            = ExponentialDecay (Just 0) 0.75 150000
       , _beta             = ExponentialDecay (Just 1e-5) 0.75 150000
       , _delta            = ExponentialDecay (Just 1e-5) 0.75 150000
       , _gamma            = ExponentialDecay (Just 1e-5) 0.75 150000
       , _zeta             = NoDecay -- ExponentialDecay (Just 1e-3) 0.75 150000
-      , _xi               = ExponentialDecay (Just 1e-2) 0.95 150000
+      , _xi               = ExponentialDecay (Just 1e-3) 0.75 150000
         -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 1e-1) 0.25 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.25 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
@@ -336,7 +336,7 @@ alg =
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.8 ByStateValues
+        AlgBORL 0.5 0.65 ByStateValues
         False mRefStateAct
         -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
@@ -453,6 +453,6 @@ admit st@(St len True) = do
   reward <- rewardFunction st Admit
   r <- randomRIO (0, 1 :: Double)
   return $ if r <= lambda / (lambda + mu)
-    then (reward, St (len+1) True, False) -- admit + new arrival
-    else (reward, St len False, False)    -- admit + no new arrival
+    then (reward, St (len+1) True, False)  -- admit + new arrival
+    else (reward, St len False, False)     -- admit + no new arrival
 admit _ = error "admit function called with no arrival available. This function is only to be called when an order arrived."

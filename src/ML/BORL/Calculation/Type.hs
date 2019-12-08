@@ -35,6 +35,27 @@ data Calculation = Calculation
   , getEpisodeEnd     :: Bool
   } deriving (Show, Generic, NFData)
 
+fmapCalculation :: (Double -> Double) -> Calculation -> Calculation
+fmapCalculation f calc =
+  Calculation
+    { getRhoMinimumVal' = f <$> getRhoMinimumVal' calc
+    , getRhoVal'        = f <$> getRhoVal' calc
+    , getPsiVValState'  = f <$> getPsiVValState' calc
+    , getVValState'     = f <$> getVValState' calc
+    , getPsiWValState'  = f <$> getPsiWValState' calc
+    , getWValState'     = f <$> getWValState' calc
+    , getPsiW2ValState' = f <$> getPsiW2ValState' calc
+    , getW2ValState'    = f <$> getW2ValState' calc
+    , getR0ValState'    = f <$> getR0ValState' calc
+    , getR1ValState'    = f <$> getR1ValState' calc
+    , getPsiValRho'     = f <$> getPsiValRho' calc
+    , getPsiValV'       = f <$> getPsiValV' calc
+    , getPsiValW'       = f <$> getPsiValW' calc
+    , getPsiValW2'      = f <$> getPsiValW2' calc
+    , getLastVs'        = getLastVs' calc
+    , getLastRews'      = getLastRews' calc
+    , getEpisodeEnd     = getEpisodeEnd calc
+    }
 
 avgCalculation :: [Calculation] -> Calculation
 avgCalculation [] = error "empty calculations. Is the batchsize>0 and replayMemoryMaxSize>0?"

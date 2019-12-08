@@ -101,6 +101,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       randAct
         | randomAction = 0
         | otherwise = 1
+      notRandAct = 1 - randAct
   let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
   let expSmth
         | learnFromRandom = expSmthPsi
@@ -126,7 +127,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let mStabVal = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRho
       mStabValDec = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRhoDecay
       stabilization = fromMaybe 0 $ decaySetup <$> mStabValDec <*> pure period <*> mStabVal
-  -- let stabilization = decaySetup (ExponentialDecay Nothing 0.5 2000) period 0.0
+  let stabilization = 0
   -- Rho
   let rhoState =
         case avgRewardType of
@@ -140,7 +141,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
             where ratio' = decaySetup decay period ratio
   let rhoVal' | randomAction && not learnFromRandom = rhoVal
               | otherwise =
-        max rhoMinimumState $
+        -- max rhoMinimumState $
         case avgRewardType of
           ByMovAvg _ -> rhoState
           Fixed x    -> x
@@ -151,21 +152,21 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * rhoVal' -- rhoState
+        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * (rhoVal' - 0.25) -- rhoState
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
-  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext - stabilization)
+  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext - notRandAct * psiVState - stabilization)
       psiV = reward + vValStateNext - rhoVal' - vValState' -- should converge to 0
       psiVState' = (1 - xiVal * bta) * psiVState + bta * xiVal * psiV
   -- LastVs
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   -- W
-  let wValState' = (1 - dltW) * wValState + dltW * (-vValState' + epsEnd * wValStateNext - stabilization)
+  let wValState' = (1 - dltW) * wValState + dltW * (-vValState' + epsEnd * wValStateNext - notRandAct * psiWState - stabilization)
       psiW = wValStateNext - vValState' - wValState'
       psiWState' = (1 - xiVal * dltW) * psiWState + dltW * xiVal * psiW
   -- W2
-  let w2ValState' = (1 - 0.5*dltW2) * w2ValState + 0.5*dltW2 * (-wValState' + epsEnd * w2ValStateNext + stabilization)
+  let w2ValState' = (1 - 0.5*dltW2) * w2ValState + 0.5*dltW2 * (-wValState' + epsEnd * w2ValStateNext - notRandAct * psiW2State + stabilization)
       psiW2 = w2ValStateNext - wValState' - w2ValState'
       psiW2State' = (1 - xiVal * 0.5*dltW2) * psiW2State + 0.5*dltW2 * xiVal * psiW2
    -- R0/R1
@@ -208,11 +209,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         where
           err = psiVState' + 0.03 * psiWState' - 0.01 * psiW2State'
 
-  let vValStateNew
+  let vValStateNew = vValState'
         -- | randomAction && not learnFromRandom = vValState'
-        | otherwise = vValState' + bta * 0.5 * signum err * err^2
-        where
-          err = psiVState' + zetaVal * psiWState' -- + zetaVal ^ 2 * psiW2State'
+        -- | otherwise = vValState' + (1-xiVal) * 0.5 * signum err * err^2
+        -- where
+        --   err = psiVState' + zetaVal * psiWState' -- + zetaVal ^ 2 * psiW2State'
 
   -- let vValStateNew
   --       | randomAction && not learnFromRandom = vValState'
@@ -271,7 +272,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   --         err = 0
   --         -- err | period `mod` 2 == 0 = psiVState' + zetaVal * psiWState'
   --         --     | otherwise = psiVState' - zetaVal ^ (2 :: Int) * psiW2State'
-  return $
+  let rnd nr x = fromIntegral (round $ x * 10 ^ (nr :: Int) ) / (10 ^ nr)
+  return $ -- fmapCalculation (rnd 2) $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just rhoVal'
@@ -588,12 +590,12 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
 rStateValue :: (MonadBorl' m) => BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
 rStateValue borl size (state, actIdxes) = maximum <$> mapM (rValueWith Target borl size state) actIdxes
 
--- | Calculates the difference between the expected discounted values.
+-- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
 eValue :: (MonadBorl' m) => BORL s -> s -> ActionIndex -> m Double
 eValue borl state act = do
   big <- rValueWith Target borl RBig (ftExtBig state) act
   small <- rValueWith Target borl RSmall (ftExtSmall state) act
-  return $ big - small
+  return $ small - big
 
   where ftExtSmall = borl ^. featureExtractor
         ftExtBig = borl ^. featureExtractor
