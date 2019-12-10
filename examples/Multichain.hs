@@ -56,13 +56,13 @@ initState = St 5
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha              = 0.001
+    { _alpha              = 0.01
     , _alphaANN           = 0.5
-    , _beta               = 0.001
+    , _beta               = 0.01
     , _betaANN            = 1
-    , _delta              = 0.001
+    , _delta              = 0.01
     , _deltaANN           = 1
-    , _gamma              = 0.0005
+    , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 0.8
@@ -74,28 +74,26 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t p = exponentialDecayParameters (Just minValues) 0.50 300000 t $
-            exponentialDecayParametersValue alpha Nothing 0.25 300000 t $
-            exponentialDecayParametersValue gamma Nothing 0.25 500000 t $
-            exponentialDecayParametersValue xi Nothing 0.25 500000 t p
-  where
-    minValues =
-      Parameters
-        { _alpha = 0.0001
-        , _alphaANN = 0.5
-        , _beta = 0.0001
-        , _betaANN = 1.0
-        , _delta = 0.0001
-        , _deltaANN = 1.0
-        , _gamma = 0.0001
-        , _gammaANN = 1.0
-        , _epsilon = 2
-        , _exploration = 0.01
-        , _learnRandomAbove = 0.05
-        , _zeta = 0.0
-        , _xi = 0.01
-        , _disableAllLearning = False
-        }
+decay =
+  decaySetupParameters
+    Parameters
+      { _alpha            = ExponentialDecay (Just 0) 0.75 50000
+      , _beta             = ExponentialDecay (Just 1e-3) 0.75 50000
+      , _delta            = ExponentialDecay (Just 1e-3) 0.75 50000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.75 50000
+      , _zeta             = NoDecay -- ExponentialDecay (Just 0.5) 0.75 50000
+      , _xi               = ExponentialDecay (Just 1e-3) 0.75 50000
+        -- Exploration
+      , _epsilon          = NoDecay
+      , _exploration      = ExponentialDecay (Just 0.01) 0.75 50000
+      , _learnRandomAbove = NoDecay
+      -- ANN
+      , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 50000
+      , _betaANN          = ExponentialDecay (Just 0.01) 0.75 50000
+      , _deltaANN         = ExponentialDecay (Just 0.01) 0.75 50000
+      , _gammaANN         = ExponentialDecay (Just 0.01) 0.75 50000
+      }
+
 
 -- State
 newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)
