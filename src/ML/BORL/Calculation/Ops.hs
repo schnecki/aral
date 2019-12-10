@@ -95,6 +95,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       zetaVal = params' ^. zeta
       period = borl ^. t
       (psiValRho, psiValV, psiValW, psiValW2) = borl ^. psis -- exponentially smoothed Psis
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
   let label = (state, aNr)
       epsEnd
         | episodeEnd = 0
@@ -102,8 +103,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       randAct
         | randomAction = 0
         | otherwise = 1
-      nonRandAct = 1 - randAct
-  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+      nonRandAct
+        | learnFromRandom = 1
+        | otherwise = 1 - randAct
   let expSmth
         | learnFromRandom = expSmthPsi
         | otherwise = randAct * expSmthPsi

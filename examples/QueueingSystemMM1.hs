@@ -71,7 +71,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 3
+maxQueueSize = 4
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -265,7 +265,7 @@ decay =
       , _xi               = ExponentialDecay (Just 1e-3) 0.75 150000
       -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 0.01) 0.75 150000
+      , _exploration      = ExponentialDecay (Just 0.10) 0.75 150000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 150000
