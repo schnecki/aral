@@ -242,13 +242,13 @@ params =
     , _betaANN            = 1
     , _delta              = 0.03
     , _deltaANN           = 1
-    , _gamma              = 0.03
+    , _gamma              = 0.005
     , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
-    , _zeta               = 0.04
-    , _xi                 = 0.03
+    , _zeta               = 0.10
+    , _xi                 = 5e-3
     , _disableAllLearning = False
     }
 
@@ -257,15 +257,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 0) 0.75 150000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _delta            = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _zeta             = NoDecay -- ExponentialDecay (Just 0.5) 0.75 150000
-      , _xi               = ExponentialDecay (Just 1e-3) 0.75 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+      , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 0.10) 0.75 150000
+      , _exploration      = ExponentialDecay (Just 0.10) 0.5 150000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 150000

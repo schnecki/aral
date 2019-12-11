@@ -236,25 +236,47 @@ params =
 
 -- | Decay function of parameters.
 decay :: Decay
-decay = exponentialDecayParameters (Just minValues) 0.05 100000
-  where
-    minValues =
-      Parameters
-        { _alpha              = 0.000
-        , _alphaANN           = 0.0
-        , _beta               = 0.000
-        , _betaANN            = 0
-        , _delta              = 0.000
-        , _deltaANN           = 0
-        , _gamma              = 0.000
-        , _gammaANN           = 0
-        , _epsilon            = 0.05
-        , _exploration        = 0.01
-        , _learnRandomAbove   = 0.0
-        , _zeta               = 0.0
-        , _xi                 = 0.00
-        , _disableAllLearning = False
-        }
+decay =
+  decaySetupParameters
+    Parameters
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+      , _xi               = NoDecay
+      -- Exploration
+      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.05 100000
+      , _learnRandomAbove = NoDecay
+      -- ANN
+      , _alphaANN         = ExponentialDecay Nothing 0.75 150000
+      , _betaANN          = ExponentialDecay Nothing 0.75 150000
+      , _deltaANN         = ExponentialDecay Nothing 0.75 150000
+      , _gammaANN         = ExponentialDecay Nothing 0.75 150000
+      }
+
+-- -- | Decay function of parameters.
+-- decay :: Decay
+-- decay = exponentialDecayParameters (Just minValues) 0.05 100000
+--   where
+--     minValues =
+--       Parameters
+--         { _alpha              = 0.000
+--         , _alphaANN           = 0.0
+--         , _beta               = 0.000
+--         , _betaANN            = 0
+--         , _delta              = 0.000
+--         , _deltaANN           = 0
+--         , _gamma              = 0.000
+--         , _gammaANN           = 0
+--         , _epsilon            = 0.05
+--         , _exploration        = 0.01
+--         , _learnRandomAbove   = 0.0
+--         , _zeta               = 0.0
+--         , _xi                 = 0.00
+--         , _disableAllLearning = False
+--         }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0
