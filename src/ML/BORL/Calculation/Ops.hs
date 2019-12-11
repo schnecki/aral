@@ -4,6 +4,7 @@ module ML.BORL.Calculation.Ops
     ( mkCalculation
     , rValue
     , eValue
+    , eValueAvgCleaned
     , vValue
     , vValueFeat
     , wValueFeat
@@ -525,6 +526,19 @@ eValue borl state act = do
   big <- rValueWith Target borl RBig (ftExtBig state) act
   small <- rValueWith Target borl RSmall (ftExtSmall state) act
   return $ small - big
+
+  where ftExtSmall = borl ^. featureExtractor
+        ftExtBig = borl ^. featureExtractor
+
+-- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
+eValueAvgCleaned :: (MonadBorl' m) => BORL s -> s -> ActionIndex -> m Double
+eValueAvgCleaned borl state act = case borl ^. algorithm of
+  AlgBORL gamma0 gamma1 _ _ _ -> do
+    rBig <- rValueWith Target borl RBig (ftExtBig state) act
+    rSmall <- rValueWith Target borl RSmall (ftExtSmall state) act
+    rhoVal <- rhoValue borl state act
+    return $ rBig - rSmall - rhoVal * (1/(1-gamma1) - 1/(1-gamma0))
+  _ -> error "eValueAvgCleaned can only be used with AlgBORL in Calculation.Ops"
 
   where ftExtSmall = borl ^. featureExtractor
         ftExtBig = borl ^. featureExtractor

@@ -150,14 +150,19 @@ nextAction borl
                bestV <-
                  do vVals <- mapM (vValue decideVPlusPsi borl state . fst) bestRho
                     return $ map snd $ headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
-               bestE <-
-                 do eVals <- mapM (eValue borl state . fst) bestV
-                    rhoVal <- rhoValue borl state (fst $ head bestRho)
-                    vVal <- vValue decideVPlusPsi borl state (fst $ head bestV) -- all a have the same V(s,a) value!
-                    r0Values <- mapM (rValue borl RSmall state . fst) bestV
-                    let rhoPlusV = rhoVal / (1-gamma0) + vVal
-                        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
-                    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
+               bestE <- do
+                 eVals <- mapM (eValueAvgCleaned borl state . fst) bestV
+                 let (increasing,decreasing) = partition ((0<) . fst) (zip eVals bestV)
+                 return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null decreasing then increasing else decreasing)
+                 -- other way of doing it:
+                 -- ----------------------
+                 -- do eVals <- mapM (eValue borl state . fst) bestV
+                 --    rhoVal <- rhoValue borl state (fst $ head bestRho)
+                 --    vVal <- vValue decideVPlusPsi borl state (fst $ head bestV) -- all a have the same V(s,a) value!
+                 --    r0Values <- mapM (rValue borl RSmall state . fst) bestV
+                 --    let rhoPlusV = rhoVal / (1-gamma0) + vVal
+                 --        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
+                 --    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
                if length bestV == 1
                  then return (borl, False, head bestV)
                  else if length bestE > 1
