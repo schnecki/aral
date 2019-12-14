@@ -39,11 +39,14 @@ import           GHC.Generics
 import           System.IO
 import           System.Random
 
+alg :: Algorithm St
+alg = AlgBORL 0.5 0.8 ByStateValues False Nothing
+
 main :: IO ()
 main = do
 
-  let rl = mkMultichainTabular algBORL initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
-  -- let rl = mkUnichainTabular algBORL initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
+  let rl = mkMultichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
+  -- let rl = mkUnichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -64,10 +67,10 @@ params =
     , _deltaANN           = 1
     , _gamma              = 0.01
     , _gammaANN           = 1
-    , _epsilon            = 5
-    , _exploration        = 0.8
-    , _learnRandomAbove   = 0.0
-    , _zeta               = 0.0
+    , _epsilon            = 0.1
+    , _exploration        = 1.0
+    , _learnRandomAbove   = 0.30
+    , _zeta               = 0.03
     , _xi                 = 0.01
     , _disableAllLearning = False
     }
@@ -81,11 +84,11 @@ decay =
       , _beta             = ExponentialDecay (Just 1e-3) 0.75 50000
       , _delta            = ExponentialDecay (Just 1e-3) 0.75 50000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.75 50000
-      , _zeta             = NoDecay -- ExponentialDecay (Just 0.5) 0.75 50000
-      , _xi               = ExponentialDecay (Just 1e-3) 0.75 50000
+      , _zeta             = NoDecay
+      , _xi               = NoDecay
         -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 0.01) 0.75 50000
+      , _exploration      = ExponentialDecay (Just 0.30) 0.75 150000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 50000
@@ -111,7 +114,7 @@ actions =  [Action (addReset move) "move"]
 addReset :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
 addReset f st = do
   r <- randomRIO (0,1)
-  if r < (0.003 :: Double)
+  if r < (0.01 :: Double)
     then do
     x <- randomRIO (4,5)
     return (Reward 0, St x, True)

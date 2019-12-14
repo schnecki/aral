@@ -1,6 +1,7 @@
 module ML.BORL.Properties
     ( isUnichain
     , isMultichain
+    , isAnn
     ) where
 
 import           ML.BORL.Proxy.Proxies
@@ -23,3 +24,5 @@ isUnichain :: BORL s -> Bool
 isUnichain = not . isMultichain
 
 
+isAnn :: BORL s -> Bool
+isAnn borl = any isNeuralNetwork (allProxies $ borl ^. proxies)

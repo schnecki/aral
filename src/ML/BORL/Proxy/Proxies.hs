@@ -40,8 +40,6 @@ data Proxies =
     , _v            :: !Proxy
     , _psiW         :: !Proxy
     , _w            :: !Proxy
-    , _psiW2        :: !Proxy
-    , _w2           :: !Proxy
     , _r0           :: !Proxy
     , _r1           :: !Proxy
     , _replayMemory :: !(Maybe ReplayMemory)
@@ -67,8 +65,8 @@ data Proxies =
 
 -- allProxiesLenses :: [(Proxies -> f Proxy) -> Proxies -> f Proxy]
 allProxiesLenses :: Functor f => Proxies -> [(Proxy -> f Proxy) -> Proxies -> f Proxies]
-allProxiesLenses pxs@Proxies {} = [rhoMinimum, rho, psiV, v, psiW, w, psiW2, w2, r0, r1]
-allProxiesLenses pxs@ProxiesCombinedUnichain {} = [rhoMinimum, rho, proxy]
+allProxiesLenses Proxies {}                 = [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
+allProxiesLenses ProxiesCombinedUnichain {} = [rhoMinimum, rho, proxy]
 
 
 rhoMinimum :: Lens' Proxies Proxy
@@ -104,15 +102,6 @@ w :: Lens' Proxies Proxy
 w f px@Proxies{}              = (\w' -> px { _w = w' }) <$> f (_w px)
 w f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 5 [])
 
-psiW2 :: Lens' Proxies Proxy
-psiW2 f px@Proxies{}  = (\psiW2' -> px { _psiW2 = psiW2' }) <$> f (_psiW2 px)
-psiW2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 6 [])
-
-w2 :: Lens' Proxies Proxy
-w2 f px@Proxies{}  = (\w2' -> px { _w2 = w2' }) <$> f (_w2 px)
-w2 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 7 [])
-
-
 proxy :: Lens' Proxies Proxy
 proxy f px@ProxiesCombinedUnichain{} = (\x -> px {_proxy = x}) <$> f (_proxy px)
 proxy f px@Proxies{} = error "calling proxy on Proxies in ML.BORL.Proxy.Proxies"
@@ -121,8 +110,5 @@ replayMemory :: Lens' Proxies (Maybe ReplayMemory)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)
 
 instance NFData Proxies where
-  rnf (Proxies rhoMin rho psiV v psiW w psiW2 w2 r0 r1 repMem) =
-    rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf psiW2 `seq` rnf w2 `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
+  rnf (Proxies rhoMin rho psiV v psiW w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
   rnf (ProxiesCombinedUnichain rhoMin rho proxy replMem) = rnf rhoMin `seq` rnf rho `seq` rnf proxy `seq` rnf replMem
-
-

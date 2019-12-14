@@ -94,7 +94,7 @@ insert borl _ state aNr randAct rew stateNext episodeEnd getCalc pxs
   | borl ^. parameters . disableAllLearning = (pxs, ) <$> getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   where
     (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing) = do
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing) = do
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftIO $ collectForkResult forkMv'
@@ -103,17 +103,15 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
   pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
   pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
-  pW2' <- mInsertProxy (getW2ValState' calc) pW2 `using` rpar
   pPsiV' <- mInsertProxy (getPsiVValState' calc) pPsiV `using` rpar
   pPsiW' <- mInsertProxy (getPsiWValState' calc) pPsiW `using` rpar
-  pPsiW2' <- mInsertProxy (getPsiW2ValState' calc) pPsiW2 `using` rpar
   pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
   pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
-  return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' Nothing, calc)
+  return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 (Just replMem))
-  | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pPsiW2 pW2 pR0 pR1 Nothing)
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
+  | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
@@ -145,13 +143,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     pV' <- mTrainBatch getVValState' calcs pV `using` rpar
     pW' <- mTrainBatch getWValState' calcs pW `using` rpar
-    pW2' <- mTrainBatch getW2ValState' calcs pW2 `using` rpar
     pPsiV' <- mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
     pPsiW' <- mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
-    pPsiW2' <- mTrainBatch getPsiW2ValState' calcs pPsiW2 `using` rpar
     pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
     pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pPsiW2' pW2' pR0' pR1' (Just replMem'), calc)
+    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy Nothing) = do
@@ -161,13 +157,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
   pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
   pW' <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
-  pW2' <- mInsertProxy (getW2ValState' calc) (pxs ^. w2) `using` rpar
   pPsiV' <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
   pPsiW' <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
-  pPsiW2' <- mInsertProxy (getPsiW2ValState' calc) (pxs ^. psiW2) `using` rpar
   pR0' <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
   pR1' <- mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
-  proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW', pPsiW2', pW2']
+  proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
@@ -204,13 +198,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
         else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     pV' <- mTrainBatch getVValState' calcs (pxs ^. v) `using` rpar
     pW' <- mTrainBatch getWValState' calcs (pxs ^. w) `using` rpar
-    pW2' <- mTrainBatch getW2ValState' calcs (pxs ^. w2) `using` rpar
     pPsiV' <- mTrainBatch getPsiVValState' calcs (pxs ^. psiV) `using` rpar
     pPsiW' <- mTrainBatch getPsiWValState' calcs (pxs ^. psiW) `using` rpar
-    pPsiW2' <- mTrainBatch getPsiW2ValState' calcs (pxs ^. psiW2) `using` rpar
     pR0' <- mTrainBatch getR0ValState' calcs (pxs ^. r0) `using` rpar
     pR1' <- mTrainBatch getR1ValState' calcs (pxs ^. r1) `using` rpar
-    proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW', pPsiW2', pW2']
+    proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
     return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' (Just replMem'), calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
@@ -453,12 +445,10 @@ getMinMaxVal p =
   case unCombine (p ^?! proxyType) of
     VTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     WTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
-    W2Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinW2Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxW2Value)
     R0Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR0Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR0Value)
     R1Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR1Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR1Value)
     PsiVTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     PsiWTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
-    PsiW2Table -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     NoScaling {} -> Nothing
     CombinedUnichain -> error "should not happend"
   where
@@ -471,8 +461,6 @@ getMinMaxVal p =
           3 -> VTable
           4 -> PsiWTable
           5 -> WTable
-          6 -> PsiW2Table
-          7 -> W2Table
           _ -> error "Proxy/Ops.hs getMinMaxVal"
     unCombine x = x
 

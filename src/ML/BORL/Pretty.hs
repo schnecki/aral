@@ -200,28 +200,11 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
         return $ text "Rho" $+$ prAct
   docHead <- prettyBORLHead' False prettyState borl
   case borl ^. algorithm of
-    AlgBORL {}
-      -- let addPsiV k v =
-      --       case borl ^. proxies . psiV of
-      --         P.Table m def -> return $ M.findWithDefault def k m
-      --         px ->
-      --           let config = px ^?! proxyNNConfig
-      --            in if borl ^. t <= config ^. replayMemoryMaxSize && (config ^. trainBatchSize) /= 1
-      --                 then return $ M.findWithDefault 0 k (px ^. proxyNNStartup)
-      --                 else do
-      --                   vPsi <- P.lookupNeuralNetworkUnscaled P.Worker k (borl ^. proxies . psiV)
-      --                   return (v + vPsi)
-      -- vPlusPsiV <- prettyTableRows borl prettyState prettyActionIdx addPsiV (borl ^. proxies . v)
-     -> do
+    AlgBORL {} -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
       prWs <- prBoolTblsStateAction t1 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
-      prW2s <- prBoolTblsStateAction t1 (text "W2" $$ nest nestCols (text "PsiW2")) (borl ^. proxies . w2) (borl ^. proxies . psiW2)
       prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
-      return $ docHead $$ algDocRho prettyRhoVal $$ -- prVW $+$ prR0R1 $+$ psis $+$ prWW2
-        prVs $+$
-        prWs $+$
-        prW2s $+$
-        prR0R1
+      return $ docHead $$ algDocRho prettyRhoVal $$ prVs $+$ prWs $+$ prR0R1
     AlgBORLVOnly {} -> do
       prV <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
@@ -316,10 +299,10 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
        AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
-      (text "Psi Rho/Psi V/Psi W/Psi W2" <> colon $$
+      (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest
          nestCols
-         (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3, printFloatWith 8 $ borl ^. psis . _4)))) $+$
+         (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
     (if printRho
        then prettyRhoVal
        else empty)
@@ -419,7 +402,7 @@ prettyBORLWithStInverse mStInverse borl =
     Just _ ->
       runMonadBorlTF $ do
         restoreTensorflowModels True borl
-        prettyBORLTables mStInverse True False False borl
+        prettyBORLTables mStInverse True True True borl
   where
     isTensorflowProxy P.TensorflowProxy {} = True
     isTensorflowProxy _                    = False

@@ -219,16 +219,16 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
-    , _grenadeLearningParams = LearningParameters 0.001 0.9 0.001
+    , _grenadeLearningParams = LearningParameters 0.001 0.0 0.001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-15000) 15000 (-300) 300 (-300) 300
+    , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-300) 300 (-300) 300
        -- scalingByMaxAbsReward False 200
-    , _stabilizationAdditionalRho = 7.5
+    , _stabilizationAdditionalRho = 0 -- 7.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 1 -- 3000
+    , _updateTargetInterval = 300 -- 3000
     , _trainMSEMax = Nothing    -- Just 0.05
-    , _setExpSmoothParamsTo1 = False -- True
+    , _setExpSmoothParamsTo1 = False
     }
 
 
@@ -237,19 +237,21 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.5
     , _beta               = 0.03
-    , _betaANN            = 1
     , _delta              = 0.03
-    , _deltaANN           = 1
     , _gamma              = 0.005
-    , _gammaANN           = 1
     , _epsilon            = 5
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
     , _zeta               = 0.10
     , _xi                 = 5e-3
     , _disableAllLearning = False
+    -- ANN
+    , _alphaANN           = 0.5 -- only used for multichain
+    , _betaANN            = 1
+    , _deltaANN           = 1
+    , _gammaANN           = 1
+
     }
 
 -- | Decay function of parameters.
@@ -261,17 +263,17 @@ decay =
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
-      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+      , _zeta             = NoDecay -- ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay
       , _exploration      = ExponentialDecay (Just 0.10) 0.5 150000
       , _learnRandomAbove = NoDecay
       -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 150000
-      , _betaANN          = ExponentialDecay (Just 0.01) 0.75 150000
-      , _deltaANN         = ExponentialDecay (Just 0.01) 0.75 150000
-      , _gammaANN         = ExponentialDecay (Just 0.01) 0.75 150000
+      , _alphaANN         = ExponentialDecay Nothing 0.75 150000
+      , _betaANN          = ExponentialDecay Nothing 0.75 150000
+      , _deltaANN         = ExponentialDecay Nothing 0.75 150000
+      , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
   --  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
   --  -   [ (alpha, 0.5, 30000, 0.00001)
@@ -336,8 +338,7 @@ alg =
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.65 ByStateValues
-        False mRefStateAct
+        AlgBORL 0.5 0.65 ByStateValues False mRefStateAct
         -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 allStateInputs :: M.Map [Double] St
@@ -358,14 +359,14 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
-type NNCombined = Network  '[ FullyConnected 2 24, Relu, FullyConnected 24 16, Relu, FullyConnected 16 16, Relu, FullyConnected 16 16, Tanh] '[ 'D1 2, 'D1 24, 'D1 24, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 16]
+type NNCombined = Network  '[ FullyConnected 2 24, Relu, FullyConnected 24 16, Relu, FullyConnected 16 16, Relu, FullyConnected 16 12, Tanh] '[ 'D1 2, 'D1 24, 'D1 24, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 12, 'D1 12]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 4, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 4, 'D1 4]
 
 

@@ -52,12 +52,10 @@ import           Grenade
 data ProxyType
   = VTable
   | WTable
-  | W2Table
   | R0Table
   | R1Table
   | PsiVTable
   | PsiWTable
-  | PsiW2Table
   | CombinedUnichain
   | NoScaling ProxyType
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
@@ -65,12 +63,10 @@ data ProxyType
 proxyTypeName :: ProxyType -> Text.Text
 proxyTypeName VTable           = "v"
 proxyTypeName WTable           = "w"
-proxyTypeName W2Table          = "w2"
 proxyTypeName R0Table          = "r0"
 proxyTypeName R1Table          = "r1"
 proxyTypeName PsiVTable        = "psiV"
 proxyTypeName PsiWTable        = "psiW"
-proxyTypeName PsiW2Table       = "psiW2"
 proxyTypeName CombinedUnichain = "combinedUnichain"
 proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
 

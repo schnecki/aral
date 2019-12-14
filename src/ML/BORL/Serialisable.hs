@@ -50,9 +50,9 @@ data BORLSerialisable s = BORLSerialisable
   , serPhase          :: !Phase
 
   -- Values:
-  , serLastVValues    :: ![Double] -- ^ List of X last V values
-  , serLastRewards    :: ![Double] -- ^ List of X last rewards
-  , serPsis           :: !(Double, Double, Double, Double)  -- ^ Exponentially smoothed psi values.
+  , serLastVValues    :: ![Double]                 -- ^ List of X last V values
+  , serLastRewards    :: ![Double]                 -- ^ List of X last rewards
+  , serPsis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
   , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 

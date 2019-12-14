@@ -63,18 +63,11 @@ fileDebugStateV = "stateVAllStates"
 fileDebugStateW :: FilePath
 fileDebugStateW = "stateWAllStates"
 
-fileDebugStateW2 :: FilePath
-fileDebugStateW2 = "stateW2AllStates"
-
-
 fileDebugPsiVValues :: FilePath
 fileDebugPsiVValues = "statePsiVAllStates"
 
 fileDebugPsiWValues :: FilePath
 fileDebugPsiWValues = "statePsiWAllStates"
-
-fileDebugPsiW2Values :: FilePath
-fileDebugPsiW2Values = "statePsiW2AllStates"
 
 fileDebugStateValuesNrStates :: FilePath
 fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
@@ -258,7 +251,7 @@ stepExecuteMaterialisedFutures (nr, _, borl) dt =
 execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
-  when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugStateW2, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values, fileDebugStateValuesNrStates] $ \f ->
+  when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
     liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
   borl <- writeDebugFiles borl
 #endif
@@ -285,7 +278,7 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
   return $
-    set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc), fromMaybe 0 (getPsiValW2' calc)) $
+    set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
@@ -308,10 +301,8 @@ writeDebugFiles borl = do
       else do
         liftIO $ writeFile fileDebugStateV ""
         liftIO $ writeFile fileDebugStateW ""
-        liftIO $ writeFile fileDebugStateW2 ""
         liftIO $ writeFile fileDebugPsiVValues ""
         liftIO $ writeFile fileDebugPsiWValues ""
-        liftIO $ writeFile fileDebugPsiW2Values ""
         liftIO $ writeFile fileDebugStateValuesNrStates "-1"
         borl' <-
           if isAnn
@@ -322,7 +313,7 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugStateW2, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugPsiW2Values] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
@@ -342,17 +333,13 @@ writeDebugFiles borl = do
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
     stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
-    stateValuesW2 <- mapM (\xs -> if isDqn then return 0 else w2ValueFeat borl' (init xs) (round $ last xs)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
       liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
-      liftIO $ appendFile fileDebugStateW2 (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW2 <> "\n")
       psiVValues <- mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
       liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
       psiWValues <- mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
       liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
-      psiW2Values <- mapM (\xs -> psiW2Feat borl' (init xs) (round $ last xs)) stateFeats
-      liftIO $ appendFile fileDebugPsiW2Values (show (borl' ^. t) <> "\t" <> mkListStr show psiW2Values <> "\n")
   return borl'
   where
     getStateFeatList Scalar {} = []
@@ -363,7 +350,6 @@ writeDebugFiles borl = do
     mkListStr f = intercalate "\t" . map f
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
-    psiW2Feat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW2)
 
 debugStepsCount :: Integer
 debugStepsCount = 8000

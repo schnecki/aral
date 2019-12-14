@@ -15,8 +15,6 @@ data ScalingNetOutParameters = ScalingNetOutParameters
   , _scaleMaxVValue  :: MaxValue
   , _scaleMinWValue  :: MinValue
   , _scaleMaxWValue  :: MaxValue
-  , _scaleMinW2Value :: MinValue
-  , _scaleMaxW2Value :: MaxValue
   , _scaleMinR0Value :: MinValue
   , _scaleMaxR0Value :: MaxValue
   , _scaleMinR1Value :: MinValue
@@ -26,8 +24,8 @@ makeLenses ''ScalingNetOutParameters
 
 
 multiplyScale :: Double -> ScalingNetOutParameters -> ScalingNetOutParameters
-multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minW2 maxW2 minR0 maxR0 minR1 maxR1) =
-  ScalingNetOutParameters (v * minV) (v * maxV) (v * minW) (v * maxW) (v * minW2) (v * maxW2) (v * minR0) (v * maxR0) (v * minR1) (v * maxR1)
+multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minR0 maxR0 minR1 maxR1) =
+  ScalingNetOutParameters (v * minV) (v * maxV) (v * minW) (v * maxW) (v * minR0) (v * maxR0) (v * minR1) (v * maxR1)
 
 
 scaleValue :: Maybe (MinValue,MaxValue) -> Double -> Double

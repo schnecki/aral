@@ -92,7 +92,7 @@ data BORL s = BORL
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
   , _lastRewards      :: ![Double]                 -- ^ List of X last rewards (head is last received reward)
-  , _psis             :: !(Double, Double, Double, Double) -- ^ Exponentially smoothed psi values.
+  , _psis             :: !(Double, Double, Double) -- ^ Exponentially smoothed psi values.
   , _proxies          :: Proxies                   -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
@@ -152,8 +152,8 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     SteadyStateValues
     mempty
     mempty
-    (0, 0, 0, 0)
-    (Proxies (Scalar 0) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (0, 0, 0)
+    (Proxies (Scalar 0) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -188,7 +188,7 @@ mkUnichainTensorflowM ::
   -> Maybe InitValues
   -> m (BORL s)
 mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
-  let nnTypes = [VTable, VTable, WTable, WTable, W2Table, W2Table, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable, PsiW2Table, PsiW2Table]
+  let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
   let netInpInitState = ftExt initialState
@@ -199,12 +199,10 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   v <- liftIO $ nnSA VTable 0
   w <- liftIO $ nnSA WTable 2
-  w2 <- liftIO $ nnSA W2Table 4
-  r0 <- liftIO $ nnSA R0Table 6
-  r1 <- liftIO $ nnSA R1Table 8
-  psiV <- liftIO $ nnSA PsiVTable 10
-  psiW <- liftIO $ nnSA PsiWTable 12
-  psiW2 <- liftIO $ nnSA PsiW2Table 14
+  r0 <- liftIO $ nnSA R0Table 4
+  r1 <- liftIO $ nnSA R1Table 6
+  psiV <- liftIO $ nnSA PsiVTable 8
+  psiW <- liftIO $ nnSA PsiWTable 10
   repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (v ^?! proxyTFTarget)
   return $
@@ -223,13 +221,13 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0, 0)
-      (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w psiW2 w2 r0 r1 repMem)
+      (0, 0, 0)
+      (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w r0 r1 repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
--- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and there must be 8
--- columns
+-- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and the columns being
+-- variable.
 mkUnichainTensorflowCombinedNetM ::
      forall s m. (NFData s, MonadBorl' m)
   => Algorithm s
@@ -246,7 +244,7 @@ mkUnichainTensorflowCombinedNetM ::
 mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
-             | otherwise = 8
+             | otherwise = 6
   let nnTypes = [CombinedUnichain, CombinedUnichain]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat (modelBuilder nrNets)))
@@ -275,7 +273,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0, 0)
+      (0, 0, 0)
       (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) proxy repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -300,7 +298,7 @@ mkUnichainTensorflow alg initialState ftExt as asFilter params decayFun modelBui
   runMonadBorlTF (mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 -- ^ Use a single network for all function approximations. Thus, the output tensor must be 2D with the number of rows
--- corresponding to the number of actions and there must be 8 columns.
+-- corresponding to the number of actions and the columns being variable.
 mkUnichainTensorflowCombinedNet ::
      forall s . (NFData s)
   => Algorithm s
@@ -334,14 +332,13 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     SteadyStateValues
     mempty
     mempty
-    (0, 0, 0, 0)
-    (Proxies (tabSA 0) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (0, 0, 0)
+    (Proxies (tabSA 0) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defV = defaultV (fromMaybe defInitValues initValues)
     defW = defaultW (fromMaybe defInitValues initValues)
-    defW2 = defaultW (fromMaybe defInitValues initValues)
     defR0 = defaultR0 (fromMaybe defInitValues initValues)
     defR1 = defaultR1 (fromMaybe defInitValues initValues)
 
@@ -364,12 +361,10 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
-  let nnSAW2Table = nnSA W2Table
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
-  let nnPsiW2 = nnSA PsiW2Table
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net 1 nnConfig $
@@ -387,8 +382,8 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0, 0)
-      (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
+      (0, 0, 0)
+      (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
@@ -408,7 +403,7 @@ mkUnichainGrenadeCombinedNet ::
 mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun net nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
-             | otherwise = 8
+             | otherwise = 6
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nn = nnSA CombinedUnichain
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
@@ -428,7 +423,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0, 0)
+      (0, 0, 0)
       (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) nn repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
@@ -462,12 +457,10 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
-  let nnSAW2Table = nnSA W2Table
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
-  let nnPsiW2 = nnSA PsiW2Table
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net 1 nnConfig $
@@ -485,8 +478,8 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       SteadyStateValues
       mempty
       mempty
-      (0, 0, 0, 0)
-      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnPsiW2 nnSAW2Table nnSAR0Table nnSAR1Table repMem)
+      (0, 0, 0)
+      (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
 
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
@@ -503,11 +496,10 @@ mkReplayMemory sz = do
 
 -- | Infer scaling by maximum reward.
 scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
-scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (-maxW2) (maxW2) (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
+scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
         maxW = 50 * maxR
-        maxW2 = 20 * maxW
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
 

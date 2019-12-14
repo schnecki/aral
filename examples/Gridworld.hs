@@ -204,13 +204,13 @@ nnConfig =
     , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = ScalingNetOutParameters (-10) 10 (-25) 25 (-50) 50 (-24) 24 (-30) 30
-                            -- scalingByMaxAbsReward False 10
+    , _scaleParameters = -- ScalingNetOutParameters (-10) 10 (-25) 25 (-24) 24 (-30) 30
+                         scalingByMaxAbsReward False 6
     , _stabilizationAdditionalRho = 0.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
     , _trainMSEMax = Nothing -- Just 0.03
-    , _setExpSmoothParamsTo1 = False
+    , _setExpSmoothParamsTo1 = True
     }
 
 
@@ -219,19 +219,20 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.5
     , _beta               = 0.01
-    , _betaANN            = 1
     , _delta              = 0.005
-    , _deltaANN           = 1
     , _gamma              = 0.01
-    , _gammaANN           = 1
     , _epsilon            = 1.0
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.5
     , _zeta               = 0.03
     , _xi                 = 0.005
     , _disableAllLearning = False
+    -- ANN
+    , _alphaANN           = 0.5 -- only used for multichain
+    , _betaANN            = 0.5
+    , _deltaANN           = 0.5
+    , _gammaANN           = 0.5
     }
 
 -- | Decay function of parameters.
@@ -255,6 +256,7 @@ decay =
       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
+
 
 -- -- | Decay function of parameters.
 -- decay :: Decay
@@ -291,6 +293,7 @@ main = do
     "exp" -> experimentMode
     _     -> usermode
 
+
 experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
@@ -312,6 +315,7 @@ lpMode = do
   runBorlLpInferWithRewardRepet 100000 policy mRefState >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
+
 mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (0,2), 0)
@@ -322,7 +326,6 @@ alg =
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
   -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-
   AlgBORL 0.5 0.8 ByStateValues False mRefState
 
 usermode :: IO ()
@@ -341,7 +344,7 @@ usermode = do
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where
@@ -359,7 +362,7 @@ maxY = 4                        -- [0..maxY]
 
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
-type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 40, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 40, 'D1 40]
+type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
