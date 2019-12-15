@@ -86,8 +86,8 @@ data BORL s = BORL
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
   -- define algorithm to use
-  , _algorithm        :: !(Algorithm s) -- ^ What algorithm to use.
-  , _phase            :: !Phase         -- ^ Current phase for scaling by `StateValueHandling`.
+  , _algorithm        :: !(Algorithm [Double]) -- ^ What algorithm to use.
+  , _phase            :: !Phase                -- ^ Current phase for scaling by `StateValueHandling`.
 
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
@@ -136,6 +136,14 @@ defInitValues = InitValues 0 0 0 0 0
 
 -- Tabular representations
 
+convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Double]
+convertAlgorithm ftExt (AlgBORL g0 g1 avgRew vPlusPsi (Just (s,a))) = AlgBORL g0 g1 avgRew vPlusPsi (Just (ftExt s,a))
+convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
+convertAlgorithm _ (AlgBORL g0 g1 avgRew vPlusPsi Nothing) = AlgBORL g0 g1 avgRew vPlusPsi Nothing
+convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
+convertAlgorithm _ (AlgDQN ga) = AlgDQN ga
+convertAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avgRew) = AlgDQNAvgRewardFree ga0 ga1 avgRew
+
 mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
@@ -148,7 +156,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     params
     decayFun
     mempty
-    alg
+    (convertAlgorithm ftExt alg)
     SteadyStateValues
     mempty
     mempty
@@ -217,7 +225,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       params
       decayFun
       mempty
-      alg
+      (convertAlgorithm ftExt alg)
       SteadyStateValues
       mempty
       mempty
@@ -269,7 +277,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       params
       decayFun
       mempty
-      alg
+      (convertAlgorithm ftExt alg)
       SteadyStateValues
       mempty
       mempty
@@ -328,7 +336,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     params
     decayFun
     mempty
-    alg
+    (convertAlgorithm ftExt alg)
     SteadyStateValues
     mempty
     mempty
@@ -378,7 +386,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       params
       decayFun
       []
-      alg
+      (convertAlgorithm ftExt alg)
       SteadyStateValues
       mempty
       mempty
@@ -419,7 +427,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
       params
       decayFun
       []
-      alg
+      (convertAlgorithm ftExt alg)
       SteadyStateValues
       mempty
       mempty
@@ -474,7 +482,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       params
       decayFun
       []
-      alg
+      (convertAlgorithm ftExt alg)
       SteadyStateValues
       mempty
       mempty

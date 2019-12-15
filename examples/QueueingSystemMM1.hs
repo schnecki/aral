@@ -223,7 +223,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay (Just 1e-4) 0.05 150000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-400) 400 (-5000) 5000 (-300) 300 (-300) 300
-    , _stabilizationAdditionalRho = 0.5
+    , _stabilizationAdditionalRho = 0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1 -- 300
     , _trainMSEMax = Nothing    -- Just 0.05
@@ -373,14 +373,14 @@ modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.0005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.0001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
 

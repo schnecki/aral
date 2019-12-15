@@ -71,11 +71,11 @@ mkCalculation' ::
   -> RewardValue
   -> (StateNextFeatures, [ActionIndex])
   -> EpisodeEnd
-  -> Algorithm s
+  -> Algorithm NetInputWoAction
   -> m Calculation
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType decideOnVPlusPsiV mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let isRefState = (first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)
+  let isRefState = mRefState == Just (state, aNr)
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
         | isANN = params' ^. paramANN
@@ -248,7 +248,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just rhoVal'
       , getPsiVValState' = Nothing
-      , getVValState' = Just $ ite ((first (borl ^. featureExtractor) <$> mRefState) == Just (state, aNr)) 0 vValState'
+      , getVValState' = Just $ ite (mRefState == Just (state, aNr)) 0 vValState'
       , getPsiWValState' = Nothing
       , getWValState' = Nothing
       , getR0ValState' = Nothing

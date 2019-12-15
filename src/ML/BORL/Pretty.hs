@@ -147,7 +147,7 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
                   minKey = nr * nrActs
                   maxKey = minKey + nrActs - 1
 
-prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm s -> Doc
+prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
@@ -158,16 +158,16 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPl
     (if vPlusPsiV
        then "V + PsiV"
        else "V") <+>
-  prettyRefState borl prettyState prettyActionIdx mRefState
+  prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =
   text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <+> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
-  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState borl prettyState prettyAction mRefState
+  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
-prettyRefState :: (Show a) => BORL s -> ([Double] -> a) -> (t -> Doc) -> Maybe (s, t) -> Doc
-prettyRefState _ _ _ Nothing = mempty
-prettyRefState borl prettyState prettyAction (Just (st,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState $ (borl ^. featureExtractor) st) <> " - " <> prettyAction aNr
+prettyRefState :: (Show a) => ([Double] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
+prettyRefState _ _ Nothing = mempty
+prettyRefState prettyState prettyAction (Just (stFeat,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState stFeat) <> " - " <> prettyAction aNr
 
 prettyAvgRewardType :: Period -> AvgReward -> Doc
 prettyAvgRewardType _ (ByMovAvg nr)          = "moving average" <> parens (int nr)

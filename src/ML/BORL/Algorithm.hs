@@ -38,13 +38,6 @@ data Algorithm s
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
-mapAlgorithm :: (s -> s') -> Algorithm s -> Algorithm s'
-mapAlgorithm f (AlgBORLVOnly avg mSA)     = AlgBORLVOnly avg (first f <$> mSA)
-mapAlgorithm f (AlgBORL g0 g1 avg dec mSA) = AlgBORL g0 g1 avg dec (first f <$> mSA)
-mapAlgorithm _ (AlgDQN ga)                  = AlgDQN ga
-mapAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avg) = AlgDQNAvgRewardFree ga0 ga1 avg
-
-
 isAlgBorl :: Algorithm s -> Bool
 isAlgBorl AlgBORL{} = True
 isAlgBorl _         = False
