@@ -373,7 +373,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textGrenadeConf conf =
           let LearningParameters l0 m0 l20 = conf ^. grenadeLearningParams
               dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              LearningParameters l m l2 = LearningParameters (dec l0) (dec m0) (dec l20)
+              LearningParameters l m l2 = LearningParameters (dec l0) m0 l20
            in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 l, printFloatWith 8 m, printFloatWith 8 l2)))
         textTensorflow conf =
           let LearningParameters l0 _ _ = conf ^. grenadeLearningParams

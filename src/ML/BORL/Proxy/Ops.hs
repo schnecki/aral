@@ -296,13 +296,15 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
     dec = decaySetup (config ^. learningParamsDecay) period
-    lp = LearningParameters (dec lRate) momentum l2 -- (dec momentum) (dec l2)
+    lp = LearningParameters (dec lRate) momentum l2
 
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   if period == 0
     then do
       lrs <- getLearningRates netW
+      when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"
+      when (length lrs > 1) $ error "Cannot handle multiple Tensorflow optimizers (multiple learning rates) in Proxy.Ops"
       return $ TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (head lrs) 0 0 $ config) nrActs
     else do
       when (period `mod` 1000 == 0 && dec lRate /= lRate) $

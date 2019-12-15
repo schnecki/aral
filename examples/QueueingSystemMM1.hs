@@ -219,16 +219,15 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _trainBatchSize = 8
-    , _grenadeLearningParams = LearningParameters 0.001 0.0 0.001
-    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
+    , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
+    , _learningParamsDecay = ExponentialDecay (Just 1e-4) 0.05 150000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = ScalingNetOutParameters (-600) 600 (-2500) 2500 (-300) 300 (-300) 300
-       -- scalingByMaxAbsReward False 200
-    , _stabilizationAdditionalRho = 0 -- 7.5
+    , _scaleParameters = ScalingNetOutParameters (-400) 400 (-5000) 5000 (-300) 300 (-300) 300
+    , _stabilizationAdditionalRho = 0.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 300 -- 3000
+    , _updateTargetInterval = 1 -- 300
     , _trainMSEMax = Nothing    -- Just 0.05
-    , _setExpSmoothParamsTo1 = False
+    , _setExpSmoothParamsTo1 = True
     }
 
 
@@ -259,7 +258,7 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      { _alpha            = ExponentialDecay (Just 1e-4) 0.15 10000
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
@@ -366,7 +365,7 @@ usermode = do
         usage = []
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
-type NNCombined = Network  '[ FullyConnected 2 24, Relu, FullyConnected 24 16, Relu, FullyConnected 16 16, Relu, FullyConnected 16 12, Tanh] '[ 'D1 2, 'D1 24, 'D1 24, 'D1 16, 'D1 16, 'D1 16, 'D1 16, 'D1 12, 'D1 12]
+type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 30, Relu, FullyConnected 30 12, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 30, 'D1 30, 'D1 12, 'D1 12]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 4, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 4, 'D1 4]
 
 
@@ -374,22 +373,16 @@ modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.0005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 
 modelBuilderCombinedNet :: ModelBuilderFunction
 modelBuilderCombinedNet colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.0001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
-
-  -- buildModel $
-  -- inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [25*inpLen] TF.relu' >> fullyConnected [15*inpLen] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- where inpLen = genericLength (netInp initState)
-
 
 netInp :: St -> [Double]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]

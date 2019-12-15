@@ -204,8 +204,7 @@ nnConfig =
     , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = -- ScalingNetOutParameters (-10) 10 (-25) 25 (-24) 24 (-30) 30
-                         scalingByMaxAbsReward False 6
+    , _scaleParameters = scalingByMaxAbsReward False 6
     , _stabilizationAdditionalRho = 0.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
