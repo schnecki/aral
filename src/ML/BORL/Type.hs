@@ -191,14 +191,14 @@ mkUnichainTensorflowM ::
   -> (s -> [Bool])
   -> ParameterInitValues
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
 mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
       scopes = concat $ repeat ["_target", "_worker"]
-  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat $ modelBuilder 1))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
@@ -298,7 +298,7 @@ mkUnichainTensorflow ::
   -> (s -> [Bool])
   -> ParameterInitValues
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)

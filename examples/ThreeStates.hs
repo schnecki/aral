@@ -95,10 +95,10 @@ numActions = genericLength actions
 numInputs :: Int64
 numInputs = genericLength (netInp initState)
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder cols =
   buildModel $
-  inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions] TF.tanh' >>
+  inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions, cols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 instance RewardFuture St where

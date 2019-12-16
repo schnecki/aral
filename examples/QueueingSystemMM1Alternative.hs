@@ -312,10 +312,10 @@ usermode = do
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder cols =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, cols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 

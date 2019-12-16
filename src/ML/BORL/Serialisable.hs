@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Unsafe              #-}
 
@@ -22,6 +24,7 @@ import           Control.Arrow         (first)
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad         (void, zipWithM, zipWithM_)
+import           Data.Int              (Int64)
 import           Data.List             (find, foldl')
 import           Data.Serialize
 import qualified Data.Vector.Mutable   as V
@@ -35,7 +38,6 @@ import           Debug.Trace
 type ActionList s = [ActionIndexed s]
 type ActionFilter s = s -> [Bool]
 type ProxyNetInput s = s -> [Double]
-type TensorflowModelBuilder = TF.Session TensorflowModel
 
 
 data BORLSerialisable s = BORLSerialisable
@@ -65,7 +67,7 @@ toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg ph v rew psis prS) =
   BORL _ _ s _ t eNr par _ future alg ph v rew psis prS <- saveTensorflowModels borl
   return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) alg ph v rew psis prS
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> TensorflowModelBuilder -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ProxyNetInput s -> ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
@@ -77,16 +79,20 @@ fromSerialisableWith ::
   -> Decay
   -> FeatureExtractor s
   -> ProxyNetInput s
-  -> TensorflowModelBuilder
+  -> ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
 fromSerialisableWith f g as aF decay ftExt inp builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
       borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg ph lastV rew psis prS
       pxs = borl ^. proxies
+      nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
+                | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2
+                | isCombinedProxies pxs = 6
+                | otherwise = 1
       borl' =
-        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder}) b)) (allProxiesLenses pxs) $
-        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder}) b)) (allProxiesLenses pxs) borl
+        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) $
+        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) borl
   restoreTensorflowModels False borl'
   return $ force borl'
 

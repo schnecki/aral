@@ -340,7 +340,7 @@ usermode = do
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
@@ -364,11 +364,8 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = modelBuilderCombined 1
-
-modelBuilderCombined :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
-modelBuilderCombined colOut =
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
