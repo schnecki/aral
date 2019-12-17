@@ -113,11 +113,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = pV ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
@@ -168,11 +168,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
   | proxy ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = proxy ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'

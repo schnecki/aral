@@ -165,17 +165,19 @@ instance Serialize Proxy where
 
 -- ^ Replay Memory
 instance Serialize ReplayMemory where
-  put (ReplayMemory vec sz maxIdx) = do
+  put (ReplayMemory vec sz idx maxIdx) = do
     let xs = unsafePerformIO $ mapM (V.read vec) [0 .. maxIdx]
     put sz
+    put idx
     put xs
     put maxIdx
   get = do
     sz <- get
+    idx <- get
     xs :: [((StateFeatures, [ActionIndex]), ActionIndex, Bool, Double, (StateNextFeatures, [ActionIndex]), EpisodeEnd)] <- get
     maxIdx <- get
     return $
       unsafePerformIO $ do
         vec <- V.new sz
         vec `seq` zipWithM_ (V.write vec) [0 .. maxIdx] xs
-        return (ReplayMemory vec sz maxIdx)
+        return (ReplayMemory vec sz idx maxIdx)

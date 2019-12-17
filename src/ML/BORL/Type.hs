@@ -494,7 +494,7 @@ mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
 mkReplayMemory sz | sz <= 0 = return Nothing
 mkReplayMemory sz = do
   vec <- V.new sz
-  return $ Just $ ReplayMemory vec sz (-1)
+  return $ Just $ ReplayMemory vec sz 0 (-1)
 
 
 -------------------- Other Constructors --------------------
