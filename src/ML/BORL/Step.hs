@@ -224,8 +224,13 @@ epsCompareWith eps f x y
 
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
+  -- File IO Operations
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
+  when (period == 0) $ do
+    liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
+    liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
+    liftIO $ writeFile fileReward "Period\tReward\n"
   (reward, stateNext, episodeEnd) <- liftIO $ action state
   let applyToReward r@(RewardFuture storage) = applyState storage state
       applyToReward r                        = r
@@ -257,11 +262,6 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
 #endif
   (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
-  -- File IO Operations
-  when (period == 0) $ do
-    liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
-    liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
-    liftIO $ writeFile fileReward "Period\tReward\n"
   let strRho = show (fromMaybe 0 (getRhoVal' calc))
       strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
