@@ -146,7 +146,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
           ByStateValuesAndReward ratio decay
             | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
             where ratio' = decaySetup decay period ratio
-          _ -> (1 - alp) * rhoVal + alp * rhoState
+          -- _ -> (1 - alp) * rhoVal + alp * rhoState
+          _ | rhoState < rhoVal -> (1 - 0.1*alp) * rhoVal + 0.1*alp * rhoState
+          _ | rhoState >= rhoVal -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
