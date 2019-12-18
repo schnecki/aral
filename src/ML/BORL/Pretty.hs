@@ -181,7 +181,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
-prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
 prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -221,14 +221,15 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
-mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe st) -> [Double] -> Maybe (Maybe st, String)
+mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Double] -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
     Nothing  -> Just (Nothing, show $ map showFloat netinp)
-    Just inv -> (Just &&& show) <$> inv netinp
+    Just inv -> fromEither <$> inv netinp
+  where fromEither (Left str) = (Nothing, str)
+        fromEither (Right st) = (Just st, show st)
 
-
-prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
+prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
@@ -391,11 +392,11 @@ prettyBORL = prettyBORLWithStInverse Nothing
 prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
+prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
 prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
-prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> IO Doc
+prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> IO Doc
 prettyBORLWithStInverse mStInverse borl =
   case find isTensorflowProxy (allProxies $ borl ^. proxies) of
     Nothing -> prettyBORLTables mStInverse True True True borl

@@ -466,8 +466,8 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: Maybe (NetInputWoAction -> Maybe St)
-mInverseSt = Just $ \xs -> M.lookup xs allStateInputs
+mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))
+mInverseSt = Just $ \xs -> return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) =

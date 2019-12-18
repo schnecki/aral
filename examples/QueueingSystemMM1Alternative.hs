@@ -166,8 +166,8 @@ policy maxAdmit (St s incoming) act
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: NetInputWoAction -> Maybe St
-mInverseSt xs = M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 
 instance ExperimentDef (BORL St)
