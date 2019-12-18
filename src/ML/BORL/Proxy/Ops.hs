@@ -230,7 +230,7 @@ insertProxy p st aNr val = insertProxyMany p [((st, aNr), val)]
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
 insertProxyMany _ xs (Scalar _) = return $ Scalar (snd $ last xs)
-insertProxyMany _ xs (Table m def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
+insertProxyMany _ xs (Table m def) = return $! force $! Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
   where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
         n = 3
 insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)

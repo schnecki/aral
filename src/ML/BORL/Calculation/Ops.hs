@@ -136,23 +136,18 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       ByStateValues -> return $ reward + vValStateNext - vValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay period ratio
-  let rhoVal' =
-        max rhoMinimumState $
-        case avgRewardType of
-          ByMovAvg _ -> rhoState
-          Fixed x -> x
-          ByReward
-            | randomAction && not learnFromRandom -> rhoVal
-          ByStateValuesAndReward ratio decay
-            | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
-            where ratio' = decaySetup decay period ratio
-          -- _ -> (1 - alp) * rhoVal + alp * rhoState
-          _ | rhoState < rhoVal -> (1 - max 1e-4 (0.01*alp)) * rhoVal + max 1e-4 (0.01*alp) * rhoState
-          _ | rhoState >= rhoVal -> (1 - alp) * rhoVal + alp * rhoState
+  let rhoVal'
+        | randomAction && not learnFromRandom = rhoVal
+        | otherwise =
+          max rhoMinimumState $
+          case avgRewardType of
+            ByMovAvg _ -> rhoState
+            Fixed x    -> x
+            _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 250) * rhoMinimumState + expSmthPsi / 250 * (0.975 * rhoVal')
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * (0.975 * rhoVal')
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -229,17 +224,14 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       ByStateValues -> return $ reward + vValStateNext - vValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
-  let rhoVal' =
-        max rhoMinimumState $
-        case avgRewardType of
-          ByMovAvg _ -> rhoState
-          Fixed x -> x
-          ByReward
-            | randomAction && not learnFromRandom -> rhoVal
-          ByStateValuesAndReward ratio decay
-            | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
-            where ratio' = decaySetup decay period ratio
-          _ -> (1 - alp) * rhoVal + alp * rhoState
+  let rhoVal'
+        | randomAction && not learnFromRandom = rhoVal
+        | otherwise =
+          max rhoMinimumState $
+          case avgRewardType of
+            ByMovAvg _ -> rhoState
+            Fixed x    -> x
+            _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
         | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
@@ -334,17 +326,14 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       ByStateValues -> return $ reward + r1StateNext - r1ValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + r1StateNext - r1ValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
-  let rhoVal' =
-        max rhoMinimumState $
-        case avgRewardType of
-          ByMovAvg _ -> rhoState
-          Fixed x -> x
-          ByReward
-            | randomAction && not learnFromRandom -> rhoVal
-          ByStateValuesAndReward ratio decay
-            | randomAction && not learnFromRandom && ratio' < 1 -> rhoVal
-            where ratio' = decaySetup decay period ratio
-          _ -> (1 - alp) * rhoVal + alp * rhoState
+  let rhoVal'
+        | randomAction && not learnFromRandom = rhoVal
+        | otherwise =
+          max rhoMinimumState $
+          case avgRewardType of
+            ByMovAvg _ -> rhoState
+            Fixed x    -> x
+            _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
