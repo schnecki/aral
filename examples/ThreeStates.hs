@@ -125,7 +125,7 @@ mRefState = Nothing
 main :: IO ()
 main = do
   let algorithm =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues False mRefState
+        AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
         -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
@@ -163,6 +163,7 @@ params =
     , _gamma = 0.01
     , _gammaANN = 1
     , _epsilon = 0.1
+    , _explorationStrategy = EpsilonGreedy
     , _exploration = 1.0
     , _learnRandomAbove = 0.5
     , _zeta = 0.15

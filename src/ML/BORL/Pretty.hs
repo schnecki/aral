@@ -148,16 +148,11 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
                   maxKey = minKey + nrActs - 1
 
 prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
-prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
+prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType (borl ^. t) avgRewType <+>
   text "for rho" <> text ";" <+>
-  text "Deciding on" <+>
-  text
-    (if vPlusPsiV
-       then "V + PsiV"
-       else "V") <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =

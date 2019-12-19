@@ -5,6 +5,7 @@ module ML.BORL
 import           ML.BORL.Action        as BORL
 import           ML.BORL.Algorithm     as BORL
 import           ML.BORL.Decay         as BORL
+import           ML.BORL.Exploration   as BORL
 import           ML.BORL.NeuralNetwork as BORL
 import           ML.BORL.Parameters    as BORL
 import           ML.BORL.Pretty        as BORL

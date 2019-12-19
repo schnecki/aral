@@ -8,7 +8,7 @@
 
 module ML.BORL.Serialisable where
 
-import           ML.BORL.Action
+import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork

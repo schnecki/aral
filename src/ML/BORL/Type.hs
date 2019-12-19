@@ -17,7 +17,7 @@
 
 module ML.BORL.Type where
 
-import           ML.BORL.Action
+import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
@@ -137,9 +137,9 @@ defInitValues = InitValues 0 0 0 0 0
 -- Tabular representations
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Double]
-convertAlgorithm ftExt (AlgBORL g0 g1 avgRew vPlusPsi (Just (s,a))) = AlgBORL g0 g1 avgRew vPlusPsi (Just (ftExt s,a))
+convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s,a))) = AlgBORL g0 g1 avgRew (Just (ftExt s,a))
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
-convertAlgorithm _ (AlgBORL g0 g1 avgRew vPlusPsi Nothing) = AlgBORL g0 g1 avgRew vPlusPsi Nothing
+convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
 convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga) = AlgDQN ga
 convertAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avgRew) = AlgDQNAvgRewardFree ga0 ga1 avgRew

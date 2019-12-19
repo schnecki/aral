@@ -121,107 +121,6 @@ stepsM (force -> borl) nr = do
 data Decision = Random | MaxRho | MaxV | MaxE
   deriving (Show, Read, Eq, Ord, Generic, NFData, Serialize)
 
--- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (MonadBorl' m) => BORL s -> m (BORL s, Bool, ActionIndexed s)
-nextAction borl
-  | null as = error "Empty action list"
-  | length as == 1 = return (borl, False, head as)
-  | otherwise = do
-    rand <- liftIO $ randomRIO (0, 1)
-    if rand < explore
-      then do
-        r <- liftIO $ randomRIO (0, length as - 1)
-        return (borl, True, as !! r)
-      else case borl ^. algorithm of
-             AlgBORL _ _ _ decideVPlusPsi _ -> do
-               bestRho <-
-                 if isUnichain borl
-                   then return as
-                   else do
-                     rhoVals <- mapM (rhoValue borl state . fst) as
-                     return $ map snd $ headRho $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rhoVals as)
-               bestV <-
-                 do vVals <- mapM (vValue decideVPlusPsi borl state . fst) bestRho
-                    return $ map snd $ headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vVals bestRho)
-               bestE <- do
-                 eVals <- mapM (eValueAvgCleaned borl state . fst) bestV
-                 let (increasing,decreasing) = partition ((0<) . fst) (zip eVals bestV)
-                 return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null decreasing then increasing else decreasing)
-                 -- other way of doing it:
-                 -- ----------------------
-                 -- do eVals <- mapM (eValue borl state . fst) bestV
-                 --    rhoVal <- rhoValue borl state (fst $ head bestRho)
-                 --    vVal <- vValue decideVPlusPsi borl state (fst $ head bestV) -- all a have the same V(s,a) value!
-                 --    r0Values <- mapM (rValue borl RSmall state . fst) bestV
-                 --    let rhoPlusV = rhoVal / (1-gamma0) + vVal
-                 --        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
-                 --    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
-               if length bestV == 1
-                 then return (borl, False, head bestV)
-                 else if length bestE > 1
-                        then do
-                          r <- liftIO $ randomRIO (0, length bestE - 1)
-                          return (borl, False, bestE !! r)
-                        else return (borl, False, headE bestE)
-             AlgBORLVOnly {} -> singleValueNextAction (vValue False borl state . fst)
-             AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
-             AlgDQNAvgRewardFree {} -> do
-               r1Values <- mapM (rValue borl RBig state . fst) as
-               let bestR1ValueActions = headV $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
-                   bestR1 = map snd bestR1ValueActions
-               r0Values <- mapM (rValue borl RSmall state . fst) bestR1
-               let r1Value = fst $ headR1 bestR1ValueActions
-                   group = groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
-                   (posErr,negErr) = (group *** group) $ partition ((r1Value<) . fst) (zip r0Values bestR1)
-               let bestR0 = map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (headR0 $ if null posErr then negErr else posErr)
-               -- trace ("bestR1: " ++ show bestR1) $
-               --  trace ("bestR0: " ++ show bestR0) $
-               if length bestR1 == 1
-                 then return (borl, False, head bestR1)
-                 else if length bestR0 > 1
-                        then do
-                          r <- liftIO $ randomRIO (0, length bestR0 - 1)
-                          return (borl, False, bestR0 !! r)
-                        else return (borl, False, headDqnAvgRewFree bestR0)
-
-               -- singleValueNextAction
-  where
-    headRho []    = error "head: empty input data in nextAction on Rho value"
-    headRho (x:_) = x
-    headV []    = error "head: empty input data in nextAction on V value"
-    headV (x:_) = x
-    headE []    = error "head: empty input data in nextAction on E Value"
-    headE (x:_) = x
-    headR0 []    = error "head: empty input data in nextAction on R0 Value"
-    headR0 (x:_) = x
-    headR1 []    = error "head: empty input data in nextAction on R1 Value"
-    headR1 (x:_) = x
-    headDqn []    = error "head: empty input data in nextAction on Dqn Value"
-    headDqn (x:_) = x
-    headDqnAvgRewFree []    = error "head: empty input data in nextAction on DqnAvgRewFree Value"
-    headDqnAvgRewFree (x:_) = x
-    gamma0 = case borl ^. algorithm of
-      AlgBORL g0 _ _ _ _         -> g0
-      AlgDQN g0                  -> g0
-      AlgDQNAvgRewardFree g0 _ _ -> g0
-      AlgBORLVOnly _ _           -> 1
-    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-    eps = params' ^. epsilon
-    explore = params' ^. exploration
-    state = borl ^. s
-    as = actionsIndexed borl state
-    epsCompare = epsCompareWith eps
-    singleValueNextAction f = do
-      rValues <- mapM f as
-      let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-      return (borl, False, snd $ headDqn bestR)
-
-epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
-epsCompareWith eps f x y
-  | abs (x - y) <= eps = f 0 0
-  | otherwise = y `f` x
-
-
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
 stepExecute (borl, randomAction, (aNr, Action action _)) = do
   -- File IO Operations
@@ -331,7 +230,7 @@ writeDebugFiles borl = do
   when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
     ". Increase debugStepsCount count in Step.hs!"
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat False borl' (init xs) (round $ last xs)) stateFeats
+    stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat borl' (init xs) (round $ last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do

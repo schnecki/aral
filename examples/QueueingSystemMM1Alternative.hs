@@ -203,8 +203,8 @@ instance ExperimentDef (BORL St)
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -225,6 +225,7 @@ params =
     , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 2
+    , _explorationStrategy = EpsilonGreedy
     , _exploration        = 0.8
     , _learnRandomAbove   = 0.0
     , _zeta               = 0.0

@@ -187,8 +187,8 @@ instance ExperimentDef (BORL St) where
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -217,21 +217,22 @@ nnConfig =
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha              = 0.01
-    , _beta               = 0.01
-    , _delta              = 0.005
-    , _gamma              = 0.01
-    , _epsilon            = 1.0
-    , _exploration        = 1.0
-    , _learnRandomAbove   = 0.5
-    , _zeta               = 0.03
-    , _xi                 = 0.005
-    , _disableAllLearning = False
+    { _alpha               = 0.01
+    , _beta                = 0.01
+    , _delta               = 0.005
+    , _gamma               = 0.01
+    , _epsilon             = 1.0
+    , _explorationStrategy = SoftmaxBoltzmann 0.5 -- EpsilonGreedy
+    , _exploration         = 1.0
+    , _learnRandomAbove    = 0.5
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    , _disableAllLearning  = False
     -- ANN
-    , _alphaANN           = 0.5 -- only used for multichain
-    , _betaANN            = 0.5
-    , _deltaANN           = 0.5
-    , _gammaANN           = 0.5
+    , _alphaANN            = 0.5 -- only used for multichain
+    , _betaANN             = 0.5
+    , _deltaANN            = 0.5
+    , _gammaANN            = 0.5
     }
 
 -- | Decay function of parameters.
@@ -325,7 +326,7 @@ alg =
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
   -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-  AlgBORL 0.5 0.8 ByStateValues False mRefState
+  AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do
@@ -343,7 +344,7 @@ usermode = do
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where

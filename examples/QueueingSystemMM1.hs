@@ -205,8 +205,8 @@ instance ExperimentDef (BORL St)
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -240,6 +240,7 @@ params =
     , _delta              = 0.03
     , _gamma              = 0.005
     , _epsilon            = 5
+    , _explorationStrategy = EpsilonGreedy
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
     , _zeta               = 0.10
@@ -337,7 +338,7 @@ alg =
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.65 ByStateValues False mRefStateAct
+        AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 allStateInputs :: M.Map [Double] St

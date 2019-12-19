@@ -171,7 +171,7 @@ main = do
 
       initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
-  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) True Nothing
+  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) Nothing
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
   -- rl <- mkUnichainTensorflow algorithm initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
@@ -194,6 +194,7 @@ params = Parameters
   , _gamma              = 0.01
   , _gammaANN           = 1
   , _epsilon            = 1.0
+  , _explorationStrategy = EpsilonGreedy
   , _exploration        = 1.0
   , _learnRandomAbove   = 0.1
   , _zeta               = 0.0
