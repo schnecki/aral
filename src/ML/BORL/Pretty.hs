@@ -47,10 +47,10 @@ commas :: Int
 commas = 3
 
 nestCols :: Int
-nestCols = 55
+nestCols = 50*3
 
 wideStyle :: Style
-wideStyle = Style { lineLength = 200, ribbonsPerLine = 100, mode = PageMode }
+wideStyle = Style { lineLength = 300, ribbonsPerLine = 200, mode = PageMode }
 
 printFloat :: Double -> Doc
 printFloat = text . showFloat
@@ -253,30 +253,30 @@ prettyBORLHead' printRho prettyStateFun borl = do
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
-    text "Alpha" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
+    colon $$
+    nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alphaANN alpha)) $+$
-    algDoc (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta))) $+$
-    algDoc (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta))) $+$
+    algDoc
+      (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta))) $+$
+    algDoc
+      (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta))) $+$
     (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gammaANN gamma)) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gammaANN gamma)) $+$
     text "Epsilon" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. epsilon) <+>
-    parens (text "Period 0" <> colon <+>
-    printFloatWith 8 (params ^. epsilon)) $+$
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. epsilon)) $+$
     text "Exploration" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>
-    parens (text "Period 0" <> colon <+>
-    printFloatWith 8 (params ^. exploration)) $+$
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
     text "Learn From Random Actions until Expl. hits" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
-    parens (text "Period 0" <> colon <+>
-    printFloatWith 8 (params ^. learnRandomAbove)) $+$
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. learnRandomAbove)) $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
@@ -287,12 +287,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <+>
-    parens (text "Period 0" <> colon <+>
-    printFloatWith 8 (params ^. zeta)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <+>
-    parens (text "Period 0" <> colon <+>
-    printFloatWith 8 (params ^. xi)) $+$
+    algDoc
+      ((text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
+    algDoc
+      ((text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
@@ -300,9 +300,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
-       nest
-         nestCols
-         (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
+       nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
     (if printRho
        then prettyRhoVal
        else empty)
