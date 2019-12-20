@@ -15,6 +15,7 @@ import           Control.Lens
 import           Control.Monad
 import           Data.List             (find)
 
+import           Debug.Trace
 
 saveTensorflowModels :: (MonadBorl' m) => BORL s -> m (BORL s)
 saveTensorflowModels borl = do

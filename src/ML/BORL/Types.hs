@@ -52,7 +52,9 @@ instance MonadUnliftIO (TF.SessionT IO) where
 
 -- | This is to ensure that Tensorflow code stays seperated from non TF Code w/o rquiering huge type inference runs.
 instance (MonadBorl' IO) where
-  liftTf _ = error "You are using the wrong type: IO instead of Tensorflow's SessionT!"
+  liftTf  =
+    -- runMonadBorlTF
+    error "You are using the wrong type: IO instead of Tensorflow's SessionT!"
 
 liftTensorflow :: (MonadBorl' m) => TF.SessionT IO a -> m a
 liftTensorflow = liftTf

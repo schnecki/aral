@@ -64,8 +64,6 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
                                                  tensorValueFromName)
 
 
-import           Debug.Trace
-
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
@@ -165,8 +163,7 @@ instance ExperimentDef (BORL St) where
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
   deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep rl _ _ =
-    liftIO $ do
+  runStep rl _ _ = do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
@@ -297,12 +294,15 @@ main = do
 experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
-     -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-     -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-     -- let runner = runMonadBorlIO
+  ---
+  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  -- let runner = runMonadBorlIO
+  ---
   let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
+  ---
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)

@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict              #-}
+{-# LANGUAGE TypeFamilies        #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
@@ -28,9 +30,9 @@ import qualified TensorFlow.Nodes       as TF (nodesUnion)
 import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
 import qualified TensorFlow.Output      as TF (ControlNode (..), NodeName (..))
+import qualified TensorFlow.Session     as TF
 import qualified TensorFlow.Tensor      as TF (Tensor (..), tensorNodeName,
                                                tensorRefFromName)
-
 
 import           ML.BORL.Types
 
@@ -114,7 +116,7 @@ instance Serialize TensorflowModel' where
     put optRefs
     let (mBasePath, bytesModel, bytesTrain) =
           unsafePerformIO $ do
-            void $ liftTf $ saveModelWithLastIO tf
+            -- void $ saveModelWithLastIO tf -- must have been done before
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName

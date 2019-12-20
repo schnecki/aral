@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
@@ -31,9 +32,6 @@ import qualified Data.Vector.Mutable   as V
 import           GHC.Generics
 import           System.IO.Unsafe
 import qualified TensorFlow.Core       as TF
-
-import           Debug.Trace
-
 
 type ActionList s = [ActionIndexed s]
 type ActionFilter s = s -> [Bool]
