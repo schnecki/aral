@@ -28,11 +28,12 @@ softmax :: Double -> [Double] -> [Double]
 softmax _ [] = []
 softmax temp xs
   | all (== head xs) (tail xs) = replicate (length xs) (1 / genericLength xs)
-  | otherwise = map (/ max 1e-2 s) xs'
+  | otherwise = map (/ max eps s) xs'
   where
     normed = normalise xs
-    xs' = map (exp . (/ temp)) normed
+    xs' = map (exp . (/ max eps temp)) normed
     s = sum xs'
+    eps = 1e-2
 
 -- | Normalise the input list to (-1, 1).
 normalise :: [Double] -> [Double]

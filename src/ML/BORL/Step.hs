@@ -134,7 +134,7 @@ stepExecute (borl, randomAction, (aNr, Action action _)) = do
   let applyToReward r@(RewardFuture storage) = applyState storage state
       applyToReward r                        = r
       updateFutures = map (over futureReward applyToReward)
-  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext (episodeEnd)])) borl
+  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
   return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
@@ -212,7 +212,7 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr show stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr printFloat stateFeats <> "\n")
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
@@ -247,6 +247,8 @@ writeDebugFiles borl = do
     acts = borl ^. actionList
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
+    printFloat :: [Double] -> String
+    printFloat xs = "[" <> intercalate "," (map (printf "%.2f") xs) <> "]"
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 
