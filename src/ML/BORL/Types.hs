@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
+import           Control.Monad.Catch
 import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Unlift
@@ -62,7 +63,10 @@ liftTensorflow = liftTf
 runMonadBorlIO :: IO a -> IO a
 runMonadBorlIO = id
 
-runMonadBorlTF :: TF.SessionT IO a -> IO a
+-- runMonadBorlTF :: TF.SessionT IO a -> IO a
+-- runMonadBorlTF = TF.runSession
+
+runMonadBorlTF :: (MonadIO m, MonadMask m) => TF.SessionT m a -> m a
 runMonadBorlTF = TF.runSession
 
 

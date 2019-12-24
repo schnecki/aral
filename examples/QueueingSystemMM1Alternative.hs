@@ -280,7 +280,7 @@ experimentMode = do
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
+  writeAndCompileLatex databaseSetup evalRes
 
 mRefStateAct :: Maybe (St, ActionIndex)
 mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
