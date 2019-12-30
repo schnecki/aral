@@ -4,7 +4,7 @@ module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
     , prettyBORLM
-    , prettyBORLMWithStateInverse
+    , prettyBORLMWithStInverse
     , prettyBORLWithStInverse
     , prettyBORLHead
     , prettyBORLTables
@@ -387,8 +387,8 @@ prettyBORL = prettyBORLWithStInverse Nothing
 prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
-prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
+prettyBORLMWithStInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLMWithStInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
 prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> IO Doc

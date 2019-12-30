@@ -115,8 +115,9 @@ instance Serialize TensorflowModel' where
     put $ map getTensorRefNodeName trVars
     put optRefs
     let (mBasePath, bytesModel, bytesTrain) =
-          unsafePerformIO $ do
+          unsafePerformIO $
             -- void $ saveModelWithLastIO tf -- must have been done before
+           do
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName
@@ -138,7 +139,8 @@ instance Serialize TensorflowModel' where
     mBasePath <- get
     bytesModel <- get
     bytesTrain <- get
-    return $ force $
+    return $
+      force $
       unsafePerformIO $ do
         basePath <- maybe (getCanonicalTemporaryDirectory >>= flip createTempDirectory "") (\b -> createDirectoryIfMissing True b >> return b) mBasePath
         let pathModel = basePath ++ "/" ++ modelName
@@ -307,8 +309,8 @@ restoreModel tfModel inp lab =
     let inpT = encodeInputBatch inp
         labT = encodeLabelBatch lab
     let tf' = tensorflowModel tfModel
+    liftIO $ putStrLn $ "Restoring training variables: " ++ show pathTrain
     unless (null $ trainingVariables tf') $
       mapM (TF.restore pathTrain) (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+    liftIO $ putStrLn "Restoring neural network variables"
     unless (null $ neuralNetworkVariables tf') $ mapM (TF.restore pathModel) (neuralNetworkVariables tf') >>= TF.run_
-  -- res <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel tfModel)
-  -- liftIO $ putStrLn $ "Training variables (restoreModel): " <> show res

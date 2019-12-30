@@ -62,7 +62,7 @@ askUser mInverse showHelp addUsage cmds ql = do
               --       foldM
               --         (\q _ -> do
               --            q' <- stepsM q nr
-              --            output <- prettyBORLMWithStateInverse mInverse q'
+              --            output <- prettyBORLMWithStInverse mInverse q'
               --            liftIO $ print output >> hFlush stdout
               --            return q')
               --         ql
