@@ -210,10 +210,7 @@ forwardRun model inp =
       inpT = encodeInputBatch inp
       nrOuts = length inp
    in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
-         return $
-           -- trace ("res: " ++ show res)
-           -- trace ("output: " ++ show (separate (length res `div` nrOuts) res []))
-           separateInputRows (length res `div` nrOuts) res []
+         return $ separateInputRows (length res `div` nrOuts) res []
   where
     separateInputRows _ [] acc = reverse acc
     separateInputRows len xs acc
@@ -309,8 +306,6 @@ restoreModel tfModel inp lab =
     let inpT = encodeInputBatch inp
         labT = encodeLabelBatch lab
     let tf' = tensorflowModel tfModel
-    liftIO $ putStrLn $ "Restoring training variables: " ++ show pathTrain
     unless (null $ trainingVariables tf') $
       mapM (TF.restore pathTrain) (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
-    liftIO $ putStrLn "Restoring neural network variables"
     unless (null $ neuralNetworkVariables tf') $ mapM (TF.restore pathModel) (neuralNetworkVariables tf') >>= TF.run_

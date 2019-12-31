@@ -197,8 +197,8 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
   case borl ^. algorithm of
     AlgBORL {} -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
-      prWs <- prBoolTblsStateAction t1 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
-      prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      prWs <- prBoolTblsStateAction t2 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
+      prR0R1 <- prBoolTblsStateAction t3 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prVs $+$ prWs $+$ prR0R1
     AlgBORLVOnly {} -> do
       prV <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
