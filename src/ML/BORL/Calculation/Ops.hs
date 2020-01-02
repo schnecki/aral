@@ -13,6 +13,7 @@ module ML.BORL.Calculation.Ops
     , RSize (..)
     ) where
 
+import           Control.DeepSeq
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
 import           ML.BORL.Decay                  (DecaySetup (..), decaySetup,
@@ -187,8 +188,8 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiValRho' = Just psiValRho'
       , getPsiValV' = Just psiValV'
       , getPsiValW' = Just psiValW'
-      , getLastVs' = Just lastVs'
-      , getLastRews' = lastRews'
+      , getLastVs' = force $ Just lastVs'
+      , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
 

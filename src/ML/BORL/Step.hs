@@ -212,7 +212,7 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr printFloat stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printFloat) stateFeats <> "\n")
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
@@ -247,6 +247,8 @@ writeDebugFiles borl = do
     acts = borl ^. actionList
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
+    shorten xs | length xs > 30 = "..." <> drop (length xs - 30) xs
+               | otherwise = xs
     printFloat :: [Double] -> String
     printFloat xs = "[" <> intercalate "," (map (printf "%.2f") xs) <> "]"
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
