@@ -4,7 +4,7 @@ module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
     , prettyBORLM
-    , prettyBORLMWithStateInverse
+    , prettyBORLMWithStInverse
     , prettyBORLWithStInverse
     , prettyBORLHead
     , prettyBORLTables
@@ -148,16 +148,11 @@ prettyTablesState borl p1 pIdx m1 p2 m2 = do
                   maxKey = minKey + nrActs - 1
 
 prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
-prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType vPlusPsiV mRefState) =
+prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType (borl ^. t) avgRewType <+>
   text "for rho" <> text ";" <+>
-  text "Deciding on" <+>
-  text
-    (if vPlusPsiV
-       then "V + PsiV"
-       else "V") <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
 prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =
@@ -181,7 +176,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
-prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
 prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -202,8 +197,8 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
   case borl ^. algorithm of
     AlgBORL {} -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
-      prWs <- prBoolTblsStateAction t1 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
-      prR0R1 <- prBoolTblsStateAction t2 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      prWs <- prBoolTblsStateAction t2 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
+      prR0R1 <- prBoolTblsStateAction t3 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prVs $+$ prWs $+$ prR0R1
     AlgBORLVOnly {} -> do
       prV <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
@@ -221,14 +216,15 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
-mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe st) -> [Double] -> Maybe (Maybe st, String)
+mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Double] -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
     Nothing  -> Just (Nothing, show $ map showFloat netinp)
-    Just inv -> (Just &&& show) <$> inv netinp
+    Just inv -> fromEither <$> inv netinp
+  where fromEither (Left str) = (Nothing, str)
+        fromEither (Right st) = (Just st, show st)
 
-
-prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
+prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
@@ -287,17 +283,15 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc
-      ((text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
-    algDoc
-      ((text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi))) $+$
+    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta)) $+$
+    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi)) $+$
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewardFree {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
+       AlgDQNAvgRewardFree {} -> text "Scaling V by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
@@ -330,11 +324,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf =
-          text
-            (show
-               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
+        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -389,11 +379,11 @@ prettyBORL = prettyBORLWithStInverse Nothing
 prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStateInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> m Doc
-prettyBORLMWithStateInverse mStInverse = prettyBORLTables mStInverse True True True
+prettyBORLMWithStInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLMWithStInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
-prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe s) -> BORL s -> IO Doc
+prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> IO Doc
 prettyBORLWithStInverse mStInverse borl =
   case find isTensorflowProxy (allProxies $ borl ^. proxies) of
     Nothing -> prettyBORLTables mStInverse True True True borl

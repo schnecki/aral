@@ -118,7 +118,7 @@ alg =
         -- AlgBORLVOnly ByStateValues mRefStateAct
         AlgBORL 0.5 0.8 ByStateValues
         -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
-        False mRefStateAct
+        mRefStateAct
 
 mRefStateAct :: Maybe (St, ActionIndex)
 mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
@@ -155,6 +155,7 @@ params = Parameters
   , _gamma            = 0.01
   , _gammaANN = 1
   , _epsilon          = 1.0
+  , _explorationStrategy = EpsilonGreedy
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 0.0

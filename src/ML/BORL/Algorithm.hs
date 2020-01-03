@@ -30,7 +30,6 @@ data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
             AvgReward
-            DecideOnVPlusPsi
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN Gamma
@@ -65,7 +64,7 @@ defaultGammaDQN = 0.99
 
 -- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
 algBORL :: Algorithm s
-algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues False Nothing
+algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Nothing
 
   -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 

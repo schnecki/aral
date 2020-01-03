@@ -57,18 +57,20 @@ data ProxyType
   | PsiVTable
   | PsiWTable
   | CombinedUnichain
+  | CombinedUnichainScaleAs ProxyType
   | NoScaling ProxyType
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 proxyTypeName :: ProxyType -> Text.Text
-proxyTypeName VTable           = "v"
-proxyTypeName WTable           = "w"
-proxyTypeName R0Table          = "r0"
-proxyTypeName R1Table          = "r1"
-proxyTypeName PsiVTable        = "psiV"
-proxyTypeName PsiWTable        = "psiW"
-proxyTypeName CombinedUnichain = "combinedUnichain"
-proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
+proxyTypeName VTable                      = "v"
+proxyTypeName WTable                      = "w"
+proxyTypeName R0Table                     = "r0"
+proxyTypeName R1Table                     = "r1"
+proxyTypeName PsiVTable                   = "psiV"
+proxyTypeName PsiWTable                   = "psiW"
+proxyTypeName CombinedUnichain            = "combinedUnichain"
+proxyTypeName (CombinedUnichainScaleAs p) = "combinedUnichainScaleAs" <> proxyTypeName p
+proxyTypeName (NoScaling p)               = "noscaling-" <> proxyTypeName p
 
 
 data Proxy = Scalar             -- ^ Combines multiple proxies in one for performance benefits.
@@ -108,11 +110,11 @@ proxyScalar f (Scalar x) = Scalar <$> f x
 proxyScalar _ p          = pure p
 
 proxyTable :: Traversal' Proxy (M.Map ([Double], ActionIndex) Double)
-proxyTable f (Table m d) = (\m' -> Table m' d) <$> f m
+proxyTable f (Table m d) = flip Table d <$> f m
 proxyTable  _ p          = pure p
 
 proxyDefault :: Traversal' Proxy Double
-proxyDefault f (Table m d) = (\d' -> Table m d') <$> f d
+proxyDefault f (Table m d) = Table m <$> f d
 proxyDefault _ p           = pure p
 
 proxyTFTarget :: Traversal' Proxy TensorflowModel'

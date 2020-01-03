@@ -181,7 +181,7 @@ instance ExperimentDef (BORL St)
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ =
     liftIO $ do
@@ -205,8 +205,8 @@ instance ExperimentDef (BORL St)
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -240,6 +240,7 @@ params =
     , _delta              = 0.03
     , _gamma              = 0.005
     , _epsilon            = 5
+    , _explorationStrategy = EpsilonGreedy
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.10
     , _zeta               = 0.10
@@ -316,7 +317,7 @@ experimentMode = do
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
+  writeAndCompileLatex databaseSetup evalRes
 
 
 lpMode :: IO ()
@@ -337,14 +338,14 @@ alg =
         -- AlgDQN 0.50
         -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.65 ByStateValues False mRefStateAct
+        AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: NetInputWoAction -> Maybe St
-mInverseSt xs = M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 usermode :: IO ()
 usermode = do
@@ -358,7 +359,7 @@ usermode = do
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombinedNet nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
@@ -369,15 +370,8 @@ type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, R
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 4, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 4, 'D1 4]
 
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
-  buildModel $
-  inputLayer1D inpLen >> fullyConnected [10*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  where inpLen = genericLength (netInp initState)
-
-modelBuilderCombinedNet :: ModelBuilderFunction
-modelBuilderCombinedNet colOut =
+modelBuilder :: ModelBuilderFunction
+modelBuilder colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}

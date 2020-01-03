@@ -166,8 +166,8 @@ policy maxAdmit (St s incoming) act
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: NetInputWoAction -> Maybe St
-mInverseSt xs = M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 
 instance ExperimentDef (BORL St)
@@ -179,7 +179,7 @@ instance ExperimentDef (BORL St)
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ =
     liftIO $ do
@@ -203,8 +203,8 @@ instance ExperimentDef (BORL St)
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -225,6 +225,7 @@ params =
     , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 2
+    , _explorationStrategy = EpsilonGreedy
     , _exploration        = 0.8
     , _learnRandomAbove   = 0.0
     , _zeta               = 0.0
@@ -279,7 +280,7 @@ experimentMode = do
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
+  writeAndCompileLatex databaseSetup evalRes
 
 mRefStateAct :: Maybe (St, ActionIndex)
 mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
@@ -312,10 +313,10 @@ usermode = do
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder =
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder cols =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [5*inpLen] TF.relu' >> fullyConnected [3*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [genericLength actions, cols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.005, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   where inpLen = genericLength (netInp initState)
 

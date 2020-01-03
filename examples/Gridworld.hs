@@ -64,8 +64,6 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
                                                  tensorValueFromName)
 
 
-import           Debug.Trace
-
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
@@ -163,10 +161,9 @@ instance ExperimentDef (BORL St) where
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep rl _ _ =
-    liftIO $ do
+  runStep rl _ _ = do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
@@ -187,8 +184,8 @@ instance ExperimentDef (BORL St) where
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) False Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) True Nothing
+           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgBORLVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -217,21 +214,22 @@ nnConfig =
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha              = 0.01
-    , _beta               = 0.01
-    , _delta              = 0.005
-    , _gamma              = 0.01
-    , _epsilon            = 1.0
-    , _exploration        = 1.0
-    , _learnRandomAbove   = 0.5
-    , _zeta               = 0.03
-    , _xi                 = 0.005
-    , _disableAllLearning = False
+    { _alpha               = 0.01
+    , _beta                = 0.01
+    , _delta               = 0.005
+    , _gamma               = 0.01
+    , _epsilon             = 1.0
+    , _explorationStrategy = SoftmaxBoltzmann 0.5 -- EpsilonGreedy
+    , _exploration         = 1.0
+    , _learnRandomAbove    = 0.5
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    , _disableAllLearning  = False
     -- ANN
-    , _alphaANN           = 0.5 -- only used for multichain
-    , _betaANN            = 0.5
-    , _deltaANN           = 0.5
-    , _gammaANN           = 0.5
+    , _alphaANN            = 0.5 -- only used for multichain
+    , _betaANN             = 0.5
+    , _deltaANN            = 0.5
+    , _gammaANN            = 0.5
     }
 
 -- | Decay function of parameters.
@@ -296,16 +294,19 @@ main = do
 experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
-     -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-     -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-     -- let runner = runMonadBorlIO
+  ---
+  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  -- let runner = runMonadBorlIO
+  ---
   let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
+  ---
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
-  writeAndCompileLatex evalRes
+  writeAndCompileLatex databaseSetup evalRes
 
 
 lpMode :: IO ()
@@ -325,7 +326,7 @@ alg =
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
   -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
-  AlgBORL 0.5 0.8 ByStateValues False mRefState
+  AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do
@@ -340,10 +341,10 @@ usermode = do
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilderCombined nnConfig (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where
@@ -364,11 +365,8 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
 
-modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
-modelBuilder = modelBuilderCombined 1
-
-modelBuilderCombined :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
-modelBuilderCombined colOut =
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
@@ -469,8 +467,8 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: Maybe (NetInputWoAction -> Maybe St)
-mInverseSt = Just $ \xs -> M.lookup xs allStateInputs
+mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))
+mInverseSt = Just $ \xs -> return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) =

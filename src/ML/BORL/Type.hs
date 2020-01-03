@@ -17,7 +17,7 @@
 
 module ML.BORL.Type where
 
-import           ML.BORL.Action
+import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
@@ -137,9 +137,9 @@ defInitValues = InitValues 0 0 0 0 0
 -- Tabular representations
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Double]
-convertAlgorithm ftExt (AlgBORL g0 g1 avgRew vPlusPsi (Just (s,a))) = AlgBORL g0 g1 avgRew vPlusPsi (Just (ftExt s,a))
+convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s,a))) = AlgBORL g0 g1 avgRew (Just (ftExt s,a))
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
-convertAlgorithm _ (AlgBORL g0 g1 avgRew vPlusPsi Nothing) = AlgBORL g0 g1 avgRew vPlusPsi Nothing
+convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
 convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga) = AlgDQN ga
 convertAlgorithm _ (AlgDQNAvgRewardFree ga0 ga1 avgRew) = AlgDQNAvgRewardFree ga0 ga1 avgRew
@@ -191,14 +191,14 @@ mkUnichainTensorflowM ::
   -> (s -> [Bool])
   -> ParameterInitValues
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
 mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nnTypes = [VTable, VTable, WTable, WTable, R0Table, R0Table, R1Table, R1Table, PsiVTable, PsiVTable, PsiWTable, PsiWTable]
       scopes = concat $ repeat ["_target", "_worker"]
-  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat modelBuilder))
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat $ modelBuilder 1))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
@@ -253,7 +253,8 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
-  let nnTypes = [CombinedUnichain, CombinedUnichain]
+  let nnTypes | isAlgDqnAvgRewardFree alg = [CombinedUnichainScaleAs VTable, CombinedUnichainScaleAs VTable]
+              | otherwise = [CombinedUnichain, CombinedUnichain]
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat (modelBuilder nrNets)))
   let netInpInitState = ftExt initialState
@@ -298,7 +299,7 @@ mkUnichainTensorflow ::
   -> (s -> [Bool])
   -> ParameterInitValues
   -> Decay
-  -> TF.Session TensorflowModel
+  -> ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
@@ -413,7 +414,9 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
-  let nn = nnSA CombinedUnichain
+  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable
+             | otherwise = CombinedUnichain
+  let nn = nnSA nnType
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   return $
     checkGrenade net nrNets nnConfig $
@@ -494,7 +497,7 @@ mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
 mkReplayMemory sz | sz <= 0 = return Nothing
 mkReplayMemory sz = do
   vec <- V.new sz
-  return $ Just $ ReplayMemory vec sz (-1)
+  return $ Just $ ReplayMemory vec sz 0 (-1)
 
 
 -------------------- Other Constructors --------------------

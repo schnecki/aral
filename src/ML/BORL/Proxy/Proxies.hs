@@ -50,18 +50,11 @@ data Proxies =
     , _replayMemory :: !(Maybe ReplayMemory)
     }
   deriving (Generic)
--- makeLenses ''Proxies
 
+isCombinedProxies :: Proxies -> Bool
+isCombinedProxies Proxies{}                 = False
+isCombinedProxies ProxiesCombinedUnichain{} = True
 
- -- data FooBar
- --   = Foo { _x, _y :: Int }
- --   | Bar { _x :: Int }
- -- makeLenses ''FooBar
-
--- type Lens' s a = forall (f :: * -> *). Functor f => (a -> f a) -> s -> f s
--- x :: Lens' FooBar Int
--- x f (Foo a b) = (\a' -> Foo a' b) <$> f a
--- x f (Bar a)   = Bar <$> f a
 
 -- allProxiesLenses :: [(Proxies -> f Proxy) -> Proxies -> f Proxy]
 allProxiesLenses :: Functor f => Proxies -> [(Proxy -> f Proxy) -> Proxies -> f Proxies]

@@ -19,7 +19,7 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
-askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Maybe (NetInputWoAction -> Maybe s) -> Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
+askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
 askUser mInverse showHelp addUsage cmds ql = do
   let usage =
         sortBy (compare `on` fst) $
@@ -62,7 +62,7 @@ askUser mInverse showHelp addUsage cmds ql = do
               --       foldM
               --         (\q _ -> do
               --            q' <- stepsM q nr
-              --            output <- prettyBORLMWithStateInverse mInverse q'
+              --            output <- prettyBORLMWithStInverse mInverse q'
               --            liftIO $ print output >> hFlush stdout
               --            return q')
               --         ql

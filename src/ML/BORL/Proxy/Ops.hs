@@ -113,11 +113,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = pV ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
@@ -168,11 +168,11 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
   | proxy ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory period (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = proxy ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
@@ -230,7 +230,7 @@ insertProxy p st aNr val = insertProxyMany p [((st, aNr), val)]
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
 insertProxyMany _ xs (Scalar _) = return $ Scalar (snd $ last xs)
-insertProxyMany _ xs (Table m def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
+insertProxyMany _ xs (Table m def) = return $! force $! Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
   where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
         n = 3
 insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)
@@ -250,8 +250,9 @@ insertProxyMany period xs px
 insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
 insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head pxs ^?! proxyType) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
   where
-    scaleTab f px | period == memSize - 1 = proxyNNStartup .~ M.mapWithKey (\(_, idx) -> scaleIndex f idx) (px ^?! proxyNNStartup) $ px
-                | otherwise = px
+    scaleTab f px
+      | period == memSize - 1 = proxyNNStartup .~ M.mapWithKey (\(_, idx) -> scaleIndex f idx) (px ^?! proxyNNStartup) $ px
+      | otherwise = px
     scaleIndex f idx val = maybe (error $ "could not find proxy for idx: " ++ show idx) (\px -> f (getMinMaxVal px) val) (find ((== idx `div` len) . (^?! proxyOutCol)) pxs)
     pxLearn = scaleTab scaleValue $ set proxyType (NoScaling $ head pxs ^?! proxyType) $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
@@ -259,8 +260,9 @@ insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head p
         (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue' (getMinMaxVal px) out)) outs)
         (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     len = head pxs ^?! proxyNrActions
-    scaleValue' val | period < memSize - 1 = id
-                    | otherwise = scaleValue val
+    scaleValue' val
+      | period < memSize - 1 = id
+      | otherwise = scaleValue val
     memSize = fromIntegral (head pxs ^?! proxyNNConfig . replayMemoryMaxSize)
 
 
@@ -453,6 +455,7 @@ getMinMaxVal p =
     PsiWTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     NoScaling {} -> Nothing
     CombinedUnichain -> error "should not happend"
+    CombinedUnichainScaleAs {} -> error "should not happend"
   where
     unCombine CombinedUnichain
       | isCombinedProxy p =
@@ -464,6 +467,8 @@ getMinMaxVal p =
           4 -> PsiWTable
           5 -> WTable
           _ -> error "Proxy/Ops.hs getMinMaxVal"
+    unCombine (CombinedUnichainScaleAs x)
+      | isCombinedProxy p = x
     unCombine x = x
 
 

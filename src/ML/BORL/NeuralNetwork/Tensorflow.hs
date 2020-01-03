@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedLists     #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict              #-}
+{-# LANGUAGE TypeFamilies        #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
 import           Control.DeepSeq
@@ -28,9 +30,9 @@ import qualified TensorFlow.Nodes       as TF (nodesUnion)
 import qualified TensorFlow.Ops         as TF hiding (initializedVariable,
                                                zeroInitializedVariable)
 import qualified TensorFlow.Output      as TF (ControlNode (..), NodeName (..))
+import qualified TensorFlow.Session     as TF
 import qualified TensorFlow.Tensor      as TF (Tensor (..), tensorNodeName,
                                                tensorRefFromName)
-
 
 import           ML.BORL.Types
 
@@ -113,8 +115,9 @@ instance Serialize TensorflowModel' where
     put $ map getTensorRefNodeName trVars
     put optRefs
     let (mBasePath, bytesModel, bytesTrain) =
-          unsafePerformIO $ do
-            void $ liftTf $ saveModelWithLastIO tf
+          unsafePerformIO $
+            -- void $ saveModelWithLastIO tf -- must have been done before
+           do
             let basePath = fromMaybe (error "cannot read tensorflow model") (checkpointBaseFileName tf) -- models have been saved during conversion
                 pathModel = basePath ++ "/" ++ modelName
                 pathTrain = basePath ++ "/" ++ trainName
@@ -136,7 +139,8 @@ instance Serialize TensorflowModel' where
     mBasePath <- get
     bytesModel <- get
     bytesTrain <- get
-    return $ force $
+    return $
+      force $
       unsafePerformIO $ do
         basePath <- maybe (getCanonicalTemporaryDirectory >>= flip createTempDirectory "") (\b -> createDirectoryIfMissing True b >> return b) mBasePath
         let pathModel = basePath ++ "/" ++ modelName
@@ -206,10 +210,7 @@ forwardRun model inp =
       inpT = encodeInputBatch inp
       nrOuts = length inp
    in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
-         return $
-           -- trace ("res: " ++ show res)
-           -- trace ("output: " ++ show (separate (length res `div` nrOuts) res []))
-           separateInputRows (length res `div` nrOuts) res []
+         return $ separateInputRows (length res `div` nrOuts) res []
   where
     separateInputRows _ [] acc = reverse acc
     separateInputRows len xs acc
@@ -308,5 +309,3 @@ restoreModel tfModel inp lab =
     unless (null $ trainingVariables tf') $
       mapM (TF.restore pathTrain) (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
     unless (null $ neuralNetworkVariables tf') $ mapM (TF.restore pathModel) (neuralNetworkVariables tf') >>= TF.run_
-  -- res <- map V.toList <$> TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel tfModel)
-  -- liftIO $ putStrLn $ "Training variables (restoreModel): " <> show res

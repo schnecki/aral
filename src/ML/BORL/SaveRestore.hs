@@ -41,5 +41,3 @@ restoreTensorflowModels build borl = do
       case find isTensorflow (allProxies $ borl ^. proxies) of
         Just (TensorflowProxy netT _ _ _ _ _) -> buildTensorflowModel netT
         _                                     -> return ()
-
-

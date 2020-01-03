@@ -6,11 +6,12 @@ module ML.BORL.Decay.Ops where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Data.Maybe         (fromMaybe)
+import           Data.Maybe          (fromMaybe)
 import           Data.Serialize
 import           GHC.Generics
 
 import           ML.BORL.Decay.Type
+import           ML.BORL.Exploration
 import           ML.BORL.Parameters
 import           ML.BORL.Types
 
@@ -39,7 +40,7 @@ overrideDecayParameters t xs params0 params = foldl (\p (setter, getter, rate, s
 --     decayedVal minVal rate steps v = max minVal (v * decay rate steps)
 
 decaySetupParameters :: Parameters DecaySetup -> Decay
-decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDelANN decGa decGaANN decEps decExp decRand decZeta decXi _) period (Parameters alp alpANN bet betANN del delANN ga gaANN eps exp rand zeta xi disable) =
+decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDelANN decGa decGaANN decEps _ decExp decRand decZeta decXi _) period (Parameters alp alpANN bet betANN del delANN ga gaANN eps expStrat exp rand zeta xi disable) =
   Parameters
     { _alpha = decaySetup decAlp period alp
     , _alphaANN = decaySetup decAlpANN period alpANN
@@ -50,6 +51,7 @@ decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDel
     , _gamma = decaySetup decGa period ga
     , _gammaANN = decaySetup decGaANN period gaANN
     , _epsilon = decaySetup decEps period eps
+    , _explorationStrategy = expStrat
     , _exploration = decaySetup decExp period exp
     , _learnRandomAbove = decaySetup decRand period rand
     , _zeta = decaySetup decZeta period zeta
@@ -61,8 +63,8 @@ decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDel
 -- | Exponential Decay with possible minimum values. All ANN parameters, the minimum learning rate for random actions,
 -- and zeta are not decayed!
 exponentialDecayParameters :: Maybe (Parameters Double) -> DecayRate -> DecaySteps -> Decay
-exponentialDecayParameters Nothing rate steps t p = exponentialDecayParameters (Just (Parameters 0 0 0 0 0 0 0 0 0 0 0 0 0 False)) rate steps t p
-exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mGaANN mEps mExp mRand mZeta mXi _)) rate steps t (Parameters alp alpANN bet betANN del delANN ga gaANN eps exp rand zeta xi disable) =
+exponentialDecayParameters Nothing rate steps t p = exponentialDecayParameters (Just (Parameters 0 0 0 0 0 0 0 0 0 EpsilonGreedy  0 0 0 0 False)) rate steps t p
+exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDelANN mGa mGaANN mEps _ mExp mRand mZeta mXi _)) rate steps t (Parameters alp alpANN bet betANN del delANN ga gaANN eps expStrat exp rand zeta xi disable) =
   Parameters
     (max mAlp $ decay * alp)
     (max mAlpANN $ decay * alpANN)
@@ -73,6 +75,7 @@ exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDel
     (max mGa $ decay * ga)
     (max mGaANN $ decay * gaANN)
     (max mEps $ decay * eps)
+    expStrat
     (max mExp $ decay * exp)
     (max mRand rand) -- no decay
     (max mZeta $ decay * zeta) -- no decay

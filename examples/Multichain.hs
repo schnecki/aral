@@ -40,7 +40,7 @@ import           System.IO
 import           System.Random
 
 alg :: Algorithm St
-alg = AlgBORL 0.5 0.8 ByStateValues False Nothing
+alg = AlgBORL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
@@ -68,6 +68,7 @@ params =
     , _gamma              = 0.01
     , _gammaANN           = 1
     , _epsilon            = 0.1
+    , _explorationStrategy = EpsilonGreedy
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.30
     , _zeta               = 0.03

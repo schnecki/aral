@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
+import           Control.Monad.Catch
 import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Unlift
@@ -52,7 +53,9 @@ instance MonadUnliftIO (TF.SessionT IO) where
 
 -- | This is to ensure that Tensorflow code stays seperated from non TF Code w/o rquiering huge type inference runs.
 instance (MonadBorl' IO) where
-  liftTf _ = error "You are using the wrong type: IO instead of Tensorflow's SessionT!"
+  liftTf  =
+    -- runMonadBorlTF
+    error "You are using the wrong type: IO instead of Tensorflow's SessionT!"
 
 liftTensorflow :: (MonadBorl' m) => TF.SessionT IO a -> m a
 liftTensorflow = liftTf
@@ -60,7 +63,10 @@ liftTensorflow = liftTf
 runMonadBorlIO :: IO a -> IO a
 runMonadBorlIO = id
 
-runMonadBorlTF :: TF.SessionT IO a -> IO a
+-- runMonadBorlTF :: TF.SessionT IO a -> IO a
+-- runMonadBorlTF = TF.runSession
+
+runMonadBorlTF :: (MonadIO m, MonadMask m) => TF.SessionT m a -> m a
 runMonadBorlTF = TF.runSession
 
 

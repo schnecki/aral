@@ -3,4 +3,5 @@ module ML.BORL.Action
   ) where
 
 
+import           ML.BORL.Action.Ops  as Type
 import           ML.BORL.Action.Type as Type
