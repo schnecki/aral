@@ -275,22 +275,6 @@ decay =
       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
-  --  | isAlgDqnAvgRewardFree alg || isAlgBorlVOnly alg = overrideDecayParameters t
-  --  -   [ (alpha, 0.5, 30000, 0.00001)
-  --     , (alphaANN, 0.5, 30000, 0.00001)
-  --     , (beta, 0.5, 30000, 0.0001)
-  --     , (betaANN, 0.5, 30000, 0.0001)
-  --     , (delta, 0.5, 30000, 0.0001)
-  --     , (deltaANN, 0.5, 30000, 0.0001)
-  --     , (gamma, 0.5, 30000, 0.0001)
-  --     , (gammaANN, 0.5, 30000, 0.0001)
-  --     , (exploration, 0.5, 30000, 0.01)
-  --     ] p
-  --   -- overrideDecayParameters t [(beta, beta, 0.5, 150000, 1e-4), (delta, delta, 0.5, 150000, 1e-4)] p $
-  --   exponentialDecayParameters (Just minValues) 0.75 150000 t p
-  -- where
-  --   m = 1e-3
-  --   minValues =
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0

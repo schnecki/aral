@@ -283,10 +283,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    algDoc (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta)) $+$
-    algDoc (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi)) $+$
+    algDoc
+      (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
+    algDoc
+      (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
