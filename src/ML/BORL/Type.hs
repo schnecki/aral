@@ -253,17 +253,17 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
-  let nnTypes | isAlgDqnAvgRewardFree alg = [CombinedUnichainScaleAs VTable, CombinedUnichainScaleAs VTable]
-              | otherwise = [CombinedUnichain, CombinedUnichain]
-      scopes = concat $ repeat ["_target", "_worker"]
-  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat (modelBuilder nrNets)))
+  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable
+              | otherwise = CombinedUnichain
+      scopes = ["_target", "_worker"]
+  let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) (repeat nnType) scopes (repeat (modelBuilder nrNets)))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
-  proxy <- liftIO $ nnSA CombinedUnichain 0
+  proxy <- liftIO $ nnSA nnType 0
   repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
   buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
