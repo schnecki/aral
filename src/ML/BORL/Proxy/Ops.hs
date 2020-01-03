@@ -250,8 +250,9 @@ insertProxyMany period xs px
 insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
 insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head pxs ^?! proxyType) <$> insertProxyMany period combineProxyExpectedOuts pxLearn
   where
-    scaleTab f px | period == memSize - 1 = proxyNNStartup .~ M.mapWithKey (\(_, idx) -> scaleIndex f idx) (px ^?! proxyNNStartup) $ px
-                | otherwise = px
+    scaleTab f px
+      | period == memSize - 1 = proxyNNStartup .~ M.mapWithKey (\(_, idx) -> scaleIndex f idx) (px ^?! proxyNNStartup) $ px
+      | otherwise = px
     scaleIndex f idx val = maybe (error $ "could not find proxy for idx: " ++ show idx) (\px -> f (getMinMaxVal px) val) (find ((== idx `div` len) . (^?! proxyOutCol)) pxs)
     pxLearn = scaleTab scaleValue $ set proxyType (NoScaling $ head pxs ^?! proxyType) $ head pxs ^?! proxySub
     combineProxyExpectedOuts =
@@ -259,8 +260,9 @@ insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head p
         (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue' (getMinMaxVal px) out)) outs)
         (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     len = head pxs ^?! proxyNrActions
-    scaleValue' val | period < memSize - 1 = id
-                    | otherwise = scaleValue val
+    scaleValue' val
+      | period < memSize - 1 = id
+      | otherwise = scaleValue val
     memSize = fromIntegral (head pxs ^?! proxyNNConfig . replayMemoryMaxSize)
 
 
@@ -453,6 +455,7 @@ getMinMaxVal p =
     PsiWTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     NoScaling {} -> Nothing
     CombinedUnichain -> error "should not happend"
+    CombinedUnichainScaleAs {} -> error "should not happend"
   where
     unCombine CombinedUnichain
       | isCombinedProxy p =
@@ -464,6 +467,8 @@ getMinMaxVal p =
           4 -> PsiWTable
           5 -> WTable
           _ -> error "Proxy/Ops.hs getMinMaxVal"
+    unCombine (CombinedUnichainScaleAs x)
+      | isCombinedProxy p = x
     unCombine x = x
 
 

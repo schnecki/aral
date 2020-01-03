@@ -247,7 +247,7 @@ writeDebugFiles borl = do
     acts = borl ^. actionList
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
-    shorten xs | length xs > 30 = "..." <> drop (length xs - 30) xs
+    shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs
                | otherwise = xs
     printFloat :: [Double] -> String
     printFloat xs = "[" <> intercalate "," (map (printf "%.2f") xs) <> "]"
