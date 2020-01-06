@@ -259,7 +259,7 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-6) 0.15 10000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
@@ -277,7 +277,7 @@ decay =
       }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 0
+initVals = InitValues 0 0 0 0 0 0
 
 main :: IO ()
 main = do
@@ -320,10 +320,9 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
+        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
-        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
+        AlgBORL 0.5 0.65 ByStateValues mRefStateAct
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]

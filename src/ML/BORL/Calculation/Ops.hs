@@ -236,7 +236,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
+        | otherwise = (1 - expSmthPsi / 100) * rhoMinimumState + expSmthPsi / 100 * rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
