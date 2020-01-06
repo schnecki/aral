@@ -63,6 +63,9 @@ ite True thenPart _  = thenPart
 ite False _ elsePart = elsePart
 {-# INLINE ite #-}
 
+rhoMinimumState' :: (Ord a, Fractional a) => a -> a
+rhoMinimumState' rhoVal' = max (rhoVal' - 2) (0.975 * rhoVal')
+
 mkCalculation' ::
      (MonadBorl' m)
   => BORL s
@@ -148,7 +151,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * (max (rhoVal' - 2) (0.975 * rhoVal'))
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoMinimumState' rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -236,7 +239,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoMinimumState' rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
@@ -339,7 +342,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = (1 - expSmthPsi / 200) * rhoMinimumState + expSmthPsi / 200 * rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $
@@ -363,7 +366,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
 rhoMinimumValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Double
-rhoMinimumValue borl state a = rhoMinimumValueWith Worker borl (ftExt state) a
+rhoMinimumValue borl state = rhoMinimumValueWith Worker borl (ftExt state)
   where
     ftExt = borl ^. featureExtractor
 

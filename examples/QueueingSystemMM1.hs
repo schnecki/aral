@@ -12,7 +12,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL
+import           ML.BORL                as B
 import           SolveLp
 
 import           Experimenter
@@ -81,7 +81,7 @@ fixedPayoffR = 12               -- fixed payoff
 c = 1                           -- holding cost per order
 
 costFunctionF :: Int -> IO Double
-costFunctionF j = do
+costFunctionF j = -- do
   -- x <- randomRIO (0.25, 1.75)
   return $ c * fromIntegral j -- (j+1) - fromIntegral j * x -- holding cost function
 
@@ -107,7 +107,7 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1"
+    { _experimentBaseName         = "queuing-system M/M/1 evaluation"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
     , _experimentRepetitions      = 1
     , _preparationSteps           = 500000
@@ -172,8 +172,7 @@ policy maxAdmit (St s incoming) act
     admitAct = actions !! 1
     rejectAct = head actions
 
-instance ExperimentDef (BORL St)
-                                          where
+instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = IO
   -- type ExpM (BORL St) = TF.SessionT IO
   type InputValue (BORL St) = ()
@@ -204,15 +203,12 @@ instance ExperimentDef (BORL St)
         (set algorithm)
         (view algorithm)
         (Just $ const $
-         return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
-           , AlgBORLVOnly (ByMovAvg 3000) Nothing
-           ])
+         return [AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing, AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing, AlgBORLVOnly (ByMovAvg 3000) Nothing])
         Nothing
         Nothing
         Nothing
     ]
+  beforeEvaluationHook _ _ _ _ rl = return $ set (B.parameters . disableAllLearning) True $ set (B.parameters . exploration) 0 rl
 
 nnConfig :: NNConfig
 nnConfig =
@@ -242,7 +238,7 @@ params =
     , _epsilon            = 5
     , _explorationStrategy = EpsilonGreedy
     , _exploration        = 1.0
-    , _learnRandomAbove   = 0.10
+    , _learnRandomAbove   = 1.0
     , _zeta               = 0.10
     , _xi                 = 5e-3
     , _disableAllLearning = False
@@ -259,10 +255,10 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-6) 0.15 10000
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      { _alpha            = ExponentialDecay (Just 1e-7) 0.15 50000
+      , _beta             = ExponentialDecay (Just 5e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 5e-3) 0.5 150000
       , _zeta             = NoDecay -- ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
@@ -292,10 +288,10 @@ main = do
 experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
-  let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   let runner = runMonadBorlIO
-  -- let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  -- let mkInitSt = mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   -- let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
@@ -320,10 +316,10 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000)) -- ByReward -- (Fixed 30)
-        -- AlgBORLVOnly ByStateValues mRefStateAct
+        -- AlgDQNAvgRewardFree 0.8 0.99 (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
-        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
+        -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
@@ -344,8 +340,8 @@ usermode = do
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds rl
   where cmds = []
         usage = []
