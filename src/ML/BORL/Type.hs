@@ -121,16 +121,17 @@ idxStart = 0
 
 
 data InitValues = InitValues
-  { defaultRho :: Double
-  , defaultV   :: Double
-  , defaultW   :: Double
-  , defaultR0  :: Double
-  , defaultR1  :: Double
+  { defaultRho        :: Double
+  , defaultRhoMinimum :: Double
+  , defaultV          :: Double
+  , defaultW          :: Double
+  , defaultR0         :: Double
+  , defaultR1         :: Double
   }
 
 
 defInitValues :: InitValues
-defInitValues = InitValues 0 0 0 0 0
+defInitValues = InitValues 0 0 0 0 0 0
 
 -------------------- Constructors --------------------
 
@@ -161,9 +162,10 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (Scalar 0) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (Scalar defRhoMin) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
     defRho = defaultRho (fromMaybe defInitValues initVals)
     defV = defaultV (fromMaybe defInitValues initVals)
     defW = defaultW (fromMaybe defInitValues initVals)
@@ -230,9 +232,10 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar defRho) psiV v psiW w r0 r1 repMem)
+      (Proxies (Scalar defRhoMin) (Scalar defRho) psiV v psiW w r0 r1 repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
 
 -- ^ The output tensor must be 2D with the number of rows corresponding to the number of actions and the columns being
 -- variable.
@@ -283,9 +286,10 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       mempty
       mempty
       (0, 0, 0)
-      (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) proxy repMem)
+      (ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) proxy repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
 
 
 -- ^ Uses a single network for each value to learn. Thus the output tensor must be 1D with the number of rows
@@ -342,9 +346,10 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     mempty
     mempty
     (0, 0, 0)
-    (Proxies (tabSA 0) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
+    (Proxies (tabSA defRhoMin) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
     tabSA def = Table mempty def
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defV = defaultV (fromMaybe defInitValues initValues)
     defW = defaultW (fromMaybe defInitValues initValues)
@@ -392,9 +397,10 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar 0) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
+      (Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
 
 mkUnichainGrenadeCombinedNet ::
      forall nrH nrL s layers shapes. (GNum (Gradients layers), KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
@@ -435,8 +441,9 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
       mempty
       mempty
       (0, 0, 0)
-      (ProxiesCombinedUnichain (Scalar 0) (Scalar defRho) nn repMem)
+      (ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nn repMem)
   where
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
@@ -494,7 +501,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
 
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
-mkReplayMemory sz | sz <= 0 = return Nothing
+mkReplayMemory sz | sz <= 1 = return Nothing
 mkReplayMemory sz = do
   vec <- V.new sz
   return $ Just $ ReplayMemory vec sz 0 (-1)

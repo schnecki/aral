@@ -256,7 +256,7 @@ decay t p = exponentialDecayParameters (Just minValues) 0.50 200000 t p
         }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 (-200)
+initVals = InitValues 0 0 0 0 0 (-200)
 
 main :: IO ()
 main = do

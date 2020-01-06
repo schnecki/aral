@@ -151,7 +151,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoMinimumState' rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -239,7 +239,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 25) * rhoMinimumState + expSmthPsi / 25 * rhoMinimumState' rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $

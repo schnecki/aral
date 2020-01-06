@@ -37,6 +37,6 @@ softmax temp xs
 
 -- | Normalise the input list to (-1, 1).
 normalise :: [Double] -> [Double]
-normalise xs = map (scaleNegPosOne (minV, maxV)) xs
+normalise xs = map (scaleZeroOneValue (minV, maxV)) xs
   where minV = minimum xs
         maxV = maximum xs

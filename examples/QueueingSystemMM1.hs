@@ -273,7 +273,7 @@ decay =
       }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 0
+initVals = InitValues 0 0 0 0 0 0
 
 main :: IO ()
 main = do
