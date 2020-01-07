@@ -28,12 +28,14 @@ nextAction :: (MonadBorl' m) => BORL s -> m (BORL s, Bool, ActionIndexed s)
 nextAction borl
   | null as = error "Empty action list"
   | length as == 1 = return (borl, False, head as)
-  | otherwise = case borl ^. parameters . explorationStrategy of
-      EpsilonGreedy       -> chooseAction borl True (return . head)
+  | otherwise =
+    case borl ^. parameters . explorationStrategy of
+      EpsilonGreedy -> chooseAction borl True (return . head)
       SoftmaxBoltzmann t0 -> chooseAction borl False (chooseBySoftmax (t0 * params' ^. exploration))
-  where as = actionsIndexed borl state
-        state = borl ^. s
-        params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  where
+    as = actionsIndexed borl state
+    state = borl ^. s
+    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
 
 
 type UseRand = Bool
@@ -116,8 +118,6 @@ chooseAction borl useRand selFromList = do
                       if null posErr
                         then negErr
                         else posErr)
-               -- trace ("bestR1: " ++ show bestR1) $
-               --  trace ("bestR0: " ++ show bestR0) $
              if length bestR1 == 1
                then return (borl, False, head bestR1)
                else if length bestR0 > 1
@@ -127,10 +127,6 @@ chooseAction borl useRand selFromList = do
                       else return (borl, False, headDqnAvgRewFree bestR0)
                -- singleValueNextAction
   where
-    headRho []    = error "head: empty input data in nextAction on Rho value"
-    headRho (x:_) = x
-    headV []    = error "head: empty input data in nextAction on V value"
-    headV (x:_) = x
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
     headR0 []    = error "head: empty input data in nextAction on R0 Value"
@@ -149,8 +145,12 @@ chooseAction borl useRand selFromList = do
     epsCompare = epsCompareWith eps
     singleValueNextAction f = do
       rValues <- mapM f as
-      let bestR = sortBy (epsCompare compare `on` fst) (zip rValues as)
-      return (borl, False, snd $ headDqn bestR)
+      bestR <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rValues as)
+      if length bestR == 1
+        then return (borl, False, snd $ headDqn bestR)
+        else do
+          r <- liftIO $ randomRIO (0, length bestR - 1)
+          return (borl, False, snd $ bestR !! r)
 
 epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y
