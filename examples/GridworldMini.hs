@@ -67,7 +67,7 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld"
+    { _experimentBaseName         = "gridworld-mini"
     , _experimentInfoParameters   = [isNN, isTf]
     , _experimentRepetitions      = 3
     , _preparationSteps           = 300000
@@ -106,9 +106,9 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == fromIdx (0, 2) && a == actRand =
+  | s == fromIdx (goalX, goalY) && a == actRand =
     map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
-  | s == fromIdx (0, 2) = []
+  | s == fromIdx (goalX, goalY) = []
   | a == actRand = []
   | otherwise =
     mkProbability $
@@ -130,17 +130,10 @@ policy s a
     actRight = actions !! 4
     states = [minBound .. maxBound] :: [St]
     stateActions =
-      ((0, 2), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
+      ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY) || (s == fromIdx (goalX, goalY) && actionName a == actionName actRand)]
     filterActRand ((r, c), a)
-      | r == 0 && c == 2 = actionName a == actionName actRand
+      | r == goalX && c == goalY = actionName a == actionName actRand
       | otherwise = actionName a /= actionName actRand
-    filterColumn ((_, c), x)
-      | c == 2 = actionName x == actionName actUp || actionName x == actionName actRand
-      | c < 2 = actionName x == actionName actRight
-          -- actionName x /= actionName actLeft
-      | c > 2 = actionName x == actionName actLeft
-        -- actionName x /= actionName actRight
-      | otherwise = True
     filterChance [x] = [x]
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
       where stepsToBorder :: [Int]
@@ -150,7 +143,7 @@ policy s a
       where
         dist :: [Int]
         dist = map (mkDistance . step) xs
-    mkDistance (r, c) = r + abs (c - 2)
+    mkDistance (r, c) = r + abs (c - goalY)
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
 instance ExperimentDef (BORL St) where
@@ -221,7 +214,7 @@ params =
     , _epsilon             = 1.0
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
-    , _learnRandomAbove    = 0.5
+    , _learnRandomAbove    = 1.5
     , _zeta                = 0.03
     , _xi                  = 0.005
     , _disableAllLearning  = False
@@ -244,7 +237,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
+      , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
       , _exploration      = ExponentialDecay (Just 0.75) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -318,13 +311,13 @@ lpMode = do
 
 mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
--- mRefState = Just (fromIdx (0,2), 0)
+-- mRefState = Just (fromIdx (goalX, goalY), 0)
 
 alg :: Algorithm St
 alg =
-        AlgDQN 0.99             -- does not work
+        --AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
-        -- algDQNAvgRewardFree
+        algDQNAvgRewardFree
   -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
@@ -340,7 +333,7 @@ usermode = do
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
@@ -356,10 +349,11 @@ usermode = do
         (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
-maxX,maxY :: Int
-maxX = 4                        -- [0..maxX]
-maxY = 4                        -- [0..maxY]
-
+maxX, maxY, goalX, goalY :: Int
+maxX = 1                        -- [0..maxX]
+maxY = 1                        -- [0..maxY]
+goalX = 0
+goalY = 0
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
@@ -383,7 +377,7 @@ tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurre
 names = ["random", "up   ", "down ", "left ", "right"]
 
 initState :: St
-initState = fromIdx (2,2)
+initState = fromIdx (maxX,maxY)
 
 
 -- State
@@ -413,7 +407,7 @@ actions = zipWith Action
 
 actFilter :: St -> [Bool]
 actFilter st
-  | st == fromIdx (0, 2) = True : repeat False
+  | st == fromIdx (goalX, goalY) = True : repeat False
 actFilter _  = False : repeat True
 
 
@@ -428,9 +422,10 @@ goalState f st = do
   r <- randomRIO (0, 8 :: Double)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
-    (0, 2) -> -- return (Reward 10, fromIdx (x, y), True)
-      return (Reward 10, fromIdx (x, y), False)
-    _      -> stepRew <$> f st
+    (x', y')
+      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), True)
+                                   -- return (Reward 10, fromIdx (x, y), False)
+    _ -> stepRew <$> f st
 
 
 moveUp :: St -> IO (Reward St,St, EpisodeEnd)
