@@ -122,14 +122,16 @@ mRefState :: Maybe (St, ActionIndex)
 -- mRefState = Just (initState, 0)
 mRefState = Nothing
 
-main :: IO ()
-main = do
-  let algorithm =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
+alg :: Algorithm St
+alg =
+        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+        AlgDQNAvgRewardFree 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
+
+main :: IO ()
+main = do
 
 
   runBorlLp policy mRefState >>= print
@@ -139,7 +141,7 @@ main = do
 
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
   -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular algorithm initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

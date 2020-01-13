@@ -114,11 +114,13 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        -- AlgDQNAvgRewardFree 0.8 0.995 (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
+        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues -- (Fixed 2)
+
+        -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
-        AlgBORL 0.5 0.8 ByStateValues
-        -- (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
-        mRefStateAct
+        -- AlgBORL 0.5 0.8 ByStateValues mRefStateAct
+
+        -- AlgBORL 0.5 0.8 ByStateValues  (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 mRefStateAct :: Maybe (St, ActionIndex)
 mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))

@@ -117,9 +117,9 @@ policy s a
     sa' = ((row, col), a)
     step ((row, col), a)
       | a == actUp = (max 0 $ row - 1, col)
-      | a == actDown = (min 4 $ row + 1, col)
+      | a == actDown = (min maxY $ row + 1, col)
       | a == actLeft = (row, max 0 $ col - 1)
-      | a == actRight = (row, min 4 $ col + 1)
+      | a == actRight = (row, min maxX $ col + 1)
       | a == actRand = (row, col)
     row = fst $ getCurrentIdx s
     col = snd $ getCurrentIdx s
@@ -145,7 +145,7 @@ policy s a
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
       where stepsToBorder :: [Int]
             stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
-            mkStepsToBorder (r, c) = min (r `mod` 4) (c `mod` 4)
+            mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
     filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
       where
         dist :: [Int]

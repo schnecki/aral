@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL
+import           ML.BORL                  as B
 import           SolveLp
 
 import           Experimenter
@@ -24,10 +24,12 @@ import           Control.Lens             (set, (^.))
 import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Function            (on)
-import           Data.List                (genericLength, groupBy, sortBy)
+import           Data.List                (genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
+import qualified Data.Text                as T
+import           Data.Text.Encoding       as E
 import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
 import           GHC.TypeLits
@@ -64,16 +66,23 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
                                                  tensorValueFromName)
 
 
+maxX, maxY, goalX, goalY :: Int
+maxX = 4                        -- [0..maxX]
+maxY = 4                        -- [0..maxY]
+goalX = 0
+goalY = 0
+
+
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld-mini"
+    { _experimentBaseName         = "gridworld"
     , _experimentInfoParameters   = [isNN, isTf]
-    , _experimentRepetitions      = 3
-    , _preparationSteps           = 300000
+    , _experimentRepetitions      = 1
+    , _preparationSteps           = 100000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
-    , _evaluationReplications     = 3
+    , _evaluationSteps            = 1000
+    , _evaluationReplications     = 1
     , _maximumParallelEvaluations = 1
     }
   where
@@ -81,20 +90,28 @@ expSetup borl =
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 evals :: [StatsDef s]
-evals =
-  [ Id $ EveryXthElem 10 $ Of "avgRew"
-  , Mean OverReplications $ EveryXthElem 100 (Of "avgRew")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "avgRew")
-  , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiRho")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiRho")
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiV")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiV")
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
+evals
+    -- Id $ EveryXthElem 10 $ Of "avgRew"
+  -- , Mean OverReplications $ EveryXthElem 100 (Of "avgRew")
+  -- , StdDev OverReplications $ EveryXthElem 100 (Of "avgRew")
+  -- , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
+  -- , Mean OverReplications $ EveryXthElem 100 (Of "psiRho")
+  -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiRho")
+  -- , Mean OverReplications $ EveryXthElem 100 (Of "psiV")
+  -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiV")
+  -- , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
+  -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
+ =
+  [ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , StdDev OverReplications $ Last (Of "reward")
+  , Mean OverReplications $ Last (Of "avgRew")
   , Mean OverReplications $ Last (Of "avgEpisodeLength")
   , StdDev OverReplications $ Last (Of "avgEpisodeLength")
   ]
+  ++ concatMap
+    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+    (filterRow (==0) $ sort [(minBound :: St) .. maxBound])
+  where filterRow f = filter (f . fst . getCurrentIdx)
 
 
 instance RewardFuture St where
@@ -106,20 +123,17 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == fromIdx (goalX, goalY) && a == actRand =
-    map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+  | s == fromIdx (goalX, goalY) && a == actRand = mkProbability $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
   | s == fromIdx (goalX, goalY) = []
   | a == actRand = []
-  | otherwise =
-    mkProbability $
-    filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
+  | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
   where
     sa' = ((row, col), a)
     step ((row, col), a)
       | a == actUp = (max 0 $ row - 1, col)
-      | a == actDown = (min 4 $ row + 1, col)
+      | a == actDown = (min maxX $ row + 1, col)
       | a == actLeft = (row, max 0 $ col - 1)
-      | a == actRight = (row, min 4 $ col + 1)
+      | a == actRight = (row, min maxY $ col + 1)
       | a == actRand = (row, col)
     row = fst $ getCurrentIdx s
     col = snd $ getCurrentIdx s
@@ -130,15 +144,17 @@ policy s a
     actRight = actions !! 4
     states = [minBound .. maxBound] :: [St]
     stateActions =
-      ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY) || (s == fromIdx (goalX, goalY) && actionName a == actionName actRand)]
+      ((goalX, goalY), actRand) :
+      map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY) || (s == fromIdx (goalX, goalY) && actionName a == actionName actRand)]
     filterActRand ((r, c), a)
       | r == goalX && c == goalY = actionName a == actionName actRand
       | otherwise = actionName a /= actionName actRand
     filterChance [x] = [x]
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
-      where stepsToBorder :: [Int]
-            stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
-            mkStepsToBorder (r, c) = min (r `mod` 4) (c `mod` 4)
+      where
+        stepsToBorder :: [Int]
+        stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
+        mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
     filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
       where
         dist :: [Int]
@@ -146,45 +162,49 @@ policy s a
     mkDistance (r, c) = r + abs (c - goalY)
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
-instance ExperimentDef (BORL St) where
-  type ExpM (BORL St) = TF.SessionT IO
-  -- type ExpM (BORL St) = IO
+fakeEpisodes :: BORL St -> BORL St -> BORL St
+fakeEpisodes rl rl'
+  | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, _) -> (nr+1, rl ^. t)) $ rl'
+  | otherwise = rl'
+
+
+instance ExperimentDef (BORL St)
+  -- type ExpM (BORL St) = TF.SessionT IO
+                                          where
+  type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay tblInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep rl _ _ = do
-      rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
-      let (eNr, eStart) = rl ^. episodeNrStart
-          eLength = fromIntegral eStart / fromIntegral eNr
-          results =
-            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
-            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
-            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
-            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
-            , StepResult "avgEpisodeLength" (Just $ fromIntegral $ rl' ^. t) eLength
-            , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
-            ]
-      return (results, rl')
+    rl' <- stepM rl
+    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
+    let (eNr, eStart) = rl ^. episodeNrStart
+        eLength = fromIntegral (rl ^. t) / max 1 (fromIntegral eNr)
+        p = Just $ fromIntegral $ rl' ^. t
+        results =
+          [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
+          , StepResult "psiRho" p (rl' ^?! psis . _1)
+          , StepResult "psiV" p (rl' ^?! psis . _2)
+          , StepResult "psiW" p (rl' ^?! psis . _3)
+          , StepResult "avgEpisodeLength" p eLength
+          , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
+          , StepResult "reward" p (head (rl' ^. lastRewards))
+          ] ++
+          concatMap
+            (\s ->
+               map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+            (sort [(minBound :: St) .. maxBound])
+    return (results, fakeEpisodes rl rl')
   parameters _ =
-    [ ParameterSetup
-        "algorithm"
-        (set algorithm)
-        (view algorithm)
-        (Just $ const $
-         return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
-           , AlgBORLVOnly (ByMovAvg 3000) Nothing
-           ])
-        Nothing
-        Nothing
-        Nothing
-    ]
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
+                                                                  [ AlgDQNAvgRewardFree 0.8 0.99 ByStateValues
+                                                                  -- , AlgDQN 0.99
+                                                                  ]) Nothing Nothing Nothing]
+  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, rl ^. t) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
@@ -230,7 +250,7 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
@@ -238,7 +258,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.75) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -286,15 +306,15 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
-  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  -- let runner = runMonadBorlIO
+  let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay Nothing
+  (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
+  let runner = runMonadBorlIO
   ---
-  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
-  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  let runner = runMonadBorlTF
+  -- let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
+  -- let runner = runMonadBorlTF
   ---
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
@@ -305,7 +325,7 @@ experimentMode = do
 lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  runBorlLpInferWithRewardRepet 100000 policy mRefState >>= print
+  runBorlLpInferWithRewardRepet 200000 policy mRefState >>= print
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
@@ -315,9 +335,11 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-        --AlgDQN 0.99             -- does not work
+
+        -- AlgDQN 0.99
         -- AlgDQN 0.50             -- does work
-        algDQNAvgRewardFree
+        -- algDQNAvgRewardFree
+        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues
   -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
@@ -349,11 +371,6 @@ usermode = do
         (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
-maxX, maxY, goalX, goalY :: Int
-maxX = 1                        -- [0..maxX]
-maxY = 1                        -- [0..maxY]
-goalX = 0
-goalY = 0
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
@@ -379,6 +396,8 @@ names = ["random", "up   ", "down ", "left ", "right"]
 initState :: St
 initState = fromIdx (maxX,maxY)
 
+goal :: St
+goal = fromIdx (goalX, goalY)
 
 -- State
 newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
@@ -423,8 +442,9 @@ goalState f st = do
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
-      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), True)
-                                   -- return (Reward 10, fromIdx (x, y), False)
+      | x' == goalX && y' == goalY ->
+                                   -- return (Reward 10, fromIdx (x, y), True)
+                                   return (Reward 10, fromIdx (x, y), False)
     _ -> stepRew <$> f st
 
 

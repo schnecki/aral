@@ -68,6 +68,8 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
         map (\xs@(x:_) -> (fst x, map snd xs)) $
         groupBy ((==) `on` second actionName . fst) $
         sortBy (compare `on` second actionName . fst) $ concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (lpActionFilter s) lpActions]
+      transProbSums = map (\(x, ps) -> (x, sum $ map snd ps)) transitionProbs
+  mapM_ (\(a, p) -> when (abs (1 - p) > 0.001) $ error $ "transition probabilities do not sum up to 1 for state-action: " ++ show a) transProbSums
   let stateActions = map fst transitionProbs
   let stateActionIndices = M.fromList $ zip (map (second actionName . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
   let obj = Maximize (1 : replicate (3 * length transitionProbs) 0)
@@ -75,7 +77,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
   rewards <- concat <$> mapM (makeReward repetitionsReward) states
   putStrLn "\t[Done]"
   let rewards' = map (\(x, y, _) -> (second actionName x, y)) rewards
-  let mRefStAct' = second (lpActions!!) <$> mRefStAct :: Maybe (st, Action st)
+  let mRefStAct' = second (lpActions !!) <$> mRefStAct :: Maybe (st, Action st)
   let constr = map (makeConstraints mRefStAct' stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
   let bounds = map Free [1 .. (3 * length transitionProbs + 1)]

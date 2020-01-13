@@ -5,7 +5,7 @@ USER=schnecki
 PC=c437-pc169
 DIR=`pwd`/
 SYNC_TIMEOUT=8
-BUILDARGS=--flag=borl:debug
+BUILDARGS= #--flag=borl:debug
 FIN=0
 
 if [ ${PWD##*/} == "test" ]; then

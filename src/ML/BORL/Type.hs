@@ -112,6 +112,9 @@ actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) s
 filteredActions :: [Action a] -> (s -> [Bool]) -> s -> [Action a]
 filteredActions actions actFilter state = map (snd.snd) $ filter fst $ zip (actFilter state) (zip [(0::Int)..] actions)
 
+filteredActionIndexes :: [Action a] -> (s -> [Bool]) -> s -> [ActionIndex]
+filteredActionIndexes actions actFilter state = map (fst.snd) $ filter fst $ zip (actFilter state) (zip [(0::Int)..] actions)
+
 
 ------------------------------ Initial Values ------------------------------
 

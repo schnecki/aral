@@ -332,7 +332,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + r1StateNext - r1ValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
   let rhoVal'
-        | randomAction && not learnFromRandom = rhoVal
+        | randomAction -- && not learnFromRandom
+        = rhoVal
         | otherwise =
           max rhoMinimumState $
           case avgRewardType of
