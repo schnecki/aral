@@ -114,7 +114,7 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues -- (Fixed 2)
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (Fixed 2)
 
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct

@@ -316,8 +316,8 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50
-        -- AlgDQNAvgRewardFree 0.8 0.99 (Fixed 30)
-        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 30)
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
@@ -335,7 +335,7 @@ usermode = do
   rl <- do
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)

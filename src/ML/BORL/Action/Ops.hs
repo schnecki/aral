@@ -100,7 +100,7 @@ chooseAction borl useRand selFromList = do
                    else return (borl, False, headE bestE)
            AlgBORLVOnly {} -> singleValueNextAction (vValue borl state . fst)
            AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
-           AlgDQNAvgRewardFree {} -> do
+           AlgDQNAvgRewAdjusted {} -> do
              r1Values <- mapM (rValue borl RBig state . fst) as
              bestR1ValueActions <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
              let bestR1 = map snd bestR1ValueActions

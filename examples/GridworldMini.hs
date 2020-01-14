@@ -90,8 +90,20 @@ expSetup borl =
     isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 evals :: [StatsDef s]
-evals
-    -- Id $ EveryXthElem 10 $ Of "avgRew"
+evals =
+  [ -- Named "Sum rewards" $
+    Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
+  ]
+  -- ++
+  -- concatMap
+  --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+  --   (sort [(minBound :: St) .. maxBound])
+  -- ++
+  -- [ Id $ EveryXthElem 10 $ Of "avgRew"
   -- , Mean OverReplications $ EveryXthElem 100 (Of "avgRew")
   -- , StdDev OverReplications $ EveryXthElem 100 (Of "avgRew")
   -- , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
@@ -100,18 +112,10 @@ evals
   -- , Mean OverReplications $ EveryXthElem 100 (Of "psiV")
   -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiV")
   -- , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
-  -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
- =
-  [ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
-  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
-  ]
-  -- ++ concatMap
-  --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-  --   (filterRow (== 1) $ sort [(minBound :: St) .. maxBound])
-  -- where filterRow f = filter (f . fst . getCurrentIdx)
+  -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")]
+
+  -- where
+  --   filterRow f = filter (f . fst . getCurrentIdx)
 
 
 instance RewardFuture St where
@@ -201,7 +205,7 @@ instance ExperimentDef (BORL St)
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewardFree 0.8 0.99 ByStateValues
+                                                                  [ AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
                                                                   , AlgDQN 0.99
                                                                   ]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
@@ -251,7 +255,7 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
@@ -339,8 +343,8 @@ alg =
         -- AlgDQN 0.99
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewardFree 0.8 0.99 ByStateValues
-  -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+  -- AlgDQNAvgRewAdjusted 0.8 0.995 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -350,7 +354,7 @@ usermode = do
   rl <-
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate

@@ -155,7 +155,7 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
-prettyAlgorithm borl _ _ (AlgDQNAvgRewardFree ga0 ga1 avgRewType) =
+prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
   text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
@@ -206,7 +206,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewardFree {}
+    AlgDQNAvgRewAdjusted {}
       -- prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
      -> do
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
@@ -293,7 +293,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewardFree {} -> text "Scaling V by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
+       AlgDQNAvgRewAdjusted {} -> text "Scaling V by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$

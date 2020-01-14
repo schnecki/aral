@@ -230,7 +230,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
   let rhoVal'
-        | randomAction && not learnFromRandom = rhoVal
+        | randomAction -- && not learnFromRandom
+        = rhoVal
         | otherwise =
           max rhoMinimumState $
           case avgRewardType of
@@ -295,7 +296,7 @@ mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episo
       , getLastRews' = lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewardFree ga0 ga1 avgRewardType) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
@@ -333,7 +334,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         where ratio' = decaySetup decay (borl ^. t) ratio
   let rhoVal'
         | randomAction -- && not learnFromRandom
-        = rhoVal
+         = rhoVal
         | otherwise =
           max rhoMinimumState $
           case avgRewardType of

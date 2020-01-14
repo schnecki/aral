@@ -325,7 +325,7 @@ alg =
         AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
-  -- AlgDQNAvgRewardFree 0.8 0.995 ByStateValues
+  -- AlgDQNAvgRewAdjusted 0.8 0.995 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -335,7 +335,7 @@ usermode = do
   rl <-
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQNAvgRewardFree{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate

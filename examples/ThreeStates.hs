@@ -126,7 +126,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewardFree 0.8 0.999 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99
 

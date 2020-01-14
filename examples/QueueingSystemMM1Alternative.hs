@@ -301,7 +301,7 @@ usermode = do
   let algorithm =
         -- AlgDQN 0.975
         -- AlgDQN 0.50
-        AlgDQNAvgRewardFree 0.8 0.995 (Fixed 22.66)
+        AlgDQNAvgRewAdjusted 0.8 0.995 (Fixed 22.66)
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade algorithm initState netInp actions actFilter params decay nn nnConfig (Just initVals)
