@@ -102,16 +102,16 @@ evals
   -- , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
   -- , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
  =
-  [ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , StdDev OverReplications $ Last (Of "reward")
-  , Mean OverReplications $ Last (Of "avgRew")
-  , Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , StdDev OverReplications $ Last (Of "avgEpisodeLength")
+  [ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
   ]
-  ++ concatMap
-    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-    (filterRow (== 1) $ sort [(minBound :: St) .. maxBound])
-  where filterRow f = filter (f . fst . getCurrentIdx)
+  -- ++ concatMap
+  --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+  --   (filterRow (== 1) $ sort [(minBound :: St) .. maxBound])
+  -- where filterRow f = filter (f . fst . getCurrentIdx)
 
 
 instance RewardFuture St where
@@ -193,11 +193,11 @@ instance ExperimentDef (BORL St)
           , StepResult "avgEpisodeLength" p eLength
           , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
           , StepResult "reward" p (head (rl' ^. lastRewards))
-          ] ++
-          concatMap
-            (\s ->
-               map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
-            (sort [(minBound :: St) .. maxBound])
+          ] -- ++
+          -- concatMap
+          --   (\s ->
+          --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+          --   (sort [(minBound :: St) .. maxBound])
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
