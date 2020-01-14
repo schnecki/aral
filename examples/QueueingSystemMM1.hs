@@ -25,10 +25,12 @@ import           Control.Lens
 import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
-import           Data.List              (genericLength)
+import           Data.List              (genericLength, sort)
 import qualified Data.Map.Strict        as M
 import           Data.Serialize
 import           Data.Text              (Text)
+import qualified Data.Text              as T
+import           Data.Text.Encoding     as E
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
@@ -71,7 +73,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 4
+maxQueueSize = 10
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -95,6 +97,9 @@ type OrderArrival = Bool
 
 data St = St CurrentQueueSize OrderArrival deriving (Show, Ord, Eq, NFData, Generic, Serialize)
 
+getQueueLength :: St -> CurrentQueueSize
+getQueueLength (St sz _) = sz
+
 instance Enum St where
   fromEnum (St sz arr)      = 2*sz + fromEnum arr
   toEnum x = St (x `div` 2) (toEnum $ x `mod` 2)
@@ -103,19 +108,19 @@ instance Bounded St where
   minBound = toEnum 0
   maxBound = toEnum (2 * maxQueueSize + 1)
 
-
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 evaluation"
+    { _experimentBaseName         = "queuing-system M/M/1"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
-    , _experimentRepetitions      = 1
+    , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
     , _evaluationSteps            = 10000
-    , _evaluationReplications     = 3
+    , _evaluationReplications     = 1
     , _maximumParallelEvaluations = 1
     }
+
   where
     iMaxQ = ExperimentInfoParameter "Maximum queue size" maxQueueSize
     iLambda = ExperimentInfoParameter "Lambda" lambda
@@ -127,19 +132,15 @@ expSetup borl =
 
 evals :: [StatsDef s]
 evals =
-  [ Id $ EveryXthElem 10 $ Of "avgRew"
-  , Mean OverReplications $ EveryXthElem 100 (Of "avgRew")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "avgRew")
-  , Mean OverReplications (Stats $ Mean OverPeriods (Of "avgRew"))
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiRho")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiRho")
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiV")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiV")
-  , Mean OverReplications $ EveryXthElem 100 (Of "psiW")
-  , StdDev OverReplications $ EveryXthElem 100 (Of "psiW")
-  , Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , StdDev OverReplications $ Last (Of "avgEpisodeLength")
-  ]
+  [ Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
+  , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  ] ++
+  concatMap
+    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+    (sort [(minBound :: St) .. maxBound])
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -186,29 +187,22 @@ instance ExperimentDef (BORL St) where
     liftIO $ do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
-      let (eNr, eStart) = rl ^. episodeNrStart
-          eLength = fromIntegral eStart / fromIntegral eNr
+      let p = Just $ fromIntegral $ rl' ^. t
           results =
-            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
-            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
-            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
-            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
-            , StepResult "avgEpisodeLength" (Just $ fromIntegral $ rl' ^. t) eLength
-            , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
-            ]
+            [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
+            , StepResult "psiRho" p (rl' ^?! psis . _1)
+            , StepResult "psiV" p (rl' ^?! psis . _2)
+            , StepResult "psiW" p (rl' ^?! psis . _3)
+            , StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
+            ] ++
+            concatMap
+              (\s ->
+                 map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+              (sort [(minBound :: St) .. maxBound])
       return (results, rl')
   parameters _ =
-    [ ParameterSetup
-        "algorithm"
-        (set algorithm)
-        (view algorithm)
-        (Just $ const $
-         return [AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing, AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing, AlgBORLVOnly (ByMovAvg 3000) Nothing])
-        Nothing
-        Nothing
-        Nothing
-    ]
-  beforeEvaluationHook _ _ _ _ rl = return $ set (B.parameters . disableAllLearning) True $ set (B.parameters . exploration) 0 rl
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return [AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues, AlgDQN 0.99]) Nothing Nothing Nothing]
+  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
@@ -231,23 +225,22 @@ nnConfig =
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha              = 0.01
-    , _beta               = 0.03
-    , _delta              = 0.03
-    , _gamma              = 0.005
-    , _epsilon            = 5
-    , _explorationStrategy = EpsilonGreedy
-    , _exploration        = 1.0
-    , _learnRandomAbove   = 1.0
-    , _zeta               = 0.10
-    , _xi                 = 5e-3
-    , _disableAllLearning = False
+    { _alpha               = 0.01
+    , _beta                = 0.01
+    , _delta               = 0.005
+    , _gamma               = 0.01
+    , _epsilon             = 1.0
+    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
+    , _exploration         = 1.0
+    , _learnRandomAbove    = 1.5
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    , _disableAllLearning  = False
     -- ANN
-    , _alphaANN           = 0.5 -- only used for multichain
-    , _betaANN            = 1
-    , _deltaANN           = 1
-    , _gammaANN           = 1
-
+    , _alphaANN            = 0.5 -- only used for multichain
+    , _betaANN             = 0.5
+    , _deltaANN            = 0.5
+    , _gammaANN            = 0.5
     }
 
 -- | Decay function of parameters.
@@ -255,15 +248,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-7) 0.15 50000
-      , _beta             = ExponentialDecay (Just 5e-4) 0.5 150000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
+      , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 5e-3) 0.5 150000
-      , _zeta             = NoDecay -- ExponentialDecay (Just 0) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 0.10) 0.5 150000
+      , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -271,6 +264,52 @@ decay =
       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
+
+
+-- | BORL Parameters.
+-- params :: ParameterInitValues
+-- params =
+--   Parameters
+--     { _alpha              = 0.01
+--     , _beta               = 0.03
+--     , _delta              = 0.03
+--     , _gamma              = 0.005
+--     , _epsilon            = 5
+--     , _explorationStrategy = EpsilonGreedy
+--     , _exploration        = 1.0
+--     , _learnRandomAbove   = 1.0
+--     , _zeta               = 0.10
+--     , _xi                 = 5e-3
+--     , _disableAllLearning = False
+--     -- ANN
+--     , _alphaANN           = 0.5 -- only used for multichain
+--     , _betaANN            = 1
+--     , _deltaANN           = 1
+--     , _gammaANN           = 1
+
+--     }
+
+-- -- | Decay function of parameters.
+-- decay :: Decay
+-- decay =
+--   decaySetupParameters
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 1e-7) 0.15 50000
+--       , _beta             = ExponentialDecay (Just 5e-4) 0.5 150000
+--       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+--       , _gamma            = ExponentialDecay (Just 5e-3) 0.5 150000
+--       , _zeta             = NoDecay -- ExponentialDecay (Just 0) 0.5 150000
+--       , _xi               = NoDecay
+--       -- Exploration
+--       , _epsilon          = NoDecay
+--       , _exploration      = ExponentialDecay (Just 0.10) 0.5 150000
+--       , _learnRandomAbove = NoDecay
+--       -- ANN
+--       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
+--       , _betaANN          = ExponentialDecay Nothing 0.75 150000
+--       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
+--       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
+--       }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
@@ -288,9 +327,11 @@ main = do
 experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+  ---
   let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   let runner = runMonadBorlIO
+  ---
   -- let mkInitSt = mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   -- let runner = runMonadBorlTF

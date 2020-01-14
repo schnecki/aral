@@ -254,29 +254,6 @@ decay =
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
 
-
--- -- | Decay function of parameters.
--- decay :: Decay
--- decay = exponentialDecayParameters (Just minValues) 0.05 100000
---   where
---     minValues =
---       Parameters
---         { _alpha              = 0.000
---         , _alphaANN           = 0.0
---         , _beta               = 0.000
---         , _betaANN            = 0
---         , _delta              = 0.000
---         , _deltaANN           = 0
---         , _gamma              = 0.000
---         , _gammaANN           = 0
---         , _epsilon            = 0.05
---         , _exploration        = 0.01
---         , _learnRandomAbove   = 0.0
---         , _zeta               = 0.0
---         , _xi                 = 0.00
---         , _disableAllLearning = False
---         }
-
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
 
@@ -322,6 +299,7 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
+       -- AlgBORLVOnly ByStateValues Nothing
         AlgDQN 0.99             -- does not work
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree

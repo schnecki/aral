@@ -67,8 +67,8 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
 
 
 maxX, maxY, goalX, goalY :: Int
-maxX = 4                        -- [0..maxX]
-maxY = 4                        -- [0..maxY]
+maxX = 1                        -- [0..maxX]
+maxY = 1                        -- [0..maxY]
 goalX = 0
 goalY = 0
 
@@ -91,12 +91,15 @@ expSetup borl =
 
 evals :: [StatsDef s]
 evals =
-  [ -- Named "Sum rewards" $
-    Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  [
+    Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
   , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Exp Mean of Repl. Mean Steps to Goal" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Exp StdDev of Repl. Mean Steps to Goal" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
   ]
   -- ++
   -- concatMap
@@ -271,29 +274,6 @@ decay =
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
 
-
--- -- | Decay function of parameters.
--- decay :: Decay
--- decay = exponentialDecayParameters (Just minValues) 0.05 100000
---   where
---     minValues =
---       Parameters
---         { _alpha              = 0.000
---         , _alphaANN           = 0.0
---         , _beta               = 0.000
---         , _betaANN            = 0
---         , _delta              = 0.000
---         , _deltaANN           = 0
---         , _gamma              = 0.000
---         , _gammaANN           = 0
---         , _epsilon            = 0.05
---         , _exploration        = 0.01
---         , _learnRandomAbove   = 0.0
---         , _zeta               = 0.0
---         , _xi                 = 0.00
---         , _disableAllLearning = False
---         }
-
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
 
@@ -312,7 +292,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay Nothing
+  let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   let runner = runMonadBorlIO
   ---
@@ -340,11 +320,13 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
 
+  -- AlgBORLVOnly ByStateValues Nothing
         -- AlgDQN 0.99
         -- AlgDQN 0.50             -- does work
         -- algDQNAvgRewardFree
+
         AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-  -- AlgDQNAvgRewAdjusted 0.8 0.995 ByStateValues
+
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -355,7 +337,7 @@ usermode = do
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
