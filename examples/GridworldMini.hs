@@ -78,10 +78,10 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld"
     , _experimentInfoParameters   = [isNN, isTf]
-    , _experimentRepetitions      = 1
-    , _preparationSteps           = 100000
+    , _experimentRepetitions      = 40
+    , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 1000
+    , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
     , _maximumParallelEvaluations = 1
     }
@@ -110,7 +110,7 @@ evals
   ]
   ++ concatMap
     (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-    (filterRow (==0) $ sort [(minBound :: St) .. maxBound])
+    (filterRow (== 1) $ sort [(minBound :: St) .. maxBound])
   where filterRow f = filter (f . fst . getCurrentIdx)
 
 
@@ -164,8 +164,8 @@ policy s a
 
 fakeEpisodes :: BORL St -> BORL St -> BORL St
 fakeEpisodes rl rl'
-  | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, _) -> (nr+1, rl ^. t)) $ rl'
-  | otherwise = rl'
+  | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
+  | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
 
 
 instance ExperimentDef (BORL St)
@@ -182,8 +182,8 @@ instance ExperimentDef (BORL St)
   runStep rl _ _ = do
     rl' <- stepM rl
     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
-    let (eNr, eStart) = rl ^. episodeNrStart
-        eLength = fromIntegral (rl ^. t) / max 1 (fromIntegral eNr)
+    let (eNr, eSteps) = rl ^. episodeNrStart
+        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
         results =
           [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
@@ -202,9 +202,9 @@ instance ExperimentDef (BORL St)
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
                                                                   [ AlgDQNAvgRewardFree 0.8 0.99 ByStateValues
-                                                                  -- , AlgDQN 0.99
+                                                                  , AlgDQN 0.99
                                                                   ]) Nothing Nothing Nothing]
-  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, rl ^. t) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
+  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
