@@ -111,7 +111,7 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 epsilon=5"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=5"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -201,7 +201,19 @@ instance ExperimentDef (BORL St) where
               (sort [(minBound :: St) .. maxBound])
       return (results, rl')
   parameters _ =
-    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return [AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues, AlgDQN 0.99 EpsilonSensitive]) Nothing Nothing Nothing]
+    [ ParameterSetup
+        "algorithm"
+        (set algorithm)
+        (view algorithm)
+        (Just $ const $ return [ AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                               , AlgDQN 0.99 EpsilonSensitive
+                               , AlgDQN 0.99 Exact
+                               , AlgDQN 0.5  EpsilonSensitive
+                               , AlgDQN 0.5  Exact])
+        Nothing
+        Nothing
+        Nothing
+    ]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
