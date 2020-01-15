@@ -161,8 +161,8 @@ prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
 prettyComparison :: Comparison -> Doc
-prettyComparison EpsilonSensitive = "epsilon-sensitive comparison"
-prettyComparison Exact = "exact comparison"
+prettyComparison EpsilonSensitive = "optimising by epsilon-sensitive comparison"
+prettyComparison Exact            = "optimising by exact comparison"
 
 
 prettyRefState :: (Show a) => ([Double] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
