@@ -111,7 +111,7 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1"
+    { _experimentBaseName         = "queuing-system M/M/1 epsilon=5"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -229,7 +229,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 1.0
+    , _epsilon             = 5.0
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -255,7 +255,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
+      , _epsilon          = NoDecay -- ExponentialDecay (Just 0.05) 0.05 150000
       , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -326,7 +326,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=experimenter2 user=experimenter password=experimenter port=5432" 10
   ---
   let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
