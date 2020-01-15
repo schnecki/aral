@@ -112,7 +112,9 @@ instance RewardFuture St where
 
 alg :: Algorithm St
 alg =
-        -- AlgDQN 0.99  EpsilonSensitive
+        -- AlgDQN 0.99 EpsilonSensitive
+        -- AlgDQN 0.5  Exact
+        -- AlgDQN 0.8027  Exact
         -- AlgDQN 0.50  EpsilonSensitive
         AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (Fixed 2)
 
@@ -141,6 +143,14 @@ main = do
           [("s", moveLeft), ("f", moveRight)] ["moveLeft", "moveRight"]
         usage = [("s", "moveLeft"), ("f", "moveRight")]
 
+-- policy :: Policy St
+-- policy s a
+--   | s == Left 5  = [((One, right), 1.0)]
+--   | s == Right 10 = [((One, left), 1.0)]
+--   | s == Left x = [((Left (x+1), moveLeft), 1.0)]
+--   | s == Right x = [((Right (x+1), moveRight), 1.0)]
+--   | otherwise = []
+
 
 initState :: St
 initState = One
@@ -148,7 +158,7 @@ initState = One
 -- | BORL Parameters.
 params :: ParameterInitValues
 params = Parameters
-  { _alpha            = 0.05
+  { _alpha            = 0.01
   , _alphaANN = 1
   , _beta             = 0.01
   , _betaANN = 1
@@ -165,36 +175,29 @@ params = Parameters
   , _disableAllLearning = False
   }
 
--- policy :: Policy St
--- policy s a
---   | s == Left 5  = [((One, right), 1.0)]
---   | s == Right 10 = [((One, left), 1.0)]
---   | s == Left x = [((Left (x+1), moveLeft), 1.0)]
---   | s == Right x = [((Right (x+1), moveRight), 1.0)]
---   | otherwise = []
-
 
 -- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecayParameters (Just minValues) 0.05 300000 t
-  where
-    minValues =
-      Parameters
-        { _alpha = 0.000
-        , _alphaANN = 1.0
-        , _beta =  0.005
-        , _betaANN = 1.0
-        , _delta = 0.005
-        , _deltaANN = 1.0
-        , _gamma = 0.005
-        , _gammaANN = 1.0
-        , _epsilon = 0.05
-        , _exploration = 0.01
-        , _learnRandomAbove = 0.0
-        , _zeta = 0.0
-        , _xi = 0.0075
-        , _disableAllLearning = False
-        }
+decay =
+  decaySetupParameters
+    Parameters
+      { _alpha            = ExponentialDecay (Just 1e-6) 0.25 100000
+      , _beta             = ExponentialDecay (Just 5e-3) 0.05 100000
+      , _delta            = ExponentialDecay (Just 5e-3) 0.05 100000
+      , _gamma            = ExponentialDecay (Just 0.03) 0.05 100000
+      , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
+        -- Exploration
+      , _epsilon          = NoDecay
+      , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
+      , _learnRandomAbove = NoDecay
+      -- ANN
+      , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      , _betaANN          = ExponentialDecay (Just 0.3) 0.75 150000
+      , _deltaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      , _gammaANN         = ExponentialDecay (Just 0.3) 0.75 150000
+      }
+
 
 -- State
 data St

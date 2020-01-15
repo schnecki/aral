@@ -126,9 +126,10 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
-        -- AlgDQN 0.99  EpsilonSensitive
+        -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
+        AlgDQN 0.99 Exact
 
 main :: IO ()
 main = do
@@ -181,12 +182,12 @@ decay =
       { _alpha            = ExponentialDecay (Just 1e-3) 0.05 100000
       , _beta             = ExponentialDecay (Just 1e-3) 0.05 100000
       , _delta            = ExponentialDecay (Just 1e-3) 0.05 100000
-      , _gamma            = ExponentialDecay (Just 1e-4) 0.05 100000
+      , _gamma            = ExponentialDecay (Just 1e-2) 0.05 100000
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration
       , _epsilon          = NoDecay
-      , _exploration      = ExponentialDecay (Just 1e-2) 0.01 25000
+      , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000

@@ -181,7 +181,7 @@ instance ExperimentDef (BORL St)
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
   deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep rl _ _ =
+  runStep phase rl _ _ =
     liftIO $ do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print

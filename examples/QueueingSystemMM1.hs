@@ -183,7 +183,7 @@ instance ExperimentDef (BORL St) where
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
   deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep rl _ _ =
+  runStep phase rl _ _ =
     liftIO $ do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
@@ -198,7 +198,7 @@ instance ExperimentDef (BORL St) where
             concatMap
               (\s ->
                  map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
-              (sort [(minBound :: St) .. maxBound])
+              (sort $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
     [ ParameterSetup
