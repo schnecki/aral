@@ -98,8 +98,8 @@ chooseAction borl useRand selFromList = do
                      r <- liftIO $ randomRIO (0, length bestE - 1)
                      return (borl, False, bestE !! r)
                    else return (borl, False, headE bestE)
-           AlgBORLVOnly {} -> singleValueNextAction (vValue borl state . fst)
-           AlgDQN {} -> singleValueNextAction (rValue borl RBig state . fst)
+           AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
+           AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
            AlgDQNAvgRewAdjusted {} -> do
              r1Values <- mapM (rValue borl RBig state . fst) as
              bestR1ValueActions <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
@@ -143,9 +143,12 @@ chooseAction borl useRand selFromList = do
     state = borl ^. s
     as = actionsIndexed borl state
     epsCompare = epsCompareWith eps
-    singleValueNextAction f = do
+    singleValueNextAction cmp f = do
       rValues <- mapM f as
-      bestR <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip rValues as)
+      let groupValues = case cmp of
+            EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
+            Exact -> groupBy ((==) `on` fst) . sortBy (compare `on` fst)
+      bestR <- liftIO $ selFromList $ groupValues (zip rValues as)
       if length bestR == 1
         then return (borl, False, snd $ headDqn bestR)
         else do

@@ -261,7 +261,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getEpisodeEnd = episodeEnd
       }
 
-mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga) = do
+mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1

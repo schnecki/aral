@@ -112,8 +112,8 @@ instance RewardFuture St where
 
 alg :: Algorithm St
 alg =
-        -- AlgDQN 0.99
-        -- AlgDQN 0.50
+        -- AlgDQN 0.99  EpsilonSensitive
+        -- AlgDQN 0.50  EpsilonSensitive
         AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (Fixed 2)
 
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)

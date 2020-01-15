@@ -145,7 +145,7 @@ convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s,a))) = AlgBORL g0 g1 avgRe
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
 convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
 convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
-convertAlgorithm _ (AlgDQN ga) = AlgDQN ga
+convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRew) = AlgDQNAvgRewAdjusted ga0 ga1 avgRew
 
 mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s

@@ -26,13 +26,21 @@ type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V 
 
 type BalanceRho = Bool    -- ^ Probability of an episode end
 
+-- | What comparison operation to use. Either an epsilon-sensitive lexicographic order or an exact comparison operation
+-- (maximum, minimum). This groups the actions, and the policy chooses one of the grouped actions. See Parameters for
+-- setting up the values.
+data Comparison
+  = EpsilonSensitive
+  | Exact
+  deriving (Ord, Eq, Show, Generic, NFData, Serialize)
+
 data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
             AvgReward
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
-  | AlgDQN Gamma
+  | AlgDQN Gamma Comparison
   | AlgDQNAvgRewAdjusted GammaLow GammaHigh AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
@@ -72,7 +80,7 @@ algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Nothing
 -- ^ Use DQN as algorithm with `defaultGamma1` as gamma value. Algorithm implementation as in Mnih, Volodymyr, et al.
 -- "Human-level control through deep reinforcement learning." Nature 518.7540 (2015): 529.
 algDQN :: Algorithm s
-algDQN = AlgDQN defaultGammaDQN
+algDQN = AlgDQN defaultGammaDQN Exact
 
 
 algDQNAvgRewardFree :: Algorithm s

@@ -299,8 +299,8 @@ usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
   let algorithm =
-        -- AlgDQN 0.975
-        -- AlgDQN 0.50
+        -- AlgDQN 0.975  EpsilonSensitive
+        -- AlgDQN 0.50   EpsilonSensitive
         AlgDQNAvgRewAdjusted 0.8 0.995 (Fixed 22.66)
 
   -- nn <- randomNetworkInitWith UniformInit :: IO NN

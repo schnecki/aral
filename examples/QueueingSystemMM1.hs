@@ -201,7 +201,7 @@ instance ExperimentDef (BORL St) where
               (sort [(minBound :: St) .. maxBound])
       return (results, rl')
   parameters _ =
-    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return [AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues, AlgDQN 0.99]) Nothing Nothing Nothing]
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return [AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues, AlgDQN 0.99 EpsilonSensitive]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
@@ -355,10 +355,11 @@ mRefStateAct = Nothing
 
 alg :: Algorithm St
 alg =
-        -- AlgDQN 0.99
-        -- AlgDQN 0.50
+        AlgDQN 0.99  Exact -- EpsilonSensitive
+        -- AlgDQN 0.99  EpsilonSensitive
+        -- AlgDQN 0.50  EpsilonSensitive
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 30)
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

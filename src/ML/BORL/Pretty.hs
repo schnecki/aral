@@ -154,11 +154,16 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   prettyAvgRewardType (borl ^. t) avgRewType <+>
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
-prettyAlgorithm _ _ _ (AlgDQN ga1)      = text "DQN with gamma" <+> text (show ga1)
+prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
 prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
   text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
+
+prettyComparison :: Comparison -> Doc
+prettyComparison EpsilonSensitive = "epsilon-sensitive comparison"
+prettyComparison Exact = "exact comparison"
+
 
 prettyRefState :: (Show a) => ([Double] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
 prettyRefState _ _ Nothing = mempty

@@ -128,7 +128,7 @@ alg =
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
-        -- AlgDQN 0.99
+        -- AlgDQN 0.99  EpsilonSensitive
 
 main :: IO ()
 main = do
