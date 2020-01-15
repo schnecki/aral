@@ -108,10 +108,12 @@ instance Bounded St where
   minBound = toEnum 0
   maxBound = toEnum (2 * maxQueueSize + 1)
 
+-- Experiment Setup
+
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -137,10 +139,11 @@ evals =
   , Name "Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
   , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
   , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
-  ] ++
-  concatMap
-    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-    (sort [(minBound :: St) .. maxBound])
+  ]
+  -- ++
+  -- concatMap
+  --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+  --   (sort [(minBound :: St) .. maxBound])
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -206,10 +209,11 @@ instance ExperimentDef (BORL St) where
         (set algorithm)
         (view algorithm)
         (Just $ const $ return [ AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-                               , AlgDQN 0.99 EpsilonSensitive
+                               -- , AlgDQN 0.99 EpsilonSensitive
                                , AlgDQN 0.99 Exact
-                               , AlgDQN 0.5  EpsilonSensitive
-                               , AlgDQN 0.5  Exact])
+                               -- , AlgDQN 0.5  EpsilonSensitive
+                               , AlgDQN 0.5  Exact
+                               ])
         Nothing
         Nothing
         Nothing
