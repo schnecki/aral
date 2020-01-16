@@ -73,7 +73,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 10
+maxQueueSize = 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -113,11 +113,11 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 15.1."
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
     , _experimentRepetitions      = 40
-    , _preparationSteps           = 500000
-    , _evaluationWarmUpSteps      = 0
+    , _preparationSteps           = 1000000
+    , _evaluationWarmUpSteps      = 1000
     , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
     , _maximumParallelEvaluations = 1
@@ -143,7 +143,7 @@ evals =
   -- ++
   -- concatMap
   --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-  --   (sort [(minBound :: St) .. maxBound])
+  --   (sort $ take 9 [(minBound :: St) .. maxBound])
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -218,6 +218,7 @@ instance ExperimentDef (BORL St) where
         Nothing
         Nothing
     ]
+  beforeWarmUpHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
@@ -264,15 +265,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
+      { _alpha            = ExponentialDecay (Just 1e-6) 0.05 50000
       , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-6) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay -- ExponentialDecay (Just 0.05) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 150000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -281,8 +282,7 @@ decay =
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
 
-
--- | BORL Parameters.
+-- -- | BORL Parameters.
 -- params :: ParameterInitValues
 -- params =
 --   Parameters
@@ -371,11 +371,11 @@ mRefStateAct = Nothing
 
 alg :: Algorithm St
 alg =
-        AlgDQN 0.99  Exact -- EpsilonSensitive
+        -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 30)
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

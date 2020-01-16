@@ -67,8 +67,8 @@ import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
 
 
 maxX, maxY, goalX, goalY :: Int
-maxX = 1                        -- [0..maxX]
-maxY = 1                        -- [0..maxY]
+maxX = 4                        -- [0..maxX]
+maxY = 4                        -- [0..maxY]
 goalX = 0
 goalY = 0
 
@@ -76,7 +76,7 @@ goalY = 0
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld"
+    { _experimentBaseName         = "gridworld 2"
     , _experimentInfoParameters   = [isNN, isTf]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -208,8 +208,11 @@ instance ExperimentDef (BORL St)
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-                                                                  , AlgDQN 0.99 EpsilonSensitive
+                                                                  [ -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                                                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  AlgDQN 0.5 EpsilonSensitive
+                                                                  --  AlgDQN 0.99 Exact
+                                                                  -- , AlgDQN 0.50 Exact
                                                                   ]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
