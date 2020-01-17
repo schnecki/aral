@@ -113,9 +113,9 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 15.1."
+    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware neu"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
-    , _experimentRepetitions      = 40
+    , _experimentRepetitions      = 10
     , _preparationSteps           = 1000000
     , _evaluationWarmUpSteps      = 1000
     , _evaluationSteps            = 10000
@@ -134,16 +134,24 @@ expSetup borl =
 
 evals :: [StatsDef s]
 evals =
+  -- [ Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  -- , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  -- , Name "Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
+  -- , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  -- , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  -- ]
   [ Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  , Name "Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
-  , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
-  , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  -- , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+    -- Name "Average Reward" $ Mean OverReplications $ First (Of "avgRew")
+  , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
+  , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
+  , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Of "queueLength"
+  -- , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
   ]
-  -- ++
-  -- concatMap
-  --   (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-  --   (sort $ take 9 [(minBound :: St) .. maxBound])
+  ++
+  concatMap
+    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+    (sort $ take 9 [(minBound :: St) .. maxBound])
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -193,22 +201,27 @@ instance ExperimentDef (BORL St) where
       let p = Just $ fromIntegral $ rl' ^. t
           results =
             [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
-            , StepResult "psiRho" p (rl' ^?! psis . _1)
-            , StepResult "psiV" p (rl' ^?! psis . _2)
-            , StepResult "psiW" p (rl' ^?! psis . _3)
+            -- , StepResult "psiRho" p (rl' ^?! psis . _1)
+            -- , StepResult "psiV" p (rl' ^?! psis . _2)
+            -- , StepResult "psiW" p (rl' ^?! psis . _3)
             , StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            ] ++
+            , StepResult "reward" p (head (rl' ^. lastRewards))
+            ]
+            ++
             concatMap
               (\s ->
                  map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
-              (sort $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
+                 (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
     [ ParameterSetup
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
+                                 AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted 0.8 1.00  ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
                                , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
@@ -246,7 +259,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 5.0
+    , _epsilon             = 10.0
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -265,15 +278,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-6) 0.05 50000
+      { _alpha            = ExponentialDecay (Just 1e-6) 0.5 50000
       , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-6) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-5) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = NoDecay -- ExponentialDecay (Just 0.05) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 150000
+      , _epsilon          = NoDecay
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -374,8 +387,11 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 30)
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues -- (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.8) 0.99 100000))
+        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                -- AlgBORLVOnly ByStateValues mRefStateAct
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

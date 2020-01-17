@@ -18,7 +18,10 @@ module ML.BORL.Step
     , sortBy
     ) where
 
-
+#ifdef DEBUG
+import           Control.Concurrent.MVar
+import           System.IO.Unsafe               (unsafePerformIO)
+#endif
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
@@ -183,6 +186,21 @@ execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
 
 #ifdef DEBUG
+
+cacheMVar :: MVar [a]
+cacheMVar = unsafePerformIO $ newMVar mempty
+{-# NOINLINE cacheMVar #-}
+
+emptyCache :: (MonadIO m) => m ()
+emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
+
+setCache :: (MonadIO m) => [a] -> m ()
+setCache x = liftIO $ modifyMVar_ cacheMVar (return . const x)
+
+getCache :: (MonadIO m) => m [a]
+getCache = liftIO $ fromMaybe mempty <$> tryReadMVar cacheMVar
+
+
 writeDebugFiles :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 writeDebugFiles borl = do
   let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardFree (borl ^. algorithm)
@@ -212,6 +230,7 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
+        setCache stateFeats
         liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printFloat) stateFeats <> "\n")
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
         if isNeuralNetwork (borl ^. proxies . v)
@@ -226,9 +245,10 @@ writeDebugFiles borl = do
         | isDqn && isTensorflow (borl' ^. proxies . r1) = True
         | isTensorflow (borl' ^. proxies . v) = True
         | otherwise = False
-  len <- liftIO $ read <$> readFile fileDebugStateValuesNrStates
-  when (len >= 0 && len /= length stateFeats) $ error $ "Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
-    ". Increase debugStepsCount count in Step.hs!"
+  -- len <- liftIO $ read <$> readFile fileDebugStateValuesNrStates
+  -- when (len >= 0 && len /= length stateFeats) $ liftIO $ putStrLn $ "WARNING: Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
+  --   ". Increase debugStepsCount count in Step.hs!"
+  stateFeats <- getCache
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
     stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat borl' (init xs) (round $ last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
