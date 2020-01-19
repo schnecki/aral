@@ -34,6 +34,8 @@ import qualified TensorFlow.Session     as TF
 import qualified TensorFlow.Tensor      as TF (Tensor (..), tensorNodeName,
                                                tensorRefFromName)
 
+import           Debug.Trace
+
 import           ML.BORL.Types
 
 
@@ -275,9 +277,10 @@ saveModel model inp lab = do
       labT = encodeLabelBatch lab
   let resetLastIO mdl = mdl {lastInputOutputTuple = Just (last inp, last lab)}
   let tf' = tensorflowModel model
-  unless (null $ neuralNetworkVariables tf') $ liftTf $ TF.save pathModel (neuralNetworkVariables tf') >>= TF.run_
-  unless (null $ trainingVariables tf') $
-    liftTf $ TF.save pathTrain (trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')) >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+  liftTf $ TF.save pathModel (neuralNetworkVariables tf') >>= TF.run_
+  let trainVars = trainingVariables tf' ++ concatMap optimizerRefsList (optimizerVariables tf')
+  liftTf $ TF.save pathTrain trainVars >>= TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT]
+
   -- res <- map V.toList <$> (Tensorflow $ TF.runWithFeeds [TF.feed inRef inpT, TF.feed labRef labT] (trainingVariables $ tensorflowModel model))
   -- Simple $ putStrLn $ "Training variables (saveModel): " <> show res
   return $
