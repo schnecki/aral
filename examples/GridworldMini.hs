@@ -306,7 +306,7 @@ experimentMode = do
   -- let runner = runMonadBorlTF
   ---
   putStrLn $ "Any change: " ++ show changed
-  evalRes <- genEvals runner databaseSetup res evals
+  evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
 
