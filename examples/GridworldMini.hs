@@ -192,7 +192,8 @@ instance ExperimentDef (BORL St)
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
-        results =
+        results | phase /= EvaluationPhase = []
+                | otherwise =
           [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
           , StepResult "psiRho" p (rl' ^?! psis . _1)
           , StepResult "psiV" p (rl' ^?! psis . _2)
@@ -209,9 +210,10 @@ instance ExperimentDef (BORL St)
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
                                                                   [ -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                                                                    AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  AlgDQN 0.5 EpsilonSensitive
-                                                                  --  AlgDQN 0.99 Exact
+                                                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  -- , AlgDQN 0.99 Exact
                                                                   -- , AlgDQN 0.50 Exact
                                                                   ]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl

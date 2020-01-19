@@ -105,19 +105,13 @@ chooseAction borl useRand selFromList = do
              bestR1ValueActions <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
              let bestR1 = map snd bestR1ValueActions
              r0Values <- mapM (rValue borl RSmall state . fst) bestR1
-             let r1Value = fst $ headR1 bestR1ValueActions
-                 group = groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
-                 (posErr, negErr) = (group *** group) $ partition ((r1Value <) . fst) (zip r0Values bestR1)
              let bestR0 =
                    map snd $
                    head $
                    groupBy (epsCompare (==) `on` fst) $
                    sortBy
                      (epsCompare compare `on` fst)
-                     (headR0 $
-                      if null posErr
-                        then negErr
-                        else posErr)
+                     (zip r0Values bestR1)
              if length bestR1 == 1
                then return (borl, False, head bestR1)
                else if length bestR0 > 1
@@ -125,7 +119,6 @@ chooseAction borl useRand selFromList = do
                         r <- liftIO $ randomRIO (0, length bestR0 - 1)
                         return (borl, False, bestR0 !! r)
                       else return (borl, False, headDqnAvgRewFree bestR0)
-               -- singleValueNextAction
   where
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x

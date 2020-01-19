@@ -245,7 +245,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.75) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000

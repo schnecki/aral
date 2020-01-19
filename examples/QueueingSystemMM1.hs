@@ -34,6 +34,7 @@ import           Data.Text.Encoding     as E
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
+import           System.Directory
 import           System.IO
 import           System.Random
 
@@ -98,7 +99,7 @@ type OrderArrival = Bool
 data St = St CurrentQueueSize OrderArrival deriving (Show, Ord, Eq, NFData, Generic, Serialize)
 
 getQueueLength :: St -> CurrentQueueSize
-getQueueLength (St sz _) = sz
+getQueueLength (St len _) = len
 
 instance Enum St where
   fromEnum (St sz arr)      = 2*sz + fromEnum arr
@@ -113,13 +114,13 @@ instance Bounded St where
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware neu"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
-    , _experimentRepetitions      = 10
+    , _experimentRepetitions      = 20
     , _preparationSteps           = 1000000
-    , _evaluationWarmUpSteps      = 1000
+    , _evaluationWarmUpSteps      = 0
     , _evaluationSteps            = 10000
-    , _evaluationReplications     = 1
+    , _evaluationReplications     = 10
     , _maximumParallelEvaluations = 1
     }
 
@@ -141,17 +142,18 @@ evals =
   -- , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
   -- ]
   [ Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-  -- , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
-    -- Name "Average Reward" $ Mean OverReplications $ First (Of "avgRew")
+  , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Average Reward" $ Mean OverReplications $ First (Of "avgRew")
   , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
+  -- , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Of "queueLength"
   , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
-  , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Of "queueLength"
-  -- , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "queueLength")
+  , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverPeriods (Of "queueLength")
   ]
-  ++
-  concatMap
-    (\s -> map (\a -> Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
-    (sort $ take 9 [(minBound :: St) .. maxBound])
+  -- ++
+  -- concatMap
+  --   (\s -> map (\a ->
+  --                 Mean OverReplications $ First (Of $ E.encodeUtf8 $ T.pack $ show (s, a))) (filteredActionIndexes actions actFilter s))
+  --   (sort $ take 9 [(minBound :: St) .. maxBound])
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -192,10 +194,9 @@ instance ExperimentDef (BORL St) where
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter decay tblInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
-  runStep phase rl _ _ =
-    liftIO $ do
+  runStep phase rl _ _ = do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let p = Just $ fromIntegral $ rl' ^. t
@@ -212,6 +213,10 @@ instance ExperimentDef (BORL St) where
               (\s ->
                  map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
+      when (phase == EvaluationPhase) $ do
+        appendFile "results/reward" (show (head (rl' ^. lastRewards)) ++ "\n")
+        appendFile "results/queueLength" (show (fromIntegral $ getQueueLength $ rl' ^. s) ++ "\n")
+        writeFile "results/params" (show (rl' ^. B.parameters))
       return (results, rl')
   parameters _ =
     [ ParameterSetup
@@ -220,18 +225,17 @@ instance ExperimentDef (BORL St) where
         (view algorithm)
         (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
                                  AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted 0.8 1.00  ByStateValues
-                               -- , AlgDQN 0.99 EpsilonSensitive
+                               , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                               , AlgDQN 0.99 EpsilonSensitive
                                , AlgDQN 0.99 Exact
-                               -- , AlgDQN 0.5  EpsilonSensitive
+                               , AlgDQN 0.5  EpsilonSensitive
                                , AlgDQN 0.5  Exact
                                ])
         Nothing
         Nothing
         Nothing
     ]
-  beforeWarmUpHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
+  -- beforeWarmUpHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
 nnConfig :: NNConfig
@@ -278,14 +282,14 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-6) 0.5 50000
-      , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
+      { _alpha            = ExponentialDecay (Just 0) 0.8 50000  -- 5e-4
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-5) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 0) 0.8 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = NoDecay
+      , _epsilon          = ExponentialDecay (Just 1.0) 0.5 150000
       , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -355,7 +359,10 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=experimenter2 user=experimenter password=experimenter port=5432" 10
+  removeFileIfExists "results/reward"
+  removeFileIfExists "results/queueLength"
+  removeFileIfExists "results/params"
+  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
@@ -368,6 +375,12 @@ experimentMode = do
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
+
+  where removeFileIfExists :: FilePath -> IO ()
+        removeFileIfExists fp = do
+          exists <- doesFileExist fp
+          when exists $ removeFile fp
+          writeFile fp  ""
 
 
 lpMode :: IO ()
@@ -385,9 +398,9 @@ mRefStateAct = Nothing
 alg :: Algorithm St
 alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
-        -- AlgDQN 0.99  EpsilonSensitive
+        -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
