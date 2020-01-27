@@ -116,11 +116,11 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
-    , _experimentRepetitions      = 20
+    , _experimentRepetitions      = 40
     , _preparationSteps           = 1000000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
-    , _evaluationReplications     = 10
+    , _evaluationSteps            = 100000
+    , _evaluationReplications     = 1
     , _maximumParallelEvaluations = 1
     }
 
@@ -144,6 +144,7 @@ evals =
   [ Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Name "Average Reward" $ Mean OverReplications $ First (Of "avgRew")
+  , Name "Exp Mean of Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ First (Of "avgRew")
   , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
   -- , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Of "queueLength"
   , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
@@ -201,22 +202,22 @@ instance ExperimentDef (BORL St) where
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let p = Just $ fromIntegral $ rl' ^. t
           results =
+            [
+              StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
+            , StepResult "reward" p (head (rl' ^. lastRewards))
+            ]
+            ++
             [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
             -- , StepResult "psiRho" p (rl' ^?! psis . _1)
             -- , StepResult "psiV" p (rl' ^?! psis . _2)
             -- , StepResult "psiW" p (rl' ^?! psis . _3)
-            , StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            , StepResult "reward" p (head (rl' ^. lastRewards))
+            | phase == EvaluationPhase
             ]
             ++
             concatMap
               (\s ->
                  map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
-      when (phase == EvaluationPhase) $ do
-        appendFile "results/reward" (show (head (rl' ^. lastRewards)) ++ "\n")
-        appendFile "results/queueLength" (show (fromIntegral $ getQueueLength $ rl' ^. s) ++ "\n")
-        writeFile "results/params" (show (rl' ^. B.parameters))
       return (results, rl')
   parameters _ =
     [ ParameterSetup
@@ -224,12 +225,13 @@ instance ExperimentDef (BORL St) where
         (set algorithm)
         (view algorithm)
         (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
+                               -- ,
                                  AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
                                , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                               , AlgDQN 0.99 EpsilonSensitive
+                               -- , AlgDQN 0.99 EpsilonSensitive
                                , AlgDQN 0.99 Exact
-                               , AlgDQN 0.5  EpsilonSensitive
-                               , AlgDQN 0.5  Exact
+                               -- , AlgDQN 0.5  EpsilonSensitive
+                               -- , AlgDQN 0.5  Exact
                                ])
         Nothing
         Nothing
@@ -263,7 +265,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 10.0
+    , _epsilon             = 5.0 -- 10.0
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -282,14 +284,14 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 0) 0.8 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 0) 0.8 150000 -- 1e-3
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 1.0) 0.5 150000
+      , _epsilon          = NoDecay -- ExponentialDecay (Just 5.0) 0.5 150000
       , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -359,10 +361,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  removeFileIfExists "results/reward"
-  removeFileIfExists "results/queueLength"
-  removeFileIfExists "results/params"
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=c437-pc147 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
@@ -372,7 +371,7 @@ experimentMode = do
   -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   -- let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
-  evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
+  evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
 
