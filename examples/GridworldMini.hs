@@ -76,7 +76,7 @@ goalY = 0
 expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld 2"
+    { _experimentBaseName         = "gridworld-mini 28.1."
     , _experimentInfoParameters   = [isNN, isTf]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -93,11 +93,13 @@ evals :: [StatsDef s]
 evals =
   [
     Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Repl. Mean Reward" $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
   , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
   , Name "Exp Mean of Repl. Mean Steps to Goal" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Repl. Mean Steps to Goal" $ Mean OverReplications $ Last (Of "avgEpisodeLength")
   , Name "Exp StdDev of Repl. Mean Steps to Goal" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
   -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
   ]
@@ -192,29 +194,34 @@ instance ExperimentDef (BORL St)
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
-        results | phase /= EvaluationPhase = []
+        results | phase /= EvaluationPhase =
+                  [ StepResult "reward" p (head (rl' ^. lastRewards))
+                  , StepResult "avgEpisodeLength" p eLength
+                  ]
                 | otherwise =
-          [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
-          , StepResult "psiRho" p (rl' ^?! psis . _1)
-          , StepResult "psiV" p (rl' ^?! psis . _2)
-          , StepResult "psiW" p (rl' ^?! psis . _3)
-          , StepResult "avgEpisodeLength" p eLength
-          , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
-          , StepResult "reward" p (head (rl' ^. lastRewards))
-          ] -- ++
-          -- concatMap
-          --   (\s ->
-          --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
-          --   (sort [(minBound :: St) .. maxBound])
+                  [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
+                  , StepResult "psiRho" p (rl' ^?! psis . _1)
+                  , StepResult "psiV" p (rl' ^?! psis . _2)
+                  , StepResult "psiW" p (rl' ^?! psis . _3)
+                  , StepResult "avgEpisodeLength" p eLength
+                  , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
+                  , StepResult "reward" p (head (rl' ^. lastRewards))
+                  ] -- ++
+                  -- concatMap
+                  --   (\s ->
+                  --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+                  --   (sort [(minBound :: St) .. maxBound])
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-                                                                    AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                                                                  [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  -- , AlgDQN 0.99 Exact
-                                                                  -- , AlgDQN 0.50 Exact
+                                                                  , AlgDQN 0.999 Exact
+                                                                  , AlgDQN 0.99 Exact
+                                                                  , AlgDQN 0.50 Exact
                                                                   ]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.parameters . disableAllLearning) True rl
 
@@ -243,7 +250,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 1.0
+    , _epsilon             = 0.25
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -262,15 +269,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
-      , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+      , _epsilon          = NoDecay -- ExponentialDecay (Just 5.0) 0.5 150000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -278,6 +285,29 @@ decay =
       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
+
+
+-- -- | Decay function of parameters.
+-- decay :: Decay
+-- decay =
+--   decaySetupParameters
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 1e-5) 0.05 100000
+--       , _beta             = ExponentialDecay (Just 1e-3) 0.5 150000
+--       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+--       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+--       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+--       , _xi               = NoDecay
+--       -- Exploration
+--       , _epsilon          = ExponentialDecay (Just 0.05) 0.05 150000
+--       , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+--       , _learnRandomAbove = NoDecay
+--       -- ANN
+--       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
+--       , _betaANN          = ExponentialDecay Nothing 0.75 150000
+--       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
+--       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
+--       }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0

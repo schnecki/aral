@@ -147,6 +147,7 @@ evals =
   , Name "Exp Mean of Average Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ First (Of "avgRew")
   , Name "Exp Mean of Repl. Mean QueueLength" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
   -- , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Of "queueLength"
+  , Name "Repl. Mean Reward" $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Name "Repl. Mean QueueLength" $ Mean OverReplications $ Stats $ Mean OverPeriods (Of "queueLength")
   , Name "Exp StdDev of Repl. Mean QueueLength" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverPeriods (Of "queueLength")
   ]
@@ -226,12 +227,14 @@ instance ExperimentDef (BORL St) where
         (view algorithm)
         (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
                                -- ,
-                                 AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                               , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                               --   AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
-                               , AlgDQN 0.99 Exact
+                               -- , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
-                               -- , AlgDQN 0.5  Exact
+                                AlgDQN 0.5  Exact
+                               , AlgDQN 0.999  Exact
+                               , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
                                ])
         Nothing
         Nothing
@@ -361,7 +364,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=c437-pc147 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   let rl = mkUnichainTabular algBORL initState tblInp actions actFilter params decay (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
