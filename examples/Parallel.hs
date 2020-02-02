@@ -247,8 +247,8 @@ moveRight s =
   return $
   case s of
     Start                     -> (Reward 0, RightSide 1, False)
-    RightSide nr | nr == 1    -> (Reward 2, RightSide (nr+1), False)
-    RightSide nr | nr == 2    -> (Reward 4, RightSide (nr+1), False)
+    RightSide nr | nr == 1    -> (Reward 0.02, RightSide (nr+1), False)
+    RightSide nr | nr == 2    -> (Reward 5.98, RightSide (nr+1), False)
     RightSide nr | nr < maxSt -> (Reward 0, RightSide (nr+1), False)
     RightSide{}               ->  (Reward 0, End, False)
     End                       -> (Reward 0, Start, False)

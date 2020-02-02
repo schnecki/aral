@@ -37,18 +37,21 @@ data LpResult st = LpResult
   , inferredRewards :: [((st, T.Text), Double)]
   , gain            :: Double
   , bias            :: [((st, T.Text), Double)]
-  , wValues         :: [((st, T.Text), Double)]
-  , w2Values        :: [((st, T.Text), Double)]
+  , wValues         :: [[((st, T.Text), Double)]]
+  -- , w2Values        :: [((st, T.Text), Double)]
+  -- , w3Values        :: [((st, T.Text), Double)]
   }
 
 instance (Show st) => Show (LpResult st) where
-  show (LpResult pol rew g b w w2) =
+  show (LpResult pol rew g b w) =
     "Provided Policy:\n--------------------\n" <> unlines (map showPol pol) <>
     "\nInferred Rewards:\n--------------------\n" <> unlines (map show rew) <>
     "\nGain: " <> show g <>
     "\nBias values:\n--------------------\n" <> unlines (map show b) <>
-    "\nW values:\n--------------------\n" <> unlines (map show w) <>
-    "\nW2 values:\n--------------------\n" <> unlines (map show w2)
+    concatMap (\nr -> "\nW" ++ show nr ++ " values:\n--------------------\n" <> unlines (map show (w!!(nr-1)))) [1..wMax]
+    -- "\nW values:\n--------------------\n" <> unlines (map show w) <>
+    -- "\nW2 values:\n--------------------\n" <> unlines (map show w2) <>
+    -- "\nW3 values:\n--------------------\n" <> unlines (map show w3)
 
 showPol :: (Show a, Show a1) => (a, a1) -> String
 showPol (sa, sa') = show sa <> ": " <> show sa'
@@ -57,6 +60,10 @@ type Policy st = State st -> Action st -> [((NextState st, Action st), Probabili
 
 runBorlLp :: forall st . (BorlLp st) => Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
 runBorlLp = runBorlLpInferWithRewardRepet 80000
+
+wMax :: Int
+wMax = 5
+
 
 runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
 runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
@@ -72,7 +79,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
   mapM_ (\(a, p) -> when (abs (1 - p) > 0.001) $ error $ "transition probabilities do not sum up to 1 for state-action: " ++ show a) transProbSums
   let stateActions = map fst transitionProbs
   let stateActionIndices = M.fromList $ zip (map (second actionName . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
-  let obj = Maximize (1 : replicate (3 * length transitionProbs) 0)
+  let obj = Maximize (1 : replicate ((wMax + 1) * length transitionProbs) 0)
   putStr ("Inferring rewards using " <> show repetitionsReward <> " replications ...") >> hFlush stdout
   rewards <- concat <$> mapM (makeReward repetitionsReward) states
   putStrLn "\t[Done]"
@@ -80,7 +87,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
   let mRefStAct' = second (lpActions !!) <$> mRefStAct :: Maybe (st, Action st)
   let constr = map (makeConstraints mRefStAct' stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
-  let bounds = map Free [1 .. (3 * length transitionProbs + 1)]
+  let bounds = map Free [1 .. ((wMax + 1) * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
   let transProbs = map (second (map (first (second actionName))) . first (second actionName)) transitionProbs
   let mkSol (g, vals) =
@@ -89,8 +96,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
           rewards'
           g
           (zipWith mkResult stateActions (tail vals))
-          (zipWith mkResult stateActions (drop (length stateActions) (tail vals)))
-          (zipWith mkResult stateActions (drop (2 * length stateActions) (tail vals)))
+          (map (\nr -> (zipWith mkResult stateActions (drop (nr * length stateActions) (tail vals)))) [1..wMax])
   let parseSol mBound sol =
         case sol of
           Optimal xs -> return $ mkSol xs
@@ -103,12 +109,12 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
                 putStrLn $
                   "\n\nProvided Policy:\n--------------------\n" <> unlines (map showPol transProbs) <> "\n\nSolver returned: Unbounded! Introducing bound of " <> show initBounds <>
                   " and retrying..."
-                let bounds = map (\x -> x :<=: 10) [1 .. (3 * length transitionProbs + 1)]
+                let bounds = map (\x -> x :<=: 10) [1 .. ((wMax + 1) * length transitionProbs + 1)]
                 parseSol (Just initBounds) (simplex obj constraints bounds)
               (res, Just bound) -> do
                 let bound' = bound + 1
                 putStrLn $ "Solver returned: " <> show res <> " for bound " <> show bound <> ". Increasing bound to " <> show bound' <> " and retrying..."
-                let mkBounds b = map (\x -> x :<=: b) [1 .. (3 * length transitionProbs + 1)]
+                let mkBounds b = map (\x -> x :<=: b) [1 .. ((wMax + 1) * length transitionProbs + 1)]
                 let list = [bound,bound + 0.05 .. bound']
                 sol <-
                   case simplex obj constraints (mkBounds bound') of
@@ -142,15 +148,17 @@ makeConstraints mRefStAct stateActionIndices rewards (stAct, xs)
    =
     [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wIndex stateAction) xs') :==: 0
-    , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
+    -- , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
+    -- , ([1 # w2Index stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w3Index stateAction) xs') :==: 0
     ] ++
+    map (\nr -> ([1 # wNrIndex (nr - 1) stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++
     stActCtr
   | otherwise =
     [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs') :==: 0
-    , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
+    -- , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
     ] ++
-    stActCtr
+    map (\nr -> ([1 # wNrIndex (nr - 1) stAct, 1 # wNrIndex nr stAct] ++ map (\(stateAction, prob) -> -prob # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++ stActCtr
   where
     stActCtr = [[1 # w2Index stAct] :==: 0 | Just stAct == mRefStAct]
     xs' =
@@ -165,8 +173,10 @@ makeConstraints mRefStAct stateActionIndices rewards (stAct, xs)
         (second actionName state)
         stateActionIndices
     stateCount = M.size stateActionIndices
+    wNrIndex nr state = nr * stateCount + stateIndex state
     wIndex state = stateCount + stateIndex state
     w2Index state = 2 * stateCount + stateIndex state
+    w3Index state = 3 * stateCount + stateIndex state
     episodeEnds = map (fst3 &&& thd3) rewards
     rewardValue k =
       case find ((== second actionName k) . second actionName . fst3) rewards of
