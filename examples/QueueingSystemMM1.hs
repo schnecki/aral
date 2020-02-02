@@ -402,7 +402,7 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-        AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues

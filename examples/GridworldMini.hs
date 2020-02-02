@@ -339,6 +339,7 @@ experimentMode = do
   evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
+  writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
 
 
 lpMode :: IO ()
