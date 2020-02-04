@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections     #-}
 module ML.BORL.Pretty
     ( prettyTable
     , prettyBORL
@@ -32,7 +33,7 @@ import           Control.Monad         (when)
 import           Data.Function         (on)
 import           Data.List             (find, foldl', sort, sortBy)
 import qualified Data.Map.Strict       as M
-import           Data.Maybe            (fromMaybe)
+import           Data.Maybe            (fromMaybe, isJust)
 import qualified Data.Set              as S
 import qualified Data.Text             as T
 import           Grenade
@@ -61,16 +62,26 @@ showFloat = printf ("%." ++ show commas ++ "f")
 printFloatWith :: Int -> Double -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
+type Modifier m = LookupType -> ([Double], ActionIndex) -> Double -> m Double
+
+noMod :: (Monad m) => Modifier m
+noMod _ _ = return
+
+subtractMod :: (MonadBorl' m) => BORL k -> P.Proxy -> Modifier m
+subtractMod borl px lk k v0 = do
+  vS <- P.lookupProxy (borl ^. t) lk k px
+  return (v0 - vS)
+
 
 prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
-prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx (\_ v -> return v) p
+prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
 prettyTableRows ::
      (MonadBorl' m, Show k, Ord k, Eq k)
   => BORL k
   -> (NetInputWoAction -> Maybe (Maybe k, String))
   -> (ActionIndex -> Doc)
-  -> (([Double], ActionIndex) -> Double -> m Double)
+  -> Modifier m
   -> P.Proxy
   -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
@@ -78,10 +89,10 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
     P.Table m _ ->
       let mkAct idx = actionName $ snd $ (borl ^. actionList) !! (idx `mod` length (borl ^. actionList))
           mkInput k = text (filter (/= '"') $ show $ map (\x -> if x < 0 then printFloat x else "+" <> printFloat x) k)
-      in mapM (\((k,idx),val) -> modifier (k,idx) val >>= \v -> return (mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
+      in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
-      mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True pr
+      mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW)) | isEmpty kDoc = []
                                         | otherwise = [kDoc <> colon <+> printFloat valT <+> text "  " <+> printFloat valW]
           unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
@@ -94,21 +105,28 @@ mkListFromNeuralNetwork ::
   -> (NetInputWoAction -> Maybe (Maybe k, String))
   -> (ActionIndex -> Doc)
   -> Bool
+  -> Modifier m
   -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
-mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled pr = do
+mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
   let subPr
         | isCombinedProxy pr = pr ^?! proxySub
         | otherwise = pr
   if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize
     then do
       let inp = map fst tbl
-      let tableVals = tbl
-      workerVals <- mapM (\x -> unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType (NoScaling $ subPr ^?! proxyType) subPr)) inp
+      let mkVals x = do
+            val <- unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType (NoScaling $ subPr ^?! proxyType) subPr)
+            modifier Worker x val
+      workerVals <- mapM mkVals inp
       return $ finalize $ zipWith (\((feat, actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))) tbl workerVals
-    else finalize <$> mkNNList borl scaled pr
+    else finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
   where
     finalize = map (first $ prettyStateActionEntry borl prettyState prettyActionIdx)
+    mkModification (inp, (xsT, xsW)) = do
+      xsT' <- mapM (\(idx, val) -> (idx,) <$> modifier Target (inp, idx) val) xsT
+      xsW' <- mapM (\(idx, val) -> (idx,) <$> modifier Worker (inp, idx) val) xsW
+      return (inp, (xsT', xsW'))
     tbl =
       case pr of
         P.Table t _                   -> M.toList t
@@ -126,10 +144,19 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
   Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
 
 
-prettyTablesState :: (MonadBorl' m, Show s, Ord s) => BORL s -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> (NetInputWoAction -> Maybe (Maybe s, String)) -> P.Proxy -> m Doc
-prettyTablesState borl p1 pIdx m1 p2 m2 = do
-  rows1 <- prettyTableRows borl p1 pIdx (\_ v -> return v) (if fromTable then tbl m1 else m1)
-  rows2 <- prettyTableRows borl p2 pIdx (\_ v -> return v) (if fromTable then tbl m2 else m2)
+prettyTablesState ::
+     (MonadBorl' m, Show s, Ord s)
+  => BORL s
+  -> (NetInputWoAction -> Maybe (Maybe s, String))
+  -> (ActionIndex -> Doc)
+  -> P.Proxy
+  -> (NetInputWoAction -> Maybe (Maybe s, String))
+  -> Modifier m
+  -> P.Proxy
+  -> m Doc
+prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
+  rows1 <- prettyTableRows borl p1 pIdx noMod (if fromTable then tbl m1 else m1)
+  rows2 <- prettyTableRows borl p2 pIdx modifier2 (if fromTable then tbl m2 else m2)
   return $ vcat $ zipWith (\x y -> x $$ nest nestCols y) rows1 rows2
   where fromTable = period < fromIntegral memSize
         period = borl ^. t
@@ -155,8 +182,8 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
-prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
+prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted mGa0 ga1 ga2 avgRewType) =
+  text "Average reward freed DQN with gammas" <+> text (show (mGa0, ga1, ga2)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
@@ -190,7 +217,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
         case borl ^. algorithm of
           AlgDQN {} -> mempty
           _         -> doc
-  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState m2
+  let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState noMod m2
       prBoolTblsStateAction False _ _ _ = return empty
   prettyRhoVal <-
     case borl ^. proxies . rho of
@@ -206,18 +233,21 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       prR0R1 <- prBoolTblsStateAction t3 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prVs $+$ prWs $+$ prR0R1
     AlgBORLVOnly {} -> do
-      prV <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . v)
+      prV <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
     AlgDQN {} -> do
-      prR1 <- prettyTableRows borl prettyState prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
+      prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewAdjusted {}
-      -- prR1 <- prettyTableRows borl prettyAction prettyActionIdx (\_ x -> return x) (borl ^. proxies . r1)
-     -> do
-      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+    AlgDQNAvgRewAdjusted Nothing _ _ _ -> do
+      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma1" $$ nest nestCols (text "V+e with gamma2")) (borl ^. proxies . r1) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
+    AlgDQNAvgRewAdjusted Just {} _ _ _ -> do
+      prV <-
+        ((text "V" $$ nest nestCols (text "Delta E")) $+$) <$>
+        prettyTablesState borl prettyState prettyActionIdx (borl ^. proxies . v) prettyState (subtractMod borl (borl ^. proxies . r0)) (borl ^. proxies . r1)
+      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      return $ docHead $$ algDocRho prettyRhoVal $$ prV $+$ prR0R1
   where
-    subtr (k, v1) (_, v2) = (k, v1 - v2)
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 

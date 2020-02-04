@@ -54,7 +54,7 @@ instance Bounded St where
   maxBound = End
 
 maxSt :: Int
-maxSt = 4
+maxSt = 6
 
 instance Enum St where
   toEnum 0 = Start
@@ -104,8 +104,8 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == End = [((Start, right), 1.0)]
-  -- | s == End = [((Start, left), 1.0)]
+  -- | s == End = [((Start, right), 1.0)]
+  | s == End = [((Start, left), 1.0)]
   | (s, a) == (Start, left)  = [((LeftSide 1, left), 1.0)]
   | (s, a) == (Start, right) = [((RightSide 1, right), 1.0)]
   | otherwise = case s of
@@ -123,7 +123,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.5 0.999 ByStateValues
+        AlgDQNAvgRewAdjusted (Just 0.5) 0.65 1.0 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -237,9 +237,10 @@ moveLeft s =
   return $
   case s of
     Start                    -> (Reward 0, LeftSide 1, False)
-    LeftSide nr | nr == 2    -> (Reward 6, LeftSide (nr+1), False)
+    LeftSide nr | nr == 1    -> (Reward 1, LeftSide (nr+1), False)
+    LeftSide nr | nr == 3    -> (Reward 4, LeftSide (nr+1), False)
     LeftSide nr | nr < maxSt -> (Reward 0, LeftSide (nr+1), False)
-    LeftSide{}               ->  (Reward 0, End, False)
+    LeftSide{}               ->  (Reward 1, End, False)
     End                      -> (Reward 0, Start, False)
 
 moveRight :: St -> IO (Reward St,St, EpisodeEnd)
@@ -247,8 +248,8 @@ moveRight s =
   return $
   case s of
     Start                     -> (Reward 0, RightSide 1, False)
-    RightSide nr | nr == 1    -> (Reward 0.02, RightSide (nr+1), False)
-    RightSide nr | nr == 2    -> (Reward 5.98, RightSide (nr+1), False)
+    -- RightSide nr | nr == 1    -> (Reward 0.02, RightSide (nr+1), False)
+    RightSide nr | nr == 3    -> (Reward 6, RightSide (nr+1), False)
     RightSide nr | nr < maxSt -> (Reward 0, RightSide (nr+1), False)
     RightSide{}               ->  (Reward 0, End, False)
     End                       -> (Reward 0, Start, False)

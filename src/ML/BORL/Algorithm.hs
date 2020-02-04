@@ -41,7 +41,7 @@ data Algorithm s
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN Gamma Comparison
-  | AlgDQNAvgRewAdjusted GammaLow GammaHigh AvgReward
+  | AlgDQNAvgRewAdjusted (Maybe GammaLow) GammaMiddle GammaHigh AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
@@ -58,6 +58,10 @@ isAlgDqnAvgRewardFree :: Algorithm s -> Bool
 isAlgDqnAvgRewardFree AlgDQNAvgRewAdjusted{} = True
 isAlgDqnAvgRewardFree _                      = False
 
+-- blackwellOptimalVersion :: Algorithm s -> Bool
+-- blackwellOptimalVersion (AlgDQNAvgRewAdjusted Just{} _ _ _) = True
+-- blackwellOptimalVersion AlgBORL{}                           = True
+-- blackwellOptimalVersion _                                   = False
 
 isAlgBorlVOnly :: Algorithm s -> Bool
 isAlgBorlVOnly AlgBORLVOnly{} = True
@@ -84,4 +88,4 @@ algDQN = AlgDQN defaultGammaDQN Exact
 
 
 algDQNAvgRewardFree :: Algorithm s
-algDQNAvgRewardFree = AlgDQNAvgRewAdjusted defaultGamma0 defaultGammaDQN ByStateValues
+algDQNAvgRewardFree = AlgDQNAvgRewAdjusted (Just defaultGamma0) defaultGamma1 1.0 ByStateValues

@@ -458,15 +458,7 @@ getMinMaxVal p =
     CombinedUnichainScaleAs {} -> error "should not happend"
   where
     unCombine CombinedUnichain
-      | isCombinedProxy p =
-        case p ^?! proxyOutCol of
-          0 -> R0Table
-          1 -> R1Table
-          2 -> PsiVTable
-          3 -> VTable
-          4 -> PsiWTable
-          5 -> WTable
-          _ -> error "Proxy/Ops.hs getMinMaxVal"
+      | isCombinedProxy p = fromCombinedIndex (p ^?! proxyOutCol)
     unCombine (CombinedUnichainScaleAs x)
       | isCombinedProxy p = x
     unCombine x = x

@@ -70,6 +70,17 @@ rho :: Lens' Proxies Proxy
 rho f px@Proxies{}                 = (\rho' -> px { _rho = rho' }) <$> f (_rho px)
 rho f px@ProxiesCombinedUnichain{} = (\rho' -> px { _rho = rho' }) <$> f (_rho px)
 
+
+fromCombinedIndex :: Int -> ProxyType
+fromCombinedIndex 0 = R0Table
+fromCombinedIndex 1 = R1Table
+fromCombinedIndex 2 = VTable
+fromCombinedIndex 3 = PsiVTable
+fromCombinedIndex 4 = PsiWTable
+fromCombinedIndex 5 = WTable
+fromCombinedIndex _ = error "Proxies.hs fromCombinedIndex: Out of Range, Proxy does not exist!"
+
+
 r1 :: Lens' Proxies Proxy
 r1 f px@Proxies{}  = (\r1' -> px { _r1 = r1' }) <$> f (_r1 px)
 r1 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 0 [])
@@ -79,13 +90,13 @@ r0 f px@Proxies{}  = (\r0' -> px { _r0 = r0' }) <$> f (_r0 px)
 r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 1 [])
 
 
-psiV :: Lens' Proxies Proxy
-psiV f px@Proxies{}                  = (\psiV' -> px { _psiV = psiV' }) <$> f (_psiV px)
-psiV f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 2 [])
-
 v :: Lens' Proxies Proxy
 v f px@Proxies{}  = (\v' -> px { _v = v' }) <$> f (_v px)
-v f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 3 [])
+v f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 2 [])
+
+psiV :: Lens' Proxies Proxy
+psiV f px@Proxies{}                  = (\psiV' -> px { _psiV = psiV' }) <$> f (_psiV px)
+psiV f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 3 [])
 
 psiW :: Lens' Proxies Proxy
 psiW f px@Proxies{}  = (\psiW' -> px { _psiW = psiW' }) <$> f (_psiW px)

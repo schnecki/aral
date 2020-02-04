@@ -27,6 +27,7 @@ type PsisNew = PsisOld
 type FeatureExtractor s = s -> [Double]
 type GammaLow = Double
 type GammaHigh = Double
+type GammaMiddle = Double
 type Gamma = Double
 
 

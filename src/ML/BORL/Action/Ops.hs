@@ -93,32 +93,57 @@ chooseAction borl useRand selFromList = do
                  --        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
                  --    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
                  ----
-                 if length bestE > 1 -- Uniform distributed as all actions are considered as having the same value!
+                 if length bestE > 1 -- Uniform distributed as all actions are considered to have the same value!
                    then do
                      r <- liftIO $ randomRIO (0, length bestE - 1)
                      return (borl, False, bestE !! r)
                    else return (borl, False, headE bestE)
            AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
            AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
-           AlgDQNAvgRewAdjusted {} -> do
-             r1Values <- mapM (rValue borl RBig state . fst) as
-             bestR1ValueActions <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values as)
-             let bestR1 = map snd bestR1ValueActions
-             r0Values <- mapM (rValue borl RSmall state . fst) bestR1
-             let bestR0 =
-                   map snd $
-                   head $
-                   groupBy (epsCompare (==) `on` fst) $
-                   sortBy
-                     (epsCompare compare `on` fst)
-                     (zip r0Values bestR1)
-             if length bestR1 == 1
-               then return (borl, False, head bestR1)
-               else if length bestR0 > 1
-                      then do
-                        r <- liftIO $ randomRIO (0, length bestR0 - 1)
-                        return (borl, False, bestR0 !! r)
-                      else return (borl, False, headDqnAvgRewFree bestR0)
+           AlgDQNAvgRewAdjusted mGa0 _ _ _ -> do
+             bestV <-
+               do vValues <- mapM (vValue borl state . fst) as
+                  map snd <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vValues as))
+             if length bestV == 1
+               then return (borl, False, head bestV)
+               else case mGa0 of
+                      Nothing -> do -- choose action by epsilon-max R1
+                        r1Values <- mapM (rValue borl RBig state . fst) bestV
+                        bestR1ValueActions <- liftIO $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip r1Values bestV)
+                        let bestR1 = map snd bestR1ValueActions
+                        if length bestR1 == 1
+                          then return (borl, False, head bestR1)
+                          else do
+                            r <- liftIO $ randomRIO (0, length bestR1 - 1)
+                            return (borl, False, bestR1 !! r)
+                      Just {} -> do
+                        bestE <- -- choose action by epsilon-max (R1-R0)
+                          do eVals <- mapM (eValue borl state . fst) bestV
+                             let (increasing, decreasing) = partition ((0 <) . fst) (zip eVals bestV)
+                                 actionsToChooseFrom
+                                   | null decreasing = increasing
+                                   | otherwise = decreasing
+                             map snd <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) actionsToChooseFrom)
+                        if length bestE > 1 -- Uniform distributed as all actions are considered to have the same value!
+                          then do
+                            r <- liftIO $ randomRIO (0, length bestE - 1)
+                            return (borl, False, bestE !! r)
+                          else return (borl, False, headE bestE)
+               -- r0Values <- mapM (rValue borl RSmall state . fst) bestR1
+               -- let bestR0 =
+               --       map snd $
+               --       head $
+               --       groupBy (epsCompare (==) `on` fst) $
+               --       sortBy
+               --         (epsCompare compare `on` fst)
+               --         (zip r0Values bestR1)
+               -- if length bestR1 == 1
+               --   then return (borl, False, head bestR1)
+               --   else if length bestR0 > 1
+               --          then do
+               --            r <- liftIO $ randomRIO (0, length bestR0 - 1)
+               --            return (borl, False, bestR0 !! r)
+               --          else return (borl, False, headDqnAvgRewFree bestR0)
   where
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
@@ -138,9 +163,10 @@ chooseAction borl useRand selFromList = do
     epsCompare = epsCompareWith eps
     singleValueNextAction cmp f = do
       rValues <- mapM f as
-      let groupValues = case cmp of
-            EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
-            Exact -> groupBy ((==) `on` fst) . sortBy (compare `on` fst)
+      let groupValues =
+            case cmp of
+              EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (epsCompare compare `on` fst)
+              Exact -> groupBy ((==) `on` fst) . sortBy (compare `on` fst)
       bestR <- liftIO $ selFromList $ groupValues (zip rValues as)
       if length bestR == 1
         then return (borl, False, snd $ headDqn bestR)

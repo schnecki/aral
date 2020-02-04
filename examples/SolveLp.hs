@@ -62,7 +62,7 @@ runBorlLp :: forall st . (BorlLp st) => Policy st -> Maybe (st, ActionIndex) -> 
 runBorlLp = runBorlLpInferWithRewardRepet 80000
 
 wMax :: Int
-wMax = 5
+wMax = 7
 
 
 runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
