@@ -104,8 +104,8 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  -- | s == End = [((Start, right), 1.0)]
-  | s == End = [((Start, left), 1.0)]
+  | s == End = [((Start, right), 1.0)]
+  -- | s == End = [((Start, left), 1.0)]
   | (s, a) == (Start, left)  = [((LeftSide 1, left), 1.0)]
   | (s, a) == (Start, right) = [((RightSide 1, right), 1.0)]
   | otherwise = case s of
@@ -119,11 +119,12 @@ mRefState :: Maybe (St, ActionIndex)
 -- mRefState = Just (initState, 0)
 mRefState = Nothing
 
+
 alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted (Just 0.5) 0.65 1.0 ByStateValues
+        AlgDQNAvgRewAdjusted (Just 0.5) 0.65 1 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -268,4 +269,5 @@ prependName txt model = model { tensorflowModel = (tensorflowModel model)
         , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
         , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
         }}
+
 
