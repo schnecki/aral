@@ -241,7 +241,7 @@ moveLeft s =
     LeftSide nr | nr == 1    -> (Reward 1, LeftSide (nr+1), False)
     LeftSide nr | nr == 3    -> (Reward 4, LeftSide (nr+1), False)
     LeftSide nr | nr < maxSt -> (Reward 0, LeftSide (nr+1), False)
-    LeftSide{}               ->  (Reward 1, End, False)
+    LeftSide{}               -> (Reward 1, End, False)
     End                      -> (Reward 0, Start, False)
 
 moveRight :: St -> IO (Reward St,St, EpisodeEnd)

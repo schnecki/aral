@@ -116,11 +116,10 @@ chooseAction borl useRand selFromList = do
                         let bestR1 = map snd bestR1ValueActions
                         if length bestR1 == 1
                           then return (borl, False, head bestR1)
-                                  -- 3. Uniform selection of leftover actions
-                          else do
+                          else do -- 3. Uniform selection of leftover actions
                             r <- liftIO $ randomRIO (0, length bestR1 - 1)
                             return (borl, False, bestR1 !! r)
-                      Just ga0 -- 2. choose action by epsilon-max (R1-R0) (Blackwell-optimal algorithm)
+                      Just ga0    -- 2. choose action by epsilon-max (R1-R0) (Blackwell-optimal algorithm)
                        -> do
                         bestE <-
                           do eVals <- mapM (eValue borl state . fst) bestV
