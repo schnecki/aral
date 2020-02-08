@@ -15,31 +15,32 @@ module ML.BORL.Pretty
 
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
+import           ML.BORL.Calculation.Ops
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
-import qualified ML.BORL.Proxy         as P
-import           ML.BORL.Proxy.Ops     (LookupType (..), getMinMaxVal, lookupNeuralNetwork,
-                                        mkNNList)
+import qualified ML.BORL.Proxy           as P
+import           ML.BORL.Proxy.Ops       (LookupType (..), getMinMaxVal,
+                                          lookupNeuralNetwork, mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Arrow         (first, second, (&&&), (***))
+import           Control.Arrow           (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad         (when)
-import           Data.Function         (on)
-import           Data.List             (find, foldl', sort, sortBy)
-import qualified Data.Map.Strict       as M
-import           Data.Maybe            (fromMaybe, isJust)
-import qualified Data.Set              as S
-import qualified Data.Text             as T
+import           Control.Monad           (when)
+import           Data.Function           (on)
+import           Data.List               (find, foldl', sort, sortBy)
+import qualified Data.Map.Strict         as M
+import           Data.Maybe              (fromMaybe, isJust)
+import qualified Data.Set                as S
+import qualified Data.Text               as T
 import           Grenade
-import           Prelude               hiding ((<>))
-import           System.IO.Unsafe      (unsafePerformIO)
-import           Text.PrettyPrint      as P
+import           Prelude                 hiding ((<>))
+import           System.IO.Unsafe        (unsafePerformIO)
+import           Text.PrettyPrint        as P
 import           Text.Printf
 
 import           Debug.Trace
@@ -67,10 +68,24 @@ type Modifier m = LookupType -> ([Double], ActionIndex) -> Double -> m Double
 noMod :: (Monad m) => Modifier m
 noMod _ _ = return
 
-subtractMod :: (MonadBorl' m) => BORL k -> P.Proxy -> Modifier m
-subtractMod borl px lk k v0 = do
+modifierSubtract :: (MonadBorl' m) => BORL k -> P.Proxy -> Modifier m
+modifierSubtract borl px lk k v0 = do
   vS <- P.lookupProxy (borl ^. t) lk k px
   return (v0 - vS)
+
+-- modifierAvgRewClean :: (MonadBorl' m) => BORL k -> Modifier m -> Modifier m
+-- modifierAvgRewClean borl modifier lk k@(s, aNr) v0 = do
+--   x <- modifier lk k v0
+--   rhoVal <- rhoValueFeat borl s aNr
+--   case borl ^. algorithm of
+--       -- AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1 x
+--       AlgDQNAvgRewAdjusted (Just gamma0) gamma1 _ _ -> avgRewardClean gamma0 gamma1 x
+--       _ -> error "eValueAvgCleaned can only be used with AlgBORL in Calculation.Ops"
+--   where
+--     -- avgRewardClean g0 g1 x = return $ x -  * (1/(1-gamma1)+1/(1-gamma0))
+
+
+-- e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0))
 
 
 prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
@@ -244,7 +259,10 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     AlgDQNAvgRewAdjusted Just {} _ _ _ -> do
       prV <-
         ((text "V" $$ nest nestCols (text "Delta E")) $+$) <$>
-        prettyTablesState borl prettyState prettyActionIdx (borl ^. proxies . v) prettyState (subtractMod borl (borl ^. proxies . r0)) (borl ^. proxies . r1)
+        prettyTablesState borl prettyState prettyActionIdx (borl ^. proxies . v) prettyState
+        (\_ (s, aNr) _ -> eValueAvgCleanedFeat borl s aNr)
+        -- (modifierSubtract borl (borl ^. proxies . r0))
+        (borl ^. proxies . r1)
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prV $+$ prR0R1
   where

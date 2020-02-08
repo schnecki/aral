@@ -48,3 +48,10 @@ queueLength
 /stateWAllStates
 /test/stateVAllStates
 /test/stateWAllStates
+/lp_e
+/lp_e_delta
+/lp_state_nrs
+/lp_v
+/lp_v_delta
+/lp_v_gamma
+/lp_v_gamma_delta

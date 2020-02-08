@@ -46,7 +46,7 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 
 -- State
-data St = Start | LeftSide Int | RightSide Int | End
+data St = Start | Top Int | Bottom Int | End
   deriving (Ord, Eq, Show,NFData,Generic)
 
 instance Bounded St where
@@ -58,13 +58,13 @@ maxSt = 6
 
 instance Enum St where
   toEnum 0 = Start
-  toEnum nr | nr <= maxSt = LeftSide nr
-            | nr <= 2*maxSt = RightSide (nr-maxSt)
+  toEnum nr | nr <= maxSt = Top nr
+            | nr <= 2*maxSt = Bottom (nr-maxSt)
             | otherwise = End
-  fromEnum Start          = 0
-  fromEnum (LeftSide nr)  = nr
-  fromEnum (RightSide nr) = nr + maxSt
-  fromEnum End            = 2*maxSt +1
+  fromEnum Start       = 0
+  fromEnum (Top nr)    = nr
+  fromEnum (Bottom nr) = nr + maxSt
+  fromEnum End         = 2*maxSt +1
 
 type R = Double
 type P = Double
@@ -106,14 +106,14 @@ policy :: Policy St
 policy s a
   | s == End = [((Start, right), 1.0)]
   -- | s == End = [((Start, left), 1.0)]
-  | (s, a) == (Start, left)  = [((LeftSide 1, left), 1.0)]
-  | (s, a) == (Start, right) = [((RightSide 1, right), 1.0)]
+  | (s, a) == (Start, left)  = [((Top 1, left), 1.0)]
+  | (s, a) == (Start, right) = [((Bottom 1, right), 1.0)]
   | otherwise = case s of
-      LeftSide nr | nr < maxSt  -> [((LeftSide (nr+1), left), 1.0)]
-      LeftSide{}                -> [((End, left), 1.0)]
-      RightSide nr | nr < maxSt -> [((RightSide (nr+1), right), 1.0)]
-      RightSide{}               -> [((End, left), 1.0)]
-      x                         -> error (show s)
+      Top nr | nr < maxSt    -> [((Top (nr+1), left), 1.0)]
+      Top{}                  -> [((End, left), 1.0)]
+      Bottom nr | nr < maxSt -> [((Bottom (nr+1), right), 1.0)]
+      Bottom{}               -> [((End, left), 1.0)]
+      x                      -> error (show s)
 
 mRefState :: Maybe (St, ActionIndex)
 -- mRefState = Just (initState, 0)
@@ -124,7 +124,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted (Just 0.5) 0.65 1 ByStateValues
+        AlgDQNAvgRewAdjusted (Just 0.7) 0.75 1 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -133,7 +133,11 @@ main :: IO ()
 main = do
 
 
-  runBorlLp policy mRefState >>= print
+  lpRes <- runBorlLpInferWithRewardRepetWMax 31 1 policy mRefState
+  print lpRes
+  mkStateFile 0.7 True True lpRes
+  mkStateFile 0.7 False True lpRes
+  mkStateFile 0.7 False False lpRes
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
@@ -223,37 +227,37 @@ actions :: [Action St]
 actions = [left, right]
 
 left,right :: Action St
-left = Action moveLeft "left "
-right = Action moveRight "right"
+left = Action moveLeft "up  "
+right = Action moveRight "down"
 
 actionFilter :: St -> [Bool]
-actionFilter Start       = [True, True]
-actionFilter LeftSide{}  = [True, False]
-actionFilter RightSide{} = [False, True]
-actionFilter End         = [True, False]
+actionFilter Start    = [True, True]
+actionFilter Top{}    = [True, False]
+actionFilter Bottom{} = [False, True]
+actionFilter End      = [True, False]
 
 
 moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
 moveLeft s =
   return $
   case s of
-    Start                    -> (Reward 0, LeftSide 1, False)
-    LeftSide nr | nr == 1    -> (Reward 1, LeftSide (nr+1), False)
-    LeftSide nr | nr == 3    -> (Reward 4, LeftSide (nr+1), False)
-    LeftSide nr | nr < maxSt -> (Reward 0, LeftSide (nr+1), False)
-    LeftSide{}               -> (Reward 1, End, False)
-    End                      -> (Reward 0, Start, False)
+    Start               -> (Reward 0, Top 1, False)
+    Top nr | nr == 1    -> (Reward 1, Top (nr+1), False)
+    Top nr | nr == 3    -> (Reward 4, Top (nr+1), False)
+    Top nr | nr < maxSt -> (Reward 0, Top (nr+1), False)
+    Top{}               -> (Reward 1, End, False)
+    End                 -> (Reward 0, Start, False)
 
 moveRight :: St -> IO (Reward St,St, EpisodeEnd)
 moveRight s =
   return $
   case s of
-    Start                     -> (Reward 0, RightSide 1, False)
-    -- RightSide nr | nr == 1    -> (Reward 0.02, RightSide (nr+1), False)
-    RightSide nr | nr == 3    -> (Reward 6, RightSide (nr+1), False)
-    RightSide nr | nr < maxSt -> (Reward 0, RightSide (nr+1), False)
-    RightSide{}               ->  (Reward 0, End, False)
-    End                       -> (Reward 0, Start, False)
+    Start                  -> (Reward 0, Bottom 1, False)
+    -- Bottom nr | nr == 1    -> (Reward 0.02, Bottom (nr+1), False)
+    Bottom nr | nr == 3    -> (Reward 6, Bottom (nr+1), False)
+    Bottom nr | nr < maxSt -> (Reward 0, Bottom (nr+1), False)
+    Bottom{}               ->  (Reward 0, End, False)
+    End                    -> (Reward 0, Start, False)
 
 
 encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a

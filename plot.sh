@@ -13,6 +13,7 @@ if [ $? -eq 0 ]; then
     gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiWAllStates' using 1:col with lines; set key title 'All Psi W Values'; pause mouse close; " &
 fi
 
+
 # set term wxt 0
 # plot for [col=2:2] 'episodeLength' using 0:col with points
 # set term wxt 1

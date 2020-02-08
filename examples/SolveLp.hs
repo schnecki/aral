@@ -1,9 +1,15 @@
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 module SolveLp
     ( runBorlLp
     , runBorlLpInferWithRewardRepet
+    , runBorlLpInferWithRewardRepetWMax
+    , mkEstimatedVFile
+    , mkEstimatedEFile
+    , mkEstimatedVGammaFile
+    , mkStateFile
     , EpisodeEnd
     , BorlLp (..)
     , Policy
@@ -38,8 +44,6 @@ data LpResult st = LpResult
   , gain            :: Double
   , bias            :: [((st, T.Text), Double)]
   , wValues         :: [[((st, T.Text), Double)]]
-  -- , w2Values        :: [((st, T.Text), Double)]
-  -- , w3Values        :: [((st, T.Text), Double)]
   }
 
 instance (Show st) => Show (LpResult st) where
@@ -48,7 +52,7 @@ instance (Show st) => Show (LpResult st) where
     "\nInferred Rewards:\n--------------------\n" <> unlines (map show rew) <>
     "\nGain: " <> show g <>
     "\nBias values:\n--------------------\n" <> unlines (map show b) <>
-    concatMap (\nr -> "\nW" ++ show nr ++ " values:\n--------------------\n" <> unlines (map show (w!!(nr-1)))) [1..wMax]
+    concatMap (\nr -> "\nW" ++ show nr ++ " values:\n--------------------\n" <> unlines (map show (w!!(nr-1)))) [1..(length w)]
     -- "\nW values:\n--------------------\n" <> unlines (map show w) <>
     -- "\nW2 values:\n--------------------\n" <> unlines (map show w2) <>
     -- "\nW3 values:\n--------------------\n" <> unlines (map show w3)
@@ -61,12 +65,60 @@ type Policy st = State st -> Action st -> [((NextState st, Action st), Probabili
 runBorlLp :: forall st . (BorlLp st) => Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
 runBorlLp = runBorlLpInferWithRewardRepet 80000
 
-wMax :: Int
-wMax = 3
+tshow :: (Show a) => a -> T.Text
+tshow = T.pack . show
+
+mkEstimatedVFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedVFile = mkStateFile 0.5 False True
+
+mkEstimatedVGammaFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedVGammaFile = mkStateFile 0.5 True True
+
+mkEstimatedEFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedEFile = mkStateFile 0.5 False False
+
+mkStateFile :: (BorlLp st) => Double -> Bool -> Bool -> LpResult st -> IO ()
+mkStateFile minGamma withGain withBias (LpResult _ _ gain bias ws) = do
+  let file
+        | withGain && withBias = "lp_v_gamma"
+        | withGain = "lp_gain_and_e"
+        | withBias = "lp_v"
+        | otherwise = "lp_e"
+  let deltaFile = file <> "_delta"
+  let stateActions = map fst bias
+      stateActionsTxt = mkListStr (\(st, a) -> T.unpack $ T.replace " " "_" $ tshow st <> "," <> a) stateActions
+  writeFile "lp_state_nrs" (show $ length stateActions)
+  writeFile file ("gamma\t" <> stateActionsTxt)
+  writeFile deltaFile ("gamma\t" <> stateActionsTxt)
+  let maxGamma
+        | withGain = 0.99
+        | otherwise = 1.0
+      step = 0.002
+  forM_ [minGamma,minGamma + step .. maxGamma] $ \gam -> do
+    let vals ga =
+          flip map stateActions $ \sa ->
+            let gainValue
+                  | withGain = gain / (1 - ga)
+                  | otherwise = 0
+                biasValue
+                  | withBias = snd $ head $ filter ((== sa) . fst) bias
+                  | otherwise = 0
+                wsValues = map (snd . head . filter ((== sa) . fst)) (init ws) -- last one is offset
+                eFun n w = ((1 - ga) / ga) ^ n * w
+                val = gainValue + biasValue + sum (zipWith eFun [(1 :: Integer) ..] wsValues)
+             in val
+    appendFile file (show gam <> "\t" <> mkListStr show (vals gam) <> "\n")
+    when (gam + step < 1) $ appendFile deltaFile (show gam <> "\t" <> mkListStr show (zipWith (-) (vals gam) (vals $ gam + step)) <> "\n")
+  where
+    mkListStr :: (a -> String) -> [a] -> String
+    mkListStr f = intercalate "\t" . map f
 
 
 runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
-runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
+runBorlLpInferWithRewardRepet = runBorlLpInferWithRewardRepetWMax 3
+
+runBorlLpInferWithRewardRepetWMax :: forall st . (BorlLp st) => Int -> Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
+runBorlLpInferWithRewardRepetWMax wMax repetitionsReward policy mRefStAct = do
   let mkPol s a =
         case policy s a of
           [] -> [((s, a), 0)]
@@ -85,7 +137,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
   putStrLn "\t[Done]"
   let rewards' = map (\(x, y, _) -> (second actionName x, y)) rewards
   let mRefStAct' = second (lpActions !!) <$> mRefStAct :: Maybe (st, Action st)
-  let constr = map (makeConstraints mRefStAct' stateActionIndices rewards) transitionProbs
+  let constr = map (makeConstraints wMax mRefStAct' stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
   let bounds = map Free [1 .. ((wMax + 1) * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
@@ -96,7 +148,7 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
           rewards'
           g
           (zipWith mkResult stateActions (tail vals))
-          (map (\nr -> (zipWith mkResult stateActions (drop (nr * length stateActions) (tail vals)))) [1..wMax])
+          (map (\nr -> (zipWith mkResult stateActions (drop (nr * length stateActions) (tail vals)))) [1 .. wMax])
   let parseSol mBound sol =
         case sol of
           Optimal xs -> return $ mkSol xs
@@ -107,8 +159,8 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
               (Unbounded, Nothing) -> do
                 let initBounds = 1
                 putStrLn $
-                  "\n\nProvided Policy:\n--------------------\n" <> unlines (map showPol transProbs) <> "\n\nSolver returned: Unbounded! Introducing bound of " <> show initBounds <>
-                  " and retrying..."
+                  "\n\nProvided Policy:\n--------------------\n" <>
+                  unlines (map showPol transProbs) <> "\n\nSolver returned: Unbounded! Introducing bound of " <> show initBounds <> " and retrying..."
                 let bounds = map (\x -> x :<=: 10) [1 .. ((wMax + 1) * length transitionProbs + 1)]
                 parseSol (Just initBounds) (simplex obj constraints bounds)
               (res, Just bound) -> do
@@ -138,25 +190,23 @@ runBorlLpInferWithRewardRepet repetitionsReward policy mRefStAct = do
 
 makeConstraints ::
      (BorlLp s)
-  => Maybe (State s, Action s)
+  => Int
+  -> Maybe (State s, Action s)
   -> M.Map (s, T.Text) Int
   -> [((State s, Action s), Double, EpisodeEnd)]
   -> ((State s, Action s), [((State s, Action s), Probability)])
   -> [Bound [(Double, Int)]]
-makeConstraints mRefStAct stateActionIndices rewards (stAct, xs)
+makeConstraints wMax mRefStAct stateActionIndices rewards (stAct, xs)
   | stAct `elem` map fst xs -- double occurance of variable is not allowed!
    =
     [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wIndex stateAction) xs') :==: 0
-    -- , ([1 # wIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w2Index stateAction) xs') :==: 0
-    -- , ([1 # w2Index stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # w3Index stateAction) xs') :==: 0
     ] ++
     map (\nr -> ([1 # wNrIndex (nr - 1) stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++
     stActCtr
   | otherwise =
     [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: rewardValue stAct
     , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs') :==: 0
-    -- , ([1 # wIndex stAct, 1 # w2Index stAct] ++ map (\(stateAction, prob) -> -prob # w2Index stateAction) xs') :==: 0
     ] ++
     map (\nr -> ([1 # wNrIndex (nr - 1) stAct, 1 # wNrIndex nr stAct] ++ map (\(stateAction, prob) -> -prob # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++ stActCtr
   where
