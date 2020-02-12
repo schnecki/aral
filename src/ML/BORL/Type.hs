@@ -257,7 +257,7 @@ mkUnichainTensorflowCombinedNetM ::
   -> m (BORL s)
 mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
-             | isAlgDqnAvgRewardFree alg = 3
+             | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
   let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable
              | otherwise = CombinedUnichain
@@ -420,7 +420,7 @@ mkUnichainGrenadeCombinedNet ::
   -> IO (BORL s)
 mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun net nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
-             | isAlgDqnAvgRewardFree alg = 3
+             | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
   let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable

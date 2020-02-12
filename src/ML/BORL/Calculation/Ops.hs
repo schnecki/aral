@@ -197,7 +197,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
+mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
