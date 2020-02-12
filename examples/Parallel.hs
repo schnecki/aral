@@ -124,7 +124,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted (Just 0.7) 0.75 1 ByStateValues
+        AlgDQNAvgRewAdjusted 0.84837 1 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact

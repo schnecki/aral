@@ -214,9 +214,9 @@ instance ExperimentDef (BORL St)
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
+                                                                  [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
                                                                   , AlgDQN 0.999 Exact
@@ -361,7 +361,7 @@ alg =
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
 
-        AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
 
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 

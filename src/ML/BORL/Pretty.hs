@@ -197,8 +197,8 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
-prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted mGa0 ga1 ga2 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (mGa0, ga1, ga2)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
+prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
+  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
@@ -253,18 +253,9 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewAdjusted Nothing _ _ _ -> do
+    AlgDQNAvgRewAdjusted _ _ _ -> do
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma1" $$ nest nestCols (text "V+e with gamma2")) (borl ^. proxies . r1) (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
-    AlgDQNAvgRewAdjusted Just {} _ _ _ -> do
-      prV <-
-        ((text "V" $$ nest nestCols (text "Delta E")) $+$) <$>
-        prettyTablesState borl prettyState prettyActionIdx (borl ^. proxies . v) prettyState
-        (\_ (s, aNr) _ -> eValueAvgCleanedFeat borl s aNr)
-        -- (modifierSubtract borl (borl ^. proxies . r0))
-        (borl ^. proxies . r1)
-      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
-      return $ docHead $$ algDocRho prettyRhoVal $$ prV $+$ prR0R1
   where
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
