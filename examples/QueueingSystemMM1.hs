@@ -225,16 +225,20 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99  ByStateValues
+        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
                                -- ,
-                               --   AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+                               --   AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
                                -- , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
+<<<<<<< HEAD
                                , AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByStateValues
+=======
+                               , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+>>>>>>> a88ff7f06243f6f00bb1e091623b0f22a314d3cc
                                ])
         Nothing
         Nothing
@@ -405,11 +409,11 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-  -- AlgDQNAvgRewAdjusted (Just 0.5) 0.8 1.0 (Fixed 30) -- ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByReward
-        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

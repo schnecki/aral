@@ -156,8 +156,8 @@ main :: IO ()
 main = do
 
   args <- getArgs
-  putStrLn $ "args: " ++ show args
-  let name | length args >= 1 = args!!0
+  putStrLn $ "Received arguments: " ++ show args
+  let name | not (null args) = head args
            | otherwise = "CartPole-v0"
   let maxReward | length args >= 2  = read (args!!1)
                 | otherwise = 1
@@ -184,45 +184,46 @@ main = do
 
 -- | BORL Parameters.
 params :: ParameterInitValues
-params = Parameters
-  { _alpha              = 0.05
-  , _alphaANN           = 1
-  , _beta               = 0.01
-  , _betaANN            = 1
-  , _delta              = 0.005
-  , _deltaANN           = 1
-  , _gamma              = 0.01
-  , _gammaANN           = 1
-  , _epsilon            = 1.0
-  , _explorationStrategy = EpsilonGreedy
-  , _exploration        = 1.0
-  , _learnRandomAbove   = 0.1
-  , _zeta               = 0.0
-  , _xi                 = 0.0075
-  , _disableAllLearning = False
-  }
+params =
+  Parameters
+    { _alpha               = 0.01
+    , _beta                = 0.01
+    , _delta               = 0.005
+    , _gamma               = 0.01
+    , _epsilon             = 1.0
+    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
+    , _exploration         = 1.0
+    , _learnRandomAbove    = 0.5
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    , _disableAllLearning  = False
+    -- ANN
+    , _alphaANN            = 0.5 -- only used for multichain
+    , _betaANN             = 0.5
+    , _deltaANN            = 0.5
+    , _gammaANN            = 0.5
+    }
 
--- | Decay function of parameters.
 decay :: Decay
-decay t = exponentialDecayParameters (Just minValues) 0.05 300000 t
-  where
-    minValues =
-      Parameters
-        { _alpha              = 0.000
-        , _alphaANN           = 1.0
-        , _beta               =  0.005
-        , _betaANN            = 1.0
-        , _delta              = 0.005
-        , _deltaANN           = 1.0
-        , _gamma              = 0.005
-        , _gammaANN           = 1.0
-        , _epsilon            = 0.05
-        , _exploration        = 0.01
-        , _learnRandomAbove   = 0.1
-        , _zeta               = 0.0
-        , _xi                 = 0.0075
-        , _disableAllLearning = False
-        }
+decay =
+  decaySetupParameters
+    Parameters
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+      , _xi               = NoDecay
+      -- Exploration
+      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+      , _learnRandomAbove = NoDecay
+      -- ANN
+      , _alphaANN         = ExponentialDecay Nothing 0.75 150000
+      , _betaANN          = ExponentialDecay Nothing 0.75 150000
+      , _deltaANN         = ExponentialDecay Nothing 0.75 150000
+      , _gammaANN         = ExponentialDecay Nothing 0.75 150000
+      }
 
 
 actFilter :: St -> [Bool]

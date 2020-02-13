@@ -127,7 +127,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.5 (Just 0.95) 1 ByStateValues
+        AlgDQNAvgRewAdjusted 0.84837 1 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -136,7 +136,7 @@ main :: IO ()
 main = do
 
 
-  lpRes <- runBorlLpInferWithRewardRepetWMax 31 1 policy mRefState
+  lpRes <- runBorlLpInferWithRewardRepetWMax 3 1 policy mRefState
   print lpRes
   mkStateFile 0.65 False True lpRes
   mkStateFile 0.65 False False lpRes
@@ -144,9 +144,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -155,6 +155,23 @@ main = do
 
 initState :: St
 initState = Start
+
+
+nnConfig :: NNConfig
+nnConfig =
+  NNConfig
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 8
+    , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
+    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
+    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = scalingByMaxAbsReward False 6
+    , _stabilizationAdditionalRho = 0.5
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _updateTargetInterval = 1
+    , _trainMSEMax = Nothing -- Just 0.03
+    , _setExpSmoothParamsTo1 = True
+    }
 
 
 -- | BORL Parameters.
