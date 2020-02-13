@@ -46,14 +46,15 @@ data LpResult st = LpResult
   , wValues         :: [[((st, T.Text), Double)]]
   }
 
-instance (Show st) => Show (LpResult st) where
+instance (Eq st, Show st) => Show (LpResult st) where
   show (LpResult pol rew g b w) =
     "Provided Policy:\n--------------------\n" <> unlines (map showPol pol) <>
     "\nInferred Rewards:\n--------------------\n" <> unlines (map show rew) <>
     "\nGain: " <> show g <>
     "\nBias values:\n--------------------\n" <> unlines (map show b) <>
-    concatMap (\nr -> "\nW" ++ show nr ++ " values:\n--------------------\n" <> unlines (map show (w!!(nr-1)))) [1..(length w)]
-    -- "\nW values:\n--------------------\n" <> unlines (map show w) <>
+    concatMap (\nr -> "\nW" ++ show nr ++ " values:\n--------------------\n" <> unlines (map show (w!!(nr-1)))) [1..min 5 (length w)] <>
+    "\nW Sum values:\n--------------------\n" <> unlines (map (show . flip mkSum (concat w)) (map fst b))
+    where mkSum k xs = (k, sum $ map snd $ filter ((==k).fst) xs)
     -- "\nW2 values:\n--------------------\n" <> unlines (map show w2) <>
     -- "\nW3 values:\n--------------------\n" <> unlines (map show w3)
 
@@ -86,10 +87,11 @@ mkStateFile minGamma withGain withBias (LpResult _ _ gain bias ws) = do
         | otherwise = "lp_e"
   let deltaFile = file <> "_delta"
   let stateActions = map fst bias
-      stateActionsTxt = mkListStr (\(st, a) -> T.unpack $ T.replace " " "_" $ tshow st <> "," <> a) stateActions
+      stateActionsTxtWith f = mkListStr (\(st, a) -> f $ T.unpack $ T.replace " " "_" $ tshow st <> "," <> a) stateActions
+      stateActionsTxt = stateActionsTxtWith id
   writeFile "lp_state_nrs" (show $ length stateActions)
-  writeFile file ("gamma\t" <> stateActionsTxt)
-  writeFile deltaFile ("gamma\t" <> stateActionsTxt)
+  writeFile file ("gamma\t" <> stateActionsTxt <> "\n")
+  writeFile deltaFile ("gamma\t" <> stateActionsTxt <> "\t" <> stateActionsTxtWith ("d/d^2"<>) <> "\n")
   let maxGamma
         | withGain = 0.99
         | otherwise = 1.0
@@ -108,7 +110,9 @@ mkStateFile minGamma withGain withBias (LpResult _ _ gain bias ws) = do
                 val = gainValue + biasValue + sum (zipWith eFun [(1 :: Integer) ..] wsValues)
              in val
     appendFile file (show gam <> "\t" <> mkListStr show (vals gam) <> "\n")
-    when (gam + step < 1) $ appendFile deltaFile (show gam <> "\t" <> mkListStr show (zipWith (-) (vals gam) (vals $ gam + step)) <> "\n")
+    let valsDelta = zipWith (-) (vals gam) (vals $ gam+step)
+        valsDelta2 = zipWith (-) valsDelta (tail valsDelta)
+    when (gam + step <= 1) $ appendFile deltaFile (show gam <> "\t" <> mkListStr show valsDelta <> "\t" <> mkListStr show valsDelta2 <> "\n")
   where
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f

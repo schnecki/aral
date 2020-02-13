@@ -106,14 +106,14 @@ chooseAction borl useRand selFromList = do
 
            AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
            AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
-           AlgDQNAvgRewAdjusted mGa0 ga1 _ _ -> do
+           AlgDQNAvgRewAdjusted ga0 mGa1 _ _ -> do
              bestV -- 1. choose highest bias values
                 <-
                do vValues <- mapM (vValue borl state . fst) as
                   map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (zip vValues as))
              if length bestV == 1
                then return (borl, False, head bestV)
-               else case mGa0 of
+               else case mGa1 of
                       Nothing -- 2. choose action by epsilon-max R1 (near-Blackwell-optimal algorithm)
                        -> do
                         r1Values <- mapM (rValue borl RBig state . fst) bestV
@@ -124,10 +124,11 @@ chooseAction borl useRand selFromList = do
                           else do -- 3. Uniform selection of leftover actions
                             r <- liftIO $ randomRIO (0, length bestR1 - 1)
                             return (borl, False, bestR1 !! r)
-                      Just ga0    -- 2. choose action by epsilon-max (R1-R0) (Blackwell-optimal algorithm)
+                      Just ga1    -- 2. choose action by epsilon-max (R1-R0) (Blackwell-optimal algorithm)
                        -> do
                         bestE <-
-                          do eVals <- mapM (eValueAvgCleaned borl state . fst) bestV
+                          do eVals <- mapM (eValue borl state . fst) bestV
+                             -- eVals <- mapM (eValueAvgCleaned borl state . fst) bestV
                              let (increasing, decreasing) = partition ((0 >) . fst) (zip eVals bestV)
                                  actionsToChooseFrom
                                    | null decreasing = increasing

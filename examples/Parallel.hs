@@ -104,16 +104,19 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == End = [((Start, right), 1.0)]
-  -- | s == End = [((Start, left), 1.0)]
-  | (s, a) == (Start, left)  = [((Top 1, left), 1.0)]
-  | (s, a) == (Start, right) = [((Bottom 1, right), 1.0)]
-  | otherwise = case s of
-      Top nr | nr < maxSt    -> [((Top (nr+1), left), 1.0)]
-      Top{}                  -> [((End, left), 1.0)]
-      Bottom nr | nr < maxSt -> [((Bottom (nr+1), right), 1.0)]
-      Bottom{}               -> [((End, left), 1.0)]
-      x                      -> error (show s)
+  | s == End = [((Start, up), 1.0)]
+  -- | s == End = [((Start, down), 1.0)]
+  | (s, a) == (Start, up) = [((Top 1, up), 1.0)]
+  | (s, a) == (Start, down) = [((Bottom 1, down), 1.0)]
+  | otherwise =
+    case s of
+      Top nr
+        | nr < maxSt -> [((Top (nr + 1), up), 1.0)]
+      Top {} -> [((End, up), 1.0)]
+      Bottom nr
+        | nr < maxSt -> [((Bottom (nr + 1), down), 1.0)]
+      Bottom {} -> [((End, up), 1.0)]
+      x -> error (show s)
 
 mRefState :: Maybe (St, ActionIndex)
 -- mRefState = Just (initState, 0)
@@ -124,7 +127,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted (Just 0.7) 0.75 1 ByStateValues
+        AlgDQNAvgRewAdjusted 0.5 (Just 0.95) 1 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -135,9 +138,8 @@ main = do
 
   lpRes <- runBorlLpInferWithRewardRepetWMax 31 1 policy mRefState
   print lpRes
-  mkStateFile 0.7 True True lpRes
-  mkStateFile 0.7 False True lpRes
-  mkStateFile 0.7 False False lpRes
+  mkStateFile 0.65 False True lpRes
+  mkStateFile 0.65 False False lpRes
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
@@ -224,11 +226,11 @@ decay =
 
 -- Actions
 actions :: [Action St]
-actions = [left, right]
+actions = [up, down]
 
-left,right :: Action St
-left = Action moveLeft "up  "
-right = Action moveRight "down"
+down,up :: Action St
+up = Action moveUp "up  "
+down = Action moveDown "down"
 
 actionFilter :: St -> [Bool]
 actionFilter Start    = [True, True]
@@ -237,22 +239,22 @@ actionFilter Bottom{} = [False, True]
 actionFilter End      = [True, False]
 
 
-moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
-moveLeft s =
+moveUp :: St -> IO (Reward St,St, EpisodeEnd)
+moveUp s =
   return $
   case s of
     Start               -> (Reward 0, Top 1, False)
-    Top nr | nr == 1    -> (Reward 1, Top (nr+1), False)
+    Top nr | nr == 1    -> (Reward 0, Top (nr+1), False)
     Top nr | nr == 3    -> (Reward 4, Top (nr+1), False)
     Top nr | nr < maxSt -> (Reward 0, Top (nr+1), False)
-    Top{}               -> (Reward 1, End, False)
+    Top{}               -> (Reward 0, End, False)
     End                 -> (Reward 0, Start, False)
 
-moveRight :: St -> IO (Reward St,St, EpisodeEnd)
-moveRight s =
+moveDown :: St -> IO (Reward St,St, EpisodeEnd)
+moveDown s =
   return $
   case s of
-    Start                  -> (Reward 0, Bottom 1, False)
+    Start                  -> (Reward (-2), Bottom 1, False)
     -- Bottom nr | nr == 1    -> (Reward 0.02, Bottom (nr+1), False)
     Bottom nr | nr == 3    -> (Reward 6, Bottom (nr+1), False)
     Bottom nr | nr < maxSt -> (Reward 0, Bottom (nr+1), False)
@@ -268,10 +270,12 @@ setCheckFile :: FilePath -> TensorflowModel' -> TensorflowModel'
 setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
 
 prependName :: Text -> TensorflowModel' -> TensorflowModel'
-prependName txt model = model { tensorflowModel = (tensorflowModel model)
-        { inputLayerName = txt <> "/" <> (inputLayerName $ tensorflowModel model)
-        , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
-        , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
-        }}
-
-
+prependName txt model =
+  model
+    { tensorflowModel =
+        (tensorflowModel model)
+          { inputLayerName = txt <> "/" <> inputLayerName (tensorflowModel model)
+          , outputLayerName = txt <> "/" <> outputLayerName (tensorflowModel model)
+          , labelLayerName = txt <> "/" <> labelLayerName (tensorflowModel model)
+          }
+    }

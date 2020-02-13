@@ -253,18 +253,20 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewAdjusted Nothing _ _ _ -> do
+    AlgDQNAvgRewAdjusted _ Nothing _ _ -> do
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma1" $$ nest nestCols (text "V+e with gamma2")) (borl ^. proxies . r1) (borl ^. proxies . v)
-      return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
-    AlgDQNAvgRewAdjusted Just {} _ _ _ -> do
+      -- prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
+      return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1 -- $$ prVs
+    AlgDQNAvgRewAdjusted _ Just {} _ _ -> do
       prV <-
         ((text "V" $$ nest nestCols (text "Delta E")) $+$) <$>
         prettyTablesState borl prettyState prettyActionIdx (borl ^. proxies . v) prettyState
-        (\_ (s, aNr) _ -> eValueAvgCleanedFeat borl s aNr)
+        (\_ (s, aNr) _ -> eValueFeat borl (s, aNr))
         -- (modifierSubtract borl (borl ^. proxies . r0))
         (borl ^. proxies . r1)
       prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
-      return $ docHead $$ algDocRho prettyRhoVal $$ prV $+$ prR0R1
+      -- prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
+      return $ docHead $$ algDocRho prettyRhoVal $$ prV $+$ prR0R1 -- $$ prVs
   where
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))

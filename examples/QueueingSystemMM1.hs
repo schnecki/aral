@@ -74,7 +74,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 20
+maxQueueSize = 5 -- was 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -234,7 +234,7 @@ instance ExperimentDef (BORL St) where
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
-                               , AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
+                               , AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByStateValues
                                ])
         Nothing
         Nothing
@@ -290,12 +290,12 @@ decay =
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
+      , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -389,7 +389,10 @@ lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
   l <- putStr "Enter integer! L=" >> hFlush stdout >> read <$> getLine
-  runBorlLpInferWithRewardRepet 1000 (policy l) mRefStateAct >>= print
+  lpRes <- runBorlLpInferWithRewardRepetWMax 10 1000 (policy l) mRefStateAct
+  print lpRes
+  mkStateFile 0.80 True True lpRes
+  mkStateFile 0.80 False False lpRes
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
@@ -402,13 +405,13 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-  AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+  -- AlgDQNAvgRewAdjusted (Just 0.5) 0.8 1.0 (Fixed 30) -- ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByReward
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
+        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByReward
+        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
+        AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
