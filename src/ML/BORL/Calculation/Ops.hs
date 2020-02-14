@@ -198,24 +198,14 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
-<<<<<<< HEAD
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 mGa1 ga2 avgRewardType) = do
-=======
-mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueFeat borl state aNr `using` rpar
   r1ValState <- rValueFeat borl RBig state aNr `using` rpar
   r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
   vValState <- vValueFeat borl state aNr `using` rpar
   vStateNext <- vStateValue borl (stateNext, stateNextActIdxes) `using` rpar
->>>>>>> a88ff7f06243f6f00bb1e091623b0f22a314d3cc
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
-  rhoVal <- rhoValueFeat borl state aNr `using` rpar
-  r1ValState <- rValueFeat borl RBig state aNr `using` rpar
-  r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  vValState <- vValueFeat borl state aNr `using` rpar
-  vStateNext <- vStateValue borl (stateNext, stateNextActIdxes) `using` rpar
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
         | isANN = params' ^. paramANN
@@ -498,11 +488,7 @@ eValueAvgCleanedFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex
 eValueAvgCleanedFeat borl state act =
   case borl ^. algorithm of
     AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
-<<<<<<< HEAD
-    AlgDQNAvgRewAdjusted gamma0 (Just gamma1) _ _ -> avgRewardClean gamma0 gamma1
-=======
     AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
->>>>>>> a88ff7f06243f6f00bb1e091623b0f22a314d3cc
     _ -> error "eValueAvgCleaned can only be used with AlgBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do

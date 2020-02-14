@@ -234,11 +234,7 @@ instance ExperimentDef (BORL St) where
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
-<<<<<<< HEAD
-                               , AlgDQNAvgRewAdjusted 0.8 Nothing 0.99 ByStateValues
-=======
                                , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
->>>>>>> a88ff7f06243f6f00bb1e091623b0f22a314d3cc
                                ])
         Nothing
         Nothing
@@ -415,7 +411,7 @@ alg =
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
-        AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
+        -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
 allStateInputs :: M.Map [Double] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]

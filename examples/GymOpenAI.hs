@@ -140,6 +140,13 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
 
+rewardFunction :: Gym -> GymResult -> Double
+rewardFunction gym (GymResult obs rew eps)
+  | name gym == "CartPole-v1" = 24 - abs (xs !! 3) -- angle
+
+  where xs = gymObservationToDoubleList obs
+
+
 stGen :: ([Double], [Double]) -> St -> St
 stGen (lows, highs) (St xs) = St $ zipWith3 splitInto lows highs xs
   where
@@ -152,31 +159,35 @@ instance RewardFuture St where
   type StoreType St = ()
 
 
+alg :: Algorithm St
+alg = AlgDQNAvgRewAdjusted 0.84837 1 ByStateValues
+
+
 main :: IO ()
 main = do
 
   args <- getArgs
   putStrLn $ "Received arguments: " ++ show args
   let name | not (null args) = head args
-           | otherwise = "CartPole-v0"
+           | otherwise = "CartPole-v1"
   let maxReward | length args >= 2  = read (args!!1)
                 | otherwise = 1
+  putStrLn "HERE"
   (obs, gym) <- initGym (T.pack name)
+  putStrLn $ "Gym: " ++ show gym
   setMaxEpisodeSteps gym 10000
   let inputNodes = spaceSize (observationSpace gym)
       actionNodes = spaceSize (actionSpace gym)
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
-
       initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
-  let algorithm = AlgBORL 0.2 0.9 (ByMovAvg 100) Nothing
-  nn <- randomNetworkInitWith UniformInit :: IO NN
+  -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkUnichainTensorflow algorithm initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
-  -- let rl = mkUnichainTabular algorithm initState (netInp gym) (stGen ranges) actions actFilter params decay initValues
-  let rl = mkUnichainTabular algorithm initState (netInp gym) actions actFilter params decay initValues
+  -- rl <- mkUnichainTensorflowCombinedNet alg initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
+  -- let rl = mkUnichainTabular alg initState (netInp gym) (stGen ranges) actions actFilter params decay initValues
+  let rl = mkUnichainTabular alg initState (netInp gym) actions actFilter params decay initValues
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

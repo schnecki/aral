@@ -16,11 +16,9 @@ For ArchLinux using `sudo` and `yay`:
     wget https://archive.archlinux.org/packages/t/tensorflow/tensorflow-1.14.0-6-x86_64.pkg.tar.xz
     sudo pacman -U tensorflow-1.14.0-6-x86_64.pkg.tar.xz
 
-    yay -S python34                # for yay see https://wiki.archlinux.org/index.php/AUR_helpers
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
-    python3.4 get-pip.py --user
-    pip3.4 install gym --user
-    pip3.4 install atari-py --user
+    # pacman -S python python-pip
+    pip install gym --user
+    pip install atari-py --user
 
 
 ## Cloning & Building
@@ -29,8 +27,6 @@ Ensure to clone all submodules:
 
     git clone --recursive git@git.uibk.ac.at:c4371143/borl.git
     cd borl
-    git checkout 3cd2e15
-    cd ..
     stack build --install-ghc
 
     # In case tensorflow-haskell/tensorflow is empty do:
