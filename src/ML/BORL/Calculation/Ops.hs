@@ -243,7 +243,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 1) * rhoMinimumState + expSmthPsi / 1 * rhoMinimumState' rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $

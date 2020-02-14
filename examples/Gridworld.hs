@@ -300,10 +300,10 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
        -- AlgBORLVOnly ByStateValues Nothing
-        AlgDQN 0.99 EpsilonSensitive            -- does not work
+        -- AlgDQN 0.99 EpsilonSensitive            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-  -- AlgDQNAvgRewAdjusted 0.8 0.995 ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -322,7 +322,7 @@ usermode = do
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where

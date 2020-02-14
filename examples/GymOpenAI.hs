@@ -123,22 +123,41 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
 
 action :: Gym -> Integer -> Action St
 action gym idx =
-  flip Action (T.pack $ show idx) $ \_ -> do
+  flip Action (T.pack $ show idx) $ \oldSt -> do
     res <- stepGym gym idx
     (rew, obs) <-
       if episodeDone res
         then do
           obs <- resetGym gym
-          return (rewardFunction gym res, obs)
-        else return (rewardFunction gym res, observation res)
-    return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
+          return (rewardFunction gym oldSt res, obs)
+        else return (rewardFunction gym oldSt res, observation res)
+    return (rew, St $ gymObservationToDoubleList obs, episodeDone res)
+
+rewardFunction :: Gym -> St -> GymResult -> Reward St
+rewardFunction gym (St oldSt) (GymResult obs rew eps)
+  | name gym == "CartPole-v1" = Reward $ 24 - abs (xs !! 3) -- angle
+  | name gym == "MountainCar-v0" =
+    let pos = head xs
+        oldPos = head oldSt
+        height = sin (3 * pos) * 0.45 + 0.55
+        velocity = xs !! 1
+     in Reward $ (*100) $ ite (pos > 0.5) 2 height^2
+        -- ite (velocity <= 0 && pos < head oldSt) height 0
+
+        -- pReward $ (* 100) $ min 0.5 pos
+        -- ite (pos > 0.5) 2 $ ite eps (+ 1) id height
+  where
+    xs = gymObservationToDoubleList obs
+    ite True x _  = x
+    ite False _ x = x
+rewardFunction _ _ _ = error "(Max) Reward function not yet defined for this environment"
 
 -- | Scales values to (-1, 1).
 netInp :: Bool -> Gym -> St -> [Double]
 netInp isTabular gym (St st) = cutValues $ zipWith3 scaleValues lowerBounds upperBounds (stSelector st)
   where
     scaleValues l u (x, norm)
-      | norm == False = x
+      | not norm = x
       | otherwise = scaleValue (Just (l, u)) x
     cutValues
       | isTabular = map (\x -> fromIntegral (round (x * 10)) / 10)
@@ -146,6 +165,8 @@ netInp isTabular gym (St st) = cutValues $ zipWith3 scaleValues lowerBounds uppe
     (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
     stSelector xs
       --  | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
+      | name gym == "MountainCar-v0" = [(head xs, True), (10 * (xs !! 1), False) ]
+                                        -- (signum (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
 
@@ -153,16 +174,6 @@ maxReward :: Gym -> Double
 maxReward gym | name gym == "CartPole-v1" = 24
               | name gym == "MountainCar-v0" = 1.0
 maxReward _   = error "(Max) Reward function not yet defined for this environment"
-
-rewardFunction :: Gym -> GymResult -> Double
-rewardFunction gym (GymResult obs rew eps)
-  | name gym == "CartPole-v1" = 24 - abs (xs !! 3) -- angle
-  | name gym == "MountainCar-v0" = ite eps 1 $ max (-0.3) (head xs) -- [position, velocity]; position [-1.2, 0.6]. goal: 0.5; velocity max: 0.07
-  where
-    xs = gymObservationToDoubleList obs
-    ite True x _  = x
-    ite False _ x = x
-rewardFunction _ _ = error "(Max) Reward function not yet defined for this environment"
 
 
 stGen :: ([Double], [Double]) -> St -> St
@@ -205,14 +216,14 @@ main = do
   putStrLn $ "Actions: " ++ show actions
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
-  rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
-  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
+  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
+  let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []
 
--- | BORL Parameters.
+ -- | BORL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -239,14 +250,14 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.15 30000
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay -- ExponentialDecay (Just 0.03) 0.05 15000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 150000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 50000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
