@@ -254,7 +254,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
     AlgDQNAvgRewAdjusted{} -> do
-      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r1) (borl ^. proxies . v)
+      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     prettyState = mkPrettyState mStInverse

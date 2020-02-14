@@ -13,10 +13,10 @@
 --
 --  ArchLinux Commands:
 --  --------------------
---  $ yay -S python34                # for yay see https://wiki.archlinux.org/index.php/AUR_helpers
+--  $ yay -S python                # for yay see https://wiki.archlinux.org/index.php/AUR_helpers
 --  $ curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
---  $ python3.4 get-pip.py --user
---  $ pip3.4 install gym --user
+--  $ python get-pip.py --user
+--  $ pip install gym --user
 --
 --
 --
@@ -79,32 +79,31 @@ maxY = 4                        -- [0..maxY]
 
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
-modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> m TensorflowModel
-modelBuilder nrInp nrOut =
+
+modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> Int64 -> m TensorflowModel
+modelBuilder nrInp nrOut outCols =
   buildModel $
   inputLayer1D (fromIntegral nrInp) >>
   fullyConnected [5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)] TF.relu' >>
   fullyConnected [3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))] TF.relu' >>
   -- fullyConnected (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
-  fullyConnected [fromIntegral nrOut] TF.tanh' >>
+  fullyConnected [fromIntegral nrOut, outCols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 nnConfig :: Gym -> Double -> NNConfig
 nnConfig gym maxRew =
   NNConfig
-    { _replayMemoryMaxSize = 20000
-    , _trainBatchSize = 8
+    { _replayMemoryMaxSize = 30000
+    , _trainBatchSize = 24
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = ppSts
-    , _scaleParameters = scalingByMaxAbsReward False 1.5
-      -- scalingByMaxAbsReward False maxRew
-    -- ScalingNetOutParameters (-1) 1 (-150) 150 0 1.5 0 1000
-    , _stabilizationAdditionalRho = 0.025
+    , _scaleParameters = scalingByMaxAbsReward False maxRew
+    , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 5000
-    , _trainMSEMax = Just 0.05
+    , _updateTargetInterval = 1
+    , _trainMSEMax = Nothing -- Just 0.05
     , _setExpSmoothParamsTo1 = True
     }
   where
@@ -112,16 +111,24 @@ nnConfig gym maxRew =
     (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
     vals = zipWith (\lo hi -> map rnd [lo,lo + (hi - lo) / 3 .. hi]) lows highs
     rnd x = fromIntegral (round (100 * x)) / 100
-    ppSts = take 1000 $ combinations vals
+    ppSts = take 150 $ combinations vals
 
-netInp :: Gym -> St -> [Double]
-netInp gym (St st) = st
+-- | Scales values to (-1, 1).
+netInp :: Bool -> Gym -> St -> [Double]
+netInp isTabular gym (St st) =
+  cutValues $
+  zipWith3 (\l u -> scaleValue (Just (l,u))) lowerBounds upperBounds st
+
   -- trace ("lows: " ++ show lows)
   -- trace ("highs: " ++ show highs)
   -- zipWith3 (curry scaleNegPosOne) lows highs st
-  where range = getGymRangeFromSpace $ observationSpace gym
-        (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
+  where -- range = getGymRangeFromSpace $ observationSpace gym
+        -- (lows, highs) = () *** map (min (1.5*maxRew))) (gymRangeToDoubleLists range)
+        -- maxRew = maxReward gym
+        cutValues | isTabular = map (\x -> fromIntegral (round (x * 10)) / 10)
+                  | otherwise = id
 
+        (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
 
 combinations :: [[a]] -> [[a]]
 combinations []       = []
@@ -135,16 +142,25 @@ action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
   res <- stepGym gym idx
   (rew, obs) <- if episodeDone res
                 then do obs <- resetGym gym
-                        return (reward res, obs)
-                else return (reward res, observation res)
+                        return (rewardFunction gym res, obs)
+                else return (rewardFunction gym res, observation res)
+
   return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
+maxReward :: Gym -> Double
+maxReward gym | name gym == "CartPole-v1" = 24
+              | name gym == "MountainCar-v0" = 1.0
+maxReward _   = error "(Max) Reward function not yet defined for this environment"
 
 rewardFunction :: Gym -> GymResult -> Double
 rewardFunction gym (GymResult obs rew eps)
   | name gym == "CartPole-v1" = 24 - abs (xs !! 3) -- angle
-
+  | name gym == "MountainCar-v0" =
+    if eps
+    then 1
+    else head xs         -- position [-1.2, 0.6]. goal: 0.5
   where xs = gymObservationToDoubleList obs
+rewardFunction _ _ = error "(Max) Reward function not yet defined for this environment"
 
 
 stGen :: ([Double], [Double]) -> St -> St
@@ -160,7 +176,7 @@ instance RewardFuture St where
 
 
 alg :: Algorithm St
-alg = AlgDQNAvgRewAdjusted 0.84837 1 ByStateValues
+alg = AlgDQNAvgRewAdjusted 0.85 1 ByStateValues
 
 
 main :: IO ()
@@ -169,11 +185,11 @@ main = do
   args <- getArgs
   putStrLn $ "Received arguments: " ++ show args
   let name | not (null args) = head args
-           | otherwise = "CartPole-v1"
-  let maxReward | length args >= 2  = read (args!!1)
-                | otherwise = 1
-  putStrLn "HERE"
+           | otherwise = "MountainCar-v0"
+             -- "CartPole-v1"
   (obs, gym) <- initGym (T.pack name)
+  let maxRew | length args >= 2  = read (args!!1)
+             | otherwise = maxReward gym
   putStrLn $ "Gym: " ++ show gym
   setMaxEpisodeSteps gym 10000
   let inputNodes = spaceSize (observationSpace gym)
@@ -181,13 +197,12 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
-      initValues = Just $ defInitValues { defaultRho = 0, defaultR1 = 1}
+      initValues = Just $ defInitValues { defaultRho = -1, defaultR1 = 1 }
   putStrLn $ "Actions: " ++ show actions
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxReward)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxReward) initValues
-  -- let rl = mkUnichainTabular alg initState (netInp gym) (stGen ranges) actions actFilter params decay initValues
-  let rl = mkUnichainTabular alg initState (netInp gym) actions actFilter params decay initValues
+  -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
+  -- rl <- mkUnichainTensorflow alg initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
+  let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -197,7 +212,7 @@ main = do
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha               = 0.01
+    { _alpha               = 0.03
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
@@ -219,15 +234,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 30000
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 15000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 10000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000

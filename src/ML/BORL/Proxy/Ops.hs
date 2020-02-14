@@ -407,8 +407,7 @@ lookupActionsNeuralNetwork tp k px = map (unscaleValue (getMinMaxVal px)) <$> lo
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
-lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} =
-   (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) px@TensorflowProxy {} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) p@(CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"

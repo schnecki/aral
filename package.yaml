@@ -94,6 +94,7 @@ executables:
       - Helper
       - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -109,6 +110,7 @@ executables:
       - Helper
       - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -124,6 +126,7 @@ executables:
       - Helper
       - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -139,6 +142,7 @@ executables:
       - Helper
       - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -153,6 +157,7 @@ executables:
     main:                GymOpenAI.hs
     other-modules:       Helper
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -161,11 +166,14 @@ executables:
     - borl
     - gym-haskell
     - experimenter
+    extra-libraries: python3.8
+
 
   multichain:
     main:                Multichain.hs
     other-modules:       Helper
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -179,6 +187,7 @@ executables:
     - Helper
     - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -193,6 +202,7 @@ executables:
     - Helper
     - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -208,6 +218,7 @@ executables:
     - Helper
     - SolveLp
     source-dirs:         examples
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts
@@ -232,6 +243,7 @@ tests:
   borl-test:
     main:                Main.hs
     source-dirs:         test
+    default-extensions: CPP
     ghc-options:
     - -threaded
     - -rtsopts

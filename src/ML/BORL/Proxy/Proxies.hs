@@ -89,7 +89,6 @@ r0 :: Lens' Proxies Proxy
 r0 f px@Proxies{}  = (\r0' -> px { _r0 = r0' }) <$> f (_r0 px)
 r0 f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 1 [])
 
-
 v :: Lens' Proxies Proxy
 v f px@Proxies{}  = (\v' -> px { _v = v' }) <$> f (_v px)
 v f px@ProxiesCombinedUnichain {} = (\x -> px {_proxy = x}) <$> f (CombinedProxy (_proxy px) 2 [])
