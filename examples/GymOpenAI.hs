@@ -145,7 +145,7 @@ netInp isTabular gym (St st) = cutValues $ zipWith3 scaleValues lowerBounds uppe
       | otherwise = id
     (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
     stSelector xs
-      | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
+      --  | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
 
@@ -205,8 +205,8 @@ main = do
   putStrLn $ "Actions: " ++ show actions
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
-  -- rl <- mkUnichainTensorflow alg initState (netInp gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
-  let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
+  rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
+  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -220,7 +220,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 1.0
+    , _epsilon             = 0.05
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
@@ -245,8 +245,8 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.03) 0.05 15000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 40000
+      , _epsilon          = NoDecay -- ExponentialDecay (Just 0.03) 0.05 15000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 150000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
