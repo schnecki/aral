@@ -157,8 +157,11 @@ maxReward _   = error "(Max) Reward function not yet defined for this environmen
 rewardFunction :: Gym -> GymResult -> Double
 rewardFunction gym (GymResult obs rew eps)
   | name gym == "CartPole-v1" = 24 - abs (xs !! 3) -- angle
-  | name gym == "MountainCar-v0" = max (-0.3) (head xs) -- [position, velocity]; position [-1.2, 0.6]. goal: 0.5; velocity max: 0.07
-  where xs = gymObservationToDoubleList obs
+  | name gym == "MountainCar-v0" = ite eps 1 $ max (-0.3) (head xs) -- [position, velocity]; position [-1.2, 0.6]. goal: 0.5; velocity max: 0.07
+  where
+    xs = gymObservationToDoubleList obs
+    ite True x _  = x
+    ite False _ x = x
 rewardFunction _ _ = error "(Max) Reward function not yet defined for this environment"
 
 
@@ -242,7 +245,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.10) 0.05 15000
+      , _epsilon          = ExponentialDecay (Just 0.03) 0.05 15000
       , _exploration      = ExponentialDecay (Just 0.075) 0.50 40000
       , _learnRandomAbove = NoDecay
       -- ANN
