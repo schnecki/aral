@@ -113,22 +113,6 @@ nnConfig gym maxRew =
     rnd x = fromIntegral (round (100 * x)) / 100
     ppSts = take 150 $ combinations vals
 
--- | Scales values to (-1, 1).
-netInp :: Bool -> Gym -> St -> [Double]
-netInp isTabular gym (St st) =
-  cutValues $
-  zipWith3 (\l u -> scaleValue (Just (l,u))) lowerBounds upperBounds st
-
-  -- trace ("lows: " ++ show lows)
-  -- trace ("highs: " ++ show highs)
-  -- zipWith3 (curry scaleNegPosOne) lows highs st
-  where -- range = getGymRangeFromSpace $ observationSpace gym
-        -- (lows, highs) = () *** map (min (1.5*maxRew))) (gymRangeToDoubleLists range)
-        -- maxRew = maxReward gym
-        cutValues | isTabular = map (\x -> fromIntegral (round (x * 10)) / 10)
-                  | otherwise = id
-
-        (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
 
 combinations :: [[a]] -> [[a]]
 combinations []       = []
@@ -138,14 +122,32 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
 
 
 action :: Gym -> Integer -> Action St
-action gym idx = flip Action (T.pack $ show idx) $ \_ -> do
-  res <- stepGym gym idx
-  (rew, obs) <- if episodeDone res
-                then do obs <- resetGym gym
-                        return (rewardFunction gym res, obs)
-                else return (rewardFunction gym res, observation res)
+action gym idx =
+  flip Action (T.pack $ show idx) $ \_ -> do
+    res <- stepGym gym idx
+    (rew, obs) <-
+      if episodeDone res
+        then do
+          obs <- resetGym gym
+          return (rewardFunction gym res, obs)
+        else return (rewardFunction gym res, observation res)
+    return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
 
-  return (Reward rew, St $ gymObservationToDoubleList obs, episodeDone res)
+-- | Scales values to (-1, 1).
+netInp :: Bool -> Gym -> St -> [Double]
+netInp isTabular gym (St st) = cutValues $ zipWith3 scaleValues lowerBounds upperBounds (stSelector st)
+  where
+    scaleValues l u (x, norm)
+      | norm == False = x
+      | otherwise = scaleValue (Just (l, u)) x
+    cutValues
+      | isTabular = map (\x -> fromIntegral (round (x * 10)) / 10)
+      | otherwise = id
+    (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+    stSelector xs
+      | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
+      | otherwise = zip xs (repeat True)
+
 
 maxReward :: Gym -> Double
 maxReward gym | name gym == "CartPole-v1" = 24
@@ -155,10 +157,7 @@ maxReward _   = error "(Max) Reward function not yet defined for this environmen
 rewardFunction :: Gym -> GymResult -> Double
 rewardFunction gym (GymResult obs rew eps)
   | name gym == "CartPole-v1" = 24 - abs (xs !! 3) -- angle
-  | name gym == "MountainCar-v0" =
-    if eps
-    then 1
-    else head xs         -- position [-1.2, 0.6]. goal: 0.5
+  | name gym == "MountainCar-v0" = max (-0.3) (head xs) -- [position, velocity]; position [-1.2, 0.6]. goal: 0.5; velocity max: 0.07
   where xs = gymObservationToDoubleList obs
 rewardFunction _ _ = error "(Max) Reward function not yet defined for this environment"
 
@@ -176,7 +175,9 @@ instance RewardFuture St where
 
 
 alg :: Algorithm St
-alg = AlgDQNAvgRewAdjusted 0.85 1 ByStateValues
+alg =
+  -- algDQN
+  AlgDQNAvgRewAdjusted 0.85 1 ByStateValues
 
 
 main :: IO ()
@@ -197,7 +198,7 @@ main = do
       ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
       actions = map (action gym) [0..actionNodes-1]
-      initValues = Just $ defInitValues { defaultRho = -1, defaultR1 = 1 }
+      initValues = Just $ defInitValues { defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1 }
   putStrLn $ "Actions: " ++ show actions
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
@@ -241,8 +242,8 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 15000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 10000
+      , _epsilon          = ExponentialDecay (Just 0.10) 0.05 15000
+      , _exploration      = ExponentialDecay (Just 0.075) 0.50 40000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
