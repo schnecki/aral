@@ -147,7 +147,7 @@ main = do
   -- rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
   rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
   -- let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
-  askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []

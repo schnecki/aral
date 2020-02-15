@@ -136,7 +136,7 @@ main = do
   -- rl <- mkUnichainGrenade alg initState actions actionFilter params decay nn nnConfig
   -- rl <- mkUnichainTensorflow alg initState actions actionFilter params decay modelBuilder nnConfig Nothing
   let rl = mkUnichainTabular alg initState tblInp actions actionFilter params decay Nothing
-  askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]
           [("s", moveLeft), ("f", moveRight)] ["moveLeft", "moveRight"]

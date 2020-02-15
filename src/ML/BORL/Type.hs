@@ -213,7 +213,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
   if isAlgDqnAvgRewardFree alg
     then do
       r0 <- liftIO $ nnSA R0Table 4
-      r1 <- liftIO $ nnSA R1Table 6
+      r1 <- liftIO $ nnSA VTable 0
       repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
       buildTensorflowModel (r0 ^?! proxyTFTarget)
       return $
@@ -548,6 +548,14 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
         maxW = 50 * maxR
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
+
+scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
+scalingByMaxAbsRewardAlg alg onlyPositive maxR = case alg of
+  AlgBORL{} -> scalingByMaxAbsReward onlyPositive maxR
+  AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) (maxR1) (-maxW) maxW (-maxR0) (maxR0) (-maxR1) maxR1
+  where maxW = 50 * maxR
+        maxR1 = 1.0 * maxR
+        maxR0 = 1.5 * maxR
 
 
 -------------------- Helpers --------------------

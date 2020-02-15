@@ -16,14 +16,14 @@ For ArchLinux using `sudo` and `yay`:
     wget https://archive.archlinux.org/packages/t/tensorflow/tensorflow-1.14.0-6-x86_64.pkg.tar.xz
     sudo pacman -U tensorflow-1.14.0-6-x86_64.pkg.tar.xz
 
-    # pacman -S python python-pip
+    # pacman -S python python-pip cmake
     pip install gym --user
-    pip install atari-py --user
+    pip install gym[atari] --user
 
 
 ## Cloning & Building
 
-Ensure to clone all submodules:
+Ensure to *clone all submodules*:
 
     git clone --recursive git@git.uibk.ac.at:c4371143/borl.git
     cd borl

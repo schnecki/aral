@@ -47,7 +47,7 @@ main = do
 
   let rl = mkMultichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
   -- let rl = mkUnichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
-  askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []

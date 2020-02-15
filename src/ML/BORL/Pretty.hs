@@ -320,7 +320,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewAdjusted {} -> text "Scaling V by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardFreeDqn) $+$
+       AlgDQNAvgRewAdjusted {} -> text "Scaling (V,R0) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
@@ -348,12 +348,13 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
-    scalingTextAvgRewardFreeDqn =
+    scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
+        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
+                                     ,(printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

@@ -28,52 +28,30 @@ import           ML.Gym
 
 import           Helper
 
-import           Control.Arrow          (first, second, (***))
+import           Control.Arrow          ((***))
 import           Control.DeepSeq        (NFData)
-import qualified Control.Exception      as E
 import           Control.Lens
-import           Control.Lens           (set, (^.))
-import           Control.Monad          (foldM_, forM, forM_, void)
-import           Control.Monad          (foldM, unless, when)
-import           Control.Monad.IO.Class (liftIO)
 import           Data.List              (genericLength, sort)
 import           Data.Maybe             (fromMaybe)
 import qualified Data.Text              as T
-import           Debug.Trace
 import           GHC.Generics
-import           GHC.Int                (Int32, Int64)
+import           GHC.Int                (Int64)
 import           Grenade
 import           System.Environment     (getArgs)
-import           System.Exit
-import           System.IO
-import           System.Random
 
-import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
-                                               opDefWithName, opType, runBuildT, summaries)
 import qualified TensorFlow.Core        as TF hiding (value)
-import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
-                                               approximateEqual, assign, cast,
-                                               getSessionHandle, getSessionTensor,
-                                               identity', identityN', lessEqual, matMul,
-                                               mul, readerSerializeState, relu, relu',
-                                               shape, square, sub, tanh, tanh',
-                                               truncatedNormal)
+import qualified TensorFlow.GenOps.Core as TF (relu', tanh')
 import qualified TensorFlow.Minimize    as TF
-import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
-                                               placeholder, placeholder', reduceMean,
-                                               reduceSum, restore, save, scalar, vector,
-                                               zeroInitializedVariable,
-                                               zeroInitializedVariable')
-import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
-                                               tensorNodeName, tensorRefFromName,
-                                               tensorValueFromName)
 
+import           Debug.Trace
 
-newtype St = St [Double]
+type Render = Bool
+
+data St = St Render [Double]
   deriving (Eq, Ord, Generic, NFData)
 
 instance Show St where
-  show (St xs) = showFloatList xs
+  show (St _ xs) = showFloatList xs
 
 
 maxX,maxY :: Int
@@ -108,7 +86,7 @@ nnConfig gym maxRew =
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
-    , _scaleParameters = scalingByMaxAbsReward False (1.25 * maxRew)
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25* maxRew)
     , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 0
@@ -118,7 +96,7 @@ nnConfig gym maxRew =
   where
     (lows, highs) = observationSpaceBounds gym
     mkParamList lo hi = sort $ takeMiddle 3 xs
-      where xs = map rnd [lo,lo + (hi - lo) / 6 .. hi]
+      where xs = map rnd [lo,lo + (hi - lo) / 10 .. hi]
     vals = zipWith mkParamList lows highs
     rnd x = fromIntegral (round (1000 * x)) / 1000
     ppSts = takeMiddle 20 $ combinations vals
@@ -141,29 +119,34 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
 
 action :: Gym -> Maybe T.Text -> Integer -> Action St
 action gym mName idx =
-  flip Action (fromMaybe (T.pack $ show idx) mName) $ \oldSt -> do
-    res <- stepGym gym idx
+  flip Action (fromMaybe (T.pack $ show idx) mName) $ \oldSt@(St render _) -> do
+    res <- stepGymRender render gym idx
     (rew, obs) <-
       if episodeDone res
         then do
           obs <- resetGym gym
           return (rewardFunction gym oldSt res, obs)
         else return (rewardFunction gym oldSt res, observation res)
-    return (rew, St $ gymObservationToDoubleList obs, episodeDone res)
+    return (rew, St render (gymObservationToDoubleList obs), episodeDone res)
 
 rewardFunction :: Gym -> St -> GymResult -> Reward St
-rewardFunction gym (St oldSt) (GymResult obs rew eps)
+rewardFunction gym (St _ oldSt) (GymResult obs rew eps)
   | name gym == "CartPole-v1" =
-    let rad = xs !! 3
-    in Reward $ (100*) $ 0.41887903213500977 - abs rad -- 24 radiant -
-                                -- ite eps 0 rew -- ite eps 0 (10 * rew) -- 24 - 2 * abs (xs !! 3) -- angle
+    let rad = xs !! 3 -- (-0.418879, 0.418879) .. 24 degrees in rad
+        pos = xs !! 1 -- (-4.8, 4.8)
+     in Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.05 * abs pos - ite (eps && abs pos >= 4.8) 0.5 0
   | name gym == "MountainCar-v0" =
     let pos = head xs
         oldPos = head oldSt
         height = sin (3 * pos) * 0.45 + 0.55
         velocity = xs !! 1
-     in Reward $ (* 100) $ ite (pos > 0.5) 1.5 (max 0 pos + height - abs velocity)
+     in Reward $ (* 20) $ ite (pos > 0.5) 1.0 $ ite (velocity > 0) (max 0 pos) 0 --  + height) -- height -- (max 0 pos + height - abs velocity)
+  | name gym == "Acrobot-v1" =
+    let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
+     in Reward $ (* 20) $ - cosS0 - cos (acos cosS0 + acos cosS1)
+                           -- -cos(s[0]) - cos(s[1] + s[0])
   | name gym == "Copy-v0" = Reward rew
+  | name gym == "Pong-ram-v0" = Reward rew
   where
     xs = gymObservationToDoubleList obs
     ite True x _  = x
@@ -171,22 +154,24 @@ rewardFunction gym (St oldSt) (GymResult obs rew eps)
 rewardFunction gym _ _ = error $ "rewardFunction not yet defined for this environment: " ++ T.unpack (name gym)
 
 maxReward :: Gym -> Double
-maxReward gym | name gym == "CartPole-v1" = 100
-              | name gym == "MountainCar-v0" = 150
+maxReward gym | name gym == "CartPole-v1" = 50
+              | name gym == "MountainCar-v0" = 50 --more as non-symmetric
               | name gym == "Copy-v0" = 1.0
+              | name gym == "Acrobot-v1" = 50
+              -- | name gym == "Pendulum-v0" =
+              | name gym == "Pong-ram-v0" = 50
 maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for this environment: " ++ T.unpack (name gym)
 
 
 -- | Scales values to (-1, 1).
 netInp :: Bool -> Gym -> St -> [Double]
-netInp isTabular gym (St st)
+netInp isTabular gym (St _ st)
   | not isTabular = zipWith3 (\l u -> scaleValue (Just (l, u))) lowerBounds upperBounds st
   | isTabular = map (rnd . fst) $ filter snd (stSelector st)
   where
     rnd x = fromIntegral (round (x * 10)) / 10
     (lowerBounds, upperBounds) = observationSpaceBounds gym
     stSelector xs
-      --  | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
       -- | name gym == "MountainCar-v0" = [(head xs, True), (5 * (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
@@ -198,18 +183,10 @@ observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRange
 
 
 mInverseSt :: Gym -> Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt gym = Just $ \xs -> Just $ Right $ St $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
+mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
   where
     (lowerBounds, upperBounds) = observationSpaceBounds gym
 
-
-stGen :: ([Double], [Double]) -> St -> St
-stGen (lows, highs) (St xs) = St $ zipWith3 splitInto lows highs xs
-  where
-    splitInto lo hi x = -- x * scale
-      fromIntegral (round (gran * x)) / gran
-      where scale = 1/(hi - lo)
-            gran = 2
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -234,10 +211,12 @@ main = do
         | length args >= 2 = read (args !! 1)
         | otherwise = maxReward gym
   putStrLn $ "Gym: " ++ show gym
-  setMaxEpisodeSteps gym 10000
+  maxEpsSteps <- getMaxEpisodeSteps gym
+  putStrLn $ "Default maximum episode steps: " ++ show maxEpsSteps
+  setMaxEpisodeSteps gym (maximumEpisodes name)
   let inputNodes = spaceSize (observationSpace gym)
       actionNodes = spaceSize (actionSpace gym)
-      initState = St (gymObservationToDoubleList obs)
+      initState = St False (gymObservationToDoubleList obs)
       actNames = actionNames name
       actions = zipWith (action gym) (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
       initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
@@ -248,10 +227,12 @@ main = do
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
   rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
-  askUser (mInverseSt gym) True usage cmds rl -- maybe increase learning by setting estimate of rho
+  askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []
+    qlCmds = [ ("f", "flip rendering", s %~ (\(St r xs) -> St (not r) xs))]
+
  -- | BORL Parameters.
 params :: ParameterInitValues
 params =
@@ -299,12 +280,19 @@ decay =
 actFilter :: St -> [Bool]
 actFilter _  = repeat True
 
+maximumEpisodes :: T.Text -> Integer
+maximumEpisodes "CartPole-v1" = 500
+maximumEpisodes _             = 10000
+
 actionNames :: T.Text -> [T.Text]
 actionNames "CartPole-v1"    = ["left", "right"]
 actionNames "MountainCar-v0" = ["left", "cont", "right"]
+actionNames "Acrobot-v1"     = ["left", "cont", "right"]
+-- actionNames "Pong-ram-v0" = []
 actionNames _                = []
 
 observationSpaceInfo :: T.Text -> [T.Text]
 observationSpaceInfo "CartPole-v1" = ["Cart Position (-4.8, 4.8)", "Cart Velocity (-Inf, Inf)", "Pole Angle (-24 deg, 24 deg)", "Pole Velocity At Tip (-Inf, Inf)"]
 observationSpaceInfo "MountainCar-v0" = ["Position (-1.2, 0.6)", "Velocity (-0.07, 0.07)"]
+observationSpaceInfo "Acrobot-v1" = ["cos(theta1)", "sin(theta1)", "cos(theta2)", "sin(theta2)", "thetaDot1", "thetaDot2"]
 observationSpaceInfo _ = ["unkown observation space description"]

@@ -381,7 +381,7 @@ usermode = do
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
-  askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
+  askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds =
       zipWith3

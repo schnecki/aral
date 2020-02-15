@@ -434,7 +434,7 @@ usermode = do
   -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
-  askUser (Just mInverseSt) True usage cmds rl
+  askUser (Just mInverseSt) True usage cmds [] rl
   where cmds = []
         usage = []
 

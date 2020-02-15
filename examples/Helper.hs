@@ -23,8 +23,16 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
-askUser :: (NFData s, Ord s, Show s, RewardFuture s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> [(String,String)] -> [(String, ActionIndexed s)] -> BORL s -> IO ()
-askUser mInverse showHelp addUsage cmds ql = do
+askUser ::
+     (NFData s, Ord s, Show s, RewardFuture s)
+  => Maybe (NetInputWoAction -> Maybe (Either String s))
+  -> Bool
+  -> [(String, String)]
+  -> [(String, ActionIndexed s)]
+  -> [(String, String, BORL s -> BORL s)]
+  -> BORL s
+  -> IO ()
+askUser mInverse showHelp addUsage cmds qlCmds ql = do
   let usage =
         sortBy (compare `on` fst) $
         [ ("v", "Print V+W tables")
@@ -36,14 +44,15 @@ askUser mInverse showHelp addUsage cmds ql = do
         -- , ("l" "Load from file save.dat")
         , ("_", "Any other input starts another learning round\n")
         ] ++
-        addUsage
+        addUsage ++
+        map (\(c, h, _) -> (c, h)) qlCmds
   putStrLn ""
   when showHelp $ putStrLn $ unlines $ map (\(c, h) -> c ++ ": " ++ h) usage
   putStr "Enter value (h for help): " >> hFlush stdout
   c <- getLine
   case c of
-    "h" -> askUser mInverse True addUsage cmds ql
-    "?" -> askUser mInverse True addUsage cmds ql
+    "h" -> askUser mInverse True addUsage cmds qlCmds ql
+    "?" -> askUser mInverse True addUsage cmds qlCmds ql
     -- "s" -> do
     --   saveQL ql "save.dat"
     --   askUser ql addUsage cmds
@@ -83,20 +92,20 @@ askUser mInverse showHelp addUsage cmds ql = do
                      return q')
                   ql
                   [1 .. often]
-              askUser mInverse False addUsage cmds ql'
-            _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds
+              askUser mInverse False addUsage cmds qlCmds ql'
+            _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds qlCmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
-          askUser mInverse False addUsage cmds ql
+          askUser mInverse False addUsage cmds qlCmds ql
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyBORLWithStInverse mInverse ql' >>= print >> hFlush stdout
-      askUser mInverse False addUsage cmds ql
+      askUser mInverse False addUsage cmds qlCmds ql
     "v" -> do
       case find isTensorflow (allProxies $ ql ^. proxies) of
         Nothing -> runMonadBorlIO $ prettyBORLTables mInverse True False False ql >>= print
         Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> prettyBORLTables mInverse True False False ql) >>= print
-      askUser mInverse False addUsage cmds ql
+      askUser mInverse False addUsage cmds qlCmds ql
     "param" -> do
       e <-
         liftIO $ do
@@ -129,21 +138,26 @@ askUser mInverse showHelp addUsage cmds ql = do
                liftIO $ putStr "New value (True or False): " >> hFlush stdout
                liftIO $ maybe ql (\v' -> parameters . disableAllLearning .~ v' $ ql) <$> getIOMWithDefault Nothing
              _ -> liftIO $ putStrLn "Did not understand the input" >> return ql
-      askUser mInverse False addUsage cmds ql'
+      askUser mInverse False addUsage cmds qlCmds ql'
     _ ->
       case find ((== c) . fst) cmds of
         Nothing ->
-          unless
-            (c == "q")
-            (step ql >>= \x -> do
-               let ppQl = setAllProxies (proxyNNConfig . prettyPrintElems) [(ql ^. featureExtractor) (ql ^. s)] x
-               case find isTensorflow (allProxies $ ql ^. proxies) of
-                 Nothing -> runMonadBorlIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds x
-                 Just _ -> runMonadBorlTF (restoreTensorflowModels True ppQl >> prettyBORLTables mInverse True False True ppQl) >>= print >> askUser mInverse False addUsage cmds x)
+          case find ((== c) . fst) (map (\(c, _, f) -> (c,f)) qlCmds) of
+            Nothing ->
+              unless
+                (c == "q")
+                (step ql >>= \x -> do
+                   let ppQl = setAllProxies (proxyNNConfig . prettyPrintElems) [(ql ^. featureExtractor) (ql ^. s)] x
+                   case find isTensorflow (allProxies $ ql ^. proxies) of
+                     Nothing -> runMonadBorlIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x
+                     Just _ ->
+                       runMonadBorlTF (restoreTensorflowModels True ppQl >> prettyBORLTables mInverse True False True ppQl) >>= print >>
+                       askUser mInverse False addUsage cmds qlCmds x)
+            Just (_,f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
-            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds
-            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser mInverse False addUsage cmds
+            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds qlCmds
+            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser mInverse False addUsage cmds qlCmds
 
 
 time :: NFData t => IO t -> IO t
