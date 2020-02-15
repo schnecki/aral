@@ -124,9 +124,9 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
+        AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -140,9 +140,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade algorithm initState netInp actions actionFilter params decay nn nnConfig Nothing
-  -- rl <- mkUnichainTensorflow algorithm initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
+  -- rl <- mkUnichainTensorflow alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

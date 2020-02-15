@@ -36,7 +36,8 @@ import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM_, forM, forM_, void)
 import           Control.Monad          (foldM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
-import           Data.List              (genericLength)
+import           Data.List              (genericLength, sort)
+import           Data.Maybe             (fromMaybe)
 import qualified Data.Text              as T
 import           Debug.Trace
 import           GHC.Generics
@@ -69,7 +70,10 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
 
 
 newtype St = St [Double]
-  deriving (Show, Eq, Ord, Generic, NFData)
+  deriving (Eq, Ord, Generic, NFData)
+
+instance Show St where
+  show (St xs) = showFloatList xs
 
 
 maxX,maxY :: Int
@@ -80,38 +84,52 @@ maxY = 4                        -- [0..maxY]
 type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
 
 
-modelBuilder :: (TF.MonadBuild m) => Integer -> Integer -> Int64 -> m TensorflowModel
-modelBuilder nrInp nrOut outCols =
+modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TensorflowModel
+modelBuilder gym initSt nrActions outCols =
   buildModel $
-  inputLayer1D (fromIntegral nrInp) >>
-  fullyConnected [5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)] TF.relu' >>
-  fullyConnected [3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))] TF.relu' >>
-  -- fullyConnected (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
-  fullyConnected [fromIntegral nrOut, outCols] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [2*inpLen] TF.relu' >> fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  -- trainingByGradientDescent 0.01
+  where inpLen = genericLength (netInp False gym initSt)
+  -- buildModel $
+  -- inputLayer1D (fromIntegral nrInp) >>
+  -- fullyConnected [5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)] TF.relu' >>
+  -- fullyConnected [3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))] TF.relu' >>
+  -- -- fullyConnected (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
+  -- fullyConnected [fromIntegral nrOut, outCols] TF.tanh' >>
+  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 nnConfig :: Gym -> Double -> NNConfig
 nnConfig gym maxRew =
   NNConfig
-    { _replayMemoryMaxSize = 30000
-    , _trainBatchSize = 24
+    { _replayMemoryMaxSize = 10000
+    , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
-    , _prettyPrintElems = ppSts
-    , _scaleParameters = scalingByMaxAbsReward False maxRew
+    , _prettyPrintElems = map (zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
+    , _scaleParameters = scalingByMaxAbsReward False (1.25 * maxRew)
     , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 1
+    , _updateTargetInterval = 0
     , _trainMSEMax = Nothing -- Just 0.05
     , _setExpSmoothParamsTo1 = True
     }
   where
-    range = getGymRangeFromSpace $ observationSpace gym
-    (lows, highs) = (map (max (-5)) *** map (min 5)) (gymRangeToDoubleLists range)
-    vals = zipWith (\lo hi -> map rnd [lo,lo + (hi - lo) / 3 .. hi]) lows highs
-    rnd x = fromIntegral (round (100 * x)) / 100
-    ppSts = take 150 $ combinations vals
+    (lows, highs) = observationSpaceBounds gym
+    mkParamList lo hi = sort $ takeMiddle 3 xs
+      where xs = map rnd [lo,lo + (hi - lo) / 6 .. hi]
+    vals = zipWith mkParamList lows highs
+    rnd x = fromIntegral (round (1000 * x)) / 1000
+    ppSts = takeMiddle 20 $ combinations vals
+
+takeMiddle :: Int -> [a] -> [a]
+takeMiddle _ [] = []
+takeMiddle nr xs
+  | nr <= 0 = []
+  | otherwise = xs !! idx : takeMiddle (nr - 1) (take idx xs ++ drop (idx + 1) xs)
+  where
+    idx = length xs `div` 2
 
 
 combinations :: [[a]] -> [[a]]
@@ -121,9 +139,9 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
   where ys = combinations xss
 
 
-action :: Gym -> Integer -> Action St
-action gym idx =
-  flip Action (T.pack $ show idx) $ \oldSt -> do
+action :: Gym -> Maybe T.Text -> Integer -> Action St
+action gym mName idx =
+  flip Action (fromMaybe (T.pack $ show idx) mName) $ \oldSt -> do
     res <- stepGym gym idx
     (rew, obs) <-
       if episodeDone res
@@ -135,45 +153,54 @@ action gym idx =
 
 rewardFunction :: Gym -> St -> GymResult -> Reward St
 rewardFunction gym (St oldSt) (GymResult obs rew eps)
-  | name gym == "CartPole-v1" = Reward $ 24 - abs (xs !! 3) -- angle
+  | name gym == "CartPole-v1" =
+    let rad = xs !! 3
+    in Reward $ (100*) $ 0.41887903213500977 - abs rad -- 24 radiant -
+                                -- ite eps 0 rew -- ite eps 0 (10 * rew) -- 24 - 2 * abs (xs !! 3) -- angle
   | name gym == "MountainCar-v0" =
     let pos = head xs
         oldPos = head oldSt
         height = sin (3 * pos) * 0.45 + 0.55
         velocity = xs !! 1
-     in Reward $ (*100) $ ite (pos > 0.5) 2 height^2
-        -- ite (velocity <= 0 && pos < head oldSt) height 0
-
-        -- pReward $ (* 100) $ min 0.5 pos
-        -- ite (pos > 0.5) 2 $ ite eps (+ 1) id height
+     in Reward $ (* 100) $ ite (pos > 0.5) 1.5 (max 0 pos + height - abs velocity)
+  | name gym == "Copy-v0" = Reward rew
   where
     xs = gymObservationToDoubleList obs
     ite True x _  = x
     ite False _ x = x
-rewardFunction _ _ _ = error "(Max) Reward function not yet defined for this environment"
+rewardFunction gym _ _ = error $ "rewardFunction not yet defined for this environment: " ++ T.unpack (name gym)
+
+maxReward :: Gym -> Double
+maxReward gym | name gym == "CartPole-v1" = 100
+              | name gym == "MountainCar-v0" = 150
+              | name gym == "Copy-v0" = 1.0
+maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for this environment: " ++ T.unpack (name gym)
+
 
 -- | Scales values to (-1, 1).
 netInp :: Bool -> Gym -> St -> [Double]
-netInp isTabular gym (St st) = cutValues $ zipWith3 scaleValues lowerBounds upperBounds (stSelector st)
+netInp isTabular gym (St st)
+  | not isTabular = zipWith3 (\l u -> scaleValue (Just (l, u))) lowerBounds upperBounds st
+  | isTabular = map (rnd . fst) $ filter snd (stSelector st)
   where
-    scaleValues l u (x, norm)
-      | not norm = x
-      | otherwise = scaleValue (Just (l, u)) x
-    cutValues
-      | isTabular = map (\x -> fromIntegral (round (x * 10)) / 10)
-      | otherwise = id
-    (lowerBounds, upperBounds) = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+    rnd x = fromIntegral (round (x * 10)) / 10
+    (lowerBounds, upperBounds) = observationSpaceBounds gym
     stSelector xs
       --  | name gym == "MountainCar-v0" = [(head xs, True), (signum (xs !! 1), False)]
-      | name gym == "MountainCar-v0" = [(head xs, True), (10 * (xs !! 1), False) ]
-                                        -- (signum (xs !! 1), False)]
+      -- | name gym == "MountainCar-v0" = [(head xs, True), (5 * (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
+observationSpaceBounds :: Gym -> ([Double], [Double])
+observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+  where
+    maxVal | name gym == "CartPole-v1" = 5
+           | otherwise = 1000
 
-maxReward :: Gym -> Double
-maxReward gym | name gym == "CartPole-v1" = 24
-              | name gym == "MountainCar-v0" = 1.0
-maxReward _   = error "(Max) Reward function not yet defined for this environment"
+
+mInverseSt :: Gym -> Maybe (NetInputWoAction -> Maybe (Either String St))
+mInverseSt gym = Just $ \xs -> Just $ Right $ St $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
+  where
+    (lowerBounds, upperBounds) = observationSpaceBounds gym
 
 
 stGen :: ([Double], [Double]) -> St -> St
@@ -196,33 +223,35 @@ alg =
 
 main :: IO ()
 main = do
-
   args <- getArgs
   putStrLn $ "Received arguments: " ++ show args
-  let name | not (null args) = head args
-           | otherwise = "MountainCar-v0"
+  let name
+        | not (null args) = T.pack (head args)
+        | otherwise = "MountainCar-v0"
              -- "CartPole-v1"
-  (obs, gym) <- initGym (T.pack name)
-  let maxRew | length args >= 2  = read (args!!1)
-             | otherwise = maxReward gym
+  (obs, gym) <- initGym name
+  let maxRew
+        | length args >= 2 = read (args !! 1)
+        | otherwise = maxReward gym
   putStrLn $ "Gym: " ++ show gym
   setMaxEpisodeSteps gym 10000
   let inputNodes = spaceSize (observationSpace gym)
       actionNodes = spaceSize (actionSpace gym)
-      ranges = gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
       initState = St (gymObservationToDoubleList obs)
-      actions = map (action gym) [0..actionNodes-1]
-      initValues = Just $ defInitValues { defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1 }
+      actNames = actionNames name
+      actions = zipWith (action gym) (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
+      initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
+  putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
+  putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   -- nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenade initState actions actFilter params decay nn (nnConfig gym maxRew)
-  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder inputNodes actionNodes) (nnConfig gym maxRew) initValues
-  let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
-  askUser Nothing True usage cmds rl   -- maybe increase learning by setting estimate of rho
-
-  where cmds = []
-        usage = []
-
+  rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter params decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter params decay initValues
+  askUser (mInverseSt gym) True usage cmds rl -- maybe increase learning by setting estimate of rho
+  where
+    cmds = []
+    usage = []
  -- | BORL Parameters.
 params :: ParameterInitValues
 params =
@@ -250,9 +279,9 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.15 30000
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
-      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _beta             = ExponentialDecay (Just 1e-2) 0.5 50000
+      , _delta            = ExponentialDecay (Just 1e-2) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
@@ -269,3 +298,13 @@ decay =
 
 actFilter :: St -> [Bool]
 actFilter _  = repeat True
+
+actionNames :: T.Text -> [T.Text]
+actionNames "CartPole-v1"    = ["left", "right"]
+actionNames "MountainCar-v0" = ["left", "cont", "right"]
+actionNames _                = []
+
+observationSpaceInfo :: T.Text -> [T.Text]
+observationSpaceInfo "CartPole-v1" = ["Cart Position (-4.8, 4.8)", "Cart Velocity (-Inf, Inf)", "Pole Angle (-24 deg, 24 deg)", "Pole Velocity At Tip (-Inf, Inf)"]
+observationSpaceInfo "MountainCar-v0" = ["Position (-1.2, 0.6)", "Velocity (-0.07, 0.07)"]
+observationSpaceInfo _ = ["unkown observation space description"]

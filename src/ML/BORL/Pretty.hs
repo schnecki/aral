@@ -10,37 +10,39 @@ module ML.BORL.Pretty
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
+    , showFloat
+    , showFloatList
     ) where
 
 
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
-import           ML.BORL.Calculation.Ops
 import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
-import qualified ML.BORL.Proxy           as P
-import           ML.BORL.Proxy.Ops       (LookupType (..), getMinMaxVal,
-                                          lookupNeuralNetwork, mkNNList)
+import qualified ML.BORL.Proxy         as P
+import           ML.BORL.Proxy.Ops     (LookupType (..), getMinMaxVal, lookupNeuralNetwork,
+                                        mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Arrow           (first, second, (&&&), (***))
+import           Control.Arrow         (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad           (when)
-import           Data.Function           (on)
-import           Data.List               (find, foldl', sort, sortBy)
-import qualified Data.Map.Strict         as M
-import           Data.Maybe              (fromMaybe, isJust)
-import qualified Data.Set                as S
-import qualified Data.Text               as T
+import           Control.Monad         (when)
+import           Data.Function         (on)
+import           Data.List             (find, foldl', intercalate, intersperse, sort,
+                                        sortBy)
+import qualified Data.Map.Strict       as M
+import           Data.Maybe            (fromMaybe, isJust)
+import qualified Data.Set              as S
+import qualified Data.Text             as T
 import           Grenade
-import           Prelude                 hiding ((<>))
-import           System.IO.Unsafe        (unsafePerformIO)
-import           Text.PrettyPrint        as P
+import           Prelude               hiding ((<>))
+import           System.IO.Unsafe      (unsafePerformIO)
+import           Text.PrettyPrint      as P
 import           Text.Printf
 
 import           Debug.Trace
@@ -58,7 +60,10 @@ printFloat :: Double -> Doc
 printFloat = text . showFloat
 
 showFloat :: Double -> String
-showFloat = printf ("%." ++ show commas ++ "f")
+showFloat = printf ("%+." ++ show commas ++ "f")
+
+showFloatList :: [Double] -> String
+showFloatList xs = "[" ++ intercalate "," (map showFloat xs) ++ "]"
 
 printFloatWith :: Int -> Double -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
@@ -73,37 +78,15 @@ modifierSubtract borl px lk k v0 = do
   vS <- P.lookupProxy (borl ^. t) lk k px
   return (v0 - vS)
 
--- modifierAvgRewClean :: (MonadBorl' m) => BORL k -> Modifier m -> Modifier m
--- modifierAvgRewClean borl modifier lk k@(s, aNr) v0 = do
---   x <- modifier lk k v0
---   rhoVal <- rhoValueFeat borl s aNr
---   case borl ^. algorithm of
---       -- AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1 x
---       AlgDQNAvgRewAdjusted (Just gamma0) gamma1 _ _ -> avgRewardClean gamma0 gamma1 x
---       _ -> error "eValueAvgCleaned can only be used with AlgBORL in Calculation.Ops"
---   where
---     -- avgRewardClean g0 g1 x = return $ x -  * (1/(1-gamma1)+1/(1-gamma0))
-
-
--- e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0))
-
-
-prettyTable :: (MonadBorl' m, Show k, Eq k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadBorl' m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
-prettyTableRows ::
-     (MonadBorl' m, Show k, Ord k, Eq k)
-  => BORL k
-  -> (NetInputWoAction -> Maybe (Maybe k, String))
-  -> (ActionIndex -> Doc)
-  -> Modifier m
-  -> P.Proxy
-  -> m [Doc]
+prettyTableRows :: (MonadBorl' m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ ->
       let mkAct idx = actionName $ snd $ (borl ^. actionList) !! (idx `mod` length (borl ^. actionList))
-          mkInput k = text (filter (/= '"') $ show $ map (\x -> if x < 0 then printFloat x else "+" <> printFloat x) k)
+          mkInput k = text (filter (/= '"') $ show $ map printFloat k)
       in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
@@ -127,7 +110,7 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
   let subPr
         | isCombinedProxy pr = pr ^?! proxySub
         | otherwise = pr
-  if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize
+  if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize && isJust (pr ^?! proxyNNConfig . trainMSEMax)
     then do
       let inp = map fst tbl
       let mkVals x = do
@@ -176,10 +159,10 @@ prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
   where fromTable = period < fromIntegral memSize
         period = borl ^. t
         memSize = case m1 of
-          P.Table{}                       -> -1
-          P.Grenade _ _ _ _ cfg _         -> cfg ^?! replayMemoryMaxSize
-          P.TensorflowProxy _ _ _ _ cfg _ -> cfg ^?! replayMemoryMaxSize
-          P.CombinedProxy{}               -> m1 ^?! proxyNNConfig.replayMemoryMaxSize
+          P.Grenade _ _ _ _ cfg _         | isJust (cfg ^?! trainMSEMax) -> cfg ^?! replayMemoryMaxSize
+          P.TensorflowProxy _ _ _ _ cfg _ | isJust (cfg ^?! trainMSEMax) -> cfg ^?! replayMemoryMaxSize
+          P.CombinedProxy{}               | isJust (m1 ^?! proxyNNConfig. trainMSEMax) -> m1 ^?! proxyNNConfig.replayMemoryMaxSize
+          _                       -> -1
         tbl px = case px of
           p@P.Table{}                   -> p
           P.Grenade _ _ p _ _ _         -> P.Table p 0
@@ -254,7 +237,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
     AlgDQNAvgRewAdjusted{} -> do
-      prR0R1 <- prBoolTblsStateAction t2 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
+      prR0R1 <- prBoolTblsStateAction t1 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
     prettyState = mkPrettyState mStInverse
@@ -263,7 +246,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
 mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Double] -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
-    Nothing  -> Just (Nothing, show $ map showFloat netinp)
+    Nothing  -> Just (Nothing, showFloatList netinp)
     Just inv -> fromEither <$> inv netinp
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
@@ -370,7 +353,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)))
+        textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

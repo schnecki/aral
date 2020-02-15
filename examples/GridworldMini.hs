@@ -375,11 +375,11 @@ usermode = do
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  rl <- mkUnichainTensorflow alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds rl -- maybe increase learning by setting estimate of rho
   where

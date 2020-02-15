@@ -125,6 +125,8 @@ instance Serialize TensorflowModel' where
                 pathTrain = basePath ++ "/" ++ trainName
             bModel <- liftIO $ BS.readFile pathModel
             bTrain <- liftIO $ BS.readFile pathTrain
+            removeFile pathModel -- remove file to not litter the filesystem
+            removeFile pathTrain
             return (checkpointBaseFileName tf, bModel, bTrain)
     put mBasePath
     put bytesModel

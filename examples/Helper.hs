@@ -59,7 +59,7 @@ askUser mInverse showHelp addUsage cmds ql = do
           putStr "How often shall I repeat this? [1] " >> hFlush stdout
           l <- getLine
           case reads l :: [(Integer, String)] of
-            [(often, _)] -> do
+            [(often, _)]
               -- ql' <-
               --   runMonadBorlTF $ do
               --     restoreTensorflowModels True ql
@@ -74,19 +74,23 @@ askUser mInverse showHelp addUsage cmds ql = do
               --         [1 .. often]
               --     saveTensorflowModels borl'
               -- askUser mInverse False addUsage cmds ql'
-              ql' <- foldM (\q _ -> do
-                        q' <- time (steps q nr)
-                        liftIO $ prettyBORLWithStInverse mInverse q' >>= print >> hFlush stdout
-                        return q'
-                    ) ql [1 .. often]
+             -> do
+              ql' <-
+                foldM
+                  (\q _ -> do
+                     q' <- time (steps q nr)
+                     liftIO $ prettyBORLWithStInverse mInverse q' >>= print >> hFlush stdout
+                     return q')
+                  ql
+                  [1 .. often]
               askUser mInverse False addUsage cmds ql'
-
             _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
           askUser mInverse False addUsage cmds ql
     "p" -> do
-      prettyBORLWithStInverse mInverse ql >>= print >> hFlush stdout
+      let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
+      prettyBORLWithStInverse mInverse ql' >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds ql
     "v" -> do
       case find isTensorflow (allProxies $ ql ^. proxies) of
@@ -131,10 +135,11 @@ askUser mInverse showHelp addUsage cmds ql = do
         Nothing ->
           unless
             (c == "q")
-            (step ql >>= \x ->
+            (step ql >>= \x -> do
+               let ppQl = setAllProxies (proxyNNConfig . prettyPrintElems) [(ql ^. featureExtractor) (ql ^. s)] x
                case find isTensorflow (allProxies $ ql ^. proxies) of
-                 Nothing -> runMonadBorlIO $ prettyBORLTables mInverse True False False x >>= print >> askUser mInverse False addUsage cmds x
-                 Just _ -> runMonadBorlTF (restoreTensorflowModels True x >> prettyBORLTables mInverse True False True x) >>= print >> askUser mInverse False addUsage cmds x)
+                 Nothing -> runMonadBorlIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds x
+                 Just _ -> runMonadBorlTF (restoreTensorflowModels True ppQl >> prettyBORLTables mInverse True False True ppQl) >>= print >> askUser mInverse False addUsage cmds x)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
             Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds

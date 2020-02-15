@@ -193,6 +193,7 @@ instance ExperimentDef (BORL St) where
         Nothing
     ]
 
+
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
@@ -218,12 +219,13 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    -- Exploration
     , _epsilon             = 1.0
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
-    , _zeta                = 0.03
-    , _xi                  = 0.005
     , _disableAllLearning  = False
     -- ANN
     , _alphaANN            = 0.5 -- only used for multichain
@@ -245,7 +247,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
-      , _exploration      = ExponentialDecay (Just 0.075) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.05 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -406,8 +408,7 @@ goalState f st = do
   r <- randomRIO (0, 8 :: Double)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
-    (0, 2) -> -- return (Reward 10, fromIdx (x, y), True)
-      return (Reward 10, fromIdx (x, y), False)
+    (0, 2) -> return (Reward 10, fromIdx (x, y), True)
     _      -> stepRew <$> f st
 
 

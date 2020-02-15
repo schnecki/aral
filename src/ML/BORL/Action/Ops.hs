@@ -38,8 +38,8 @@ nextAction borl
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
 
 data SelectedActions s = SelectedActions
-  { maximised :: [(Double, ActionIndexed s)] -- ^ Choose actions by maximising
-  , minimised :: [(Double, ActionIndexed s)] -- ^ Choose actions by minimising
+  { maximised :: [(Double, ActionIndexed s)] -- ^ Choose actions by maximising objective
+  , minimised :: [(Double, ActionIndexed s)] -- ^ Choose actions by minimising objective
   }
 
 
@@ -74,20 +74,20 @@ chooseAction borl useRand selFromList = do
                  then return as
                  else do
                    rhoVals <- mapM (rhoValue borl state . fst) as
-                   map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (compare `on` fst) (zip rhoVals as))
+                   map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
              bestV <-
                do vVals <- mapM (vValue borl state . fst) bestRho
-                  map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (compare `on` fst) (zip vVals bestRho))
+                  map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
              if length bestV == 1
                then return (borl, False, head bestV)
                else do
                  bestE <-
                    do eVals <- mapM (eValueAvgCleaned borl state . fst) bestV
-                      let (increasing, decreasing) = partition ((0 >) . fst) (zip eVals bestV)
+                      let (increasing, decreasing) = partition ((0 <) . fst) (zip eVals bestV)
                           actionsToChooseFrom
                             | null decreasing = increasing
                             | otherwise = decreasing
-                      map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompareWith (ga1 - ga0) (==) `on` fst) $ sortBy (compare `on` fst) actionsToChooseFrom)
+                      map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompareWith (ga1 - ga0) (==) `on` fst) $ sortBy (flip compare `on` fst) actionsToChooseFrom)
                  -- other way of doing it:
                  -- ----------------------
                  -- do eVals <- mapM (eValue borl state . fst) bestV
@@ -96,7 +96,7 @@ chooseAction borl useRand selFromList = do
                  --    r0Values <- mapM (rValue borl RSmall state . fst) bestV
                  --    let rhoPlusV = rhoVal / (1-gamma0) + vVal
                  --        (posErr,negErr) = (map snd *** map snd) $ partition ((rhoPlusV<) . fst) (zip r0Values (zip eVals bestV))
-                 --    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (epsCompare compare `on` fst) (if null posErr then negErr else posErr)
+                 --    return $ map snd $ head $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (if null posErr then negErr else posErr)
                  ----
                  if length bestE == 1 -- Uniform distributed as all actions are considered to have the same value!
                    then return (borl, False, headE bestE)
@@ -106,20 +106,20 @@ chooseAction borl useRand selFromList = do
            AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
            AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
            AlgDQNAvgRewAdjusted {} -> do
-             bestV <-
-               do vValues <- mapM (vValue borl state . fst) as -- 1. choose highest bias values
-                  map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (compare `on` fst) (zip vValues as))
-             if length bestV == 1
-               then return (borl, False, head bestV)
+             bestR1 <-
+               do r1Values <- mapM (rValue borl RBig state . fst) as -- 1. choose highest bias values
+                  map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
+             if length bestR1 == 1
+               then return (borl, False, head bestR1)
                else do
-                 r1Values <- mapM (rValue borl RBig state . fst) bestV -- 2. choose action by epsilon-max R1 (near-Blackwell-optimal algorithm)
-                 bestR1ValueActions <- liftIO $ fmap maximised $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (compare `on` fst) (zip r1Values bestV)
-                 let bestR1 = map snd bestR1ValueActions
-                 if length bestR1 == 1
-                   then return (borl, False, head bestR1)
+                 r0Values <- mapM (rValue borl RSmall state . fst) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
+                 bestR0ValueActions <- liftIO $ fmap maximised $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
+                 let bestR0 = map snd bestR0ValueActions
+                 if length bestR0 == 1
+                   then return (borl, False, head bestR0)
                    else do
-                     r <- liftIO $ randomRIO (0, length bestR1 - 1) --  3. Uniform selection of leftover actions
-                     return (borl, False, bestR1 !! r)
+                     r <- liftIO $ randomRIO (0, length bestR0 - 1) --  3. Uniform selection of leftover actions
+                     return (borl, False, bestR0 !! r)
   where
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
@@ -136,8 +136,8 @@ chooseAction borl useRand selFromList = do
       rValues <- mapM f as
       let groupValues =
             case cmp of
-              EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (compare `on` fst)
-              Exact -> groupBy ((==) `on` fst) . sortBy (compare `on` fst)
+              EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (flip compare `on` fst)
+              Exact -> groupBy ((==) `on` fst) . sortBy (flip compare `on` fst)
       bestR <- liftIO $ fmap maximised $ selFromList $ groupValues (zip rValues as)
       if length bestR == 1
         then return (borl, False, snd $ headDqn bestR)
@@ -150,6 +150,8 @@ chooseAction borl useRand selFromList = do
 --
 -- > groupBy (epsCompareWith 2 (==)) $ sortBy (compare) [3,5,1]
 -- > [[1,3],[5]]
+-- > groupBy (epsCompareWith 2 (==)) $ sortBy (flip compare) [3,5,1]
+-- > [[5,3],[1]]
 --
 epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y

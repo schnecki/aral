@@ -72,12 +72,11 @@ fileDebugPsiVValues = "statePsiVAllStates"
 fileDebugPsiWValues :: FilePath
 fileDebugPsiWValues = "statePsiWAllStates"
 
-fileDebugStateValuesNrStates :: FilePath
-fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
-
-
 fileStateValues :: FilePath
 fileStateValues = "stateValues"
+
+fileDebugStateValuesNrStates :: FilePath
+fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
 
 fileReward :: FilePath
 fileReward = "reward"
@@ -187,18 +186,15 @@ execute _ _ = error "Exectue on invalid data structure. This is a bug!"
 
 #ifdef DEBUG
 
-cacheMVar :: MVar [a]
-cacheMVar = unsafePerformIO $ newMVar mempty
-{-# NOINLINE cacheMVar #-}
+stateFeatures :: MVar [a]
+stateFeatures = unsafePerformIO $ newMVar mempty
+{-# NOINLINE stateFeatures #-}
 
-emptyCache :: (MonadIO m) => m ()
-emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
+setStateFeatures :: (MonadIO m) => [a] -> m ()
+setStateFeatures x = liftIO $ modifyMVar_ stateFeatures (return . const x)
 
-setCache :: (MonadIO m) => [a] -> m ()
-setCache x = liftIO $ modifyMVar_ cacheMVar (return . const x)
-
-getCache :: (MonadIO m) => m [a]
-getCache = liftIO $ fromMaybe mempty <$> tryReadMVar cacheMVar
+getStateFeatures :: (MonadIO m) => m [a]
+getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
 writeDebugFiles :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
@@ -220,7 +216,6 @@ writeDebugFiles borl = do
         liftIO $ writeFile fileDebugStateW ""
         liftIO $ writeFile fileDebugPsiVValues ""
         liftIO $ writeFile fileDebugPsiWValues ""
-        liftIO $ writeFile fileDebugStateValuesNrStates "-1"
         borl' <-
           if isAnn
             then return borl
@@ -230,9 +225,9 @@ writeDebugFiles borl = do
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)
-        setCache stateFeats
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printFloat) stateFeats <> "\n")
+        setStateFeatures stateFeats
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printFloat) stateFeats <> "\n")
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
           else do
@@ -245,10 +240,7 @@ writeDebugFiles borl = do
         | isDqn && isTensorflow (borl' ^. proxies . r1) = True
         | isTensorflow (borl' ^. proxies . v) = True
         | otherwise = False
-  -- len <- liftIO $ read <$> readFile fileDebugStateValuesNrStates
-  -- when (len >= 0 && len /= length stateFeats) $ liftIO $ putStrLn $ "WARNING: Number of states to write to debug file changed from " <> show len <> " to " <> show (length stateFeats) <>
-  --   ". Increase debugStepsCount count in Step.hs!"
-  stateFeats <- getCache
+  stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
     stateValuesV <- mapM (\xs -> if isDqn then rValueFeat borl' RBig (init xs) (round $ last xs) else vValueFeat borl' (init xs) (round $ last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats

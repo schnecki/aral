@@ -210,32 +210,57 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
-  v <- liftIO $ nnSA VTable 0
-  w <- liftIO $ nnSA WTable 2
-  r0 <- liftIO $ nnSA R0Table 4
-  r1 <- liftIO $ nnSA R1Table 6
-  psiV <- liftIO $ nnSA PsiVTable 8
-  psiW <- liftIO $ nnSA PsiWTable 10
-  repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
-  buildTensorflowModel (v ^?! proxyTFTarget)
-  return $
-    force $
-    BORL
-      (zip [idxStart ..] as)
-      asFilter
-      initialState
-      ftExt
-      0
-      (0, 0)
-      params
-      decayFun
-      mempty
-      (convertAlgorithm ftExt alg)
-      SteadyStateValues
-      mempty
-      mempty
-      (0, 0, 0)
-      (Proxies (Scalar defRhoMin) (Scalar defRho) psiV v psiW w r0 r1 repMem)
+  if isAlgDqnAvgRewardFree alg
+    then do
+      r0 <- liftIO $ nnSA R0Table 4
+      r1 <- liftIO $ nnSA R1Table 6
+      repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+      buildTensorflowModel (r0 ^?! proxyTFTarget)
+      return $
+        force $
+        BORL
+          (zip [idxStart ..] as)
+          asFilter
+          initialState
+          ftExt
+          0
+          (0, 0)
+          params
+          decayFun
+          mempty
+          (convertAlgorithm ftExt alg)
+          SteadyStateValues
+          mempty
+          mempty
+          (0, 0, 0)
+          (Proxies (Scalar defRhoMin) (Scalar defRho) (Scalar 0) r1 (Scalar 0) (Scalar 0) r0 r1 repMem)
+    else do
+      v <- liftIO $ nnSA VTable 0
+      w <- liftIO $ nnSA WTable 2
+      r0 <- liftIO $ nnSA R0Table 4
+      r1 <- liftIO $ nnSA R1Table 6
+      psiV <- liftIO $ nnSA PsiVTable 8
+      psiW <- liftIO $ nnSA PsiWTable 10
+      repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+      buildTensorflowModel (v ^?! proxyTFTarget)
+      return $
+        force $
+        BORL
+          (zip [idxStart ..] as)
+          asFilter
+          initialState
+          ftExt
+          0
+          (0, 0)
+          params
+          decayFun
+          mempty
+          (convertAlgorithm ftExt alg)
+          SteadyStateValues
+          mempty
+          mempty
+          (0, 0, 0)
+          (Proxies (Scalar defRhoMin) (Scalar defRho) psiV v psiW w r0 r1 repMem)
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
