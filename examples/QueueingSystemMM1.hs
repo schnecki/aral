@@ -446,10 +446,11 @@ type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 2
 modelBuilder :: ModelBuilderFunction
 modelBuilder colOut =
   buildModel $
-  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
+  inputLayer1D inpLen >> fullyConnected [3*(inpLen + nrActs)] TF.relu' >> fullyConnected [2*nrActs] TF.relu' >> fullyConnected [2*nrActs] TF.relu' >> fullyConnected [nrActs, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = genericLength (netInp initState)
+        nrActs = genericLength actions
 
 netInp :: St -> [Double]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]

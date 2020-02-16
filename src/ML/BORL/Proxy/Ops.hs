@@ -207,6 +207,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 
+-- | Caching of results
 cacheMVar :: MVar (M.Map (ProxyType, StateFeatures) [Double])
 cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}

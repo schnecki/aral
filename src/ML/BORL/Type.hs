@@ -537,9 +537,6 @@ mkReplayMemory sz = do
 
 -------------------- Other Constructors --------------------
 
--- noScaling :: ScalingNetOutParameters
--- noScaling = ScalingNetOutParameters
-
 -- | Infer scaling by maximum reward.
 scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
@@ -551,11 +548,11 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 
 scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR = case alg of
-  AlgBORL{} -> scalingByMaxAbsReward onlyPositive maxR
-  AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) (maxR1) (-maxW) maxW (-maxR0) (maxR0) (-maxR1) maxR1
+  AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR0) maxR0 (-maxR1) maxR1
+  _ -> scalingByMaxAbsReward onlyPositive maxR
   where maxW = 50 * maxR
         maxR1 = 1.0 * maxR
-        maxR0 = 1.5 * maxR
+        maxR0 = 0.8 * maxR
 
 
 -------------------- Helpers --------------------

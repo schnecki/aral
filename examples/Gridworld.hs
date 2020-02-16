@@ -223,7 +223,7 @@ params =
     , _xi                  = 0.005
     -- Exploration
     , _epsilon             = 1.0
-    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
+    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 5
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
     , _disableAllLearning  = False
