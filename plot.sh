@@ -1,4 +1,6 @@
 
+INIT_GNUPLOT="set terminal wxt lw 2; set terminal wxt fontscale 2"
+
 function age() {
    local filename=$1
    local changed=`stat -c %Y "$filename"`
@@ -9,19 +11,19 @@ function age() {
    echo $elapsed
 }
 
-gnuplot -e "set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
-gnuplot -e "set key autotitle columnhead; plot for [col=2:4] 'stateValues' using 0:col with lines; pause mouse close; " &
-gnuplot -e "set key autotitle columnhead; plot for [col=5:6] 'stateValues' using 0:col with lines; pause mouse close; " &
-gnuplot -e "set key autotitle columnhead; plot for [col=2:3] 'costs' using 0:col with points; pause mouse close; " &
-gnuplot -e "set key autotitle columnhead; plot for [col=2:2] 'reward' using 0:col with points; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:4] 'stateValues' using 0:col with lines; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=5:6] 'stateValues' using 0:col with lines; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:3] 'costs' using 0:col with points; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'reward' using 0:col with points; pause mouse close; " &
 
 if [[ $(age "$file") < 300 ]];
 then
     NR="`head -n1 stateValuesAllStatesCount`"
-    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
-    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateWAllStates' using 1:col with lines; set key title 'All W Values'; pause mouse close; " &
-    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiVAllStates' using 1:col with lines; set key title 'All Psi V Values'; pause mouse close; " &
-    gnuplot -e "set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiWAllStates' using 1:col with lines; set key title 'All Psi W Values'; pause mouse close; " &
+    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
+    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateWAllStates' using 1:col with lines; set key title 'All W Values'; pause mouse close; " &
+    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiVAllStates' using 1:col with lines; set key title 'All Psi V Values'; pause mouse close; " &
+    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiWAllStates' using 1:col with lines; set key title 'All Psi W Values'; pause mouse close; " &
 fi
 
 

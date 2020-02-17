@@ -169,11 +169,10 @@ rewardFunction gym (St _ oldSt) (GymResult obs rew eps) =
             oldPos = head oldSt
             oldVelocity = oldSt !! 1
         epsStep <- getElapsedSteps gym
-        return $ Reward $ (* 10) . (+1.2) $
+        return $ Reward $ (* 10) $
           ite eps (ite (epsStep == Just maxEpsSteps) (-3) 3) $
           -- ite eps (ite (epsStep == Just maxEpsSteps) (-2) 2) $ ite (oldVelocity >= 0 && velocity <= 0) (max oldPos pos) (-1.2) -- ite (oldVelocity <= 0 && velocity >= 0) (min oldPos pos) (-1.2)
-          ite (oldVelocity >= 0 && velocity <= 0) (height -- max oldPos pos
-                                                  ) (-1.2)
+          ite (oldVelocity >= 0 && velocity <= 0) (-1) 1
     AlgDQNAvgRewAdjusted {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
