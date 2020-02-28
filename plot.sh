@@ -1,5 +1,6 @@
 
-INIT_GNUPLOT="set terminal wxt lw 2; set terminal wxt fontscale 2"
+FONTSCALE=1
+INIT_GNUPLOT="set terminal wxt lw $FONTSCALE; set terminal wxt fontscale $FONTSCALE"
 
 function age() {
    local filename=$1

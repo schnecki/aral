@@ -99,9 +99,9 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 , _proxyNrActions :: !Int
                 }
              | CombinedProxy
-                { _proxySub            :: Proxy
-                , _proxyOutCol         :: Int
-                , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Double)]
+                { _proxySub            :: Proxy                                    -- ^ The actual proxy holding all combined values.
+                , _proxyOutCol         :: Int                                      -- ^ Output column/row of the data.
+                , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Double)] -- ^ Used to save the data for learning.
                 }
 -- makeLenses ''Proxy
 

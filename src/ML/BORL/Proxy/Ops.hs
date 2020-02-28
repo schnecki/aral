@@ -63,6 +63,7 @@ import           Debug.Trace
 
 -- ^ Lookup Type for neural networks.
 data LookupType = Target | Worker
+  deriving (Eq, Ord)
 
 
 mkStateActs :: BORL s -> s -> s -> ([Double], ([Double], [ActionIndex]), ([Double], [ActionIndex]))
@@ -111,7 +112,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
-  | pV ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
+  | pV ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
@@ -166,7 +167,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
-  | proxy ^?! proxyNNConfig . replayMemoryMaxSize == 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
+  | proxy ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
   | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
     replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
@@ -208,17 +209,19 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 
 -- | Caching of results
-cacheMVar :: MVar (M.Map (ProxyType, StateFeatures) [Double])
+type CacheKey = (LookupType, ProxyType, StateFeatures)
+
+cacheMVar :: MVar (M.Map CacheKey [Double])
 cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}
 
 emptyCache :: MonadBorl' m => m ()
 emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
 
-addCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> [Double] -> m ()
+addCache :: (MonadBorl' m) => CacheKey -> [Double] -> m ()
 addCache k v = liftIO $ modifyMVar_ cacheMVar (return . M.insert k v)
 
-lookupCache :: (MonadBorl' m) => (ProxyType, StateFeatures) -> m (Maybe [Double])
+lookupCache :: (MonadBorl' m) => CacheKey -> m (Maybe [Double])
 lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 
@@ -274,7 +277,7 @@ updateNNTargetNet forceReset period px
   | config ^. updateTargetInterval <= 1 = return px
   | forceReset = copyValues
   | period <= memSize = return px
-  | ((period - memSize - 1) `mod` config ^. updateTargetInterval) == 0 = copyValues
+  | ((period - memSize) `mod` config ^. updateTargetInterval) == 0 = copyValues
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -417,7 +420,7 @@ headLookupActions :: [p] -> p
 headLookupActions []    = error "head: empty input data in lookupActionsNeuralNetworkUnscaled"
 headLookupActions (x:_) = x
 
-cached :: (MonadBorl' m) => (ProxyType, StateFeatures) -> m [Double] -> m [Double]
+cached :: (MonadBorl' m) => (LookupType, ProxyType, StateFeatures) -> m [Double] -> m [Double]
 cached st f = do
   c <- lookupCache st
   case c of
@@ -429,15 +432,15 @@ cached st f = do
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
-lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
+lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (Worker, tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
 lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
-  | otherwise = cached (tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
-lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netW [map realToFrac st])
+  | otherwise = cached (Target, tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
+lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (Worker, tp, st) (map realToFrac . headLookupActions <$> forwardRun netW [map realToFrac st])
 lookupActionsNeuralNetworkUnscaled Target st px@(TensorflowProxy netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
-  | otherwise = cached (tp, st) (map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st])
-lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = take nrActs . drop (nr*nrActs) <$> lookupActionsNeuralNetworkUnscaled tp st px
+  | otherwise = cached (Target, tp, st) (map realToFrac . headLookupActions <$> forwardRun netT [map realToFrac st])
+lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = take nrActs . drop (nr*nrActs) <$> cached (tp, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaled tp st px)
   where nrActs = px ^?! proxyNrActions
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 

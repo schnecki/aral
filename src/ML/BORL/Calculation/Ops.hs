@@ -2,8 +2,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module ML.BORL.Calculation.Ops
     ( mkCalculation
-    , rhoValueFeat
+    , rhoValueWith
     , rValue
+    , rValueWith
     , eValue
     , eValueFeat
     , eValueAvgCleaned
@@ -11,7 +12,6 @@ module ML.BORL.Calculation.Ops
     , vValue
     , vValueFeat
     , wValueFeat
-    , rValueFeat
     , rhoValue
     , RSize (..)
     ) where
@@ -121,15 +121,15 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   vValState <- vValueFeat borl state aNr                                   `using` rpar
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr                    `using` rpar
   vValStateNext <- vStateValue borl (stateNext, stateNextActIdxes)         `using` rpar
-  rhoVal <- rhoValueFeat borl state aNr                                    `using` rpar
+  rhoVal <- rhoValueWith Worker borl state aNr                                    `using` rpar
   wValState <- wValueFeat borl state aNr                                   `using` rpar
   wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes)         `using` rpar
   psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV)  `using` rpar
   psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW)  `using` rpar
-  r0ValState <- rValueFeat borl RSmall state aNr                           `using` rpar
-  r0ValStateNext <- rStateValue borl RSmall (stateNext, stateNextActIdxes) `using` rpar
-  r1ValState <- rValueFeat borl RBig state aNr                             `using` rpar
-  r1ValStateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes)   `using` rpar
+  r0ValState <- rValueWith Worker  borl RSmall state aNr                           `using` rpar
+  r0ValStateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr                             `using` rpar
+  r1ValStateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes)   `using` rpar
   -- Stabilization
   let mStabVal = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRho
       mStabValDec = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRhoDecay
@@ -200,11 +200,11 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       }
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
-  rhoVal <- rhoValueFeat borl state aNr `using` rpar
-  r0ValState <- rValueFeat borl RSmall state aNr `using` rpar
-  r0StateNext <- rStateValue borl RSmall (stateNext, stateNextActIdxes) `using` rpar
-  r1ValState <- rValueFeat borl RBig state aNr `using` rpar
-  r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
+  rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
+  r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
+  r0StateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
+  r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
@@ -280,7 +280,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
-  rhoVal <- rhoValueFeat borl state aNr `using` rpar
+  rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
   vValState <- vValueFeat borl state aNr `using` rpar
   vValStateNext <- vStateValue borl (stateNext, stateNextActIdxes) `using` rpar
   let lastRews' =
@@ -343,8 +343,8 @@ mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episo
         | episodeEnd = 0
         | otherwise = 1
   let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
-  r1ValState <- rValueFeat borl RBig state aNr `using` rpar
-  r1StateNext <- rStateValue borl RBig (stateNext, stateNextActIdxes) `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
+  r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * r1StateNext)
   return $
     Calculation
@@ -381,9 +381,6 @@ rhoValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Double
 rhoValue borl s a = rhoValueWith Worker borl (ftExt s) a
   where
     ftExt = borl ^. featureExtractor
-
-rhoValueFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Double
-rhoValueFeat = rhoValueWith Worker
 
 rhoValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Double
 rhoValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rho)
@@ -436,10 +433,6 @@ rValue borl size s aNr = rValueWith Worker borl size (ftExt s) aNr
           RSmall -> borl ^. featureExtractor
           RBig   -> borl ^. featureExtractor
 
-rValueFeat :: (MonadBorl' m) => BORL s -> RSize -> StateFeatures -> ActionIndex -> m Double
-rValueFeat = rValueWith Worker
-
-
 -- | Calculates the expected discounted value with the provided gamma (small/big).
 rValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Double
 rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
@@ -449,8 +442,8 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
         RSmall -> borl ^. proxies.r0
         RBig   -> borl ^. proxies.r1
 
-rStateValue :: (MonadBorl' m) => BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
-rStateValue borl size (state, actIdxes) = maximum <$> mapM (rValueWith Target borl size state) actIdxes
+rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
+rStateValueWith lkTp borl size (state, actIdxes) = maximum <$> mapM (rValueWith lkTp borl size state) actIdxes
 
 
 -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
@@ -465,11 +458,11 @@ eValueFeat borl (stateFeat, act) = do
   return $ small - big
 
 -- -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
--- errorValueFeat :: (MonadBorl' m) => BORL s -> RSize -> StateFeatures -> ActionIndex -> m Double
--- errorValueFeat borl size stateFeat act = do
+-- errorValueWith Worker :: (MonadBorl' m) => BORL s -> RSize -> StateFeatures -> ActionIndex -> m Double
+-- errorValueWith Worker borl size stateFeat act = do
 --   small <- rValueWith Target borl size stateFeat act
 --   vVal <- vValueFeat borl stateFeat act
---   -- rhoVal <- rhoValueFeat borl stateFeat act
+--   -- rhoVal <- rhoValueWith Worker borl stateFeat act
 --   return $ small - vVal -- + rhoVal
 --   -- where
 --     -- rhoVal =
@@ -477,11 +470,11 @@ eValueFeat borl (stateFeat, act) = do
 --     --     -- AlgBORL gamma0 gamma1 _ _ -> fromSize gamma0 gamma1
 --     --     -- AlgDQNAvgRewAdjusted gamma0 (Just gamma1) _ _ -> case size of
 --     --     AlgDQNAvgRewAdjusted gamma0 Nothing _ _ -> 0
---     --     _ -> error "errorValueFeat can only be used with AlgBORL/AlgDQNAvgRewAdjusted in Calculation.Ops"
+--     --     _ -> error "errorValueWith Worker can only be used with AlgBORL/AlgDQNAvgRewAdjusted in Calculation.Ops"
 
 -- -- | Calculates the difference between the expected discounted values: e_gamma - V
 -- errorValueState :: (MonadBorl' m) => BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
--- errorValueState borl size (state, actIdxes) = maximum <$> mapM (errorValueFeat borl size state) actIdxes
+-- errorValueState borl size (state, actIdxes) = maximum <$> mapM (errorValueWith Worker borl size state) actIdxes
 
 -- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
 eValueAvgCleanedFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Double
@@ -494,7 +487,7 @@ eValueAvgCleanedFeat borl state act =
     avgRewardClean gamma0 gamma1 = do
       rBig <- rValueWith Target borl RBig state act
       rSmall <- rValueWith Target borl RSmall state act
-      rhoVal <- rhoValueFeat borl state act
+      rhoVal <- rhoValueWith Worker borl state act
       return $ rBig - rSmall - rhoVal * (1 / (1 - gamma1) - 1 / (1 - gamma0))
 
 
