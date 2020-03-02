@@ -242,7 +242,7 @@ writeDebugFiles borl = do
         | otherwise = False
   stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (init xs) (round $ last xs) else vValueFeat borl' (init xs) (round $ last xs)) stateFeats
+    stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (init xs) (round $ last xs) else vValueWith Worker borl' (init xs) (round $ last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do

@@ -102,7 +102,8 @@ nnConfig gym maxRew =
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25* maxRew)
     , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 1000
+    , _updateTargetInterval = 10000
+    , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     , _trainMSEMax = Nothing -- Just 0.05
     , _setExpSmoothParamsTo1 = True
     }
@@ -161,7 +162,7 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         epsStep <- getElapsedSteps gym
         let rad = xs !! 3 -- (-0.418879, 0.418879) .. 24 degrees in rad
             pos = xs !! 1 -- (-4.8, 4.8)
-        return $ Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.10 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
+        return $ Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879/4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
     AlgDQNAvgRewAdjusted {}
       | name gym == "MountainCar-v0" -> do
         let pos = head xs
@@ -169,11 +170,21 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
             velocity = xs !! 1
             oldPos = head oldSt
             oldVelocity = oldSt !! 1
-        epsStep <- getElapsedSteps gym
-        return $ Reward $ (* 50) $
-          ite eps (ite (epsStep == Just maxEpsSteps) (-5) 5) $
+        step <- fromMaybe 0 <$> getGlobalVar
+        setGlobalVar (Just $ step + 1)
+        let movGoal = min 0.5 (5e-6 * step - 0.3)
+        -- print (step, movGoal)
+
+        -- epsStep <- getElapsedSteps gym
+        -- return $ Reward $ (100 *) $ ite (pos > movGoal && oldVelocity >= 0 && velocity <= 0) 1 rew
+        return $ Reward $ (20 *) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
+
+        -- ite (pos > movGoal && oldVelocity >= 0 && velocity <= 0) 1 rew
+         -- 0.41887903213500977 - abs rad - 0.418879/4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
+        -- return $ Reward $ (* 50) $
+          -- ite eps (ite (epsStep == Just maxEpsSteps) (-5) 5) $
           -- fromIntegral (actIdx - 1) / 10
-          ite (oldVelocity >= 0 && velocity <= 0) (-1) 1
+          -- ite (oldVelocity >= 0 && velocity <= 0) (-1) 1
 
           -- ite eps (ite (epsStep == Just maxEpsSteps) (-2) 2) $ ite (oldVelocity >= 0 && velocity <= 0) (max oldPos pos) (-1.2) -- ite (oldVelocity <= 0 && velocity >= 0) (min oldPos pos) (-1.2)
     AlgDQNAvgRewAdjusted {}
@@ -235,9 +246,9 @@ instance RewardFuture St where
 
 alg :: Algorithm St
 alg =
-  algDQN
+  -- algDQN
   -- AlgDQNAvgRewAdjusted 0.85 0.99 ByStateValues
-  -- AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
 
 
 main :: IO ()
@@ -267,8 +278,8 @@ main = do
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) decay nn (nnConfig gym maxRew) initValues
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  rl <- mkUnichainTensorflowCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   ---let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) decay initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where

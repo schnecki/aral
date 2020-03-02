@@ -205,7 +205,8 @@ nnConfig =
     , _scaleParameters = scalingByMaxAbsReward False 6
     , _stabilizationAdditionalRho = 0.5
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 1
+    , _updateTargetInterval = 10000
+    , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     , _trainMSEMax = Nothing -- Just 0.03
     , _setExpSmoothParamsTo1 = True
     }

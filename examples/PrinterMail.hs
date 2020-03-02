@@ -76,6 +76,7 @@ nnConfig =
     , _stabilizationAdditionalRho = 0.025
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 100
+    , _updateTargetIntervalDecay = NoDecay
     , _trainMSEMax = Just 0.015
     , _setExpSmoothParamsTo1 = True
     }

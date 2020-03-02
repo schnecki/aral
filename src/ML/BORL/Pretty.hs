@@ -353,8 +353,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show ((printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
-                                     ,(printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)))
+        textNNConf conf =
+          text
+            (show
+               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -366,7 +369,10 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> empty
         px         -> textTargetUpdate (px ^?! proxyNNConfig)
       where
-        textTargetUpdate conf = text "NN Target Replacment Interval" <> colon $$ nest nestCols (int $ conf ^. updateTargetInterval)
+        textTargetUpdate conf =
+          text "NN Target Replacment Interval" <> colon $$ nest nestCols (int upTargetInterval) <+> parens (text "Period 0" <> colon <+> int (conf ^. updateTargetInterval))
+          where
+            upTargetInterval = max 1 $ round $ decaySetup (conf ^. updateTargetIntervalDecay) (borl ^. t - conf ^. replayMemoryMaxSize - 1) (fromIntegral $ conf ^. updateTargetInterval)
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty

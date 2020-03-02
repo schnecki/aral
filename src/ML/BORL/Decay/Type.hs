@@ -20,24 +20,27 @@ type DecayedValue = Double
 
 data DecaySetup
   = NoDecay
-  | ExponentialDecay { _decayMinimum :: Maybe Double
-                     , _decayExpRate :: Double
-                     , _decyaSteps   :: Integer }
+  | ExponentialDecay                  -- ^ Exponentially decrease a given value to 0, maybe cut by the given minimum value. v * rate^(t/steps
+      { _decayMinimum :: Maybe Double -- ^ Minimum value.
+      , _decayExpRate :: Double       -- ^ Decay rate.
+      , _decyaSteps   :: Integer      -- ^ Decay steps.
+      }
+  | ExponentialIncrease -- ^ Exponentially increase from 0 (or the specified minimum) to the provided value. Formula
+                        -- used: v * (1-rate^(t/steps))
+      { _increaseMinimum :: Maybe Double -- ^ Minimum value.
+      , _increaseExpRate :: Double       -- ^ Exponential rate.
+      , _increaseSteps   :: Integer      -- ^ Steps.
+      }
+  | LinearIncrease              -- ^ Linearly increase to a value from 0, maybe starting with a minimum. y = k * x + d
+    { _increaseD :: Maybe Double -- ^ d [Default: 0]
+    , _increaseK :: Double       -- ^ k
+    }
+  | StepWiseIncrease                -- ^ Linearly increase to a value from 0, maybe starting with a minimum. y = k * x + d but only updated to y every X step.
+    { _increaseD    :: Maybe Double -- ^ d [Default: 0]
+    , _increaseK    :: Double       -- ^ k
+    , _increaseStep :: Int          -- ^ Step
+    }
+
   deriving (Generic, Show, Eq, Ord, NFData, Serialize)
 makeLenses ''DecaySetup
 
-
--- data MinimumValues = MinimumValues
---   { _minAlpha       :: Double
---   , _minAlphaANN    :: Double
---   , _minBeta        :: Double
---   , _minBetaANN     :: Double
---   , _minDelta       :: Double
---   , _minDeltaANN    :: Double
---   , _minGamma       :: Double
---   , _minGammaANN    :: Double
---   , _minEpsilon     :: Double
---   , _minExploration :: Double
---   , _minXi          :: Double
---   }   deriving (Generic, NFData, Serialize)
--- makeLenses ''MinimumValues

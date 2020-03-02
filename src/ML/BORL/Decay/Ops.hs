@@ -1,14 +1,9 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes     #-}
 module ML.BORL.Decay.Ops where
 
-import           Control.DeepSeq
 import           Control.Lens
 import           Data.Maybe          (fromMaybe)
-import           Data.Serialize
-import           GHC.Generics
 
 import           ML.BORL.Decay.Type
 import           ML.BORL.Exploration
@@ -18,8 +13,11 @@ import           ML.BORL.Types
 type Decay = Period -> Parameters Double -> Parameters Double -- ^ Function specifying the decay of the parameters at time t.
 
 decaySetup :: DecaySetup -> Period -> Value -> DecayedValue
-decaySetup NoDecay                            = const id
-decaySetup (ExponentialDecay mMin rate steps) = exponentialDecayValue mMin rate steps
+decaySetup NoDecay                               = const id
+decaySetup (ExponentialDecay mMin rate steps)    = exponentialDecayValue mMin rate steps
+decaySetup (ExponentialIncrease mMin rate steps) = exponentialIncreaseValue mMin rate steps
+decaySetup (LinearIncrease mD k)                 = linearIncreaseValue mD k
+decaySetup (StepWiseIncrease mD k step)          = stepWiseIncreaseValue mD k step
 
 -- | Override the decay of specified parameters.
 overrideDecayParameters ::
@@ -94,4 +92,14 @@ exponentialDecayValue :: Maybe Double -> DecayRate -> DecaySteps -> Period -> Do
 exponentialDecayValue mMin rate steps t v = max (fromMaybe 0 mMin) (decay * v)
   where decay = rate ** (fromIntegral t / fromIntegral steps)
 
+exponentialIncreaseValue :: Maybe Double -> DecayRate -> DecaySteps -> Period -> Double -> Double
+exponentialIncreaseValue mMin rate steps t v = v - exponentialDecayValue ((v *) <$> mMin) rate steps t v
 
+
+linearIncreaseValue :: Maybe Double -> Double -> Period -> Double -> Double
+linearIncreaseValue mD k t v = min v $ fromIntegral t * k + fromMaybe 0 mD
+
+stepWiseIncreaseValue :: Maybe Double -> Double -> Period -> Period -> Double -> Double
+stepWiseIncreaseValue mD k step t = linearIncreaseValue mD k t'
+  where
+    t' = t - t `mod` step

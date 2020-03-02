@@ -274,14 +274,17 @@ insertCombinedProxies period pxs = scaleTab unscaleValue . set proxyType (head p
 updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
 updateNNTargetNet forceReset period px
-  | config ^. updateTargetInterval <= 1 = return px
+  | config ^. updateTargetInterval <= 1 || currentUpdateInterval <= 1 = return px
   | forceReset = copyValues
   | period <= memSize = return px
-  | ((period - memSize) `mod` config ^. updateTargetInterval) == 0 = copyValues
+  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 =
+      -- trace ("Period: " ++ show period)$
+    copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     config = px ^?! proxyNNConfig
+    currentUpdateInterval = max 1 $ round $ decaySetup (config ^. updateTargetIntervalDecay) period (fromIntegral $ config ^. updateTargetInterval)
     copyValues =
       case px of
         (Grenade _ netW' tab' tp' config' nrActs) -> return $ Grenade netW' netW' tab' tp' config' nrActs
