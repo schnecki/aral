@@ -18,6 +18,7 @@ import           Control.Lens
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Function          (on)
 import           Data.List              (groupBy, partition, sortBy)
+import           Data.Maybe             (fromMaybe)
 import           System.Random
 
 import           Debug.Trace
@@ -103,9 +104,7 @@ chooseAction borl useRand selFromList = do
                    else do
                      r <- liftIO $ randomRIO (0, length bestE - 1)
                      return (borl, False, bestE !! r)
-           AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
-           AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
-           AlgDQNAvgRewAdjusted {} -> do
+           AlgDQNAvgRewAdjusted mEpsMiddle _ _ _ -> do
              bestR1 <-
                do r1Values <- mapM (rValue borl RBig state . fst) as -- 1. choose highest bias values
                   map snd . maximised <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
@@ -113,13 +112,16 @@ chooseAction borl useRand selFromList = do
                then return (borl, False, head bestR1)
                else do
                  r0Values <- mapM (rValue borl RSmall state . fst) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
-                 bestR0ValueActions <- liftIO $ fmap maximised $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
+                 -- bestR0ValueActions <- liftIO $ fmap maximised $ selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
+                 bestR0ValueActions <- liftIO $ fmap maximised $ selFromList $ groupBy (epsCompareWith (fromMaybe eps mEpsMiddle) (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
                  let bestR0 = map snd bestR0ValueActions
                  if length bestR0 == 1
                    then return (borl, False, head bestR0)
                    else do
                      r <- liftIO $ randomRIO (0, length bestR0 - 1) --  3. Uniform selection of leftover actions
                      return (borl, False, bestR0 !! r)
+           AlgBORLVOnly {} -> singleValueNextAction EpsilonSensitive (vValue borl state . fst)
+           AlgDQN _ cmp -> singleValueNextAction cmp (rValue borl RBig state . fst)
   where
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
@@ -157,3 +159,4 @@ epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y
   | abs (x - y) <= eps = f 0 0
   | otherwise = y `f` x
+

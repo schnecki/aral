@@ -214,9 +214,9 @@ instance ExperimentDef (BORL St)
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                                                                  [ AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
+                                                                  , AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
                                                                   , AlgDQN 0.999 Exact
@@ -361,7 +361,7 @@ alg =
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -371,7 +371,7 @@ usermode = do
   rl <-
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted {} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
       _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate

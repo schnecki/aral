@@ -78,17 +78,10 @@ modelBuilder gym initSt nrActions outCols =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [10 * inpLen] TF.relu' >> fullyConnected [5 * inpLen] TF.relu' >> fullyConnected [5 * inpLen] TF.relu' >>
   fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- trainingByGradientDescent 0.01
+  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  trainingByGradientDescent 0.01
   where
     inpLen = genericLength (netInp False gym initSt)
-  -- buildModel $
-  -- inputLayer1D (fromIntegral nrInp) >>
-  -- fullyConnected [5 * (fromIntegral (nrOut `div` 3) + fromIntegral nrInp)] TF.relu' >>
-  -- fullyConnected [3 * (fromIntegral (nrOut `div` 2) + fromIntegral (nrInp `div` 2))] TF.relu' >>
-  -- -- fullyConnected (1 * (fromIntegral nrOut + fromIntegral (nrInp `div` 3))) TF.relu' >>
-  -- fullyConnected [fromIntegral nrOut, outCols] TF.tanh' >>
-  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
 nnConfig :: Gym -> Double -> NNConfig
@@ -102,7 +95,7 @@ nnConfig gym maxRew =
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25* maxRew)
     , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 10000
+    , _updateTargetInterval = 15000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     , _trainMSEMax = Nothing -- Just 0.05
     , _setExpSmoothParamsTo1 = True
@@ -157,12 +150,12 @@ rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
 rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
   case alg of
     AlgDQN {} -> return $ Reward rew
-    AlgDQNAvgRewAdjusted {}
+    AlgDQNAvgRewAdjusted  {}
       | name gym == "CartPole-v1" -> do
         epsStep <- getElapsedSteps gym
         let rad = xs !! 3 -- (-0.418879, 0.418879) .. 24 degrees in rad
             pos = xs !! 1 -- (-4.8, 4.8)
-        return $ Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879/4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
+        return $ Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879 / 4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
     AlgDQNAvgRewAdjusted {}
       | name gym == "MountainCar-v0" -> do
         let pos = head xs
@@ -173,21 +166,9 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         step <- fromMaybe 0 <$> getGlobalVar
         setGlobalVar (Just $ step + 1)
         let movGoal = min 0.5 (5e-6 * step - 0.3)
-        -- print (step, movGoal)
-
-        -- epsStep <- getElapsedSteps gym
-        -- return $ Reward $ (100 *) $ ite (pos > movGoal && oldVelocity >= 0 && velocity <= 0) 1 rew
-        return $ Reward $ (20 *) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
-
-        -- ite (pos > movGoal && oldVelocity >= 0 && velocity <= 0) 1 rew
-         -- 0.41887903213500977 - abs rad - 0.418879/4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
-        -- return $ Reward $ (* 50) $
-          -- ite eps (ite (epsStep == Just maxEpsSteps) (-5) 5) $
-          -- fromIntegral (actIdx - 1) / 10
-          -- ite (oldVelocity >= 0 && velocity <= 0) (-1) 1
-
-          -- ite eps (ite (epsStep == Just maxEpsSteps) (-2) 2) $ ite (oldVelocity >= 0 && velocity <= 0) (max oldPos pos) (-1.2) -- ite (oldVelocity <= 0 && velocity >= 0) (min oldPos pos) (-1.2)
-    AlgDQNAvgRewAdjusted {}
+        epsStep <- getElapsedSteps gym
+        return $ Reward $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) id $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
+    AlgDQNAvgRewAdjusted  {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
          in return $ Reward $ (* 20) $ -cosS0 - cos (acos cosS0 + acos cosS1)
@@ -207,7 +188,7 @@ rewardFunction gym _ _ _ = error $ "rewardFunction not yet defined for this envi
 maxReward :: Gym -> Double
 maxReward _ | isAlgDqn alg = 10
 maxReward gym | name gym == "CartPole-v1" = 50
-              | name gym == "MountainCar-v0" = 50
+              | name gym == "MountainCar-v0" = 200
               | name gym == "Copy-v0" = 1.0
               | name gym == "Acrobot-v1" = 50
               -- | name gym == "Pendulum-v0" =
@@ -247,8 +228,8 @@ instance RewardFuture St where
 alg :: Algorithm St
 alg =
   -- algDQN
-  -- AlgDQNAvgRewAdjusted 0.85 0.99 ByStateValues
-  AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
+  -- AlgDQNAvgRewAdjusted Nothing 0.85 0.99 ByStateValues
+  AlgDQNAvgRewAdjusted (Just 0.01) 0.85 1.0 ByStateValues
 
 
 main :: IO ()
@@ -277,10 +258,10 @@ main = do
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith UniformInit :: IO NN
-  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) decay nn (nnConfig gym maxRew) initValues
-  rl <- mkUnichainTensorflowCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) decay (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  ---let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) decay initValues
+  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+  rl <- mkUnichainTensorflowCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  ---let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
@@ -309,11 +290,11 @@ params gym maxRew =
     , _deltaANN            = 0.5
     , _gammaANN            = 0.5
     }
-  where eps | name gym == "MountainCar-v0" = 0.01
+  where eps | name gym == "MountainCar-v0" = 0.25
             | otherwise = min 1.0 $ max 0.05 $ 0.005 * maxRew
 
-decay :: Decay
-decay =
+decay :: Gym -> Decay
+decay gym =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 30000
@@ -324,7 +305,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = NoDecay -- ExponentialDecay (Just 0.03) 0.05 15000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 50000
+      , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -332,6 +313,11 @@ decay =
       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
+  where minExp -- | name gym == "MountainCar-v0" = 0.15
+               | otherwise = 0.01
+        expFact
+          | name gym == "MountainCar-v0" = 2
+          | otherwise = 1
 
 
 actFilter :: St -> [Bool]

@@ -34,6 +34,9 @@ data Comparison
   | Exact
   deriving (Ord, Eq, Show, Generic, NFData, Serialize)
 
+type EpsilonMiddle = Double
+
+
 data Algorithm s
   = AlgBORL GammaLow
             GammaHigh
@@ -41,7 +44,7 @@ data Algorithm s
             (Maybe (s, ActionIndex))
   | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN Gamma Comparison
-  | AlgDQNAvgRewAdjusted GammaMiddle GammaHigh AvgReward
+  | AlgDQNAvgRewAdjusted (Maybe EpsilonMiddle) GammaMiddle GammaHigh AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 
@@ -88,4 +91,4 @@ algDQN = AlgDQN defaultGammaDQN Exact
 
 
 algDQNAvgRewardFree :: Algorithm s
-algDQNAvgRewardFree = AlgDQNAvgRewAdjusted defaultGamma1 1.0 ByStateValues
+algDQNAvgRewardFree = AlgDQNAvgRewAdjusted (Just 0.01) defaultGamma1 1.0 ByStateValues

@@ -68,31 +68,33 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
           putStr "How often shall I repeat this? [1] " >> hFlush stdout
           l <- getLine
           case reads l :: [(Integer, String)] of
-            [(often, _)]
-              -- ql' <-
-              --   runMonadBorlTF $ do
-              --     restoreTensorflowModels True ql
-              --     borl' <-
-              --       foldM
-              --         (\q _ -> do
-              --            q' <- stepsM q nr
-              --            output <- prettyBORLMWithStInverse mInverse q'
-              --            liftIO $ print output >> hFlush stdout
-              --            return q')
-              --         ql
-              --         [1 .. often]
-              --     saveTensorflowModels borl'
-              -- askUser mInverse False addUsage cmds ql'
-             -> do
+            [(often, _)] -> do
               ql' <-
-                foldM
-                  (\q _ -> do
-                     q' <- time (steps q nr)
-                     liftIO $ prettyBORLWithStInverse mInverse q' >>= print >> hFlush stdout
-                     return q')
-                  ql
-                  [1 .. often]
+                runMonadBorlTF $ do
+                  restoreTensorflowModels True ql
+                  borl' <-
+                    foldM
+                      (\q _ -> do
+                         q' <- stepsM q nr
+                         let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (ql ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
+                         output <- prettyBORLMWithStInverse mInverse qPP
+                         liftIO $ print output >> hFlush stdout
+                         return q')
+                      ql
+                      [1 .. often]
+                  saveTensorflowModels borl'
               askUser mInverse False addUsage cmds qlCmds ql'
+             -- -> do
+             --  ql' <-
+             --    foldM
+             --      (\q _ -> do
+             --         q' <- time (steps q nr)
+             --         let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (ql ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
+             --         liftIO $ prettyBORLWithStInverse mInverse qPP >>= print >> hFlush stdout
+             --         return q')
+             --      ql
+             --      [1 .. often]
+             --  askUser mInverse False addUsage cmds qlCmds ql'
             _ -> time (steps ql nr) >>= askUser mInverse False addUsage cmds qlCmds
         _ -> do
           putStr "Could not read your input :( You are supposed to enter an Integer.\n"
@@ -142,7 +144,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
     _ ->
       case find ((== c) . fst) cmds of
         Nothing ->
-          case find ((== c) . fst) (map (\(c, _, f) -> (c,f)) qlCmds) of
+          case find ((== c) . fst) (map (\(c, _, f) -> (c, f)) qlCmds) of
             Nothing ->
               unless
                 (c == "q")
@@ -153,7 +155,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                      Just _ ->
                        runMonadBorlTF (restoreTensorflowModels True ppQl >> prettyBORLTables mInverse True False True ppQl) >>= print >>
                        askUser mInverse False addUsage cmds qlCmds x)
-            Just (_,f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
+            Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
             Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds qlCmds

@@ -225,16 +225,16 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
+        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99  ByStateValues
                                -- ,
-                               --   AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                               --   AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
                                -- , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
-                               , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                               , AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
                                ])
         Nothing
         Nothing
@@ -305,51 +305,6 @@ decay =
       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
 
--- -- | BORL Parameters.
--- params :: ParameterInitValues
--- params =
---   Parameters
---     { _alpha              = 0.01
---     , _beta               = 0.03
---     , _delta              = 0.03
---     , _gamma              = 0.005
---     , _epsilon            = 5
---     , _explorationStrategy = EpsilonGreedy
---     , _exploration        = 1.0
---     , _learnRandomAbove   = 1.0
---     , _zeta               = 0.10
---     , _xi                 = 5e-3
---     , _disableAllLearning = False
---     -- ANN
---     , _alphaANN           = 0.5 -- only used for multichain
---     , _betaANN            = 1
---     , _deltaANN           = 1
---     , _gammaANN           = 1
-
---     }
-
--- -- | Decay function of parameters.
--- decay :: Decay
--- decay =
---   decaySetupParameters
---     Parameters
---       { _alpha            = ExponentialDecay (Just 1e-7) 0.15 50000
---       , _beta             = ExponentialDecay (Just 5e-4) 0.5 150000
---       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
---       , _gamma            = ExponentialDecay (Just 5e-3) 0.5 150000
---       , _zeta             = NoDecay -- ExponentialDecay (Just 0) 0.5 150000
---       , _xi               = NoDecay
---       -- Exploration
---       , _epsilon          = NoDecay
---       , _exploration      = ExponentialDecay (Just 0.10) 0.5 150000
---       , _learnRandomAbove = NoDecay
---       -- ANN
---       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
---       , _betaANN          = ExponentialDecay Nothing 0.75 150000
---       , _deltaANN         = ExponentialDecay Nothing 0.75 150000
---       , _gammaANN         = ExponentialDecay Nothing 0.75 150000
---       }
-
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
 
@@ -406,11 +361,11 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
+        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByReward
+        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

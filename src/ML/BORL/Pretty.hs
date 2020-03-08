@@ -180,8 +180,8 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
-prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
+prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted mEps ga0 ga1 avgRewType) =
+  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType <> maybe mempty (\e -> text ". Epsilon for gamma0:" <+> double e) mEps
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
@@ -320,7 +320,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewAdjusted {} -> text "Scaling (V,R0) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
+       AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printFloatWith 8 $ borl ^. psis . _1, printFloatWith 8 $ borl ^. psis . _2, printFloatWith 8 $ borl ^. psis . _3)))) $+$
@@ -356,8 +356,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textNNConf conf =
           text
             (show
-               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)))
+               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -370,9 +370,10 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textTargetUpdate (px ^?! proxyNNConfig)
       where
         textTargetUpdate conf =
-          text "NN Target Replacment Interval" <> colon $$ nest nestCols (int upTargetInterval) <+> parens (text "Period 0" <> colon <+> int (conf ^. updateTargetInterval))
+          text "NN Target Replacment Interval" <> colon $$ nest nestCols (int upTargetInterval) <+> parens (text "Maximum" <> colon <+> int (conf ^. updateTargetInterval))
           where
-            upTargetInterval = max 1 $ round $ decaySetup (conf ^. updateTargetIntervalDecay) (borl ^. t - conf ^. replayMemoryMaxSize - 1) (fromIntegral $ conf ^. updateTargetInterval)
+            upTargetInterval =
+              max 1 $ round $ decaySetup (conf ^. updateTargetIntervalDecay) (borl ^. t - conf ^. replayMemoryMaxSize - 1) (fromIntegral $ conf ^. updateTargetInterval)
     nnBatchSize =
       case borl ^. proxies . v of
         P.Table {} -> empty
