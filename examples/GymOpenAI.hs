@@ -98,7 +98,7 @@ nnConfig gym maxRew =
     , _updateTargetInterval = 15000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     , _trainMSEMax = Nothing -- Just 0.05
-    , _setExpSmoothParamsTo1 = True
+    , _setExpSmoothParamsTo1 = False
     }
   where
     (lows, highs) = observationSpaceBounds gym
@@ -286,9 +286,9 @@ params gym maxRew =
     , _disableAllLearning  = False
     -- ANN
     , _alphaANN            = 0.5 -- only used for multichain
-    , _betaANN             = 0.5
-    , _deltaANN            = 0.5
-    , _gammaANN            = 0.5
+    , _betaANN             = 1.0
+    , _deltaANN            = 1.0
+    , _gammaANN            = 1.0
     }
   where eps | name gym == "MountainCar-v0" = 0.25
             | otherwise = min 1.0 $ max 0.05 $ 0.005 * maxRew
@@ -308,10 +308,10 @@ decay gym =
       , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
       , _learnRandomAbove = NoDecay
       -- ANN
-      , _alphaANN         = ExponentialDecay Nothing 0.75 150000
-      , _betaANN          = ExponentialDecay Nothing 0.75 150000
-      , _deltaANN         = ExponentialDecay Nothing 0.75 150000
-      , _gammaANN         = ExponentialDecay Nothing 0.75 150000
+      , _alphaANN         = ExponentialDecay (Just 0.05) 0.75 150000
+      , _betaANN          = ExponentialDecay (Just 0.05) 0.75 150000
+      , _deltaANN         = ExponentialDecay (Just 0.05) 0.75 150000
+      , _gammaANN         = ExponentialDecay (Just 0.05) 0.75 150000
       }
   where minExp -- | name gym == "MountainCar-v0" = 0.15
                | otherwise = 0.01
