@@ -313,10 +313,10 @@ decay gym =
       , _deltaANN         = ExponentialDecay (Just 0.05) 0.75 150000
       , _gammaANN         = ExponentialDecay (Just 0.05) 0.75 150000
       }
-  where minExp -- | name gym == "MountainCar-v0" = 0.15
+  where minExp | name gym == "MountainCar-v0" = 0.001
                | otherwise = 0.01
         expFact
-          | name gym == "MountainCar-v0" = 2
+          | name gym == "MountainCar-v0" = 3
           | otherwise = 1
 
 
