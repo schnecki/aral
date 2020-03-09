@@ -461,12 +461,12 @@ getMinMaxVal p =
     PsiWTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     NoScaling {} -> Nothing
     CombinedUnichain -> error "should not happend"
-    CombinedUnichainScaleAs {} -> error "should not happend"
+    -- CombinedUnichainScaleAs {} -> error "should not happend"
   where
     unCombine CombinedUnichain
       | isCombinedProxy p = fromCombinedIndex (p ^?! proxyOutCol)
-    unCombine (CombinedUnichainScaleAs x)
-      | isCombinedProxy p = x
+    -- unCombine (CombinedUnichainScaleAs x)
+    --   | isCombinedProxy p = x
     unCombine x = x
 
 

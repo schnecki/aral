@@ -284,7 +284,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
-  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable
+  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
       scopes = ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) (repeat nnType) scopes (repeat (modelBuilder nrNets)))
@@ -448,7 +448,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
   let nnSA tp = Grenade net net mempty tp nnConfig (length as)
-  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichainScaleAs VTable
+  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
   let nn = nnSA nnType
   repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
@@ -584,4 +584,5 @@ setAllProxies l = overAllProxies l . const
 
 allProxies :: Proxies -> [Proxy]
 allProxies pxs = map (pxs ^. ) (allProxiesLenses pxs)
+
 
