@@ -57,20 +57,20 @@ data ProxyType
   | PsiVTable
   | PsiWTable
   | CombinedUnichain
-  | CombinedUnichainScaleAs ProxyType
+--  | CombinedUnichainScaleAs ProxyType
   | NoScaling ProxyType
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 proxyTypeName :: ProxyType -> Text.Text
-proxyTypeName VTable                      = "v"
-proxyTypeName WTable                      = "w"
-proxyTypeName R0Table                     = "r0"
-proxyTypeName R1Table                     = "r1"
-proxyTypeName PsiVTable                   = "psiV"
-proxyTypeName PsiWTable                   = "psiW"
-proxyTypeName CombinedUnichain            = "combinedUnichain"
-proxyTypeName (CombinedUnichainScaleAs p) = "combinedUnichainScaleAs" <> proxyTypeName p
-proxyTypeName (NoScaling p)               = "noscaling-" <> proxyTypeName p
+proxyTypeName VTable           = "v"
+proxyTypeName WTable           = "w"
+proxyTypeName R0Table          = "r0"
+proxyTypeName R1Table          = "r1"
+proxyTypeName PsiVTable        = "psiV"
+proxyTypeName PsiWTable        = "psiW"
+proxyTypeName CombinedUnichain = "combinedUnichain"
+-- proxyTypeName (CombinedUnichainScaleAs p) = "combinedUnichainScaleAs" <> proxyTypeName p
+proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
 
 
 data Proxy = Scalar             -- ^ Combines multiple proxies in one for performance benefits.

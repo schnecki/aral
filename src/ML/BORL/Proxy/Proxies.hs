@@ -72,8 +72,8 @@ rho f px@ProxiesCombinedUnichain{} = (\rho' -> px { _rho = rho' }) <$> f (_rho p
 
 
 fromCombinedIndex :: Int -> ProxyType
-fromCombinedIndex 0 = R0Table
-fromCombinedIndex 1 = R1Table
+fromCombinedIndex 0 = R1Table
+fromCombinedIndex 1 = R0Table
 fromCombinedIndex 2 = VTable
 fromCombinedIndex 3 = PsiVTable
 fromCombinedIndex 4 = PsiWTable
