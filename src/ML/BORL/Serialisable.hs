@@ -47,7 +47,7 @@ data BORLSerialisable s = BORLSerialisable
 
   -- define algorithm to use
   , serAlgorithm      :: !(Algorithm [Double])
-  , serPhase          :: !Phase
+  , serObjective      :: !Objective
 
   -- Values:
   , serLastVValues    :: ![Double]                 -- ^ List of X last V values
@@ -61,9 +61,9 @@ toSerialisable = toSerialisableWith id id
 
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg ph v rew psis prS) = do
-  BORL _ _ s _ t eNr par _ future alg ph v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) alg ph v rew psis prS
+toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg obj v rew psis prS) = do
+  BORL _ _ s _ t eNr par _ future alg obj v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) alg obj v rew psis prS
 
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
@@ -79,9 +79,9 @@ fromSerialisableWith ::
   -> ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s t e par future alg ph lastV rew psis prS) = do
+fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s t e par future alg obj lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg ph lastV rew psis prS
+      borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2

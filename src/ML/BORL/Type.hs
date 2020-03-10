@@ -15,7 +15,69 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module ML.BORL.Type where
+module ML.BORL.Type
+  ( -- objective
+    Objective (..)
+  , setObjective
+  , flipObjective
+    -- common
+  , ActionIndexed
+  , RewardFutureData (..)
+  , futurePeriod
+  , futureState
+  , futureActionNr
+  , futureRandomAction
+  , futureReward
+  , futureStateNext
+  , futureEpisodeEnd
+  , mapRewardFutureData
+  , idxStart
+    -- BORL
+  , BORL (..)
+  , actionList
+  , actionFilter
+  , s
+  , featureExtractor
+  , t
+  , episodeNrStart
+  , parameters
+  , decayFunction
+  , futureRewards
+  , algorithm
+  , objective
+  , lastVValues
+  , lastRewards
+  , psis
+  , proxies
+    -- actions
+  , actionsIndexed
+  , filteredActions
+  , filteredActionIndexes
+    -- initial values
+  , InitValues (..)
+  , defInitValues
+    -- constructors
+  , mkUnichainTabular
+  , mkMultichainTabular
+
+  , mkTensorflowModel
+  , mkUnichainTensorflowM
+  , mkUnichainTensorflowCombinedNetM
+  , mkUnichainTensorflow
+  , mkUnichainTensorflowCombinedNet
+
+  , mkUnichainGrenade
+  , mkUnichainGrenadeCombinedNet
+  , mkMultichainGrenade
+
+    -- scaling
+  , scalingByMaxAbsReward
+  , scalingByMaxAbsRewardAlg
+    -- proxy/proxies helpers
+  , overAllProxies
+  , setAllProxies
+  , allProxies
+  ) where
 
 import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
@@ -53,11 +115,10 @@ import           Debug.Trace
 
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
 
-data Phase = IncreasingStateValues
-           --  | DecreasingStateValues
-           | SteadyStateValues
+data Objective
+  = Minimise
+  | Maximise
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
-
 
 data RewardFutureData s = RewardFutureData
                 { _futurePeriod       :: Period
@@ -87,7 +148,7 @@ data BORL s = BORL
 
   -- define algorithm to use
   , _algorithm        :: !(Algorithm [Double]) -- ^ What algorithm to use.
-  , _phase            :: !Phase                -- ^ Current phase for scaling by `StateValueHandling`.
+  , _objective        :: !Objective            -- ^ Objective to minimise or maximise.
 
   -- Values:
   , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
@@ -136,6 +197,19 @@ data InitValues = InitValues
 defInitValues :: InitValues
 defInitValues = InitValues 0 0 0 0 0 0
 
+
+-------------------- Objective --------------------
+
+setObjective :: Objective -> BORL s -> BORL s
+setObjective obj = objective .~ obj
+
+-- | Default objective is Maximise.
+flipObjective :: BORL s -> BORL s
+flipObjective borl = case borl ^. objective of
+  Minimise -> objective .~ Maximise $ borl
+  Maximise -> objective .~ Minimise $ borl
+
+
 -------------------- Constructors --------------------
 
 -- Tabular representations
@@ -147,6 +221,7 @@ convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
 convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted mEpsGa1 ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted mEpsGa1 ga1 ga2 avgRew
+
 
 mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
@@ -161,7 +236,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     decayFun
     mempty
     (convertAlgorithm ftExt alg)
-    SteadyStateValues
+    Maximise
     mempty
     mempty
     (0, 0, 0)
@@ -229,7 +304,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
           decayFun
           mempty
           (convertAlgorithm ftExt alg)
-          SteadyStateValues
+          Maximise
           mempty
           mempty
           (0, 0, 0)
@@ -256,7 +331,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
           decayFun
           mempty
           (convertAlgorithm ftExt alg)
-          SteadyStateValues
+          Maximise
           mempty
           mempty
           (0, 0, 0)
@@ -310,7 +385,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       decayFun
       mempty
       (convertAlgorithm ftExt alg)
-      SteadyStateValues
+      Maximise
       mempty
       mempty
       (0, 0, 0)
@@ -370,7 +445,7 @@ mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValue
     decayFun
     mempty
     (convertAlgorithm ftExt alg)
-    SteadyStateValues
+    Maximise
     mempty
     mempty
     (0, 0, 0)
@@ -421,7 +496,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
       decayFun
       []
       (convertAlgorithm ftExt alg)
-      SteadyStateValues
+      Maximise
       mempty
       mempty
       (0, 0, 0)
@@ -465,7 +540,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
       decayFun
       []
       (convertAlgorithm ftExt alg)
-      SteadyStateValues
+      Maximise
       mempty
       mempty
       (0, 0, 0)
@@ -521,7 +596,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       decayFun
       []
       (convertAlgorithm ftExt alg)
-      SteadyStateValues
+      Maximise
       mempty
       mempty
       (0, 0, 0)
@@ -547,12 +622,14 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
         maxR1 = 1.0 * maxDiscount defaultGamma1
 
 scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
-scalingByMaxAbsRewardAlg alg onlyPositive maxR = case alg of
-  AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR0) maxR0 (-maxR1) maxR1
-  _ -> scalingByMaxAbsReward onlyPositive maxR
-  where maxW = 50 * maxR
-        maxR1 = 1.0 * maxR
-        maxR0 = 0.8 * maxR
+scalingByMaxAbsRewardAlg alg onlyPositive maxR =
+  case alg of
+    AlgDQNAvgRewAdjusted _ ga0 _ _ -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR0) maxR0 (-maxR1) maxR1
+      where maxR0 = ga0 * maxR
+    _ -> scalingByMaxAbsReward onlyPositive maxR
+  where
+    maxW = 50 * maxR
+    maxR1 = 1.0 * maxR
 
 
 -------------------- Helpers --------------------

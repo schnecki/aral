@@ -308,10 +308,10 @@ decay gym =
       , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
       , _learnRandomAbove = NoDecay
       -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.05) 0.75 150000
-      , _betaANN          = ExponentialDecay (Just 0.05) 0.75 150000
-      , _deltaANN         = ExponentialDecay (Just 0.05) 0.75 150000
-      , _gammaANN         = ExponentialDecay (Just 0.05) 0.75 150000
+      , _alphaANN         = ExponentialDecay (Just 0.15) 0.75 150000
+      , _betaANN          = ExponentialDecay (Just 0.15) 0.75 150000
+      , _deltaANN         = ExponentialDecay (Just 0.15) 0.75 150000
+      , _gammaANN         = ExponentialDecay (Just 0.15) 0.75 150000
       }
   where minExp | name gym == "MountainCar-v0" = 0.001
                | otherwise = 0.01

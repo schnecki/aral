@@ -53,10 +53,6 @@ expSmthPsi = 0.001
 keepXLastValues :: Int
 keepXLastValues = 100
 
-approxAvg :: Double
-approxAvg = fromIntegral (100 :: Int)
-
-
 mkCalculation :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
 mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
   mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
@@ -66,8 +62,15 @@ ite True thenPart _  = thenPart
 ite False _ elsePart = elsePart
 {-# INLINE ite #-}
 
-rhoMinimumState' :: (Ord a, Fractional a) => a -> a
-rhoMinimumState' rhoVal' = max (rhoVal' - 2) (0.975 * rhoVal')
+rhoMinimumState' :: (Ord a, Fractional a) => BORL s -> a -> a
+rhoMinimumState' borl rhoVal' =
+  case borl ^. objective of
+    Maximise
+      | rhoVal' >= 0 -> max (rhoVal' - 2) (0.975 * rhoVal')
+      | otherwise -> max (rhoVal' - 2) (1.025 * rhoVal')
+    Minimise
+      | rhoVal' >= 0 -> min (rhoVal' + 2) (1.025 * rhoVal')
+      | otherwise -> min (rhoVal' + 2) (0.975 * rhoVal')
 
 mkCalculation' ::
      (MonadBorl' m)
@@ -118,18 +121,18 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         case avgRewardType of
           ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
           _                  -> take keepXLastValues $ reward : borl ^. lastRewards
-  vValState <- vValueWith Worker borl state aNr                                   `using` rpar
-  rhoMinimumState <- rhoMinimumValueFeat borl state aNr                    `using` rpar
-  vValStateNext <- vStateValueWith Target borl (stateNext, stateNextActIdxes)         `using` rpar
-  rhoVal <- rhoValueWith Worker borl state aNr                                    `using` rpar
-  wValState <- wValueFeat borl state aNr                                   `using` rpar
-  wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes)         `using` rpar
-  psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV)  `using` rpar
-  psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW)  `using` rpar
-  r0ValState <- rValueWith Worker  borl RSmall state aNr                           `using` rpar
+  vValState <- vValueWith Worker borl state aNr `using` rpar
+  rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
+  vValStateNext <- vStateValueWith Target borl (stateNext, stateNextActIdxes) `using` rpar
+  rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
+  wValState <- wValueFeat borl state aNr `using` rpar
+  wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes) `using` rpar
+  psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV) `using` rpar
+  psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW) `using` rpar
+  r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
   r0ValStateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
-  r1ValState <- rValueWith Worker borl RBig state aNr                             `using` rpar
-  r1ValStateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes)   `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
+  r1ValStateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   -- Stabilization
   let mStabVal = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRho
       mStabValDec = borl ^? proxies . v . proxyNNConfig . stabilizationAdditionalRhoDecay
@@ -145,10 +148,14 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       ByStateValues -> return $ reward + vValStateNext - vValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay period ratio
+  let maxOrMin =
+        case borl ^. objective of
+          Maximise -> max
+          Minimise -> min
   let rhoVal'
         | randomAction && not learnFromRandom = rhoVal
         | otherwise =
-          max rhoMinimumState $
+          maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x    -> x
@@ -156,7 +163,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
+        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -180,7 +187,6 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValRho' = (1 - expSmth) * psiValRho + expSmth * abs psiRho
   let psiValV' = (1 - expSmth) * psiValV + expSmth * abs psiVState'
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
-
   return $
     Calculation
       { getRhoMinimumVal' = Just rhoMinimumVal'
@@ -206,7 +212,6 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
-
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
@@ -234,11 +239,14 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       ByStateValues -> return $ reward + r1StateNextWorker - r1ValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + r1StateNextWorker - r1ValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
+  let maxOrMin =
+        case borl ^. objective of
+          Maximise -> max
+          Minimise -> min
   let rhoVal'
-        | randomAction = max rhoMinimumState
-            rhoVal
+        | randomAction = maxOrMin rhoMinimumState rhoVal
         | otherwise =
-          max rhoMinimumState $
+          maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x    -> x
@@ -246,7 +254,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   -- RhoMin
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
+        | otherwise = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $
@@ -254,7 +262,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       { getRhoMinimumVal' = Just rhoMinimumVal'
       , getRhoVal' = Just rhoVal'
       , getPsiVValState' = Nothing
-      , getVValState' =  Nothing
+      , getVValState' = Nothing
       , getPsiWValState' = Nothing
       , getWValState' = Nothing
       , getR0ValState' = Just r0ValState' -- gamma low
@@ -299,18 +307,21 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       ByStateValues -> return $ reward + vValStateNext - vValState
       ByStateValuesAndReward ratio decay -> return $ ratio' * (reward + vValStateNext - vValState) + (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
+  let maxOrMin =
+        case borl ^. objective of
+          Maximise -> max
+          Minimise -> min
   let rhoVal'
-        | randomAction -- && not learnFromRandom
-        = rhoVal
+        | randomAction = rhoVal
         | otherwise =
-          max rhoMinimumState $
+          maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal'
         | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = max rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' rhoVal'
+        | otherwise = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
@@ -392,7 +403,12 @@ rhoStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m
 rhoStateValue borl (state, actIdxes) =
   case borl ^. proxies . rho of
     Scalar r -> return r
-    _        -> maximum <$> mapM (rhoValueWith Target borl state) actIdxes
+    _        -> maxOrMin <$> mapM (rhoValueWith Target borl state) actIdxes
+  where
+    maxOrMin =
+      case borl ^. objective of
+        Maximise -> maximum
+        Minimise -> minimum
 
 -- | Bias value from Worker net.
 vValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Double
@@ -408,7 +424,13 @@ vValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^
 vStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> (StateFeatures, [ActionIndex]) -> m Double
 vStateValueWith lkTp borl (state, asIdxes) = do
   xs <- mapM (vValueWith lkTp borl state) asIdxes
-  return $ snd $ maximumBy (compare `on` snd) $ zip asIdxes xs
+  return $ snd $ maxOrMin (compare `on` snd) $ zip asIdxes xs
+  where
+    maxOrMin =
+      case borl ^. objective of
+        Maximise -> maximumBy
+        Minimise -> minimumBy
+
 
 -- psiVValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Double
 -- psiVValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . psiV)
@@ -426,7 +448,12 @@ wValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionI
 wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . w)
 
 wStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m Double
-wStateValue borl (state, asIdxes) = maximum <$> mapM (wValueWith Target borl state) asIdxes
+wStateValue borl (state, asIdxes) = maxOrMin <$> mapM (wValueWith Target borl state) asIdxes
+  where
+    maxOrMin =
+      case borl ^. objective of
+        Maximise -> maximum
+        Minimise -> minimum
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
@@ -446,7 +473,10 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
         RBig   -> borl ^. proxies.r1
 
 rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
-rStateValueWith lkTp borl size (state, actIdxes) = maximum <$> mapM (rValueWith lkTp borl size state) actIdxes
+rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> mapM (rValueWith lkTp borl size state) actIdxes
+  where maxOrMin = case borl ^. objective of
+          Maximise -> maximum
+          Minimise -> minimum
 
 
 -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
@@ -459,25 +489,6 @@ eValueFeat borl (stateFeat, act) = do
   big <- rValueWith Target borl RBig stateFeat act
   small <- rValueWith Target borl RSmall stateFeat act
   return $ small - big
-
--- -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
--- errorValueWith Worker :: (MonadBorl' m) => BORL s -> RSize -> StateFeatures -> ActionIndex -> m Double
--- errorValueWith Worker borl size stateFeat act = do
---   small <- rValueWith Target borl size stateFeat act
---   vVal <- vValueWith Worker borl stateFeat act
---   -- rhoVal <- rhoValueWith Worker borl stateFeat act
---   return $ small - vVal -- + rhoVal
---   -- where
---     -- rhoVal =
---     --   case borl ^. algorithm of
---     --     -- AlgBORL gamma0 gamma1 _ _ -> fromSize gamma0 gamma1
---     --     -- AlgDQNAvgRewAdjusted gamma0 (Just gamma1) _ _ -> case size of
---     --     AlgDQNAvgRewAdjusted gamma0 Nothing _ _ -> 0
---     --     _ -> error "errorValueWith Worker can only be used with AlgBORL/AlgDQNAvgRewAdjusted in Calculation.Ops"
-
--- -- | Calculates the difference between the expected discounted values: e_gamma - V
--- errorValueState :: (MonadBorl' m) => BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Double
--- errorValueState borl size (state, actIdxes) = maximum <$> mapM (errorValueWith Worker borl size state) actIdxes
 
 -- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
 eValueAvgCleanedFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Double
@@ -501,7 +512,3 @@ eValueAvgCleaned borl state = eValueAvgCleanedFeat borl sFeat
     sFeat = (borl ^. featureExtractor) state
 
 
---  | Calculates the difference between the expected discounted values.
--- eStateValue :: (Ord s) => BORL s -> s -> Double
--- eStateValue borl state = maximum (map (rValueWith Target borl RBig state) as) - reduce (map (rValueWith Target borl RSmall state) as)
---   where as = actionsIndexed borl state
