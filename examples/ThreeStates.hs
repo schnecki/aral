@@ -188,7 +188,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration
-      , _epsilon          = NoDecay
+      , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
       , _learnRandomAbove = NoDecay
       -- ANN

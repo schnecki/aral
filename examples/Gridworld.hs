@@ -247,7 +247,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = ExponentialDecay (Just 0.050) 0.05 150000
+      , _epsilon          = [ExponentialDecay (Just 0.050) 0.05 150000]
       , _exploration      = ExponentialDecay (Just 0.01) 0.05 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -306,7 +306,7 @@ alg =
         -- AlgDQN 0.99 EpsilonSensitive            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-  AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()

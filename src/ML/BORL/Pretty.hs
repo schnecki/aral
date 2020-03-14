@@ -18,6 +18,7 @@ module ML.BORL.Pretty
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Decay
+import           ML.BORL.InftyVector
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy         as P
@@ -180,8 +181,8 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
-prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted mEps ga0 ga1 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType <> maybe mempty (\e -> text ". Epsilon for gamma0:" <+> double e) mEps
+prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
+  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
@@ -290,8 +291,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gammaANN gamma)) $+$
     text "Epsilon" <>
     colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. epsilon) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. epsilon)) $+$
+    nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
+    parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) $+$
     text "Exploration" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>

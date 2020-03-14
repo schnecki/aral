@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TypeFamilies               #-}
 -- This is example is a multichain example from Puttermann 1994 (Example 8.2.2). For multichain MDPs the average reward
@@ -88,7 +89,7 @@ decay =
       , _zeta             = NoDecay
       , _xi               = NoDecay
         -- Exploration
-      , _epsilon          = NoDecay
+      , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 0.30) 0.75 150000
       , _learnRandomAbove = NoDecay
       -- ANN

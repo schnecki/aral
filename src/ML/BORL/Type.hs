@@ -215,12 +215,12 @@ flipObjective borl = case borl ^. objective of
 -- Tabular representations
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Double]
-convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s,a))) = AlgBORL g0 g1 avgRew (Just (ftExt s,a))
+convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s, a))) = AlgBORL g0 g1 avgRew (Just (ftExt s, a))
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
 convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
 convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
-convertAlgorithm _ (AlgDQNAvgRewAdjusted mEpsGa1 ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted mEpsGa1 ga1 ga2 avgRew
+convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 
 mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
@@ -624,8 +624,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
-    AlgDQNAvgRewAdjusted _ ga0 _ _ -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR0) maxR0 (-maxR1) maxR1
-      where maxR0 = ga0 * maxR
+    AlgDQNAvgRewAdjusted _ _ _ -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
     _ -> scalingByMaxAbsReward onlyPositive maxR
   where
     maxW = 50 * maxR

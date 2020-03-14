@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -225,16 +226,16 @@ instance ExperimentDef (BORL St) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99  ByStateValues
+        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
                                -- ,
-                               --   AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+                               --   AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
                                -- , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
-                               , AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
+                               , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
                                ])
         Nothing
         Nothing
@@ -295,7 +296,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = NoDecay -- ExponentialDecay (Just 5.0) 0.5 150000
+      , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
       , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
@@ -361,11 +362,11 @@ alg =
         -- AlgDQN 0.99  Exact -- EpsilonSensitive
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
-  AlgDQNAvgRewAdjusted Nothing 0.8 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
                 -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByReward
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 

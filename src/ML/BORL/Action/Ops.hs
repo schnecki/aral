@@ -7,6 +7,7 @@ module ML.BORL.Action.Ops
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Exploration
+import           ML.BORL.InftyVector
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Type
@@ -75,10 +76,10 @@ chooseAction borl useRand selFromList = do
                  then return as
                  else do
                    rhoVals <- mapM (rhoValue borl state . fst) as
-                   map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
+                   map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
              bestV <-
                do vVals <- mapM (vValue borl state . fst) bestRho
-                  map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
+                  map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
              if length bestV == 1
                then return (borl, False, head bestV)
                else do
@@ -104,15 +105,15 @@ chooseAction borl useRand selFromList = do
                    else do
                      r <- liftIO $ randomRIO (0, length bestE - 1)
                      return (borl, False, bestE !! r)
-           AlgDQNAvgRewAdjusted mEpsMiddle _ _ _ -> do
+           AlgDQNAvgRewAdjusted{} -> do
              bestR1 <-
                do r1Values <- mapM (rValue borl RBig state . fst) as -- 1. choose highest bias values
-                  map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompare (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
+                  map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
              if length bestR1 == 1
                then return (borl, False, head bestR1)
                else do
                  r0Values <- mapM (rValue borl RSmall state . fst) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
-                 bestR0ValueActions <- liftIO $ fmap maxOrMin $ selFromList $ groupBy (epsCompareWith (fromMaybe eps mEpsMiddle) (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
+                 bestR0ValueActions <- liftIO $ fmap maxOrMin $ selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
                  let bestR0 = map snd bestR0ValueActions
                  if length bestR0 == 1
                    then return (borl, False, head bestR0)
@@ -134,13 +135,13 @@ chooseAction borl useRand selFromList = do
     explore = params' ^. exploration
     state = borl ^. s
     as = actionsIndexed borl state
-    epsCompare = epsCompareWithFactor 1
-    epsCompareWithFactor fact = epsCompareWith (fact * eps)
+    epsCompareN n = epsCompareWithN n 1
+    epsCompareWithN n fact = epsCompareWith (fact * getNthElement n eps)
     singleValueNextAction cmp f = do
       rValues <- mapM f as
       let groupValues =
             case cmp of
-              EpsilonSensitive -> groupBy (epsCompare (==) `on` fst) . sortBy (flip compare `on` fst)
+              EpsilonSensitive -> groupBy (epsCompareN 0 (==) `on` fst) . sortBy (flip compare `on` fst)
               Exact -> groupBy ((==) `on` fst) . sortBy (flip compare `on` fst)
       bestR <- liftIO $ fmap maxOrMin $ selFromList $ groupValues (zip rValues as)
       if length bestR == 1

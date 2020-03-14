@@ -204,7 +204,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted _ ga0 ga1 avgRewardType) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) = do
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
   rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
   r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
@@ -495,7 +495,7 @@ eValueAvgCleanedFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex
 eValueAvgCleanedFeat borl state act =
   case borl ^. algorithm of
     AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
-    AlgDQNAvgRewAdjusted _ gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
+    AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
     _ -> error "eValueAvgCleaned can only be used with AlgBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do

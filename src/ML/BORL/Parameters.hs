@@ -1,19 +1,24 @@
-{-# LANGUAGE DeriveAnyClass  #-}
-{-# LANGUAGE DeriveGeneric   #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 module ML.BORL.Parameters where
 
 import           Control.DeepSeq
 import           Control.Lens
 import           Data.Serialize
+import           GHC.Exts
 import           GHC.Generics
 
 import           ML.BORL.Decay.Type
 import           ML.BORL.Exploration
+import           ML.BORL.InftyVector
 
 type ParameterInitValues = Parameters Double
 type ParameterDecayedValues = Parameters Double
 type ParameterDecaySetting = Parameters DecaySetup
+
 
 -- Parameters
 data Parameters a = Parameters
@@ -25,7 +30,7 @@ data Parameters a = Parameters
   , _deltaANN            :: !a             -- ^ for W value when training the ANN
   , _gamma               :: !a             -- ^ Gamma values for R0/R1.
   , _gammaANN            :: !a             -- ^ Gamma values for R0/R1 when using the ANN.
-  , _epsilon             :: !a             -- ^ for comparison between state values
+  , _epsilon             :: !(InftyVector a) -- ^ for comparison between state values
   , _explorationStrategy :: ExplorationStrategy -- ^ Strategy for exploration.
   , _exploration         :: !a             -- ^ exploration rate
   , _learnRandomAbove    :: !a             -- ^ Value which specifies until when randomized actions are learned.

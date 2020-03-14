@@ -229,7 +229,7 @@ alg :: Algorithm St
 alg =
   -- algDQN
   -- AlgDQNAvgRewAdjusted Nothing 0.85 0.99 ByStateValues
-  AlgDQNAvgRewAdjusted (Just 0.01) 0.85 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
 
 
 main :: IO ()
@@ -277,7 +277,7 @@ params gym maxRew =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = eps
+    , _epsilon             = [eps, 0.01]
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
@@ -304,7 +304,7 @@ decay gym =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = NoDecay -- ExponentialDecay (Just 0.03) 0.05 15000
+      , _epsilon          = [NoDecay] -- ExponentialDecay (Just 0.03) 0.05 15000
       , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
       , _learnRandomAbove = NoDecay
       -- ANN

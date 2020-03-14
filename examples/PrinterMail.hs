@@ -117,7 +117,7 @@ alg =
         -- AlgDQN 0.5  Exact
         -- AlgDQN 0.8027  Exact
         -- AlgDQN 0.50  EpsilonSensitive
-        AlgDQNAvgRewAdjusted Nothing 0.8 0.99 (Fixed 2.5)
+        AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.8 ByStateValues mRefStateAct
@@ -188,7 +188,7 @@ decay =
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration
-      , _epsilon          = NoDecay
+      , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
       , _learnRandomAbove = NoDecay
       -- ANN

@@ -48,7 +48,7 @@ decaySetupParameters (Parameters decAlp decAlpANN decBet decBetANN decDel decDel
     , _deltaANN = decaySetup decDelANN period delANN
     , _gamma = decaySetup decGa period ga
     , _gammaANN = decaySetup decGaANN period gaANN
-    , _epsilon = decaySetup decEps period eps
+    , _epsilon = (\de e -> decaySetup de period e) <$> decEps <*> eps
     , _explorationStrategy = expStrat
     , _exploration = decaySetup decExp period exp
     , _learnRandomAbove = decaySetup decRand period rand
@@ -72,7 +72,7 @@ exponentialDecayParameters (Just (Parameters mAlp mAlpANN mBet mBetANN mDel mDel
     (max mDelANN $ decay * delANN)
     (max mGa $ decay * ga)
     (max mGaANN $ decay * gaANN)
-    (max mEps $ decay * eps)
+    (max <$> mEps <*> ((decay *) <$> eps))
     expStrat
     (max mExp $ decay * exp)
     (max mRand rand) -- no decay
