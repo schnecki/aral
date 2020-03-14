@@ -161,9 +161,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
-  let rhoMinimumVal'
-        -- | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -252,9 +250,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
-  let rhoMinimumVal'
-        -- | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $
@@ -319,9 +315,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             ByMovAvg _ -> rhoState
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
-  let rhoMinimumVal'
-        -- | rhoState < rhoMinimumState = rhoMinimumState
-        | otherwise = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
