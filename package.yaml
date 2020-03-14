@@ -120,6 +120,22 @@ executables:
     - experimenter
     - hmatrix-glpk
 
+  gridworld-step:
+    main:                GridworldStep.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         examples
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
   queuing-system:
     main:                QueueingSystemMM1.hs
     other-modules:
