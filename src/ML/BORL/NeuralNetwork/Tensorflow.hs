@@ -68,29 +68,37 @@ data OptimizerRefs
   | AdamRefs
       { adamLearningRateRef :: TF.Tensor TF.Ref Float
       }
+  | RmsPropRefs
+      { rmsPropLearningRateRef :: TF.Tensor TF.Ref Float
+      }
 
 prettyOptimizerNames :: OptimizerRefs -> String
 prettyOptimizerNames GradientDescentRefs{} = "Gradient Descent"
 prettyOptimizerNames AdamRefs{}            = "Adam"
+prettyOptimizerNames RmsPropRefs{}         = "RmsProp"
 
 
 instance NFData OptimizerRefs where
   rnf (GradientDescentRefs !_) = ()
   rnf (AdamRefs !_ )           = ()
+  rnf (RmsPropRefs !_ )        = ()
 
 
 optimizerRefsList :: OptimizerRefs -> [TF.Tensor TF.Ref Float]
 optimizerRefsList (GradientDescentRefs lr) = [lr]
 optimizerRefsList (AdamRefs lr)            = [lr]
+optimizerRefsList (RmsPropRefs lr)         = [lr]
 
 getLearningRateRef :: OptimizerRefs -> [TF.Tensor TF.Ref Float]
 getLearningRateRef (GradientDescentRefs lr) = [lr]
 getLearningRateRef (AdamRefs lr)            = [lr]
+getLearningRateRef (RmsPropRefs lr)         = [lr]
 
 
 instance Serialize OptimizerRefs where
   put (GradientDescentRefs lr) = put (0 :: Int) >> put (getTensorRefNodeName lr)
   put (AdamRefs lr)            = put (1 :: Int) >> put (getTensorRefNodeName lr)
+  put (RmsPropRefs lr)         = put (2 :: Int) >> put (getTensorRefNodeName lr)
   get = do
     nr <- get
     case (nr :: Int) of
@@ -100,6 +108,9 @@ instance Serialize OptimizerRefs where
       1 -> do
         lr <- getRefTensorFromName <$> get
         return $ AdamRefs lr
+      2 -> do
+        lr <- getRefTensorFromName <$> get
+        return $ RmsPropRefs lr
       x -> error $ "Could not deserialise optimizer refs with key: " <> show x
 
 

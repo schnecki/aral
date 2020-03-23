@@ -239,13 +239,15 @@ insertProxyMany _ xs (Table m def) = return $! force $! Table (foldl' (\m' ((st,
         n = 3
 insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)
 insertProxyMany period xs px
-  | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return px
+  | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) 0 m) tab xs $ px
   | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
-  | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet False period px
+  -- | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> netInit px >>= updateNNTargetNet True period px
   | period == memSize - 1 = liftIO (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
   | otherwise = emptyCache >> trainBatch period xs px >>= updateNNTargetNet False period
   where
-    netInit = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams) -- no decay needed
+    netInit px | isNothing (px ^?! proxyNNConfig . trainMSEMax) = fmap (proxyNNStartup .~ mempty) $ fmap (proxyNNConfig.trainMSEMax .~ Nothing) $
+                                                                  trainMSE (Just 195) (M.toList tab) (config ^. grenadeLearningParams) (proxyNNConfig.trainMSEMax .~ Just 0.1 $ px)
+               | otherwise = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams) px -- no decay needed
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
     memSize = fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize)
@@ -306,7 +308,6 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
     dec = decaySetup (config ^. learningParamsDecay) period
     lp = LearningParameters (dec lRate) momentum l2
-
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   if period == 0
