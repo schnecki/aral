@@ -42,12 +42,12 @@ data Proxies =
     , _w            :: !Proxy
     , _r0           :: !Proxy
     , _r1           :: !Proxy
-    , _replayMemory :: !(Maybe ReplayMemory)
+    , _replayMemory :: !(Maybe ReplayMemories)
     } | ProxiesCombinedUnichain
     { _rhoMinimum   :: !Proxy
     , _rho          :: !Proxy
     , _proxy        :: !Proxy
-    , _replayMemory :: !(Maybe ReplayMemory)
+    , _replayMemory :: !(Maybe ReplayMemories)
     }
   deriving (Generic)
 
@@ -109,7 +109,7 @@ proxy :: Lens' Proxies Proxy
 proxy f px@ProxiesCombinedUnichain{} = (\x -> px {_proxy = x}) <$> f (_proxy px)
 proxy f px@Proxies{} = error "calling proxy on Proxies in ML.BORL.Proxy.Proxies"
 
-replayMemory :: Lens' Proxies (Maybe ReplayMemory)
+replayMemory :: Lens' Proxies (Maybe ReplayMemories)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)
 
 instance NFData Proxies where
