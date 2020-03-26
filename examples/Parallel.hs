@@ -161,6 +161,7 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
+    , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000

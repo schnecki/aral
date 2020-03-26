@@ -198,6 +198,7 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
+    , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
@@ -223,7 +224,7 @@ params =
     , _zeta                = 0.03
     , _xi                  = 0.005
     -- Exploration
-    , _epsilon             = 1.0
+    , _epsilon             = 0.25
     , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 5
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
@@ -240,15 +241,15 @@ decay :: Decay
 decay =
   decaySetupParameters
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.15 10000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = [ExponentialDecay (Just 0.050) 0.05 150000]
-      , _exploration      = ExponentialDecay (Just 0.01) 0.05 100000
+      , _epsilon          = [NoDecay] -- [ExponentialDecay (Just 0.050) 0.05 150000]
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       -- ANN
       , _alphaANN         = ExponentialDecay Nothing 0.75 150000
@@ -350,9 +351,9 @@ modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
 modelBuilder colOut =
   buildModel $
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
-  -- trainingByRmsProp
+  trainingByRmsProp
   where inpLen = genericLength (netInp initState)
 
 

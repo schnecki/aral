@@ -96,11 +96,14 @@ fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s t e par f
 
 instance Serialize Proxies
 
+instance Serialize ReplayMemories
+
 instance Serialize NNConfig where
-  put (NNConfig memSz batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param) =
-    put memSz >> put batchSz >> put lp >> put decaySetup >> put prS >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put trainMax >> put param
+  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param) =
+    put memSz >> put memStrat >> put batchSz >> put lp >> put decaySetup >> put prS >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put trainMax >> put param
   get = do
     memSz <- get
+    memStrat <- get
     batchSz <- get
     lp <- get
     decaySetup <- get
@@ -112,7 +115,7 @@ instance Serialize NNConfig where
     upIntDec <- get
     trainMax <- get
     param <- get
-    return $ NNConfig memSz batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param
+    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param
 
 
 instance Serialize Proxy where

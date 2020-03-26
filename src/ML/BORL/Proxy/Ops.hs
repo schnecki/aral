@@ -111,17 +111,17 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMem))
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMems))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
-  | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+  | period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
+    replMem' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = pV ^?! proxyNNConfig
-    mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
+    mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -148,7 +148,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pPsiW' <- mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
     pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
     pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
-    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
+    return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMems'), calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy Nothing) = do
@@ -166,17 +166,17 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMem))
+insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMems))
   | proxy ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
-  | period <= fromIntegral (replMem ^. replayMemorySize) - 1 = do
-    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+  | period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
+    replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
-    return (replayMemory ?~ replMem' $ pxs', calc)
+    return (replayMemory ?~ replMems' $ pxs', calc)
   | otherwise = do
-    replMem' <- liftIO $ addToReplayMemory (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMem
+    replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = proxy ^?! proxyNNConfig
-    mems <- liftIO $ getRandomReplayMemoryElements (config ^. trainBatchSize) replMem'
+    mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -204,7 +204,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     pR0' <- mTrainBatch getR0ValState' calcs (pxs ^. r0) `using` rpar
     pR1' <- mTrainBatch getR1ValState' calcs (pxs ^. r1) `using` rpar
     proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
-    return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' (Just replMem'), calc)
+    return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' (Just replMems'), calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 
@@ -240,14 +240,12 @@ insertProxyMany _ xs (Table m def) = return $! force $! Table (foldl' (\m' ((st,
 insertProxyMany _ xs (CombinedProxy subPx col vs) = return $ CombinedProxy subPx col (vs <> xs)
 insertProxyMany period xs px
   | period < memSize - 1 && isNothing (px ^?! proxyNNConfig . trainMSEMax) = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) 0 m) tab xs $ px
-  | period < memSize - 1 = return $ proxyNNStartup .~ foldl' (\m ((st, aNr), v) -> M.insert (st, aNr) v m) tab xs $ px
-  -- | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> netInit px >>= updateNNTargetNet True period px
+  | period < memSize - 1 = return px
+  | period == memSize - 1 && (isNothing (px ^?! proxyNNConfig . trainMSEMax) || px ^?! proxyNNConfig . replayMemoryMaxSize == 1) = emptyCache >> updateNNTargetNet True period px
   | period == memSize - 1 = liftIO (putStrLn $ "Initializing artificial neural networks: " ++ show (px ^? proxyType)) >> emptyCache >> netInit px >>= updateNNTargetNet True period
   | otherwise = emptyCache >> trainBatch period xs px >>= updateNNTargetNet False period
   where
-    netInit px | isNothing (px ^?! proxyNNConfig . trainMSEMax) = fmap (proxyNNStartup .~ mempty) $ fmap (proxyNNConfig.trainMSEMax .~ Nothing) $
-                                                                  trainMSE (Just 195) (M.toList tab) (config ^. grenadeLearningParams) (proxyNNConfig.trainMSEMax .~ Just 0.1 $ px)
-               | otherwise = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams) px -- no decay needed
+    netInit px = trainMSE (Just 0) (M.toList tab) (config ^. grenadeLearningParams) px -- no decay needed
     config = px ^?! proxyNNConfig
     tab = px ^?! proxyNNStartup
     memSize = fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize)
@@ -310,7 +308,7 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     lp = LearningParameters (dec lRate) momentum l2
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
-  if period == 0
+  if period == px ^?! proxyNNConfig . replayMemoryMaxSize
     then do
       lrs <- getLearningRates netW
       when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"

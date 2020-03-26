@@ -91,7 +91,7 @@ import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (zipWithM)
+import           Control.Monad                (replicateM, zipWithM)
 import           Control.Monad.IO.Class       (MonadIO, liftIO)
 import           Data.List                    (foldl')
 import qualified Data.Map.Strict              as M
@@ -179,18 +179,16 @@ filteredActionIndexes actions actFilter state = map (fst.snd) $ filter fst $ zip
 
 ------------------------------ Initial Values ------------------------------
 
-
 idxStart :: Int
 idxStart = 0
 
-
 data InitValues = InitValues
-  { defaultRho        :: Double
-  , defaultRhoMinimum :: Double
-  , defaultV          :: Double
-  , defaultW          :: Double
-  , defaultR0         :: Double
-  , defaultR1         :: Double
+  { defaultRho        :: Double -- ^ Starting rho value [Default: 0]
+  , defaultRhoMinimum :: Double -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
+  , defaultV          :: Double -- ^ Starting V value [Default: 0]
+  , defaultW          :: Double -- ^ Starting W value [Default: 0]
+  , defaultR0         :: Double -- ^ Starting R0 value [Default: 0]
+  , defaultR1         :: Double -- ^ starting R1 value [Default: 0]
   }
 
 
@@ -289,7 +287,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
     then do
       r0 <- liftIO $ nnSA R0Table 4
       r1 <- liftIO $ nnSA VTable 0
-      repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+      repMem <- liftIO $ mkReplayMemories as nnConfig
       buildTensorflowModel (r0 ^?! proxyTFTarget)
       return $
         force $
@@ -316,7 +314,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       r1 <- liftIO $ nnSA R1Table 6
       psiV <- liftIO $ nnSA PsiVTable 8
       psiW <- liftIO $ nnSA PsiWTable 10
-      repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+      repMem <- liftIO $ mkReplayMemories as nnConfig
       buildTensorflowModel (v ^?! proxyTFTarget)
       return $
         force $
@@ -370,7 +368,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
   proxy <- liftIO $ nnSA nnType 0
-  repMem <- liftIO $ mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  repMem <- liftIO $ mkReplayMemories as nnConfig
   buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
@@ -482,7 +480,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
-  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  repMem <- mkReplayMemories as nnConfig
   return $
     checkGrenade net 1 nnConfig $
     BORL
@@ -526,7 +524,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
   let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
   let nn = nnSA nnType
-  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  repMem <- mkReplayMemories as nnConfig
   return $
     checkGrenade net nrNets nnConfig $
     BORL
@@ -582,7 +580,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
-  repMem <- mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  repMem <- mkReplayMemories as nnConfig
   return $
     checkGrenade net 1 nnConfig $
     BORL
@@ -602,6 +600,12 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
       (0, 0, 0)
       (Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
 
+------------------------------ Replay Memory/Memories ------------------------------
+
+mkReplayMemories :: [Action s] -> NNConfig -> IO (Maybe ReplayMemories)
+mkReplayMemories as nnConfig = case nnConfig ^. replayMemoryStrategy of
+  ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence <$> replicateM (length as) (mkReplayMemory (nnConfig ^. replayMemoryMaxSize `div` length as))
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
 mkReplayMemory sz | sz <= 1 = return Nothing
