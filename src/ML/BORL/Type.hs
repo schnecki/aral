@@ -183,12 +183,12 @@ idxStart :: Int
 idxStart = 0
 
 data InitValues = InitValues
-  { defaultRho        :: Double
-  , defaultRhoMinimum :: Double
-  , defaultV          :: Double
-  , defaultW          :: Double
-  , defaultR0         :: Double
-  , defaultR1         :: Double
+  { defaultRho        :: Double -- ^ Starting rho value [Default: 0]
+  , defaultRhoMinimum :: Double -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
+  , defaultV          :: Double -- ^ Starting V value [Default: 0]
+  , defaultW          :: Double -- ^ Starting W value [Default: 0]
+  , defaultR0         :: Double -- ^ Starting R0 value [Default: 0]
+  , defaultR1         :: Double -- ^ starting R1 value [Default: 0]
   }
 
 

@@ -292,15 +292,16 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Epsilon" <>
     colon $$
     nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
-    parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) $+$
+    parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) <+>
+    text "Strategy" <> colon <+> text (show $ params' ^. explorationStrategy)
+    $+$
     text "Exploration" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
-    text "Learn From Random Actions until Expl. hits" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. learnRandomAbove)) $+$
+    algDoc
+      (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. learnRandomAbove))) $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
@@ -386,8 +387,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> empty
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <> textReplayMemoryType (borl ^. proxies.replayMemory)
-        textReplayMemoryType (Just ReplayMemoriesUnified{}) = text " [unified replay memory]"
+        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <> textReplayMemoryType (borl ^. proxies . replayMemory)
+        textReplayMemoryType (Just ReplayMemoriesUnified {}) = text " [unified replay memory]"
         textReplayMemoryType (Just (ReplayMemoriesPerActions (r:_))) = text " [per actions each of size " <> int (r ^. replayMemorySize) <> "]"
         textReplayMemoryType _ = mempty
     nnLearningParams =

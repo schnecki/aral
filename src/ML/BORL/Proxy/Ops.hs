@@ -113,7 +113,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 (Just replMems))
   | pV ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1 Nothing)
-  | period <= fromIntegral (replMems ^. replayMemories 0 . replayMemorySize) - 1 = do
+  | period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
     replMem' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMem' $ pxs', calc)
@@ -168,7 +168,7 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(ProxiesCombinedUnichain pRhoMin pRho proxy (Just replMems))
   | proxy ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
-  | period <= fromIntegral (replMems ^. replayMemories 0 . replayMemorySize) - 1 = do
+  | period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
     replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
     return (replayMemory ?~ replMems' $ pxs', calc)
@@ -308,7 +308,7 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     lp = LearningParameters (dec lRate) momentum l2
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
-  if period == 0
+  if period == px ^?! proxyNNConfig . replayMemoryMaxSize
     then do
       lrs <- getLearningRates netW
       when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"

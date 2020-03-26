@@ -272,7 +272,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       }
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+  let -- learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
       period = borl ^. t
   let getExpSmthParam p paramANN param
         | isANN && useOne = 1
