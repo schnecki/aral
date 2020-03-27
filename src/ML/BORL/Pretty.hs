@@ -293,8 +293,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
     colon $$
     nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
     parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) <+>
-    text "Strategy" <> colon <+> text (show $ params' ^. explorationStrategy)
-    $+$
+    text "Strategy" <>
+    colon <+>
+    text (show $ params' ^. explorationStrategy) $+$
     text "Exploration" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>
@@ -312,6 +313,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
+    nnWorkers $+$
     algDoc
       (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
        parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
@@ -332,6 +334,10 @@ prettyBORLHead' printRho prettyStateFun borl = do
   where
     params = borl ^. parameters
     params' = (borl ^. decayFunction) (borl ^. t) params
+    nnWorkers =
+      case borl ^. proxies . r1 of
+        P.Table {} -> mempty
+        px -> text "Workers Minimum Exploration" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration)))
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"

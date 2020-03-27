@@ -210,6 +210,7 @@ nnConfig =
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     , _trainMSEMax = Nothing -- Just 0.03
     , _setExpSmoothParamsTo1 = True
+    , _workersMinExploration = []
     }
 
 

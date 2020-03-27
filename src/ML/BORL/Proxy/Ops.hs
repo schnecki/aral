@@ -22,6 +22,7 @@ module ML.BORL.Proxy.Ops
     , lookupActionsNeuralNetworkUnscaled
     , mkNNList
     , getMinMaxVal
+    , mkStateActs
     , StateFeatures
     , StateNextFeatures
     , LookupType (..)
@@ -58,6 +59,7 @@ import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward
 import           ML.BORL.Type
 import           ML.BORL.Types                as T
+import           ML.BORL.Workers.Type
 
 import           Debug.Trace
 
@@ -122,8 +124,9 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = pV ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
+    workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) (borl ^. workers.traversed.workersReplayMemories)
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
-    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
+    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
     let mTrainBatch accessor calcs px =
           maybe
@@ -177,8 +180,9 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
     calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
     let config = proxy ^?! proxyNNConfig
     mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
+    workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) (borl ^. workers.traversed.workersReplayMemories)
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
-    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) mems
+    calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
     let mTrainBatch accessor calcs px =
           maybe

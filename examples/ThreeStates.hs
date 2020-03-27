@@ -79,6 +79,7 @@ nnConfig =
     , _updateTargetIntervalDecay = NoDecay
     , _trainMSEMax = Just 0.03
     , _setExpSmoothParamsTo1 = True
+    , _workersMinExploration = []
     }
 
 

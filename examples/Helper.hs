@@ -159,8 +159,8 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
             Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
           case find isTensorflow (allProxies $ ql ^. proxies) of
-            Nothing -> runMonadBorlIO $ stepExecute (ql, False, cmd) >>= askUser mInverse False addUsage cmds qlCmds
-            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute (ql, False, cmd) >>= saveTensorflowModels) >>= askUser mInverse False addUsage cmds qlCmds
+            Nothing -> runMonadBorlIO $ stepExecute ql ((False, cmd), []) >>= askUser mInverse False addUsage cmds qlCmds
+            Just _ -> runMonadBorlTF (restoreTensorflowModels True ql >> stepExecute ql ((False, cmd), []) >>= saveTensorflowModels) >>= askUser mInverse False addUsage cmds qlCmds
 
 
 time :: NFData t => IO t -> IO t

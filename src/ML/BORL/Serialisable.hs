@@ -20,6 +20,7 @@ import           ML.BORL.Reward.Type
 import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
+import           ML.BORL.Workers.Type
 
 import           Control.Arrow         (first)
 import           Control.DeepSeq
@@ -40,6 +41,7 @@ type ProxyNetInput s = s -> [Double]
 
 data BORLSerialisable s = BORLSerialisable
   { serS              :: !s                    -- ^ Current state.
+  , serWorkers        :: !(Maybe (Workers s))  -- ^ Workers
   , serT              :: !Int                  -- ^ Current time t.
   , serEpisodeNrStart :: !(Int, Int)           -- ^ Nr of Episode and start period.
   , serParameters     :: !ParameterInitValues  -- ^ Parameter setup.
@@ -61,9 +63,9 @@ toSerialisable = toSerialisableWith id id
 
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _ s _ t eNr par _ _ alg obj v rew psis prS) = do
-  BORL _ _ s _ t eNr par _ future alg obj v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) t eNr par (map (mapRewardFutureData f g) future) alg obj v rew psis prS
+toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par _ _ alg obj v rew psis prS) = do
+  BORL _ _ s workers _ t eNr par _ future alg obj v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par (map (mapRewardFutureData f g) future) alg obj v rew psis prS
 
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
@@ -79,9 +81,9 @@ fromSerialisableWith ::
   -> ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s t e par future alg obj lastV rew psis prS) = do
+fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t e par future alg obj lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL aL aF (f s) ftExt t e par decay (map (mapRewardFutureData f g) future) alg obj lastV rew psis prS
+      borl = BORL aL aF (f s) (mapWorkers f g <$> workers) ftExt t e par decay (map (mapRewardFutureData f g) future) alg obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2
@@ -95,12 +97,12 @@ fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s t e par f
 
 
 instance Serialize Proxies
-
 instance Serialize ReplayMemories
+instance (Serialize s, RewardFuture s) => Serialize (Workers s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param) =
-    put memSz >> put memStrat >> put batchSz >> put lp >> put decaySetup >> put prS >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put trainMax >> put param
+  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param workerMinExp) =
+    put memSz >> put memStrat >> put batchSz >> put lp >> put decaySetup >> put prS >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put trainMax >> put param >> put workerMinExp
   get = do
     memSz <- get
     memStrat <- get
@@ -115,7 +117,8 @@ instance Serialize NNConfig where
     upIntDec <- get
     trainMax <- get
     param <- get
-    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param
+    workerMinExp <- get
+    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param workerMinExp
 
 
 instance Serialize Proxy where

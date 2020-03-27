@@ -20,43 +20,48 @@ module ML.BORL.Step
 
 #ifdef DEBUG
 import           Control.Concurrent.MVar
-import           System.IO.Unsafe               (unsafePerformIO)
+import           System.IO.Unsafe                   (unsafePerformIO)
 #endif
-import           ML.BORL.Action
-import           ML.BORL.Algorithm
-import           ML.BORL.Calculation
-import           ML.BORL.Fork
-import           ML.BORL.NeuralNetwork.NNConfig
-import           ML.BORL.NeuralNetwork.Scaling
-import           ML.BORL.Parameters
-import           ML.BORL.Properties
-import           ML.BORL.Proxy                  as P
-import           ML.BORL.Reward
-import           ML.BORL.SaveRestore
-import           ML.BORL.Serialisable
-import           ML.BORL.Type
-import           ML.BORL.Types
-
-import           Control.Applicative            ((<|>))
-import           Control.Arrow                  ((&&&), (***))
+import           Control.Applicative                ((<|>))
+import           Control.Arrow                      ((&&&), (***))
 import           Control.DeepSeq
-import           Control.DeepSeq                (NFData, force)
+import           Control.DeepSeq                    (NFData, force)
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.IO.Class         (liftIO)
-import           Control.Monad.IO.Class         (MonadIO, liftIO)
-import           Control.Parallel.Strategies    hiding (r0)
-import           Data.Function                  (on)
-import           Data.List                      (find, groupBy, intercalate, partition,
-                                                 sortBy)
-import qualified Data.Map.Strict                as M
-import           Data.Maybe                     (fromMaybe, isJust)
+import           Control.Monad.IO.Class             (liftIO)
+import           Control.Monad.IO.Class             (MonadIO, liftIO)
+import           Control.Parallel.Strategies        hiding (r0)
+import           Data.Function                      (on)
+import           Data.List                          (find, groupBy, intercalate, partition,
+                                                     sortBy, transpose)
+import qualified Data.Map.Strict                    as M
+import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Serialize
 import           GHC.Generics
 import           System.Directory
 import           System.IO
 import           System.Random
 import           Text.Printf
+
+
+import           ML.BORL.Action
+import           ML.BORL.Algorithm
+import           ML.BORL.Calculation
+import           ML.BORL.Fork
+import           ML.BORL.NeuralNetwork.NNConfig
+import           ML.BORL.NeuralNetwork.ReplayMemory
+import           ML.BORL.NeuralNetwork.Scaling
+import           ML.BORL.Parameters
+import           ML.BORL.Properties
+import           ML.BORL.Proxy                      as P
+import           ML.BORL.Reward
+import           ML.BORL.SaveRestore
+import           ML.BORL.Serialisable
+import           ML.BORL.Type
+import           ML.BORL.Types
+import           ML.BORL.Workers.Type
+import           ML.BORL.Workers.Type
+
 
 import           Debug.Trace
 
@@ -88,59 +93,87 @@ fileEpisodeLength = "episodeLength"
 steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
 steps (force -> borl) nr =
   case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [0 .. nr - 1]
+    Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
     Just _ ->
       runMonadBorlTF $ do
         void $ restoreTensorflowModels True borl
-        !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [0 .. nr - 1]
+        !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
         force <$> saveTensorflowModels borl'
 
 
 step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
 step (force -> borl) =
   case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> nextAction borl >>= stepExecute
+    Nothing -> nextAction borl >>= stepExecute borl
     Just _ ->
       runMonadBorlTF $ do
         void $ restoreTensorflowModels True borl
-        !borl' <- nextAction borl >>= stepExecute
+        !borl' <- nextAction borl >>= stepExecute borl
         force <$> saveTensorflowModels borl'
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
 stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
-stepM (force -> borl) = nextAction (force borl) >>= stepExecute
+stepM (force -> borl) = nextAction (force borl) >>= stepExecute borl
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
 -- evaluation of the data structure every 1000 periods.
 stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
 stepsM (force -> borl) nr = do
-  !borl' <- force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute) borl [1 .. min maxNr nr]
+  !borl' <- force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [1 .. min maxNr nr]
   if nr > maxNr
     then stepsM borl' (nr - maxNr)
     else return borl'
   where maxNr = 1000
 
-data Decision = Random | MaxRho | MaxV | MaxE
-  deriving (Show, Read, Eq, Ord, Generic, NFData, Serialize)
-
-stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => (BORL s, Bool, ActionIndexed s) -> m (BORL s)
-stepExecute (borl, randomAction, (aNr, Action action _)) = do
+stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
+stepExecute borl ((randomAction, (aNr, Action action _)), workerActions)
   -- File IO Operations
+ = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
   when (period == 0) $ do
     liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
+  workerReplMemFuture <- liftIO $ doFork $ runWorkerActions borl workerActions
   (reward, stateNext, episodeEnd) <- liftIO $ action state
-  let applyToReward r@(RewardFuture storage) = applyState storage state
-      applyToReward r                        = r
+  let applyToReward (RewardFuture storage storageWorkers) = applyState storage state
+      applyToReward r                                     = r
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
-  return $ force $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+  (workerReplMems', workerFutureRewards') <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
+  return $
+    force $
+    set (workers . traversed . workersReplayMemories) workerReplMems' $
+    set (workers . traversed . workersFutureRewards) workerFutureRewards' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
+-- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
+-- lists.
+runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO ([ReplayMemories], [[RewardFutureData s]])
+runWorkerActions borl acts = do
+  let states = borl ^. workers.traversed.workersS
+  stepRewards <- zipWithM runWorkerAction states acts
+  let futureRews = borl ^. workers.traversed.workersFutureRewards
+  let updateFuturesWith f = map (over futureReward f)
+  let futureRewsTmp = zipWith3 (\state fs r -> updateFuturesWith (applyToReward state) (fs ++ [r])) states futureRews stepRewards
+  let (rewards, futureRews') = unzip $ map splitMaterialisedFutures futureRewsTmp
+  (,futureRews') <$> zipWithM (foldM addExperience) (borl ^. workers.traversed.workersReplayMemories) rewards
+  where runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
+        runWorkerAction state (randomAction, (aNr, Action action _)) = do
+          (reward, stateNext, episodeEnd) <- liftIO $ action state
+          return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
+        applyToReward state (RewardFuture _ storageWorkers) = applyState storageWorkers state
+        applyToReward _ r                               = r
+        splitMaterialisedFutures fs = let xs = takeWhile (not . isRewardFuture . view futureReward) fs
+          in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
+        addExperience replMem (RewardFutureData _ state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+          let (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
+          liftIO $ addToReplayMemories (stateActs, aNr, randomAction, reward, stateNextActs, episodeEnd) replMem
+        addExperience _ _ = error "Unexpected Reward in calcExperience of runWorkerActions! "
 
+-- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
+-- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
      forall m s. (MonadBorl' m, NFData s, Ord s, RewardFuture s)
   => (Int, Bool, BORL s)
@@ -153,7 +186,8 @@ stepExecuteMaterialisedFutures (nr, _, borl) dt =
     RewardFuture {} -> return (nr, True, borl)
     Reward {}       -> (nr+1, False, ) <$> execute borl dt
 
-
+-- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
+-- experiences of the replay memory.
 execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
 execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG

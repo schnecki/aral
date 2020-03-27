@@ -42,12 +42,14 @@ data NNConfig = NNConfig
   , _updateTargetIntervalDecay       :: !DecaySetup              -- ^ After how many steps should the target network be replaced by the worker?
   , _trainMSEMax                     :: !(Maybe MSE)             -- ^ Mean squared error when output is scaled to (-1,1). Used to initialise
                                                                  -- the neural network once the replay memory is filled.
-  , _setExpSmoothParamsTo1           :: Bool                     -- ^ Set all exponential smoothing parameters to 1 and
+  , _setExpSmoothParamsTo1           :: !Bool                    -- ^ Set all exponential smoothing parameters to 1 and
                                                                  -- use ANN learning rate to decay learning solely.
-  }
+  , _workersMinExploration           :: ![Double]                -- ^ Set worker minimum exploration values.
+ }
 makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat tr lp dec pp sc stab stabDec up upDec mse param) =
-    rnf rep `seq` rnf repStrat `seq` rnf tr `seq` rnf lp `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec `seq` rnf mse `seq` rnf param
+  rnf (NNConfig rep repStrat tr lp dec pp sc stab stabDec up upDec mse param workers) =
+    rnf rep `seq` rnf repStrat `seq`
+    rnf tr `seq` rnf lp `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec `seq` rnf mse `seq` rnf param `seq` rnf workers
