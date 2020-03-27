@@ -41,10 +41,11 @@ nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction borl = do
   mainAgent <- nextActionFor borl (borl ^. s) (params' ^. exploration)
   let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
-  ws <- zipWithM (nextActionFor borl) (borl ^. workers . traversed . workersS) (nnConfigs ^. workersMinExploration)
+  ws <- zipWithM (nextActionFor borl) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
   return (mainAgent, ws)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    maxExpl = max (params' ^. exploration)
 
 nextActionFor :: (MonadBorl' m) => BORL s -> s -> Double -> m (ActionChoice s)
 nextActionFor borl state explore
