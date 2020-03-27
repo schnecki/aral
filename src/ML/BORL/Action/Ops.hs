@@ -166,7 +166,6 @@ chooseAction borl useRand selFromList = do
     headDqn (x:_) = x
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     eps = params' ^. epsilon
-    -- as = actionsIndexed borl state
     epsCompareN n = epsCompareWithN n 1
     epsCompareWithN n fact = epsCompareWith (fact * getNthElement n eps)
     singleValueNextAction as cmp f = do
