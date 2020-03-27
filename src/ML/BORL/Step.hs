@@ -137,8 +137,8 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions)
     liftIO $ writeFile fileReward "Period\tReward\n"
   workerReplMemFuture <- liftIO $ doFork $ runWorkerActions borl workerActions
   (reward, stateNext, episodeEnd) <- liftIO $ action state
-  let applyToReward (RewardFuture storage storageWorkers) = applyState storage state
-      applyToReward r                                     = r
+  let applyToReward (RewardFuture storage) = applyState storage state
+      applyToReward r                      = r
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
@@ -163,8 +163,8 @@ runWorkerActions borl acts = do
         runWorkerAction state (randomAction, (aNr, Action action _)) = do
           (reward, stateNext, episodeEnd) <- liftIO $ action state
           return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
-        applyToReward state (RewardFuture _ storageWorkers) = applyState storageWorkers state
-        applyToReward _ r                               = r
+        applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
+        applyToReward _ r                                 = r
         splitMaterialisedFutures fs = let xs = takeWhile (not . isRewardFuture . view futureReward) fs
           in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
         addExperience replMem (RewardFutureData _ state aNr randomAction (Reward reward) stateNext episodeEnd) = do

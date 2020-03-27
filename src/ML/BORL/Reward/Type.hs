@@ -24,7 +24,7 @@ type RewardValue = Double
 data Reward s
   = Reward RewardValue
   | RewardEmpty
-  | (RewardFuture s) => RewardFuture (StoreType s) (StoreType s)
+  | (RewardFuture s) => RewardFuture (StoreType s)
 
 isRewardFuture :: Reward s -> Bool
 isRewardFuture RewardFuture{} = True
@@ -41,9 +41,9 @@ class (NFData (StoreType s), Serialize (StoreType s)) => RewardFuture s where
 
 
 instance NFData (Reward s) where
-  rnf (Reward v)          = rnf v
-  rnf RewardEmpty         = ()
-  rnf (RewardFuture v vw) = rnf v `seq` rnf vw
+  rnf (Reward v)       = rnf v
+  rnf RewardEmpty      = ()
+  rnf (RewardFuture v) = rnf v
 
 instance Num (Reward s) where
   v + w = Reward (rewardValue v + rewardValue w)
@@ -59,15 +59,15 @@ instance Fractional (Reward s) where
 
 
 instance RewardFuture s => Serialize (Reward s) where
-  put (Reward r)         = put (0::Int) >> put r
-  put RewardEmpty        = put (1::Int)
-  put (RewardFuture f w) = put (2::Int) >> put f >> put w
+  put (Reward r)       = put (0::Int) >> put r
+  put RewardEmpty      = put (1::Int)
+  put (RewardFuture f) = put (2::Int) >> put f
   get = do
     (nr :: Int) <- get
     case nr of
       0 -> Reward <$> get
       1 -> return RewardEmpty
-      2 -> RewardFuture <$> get <*> get
+      2 -> RewardFuture <$> get
       _ -> error "unmatched case in Serialize instance of Reward"
 
 
@@ -76,10 +76,10 @@ instance RewardFuture s => Serialize (Reward s) where
 rewardValue :: Reward s -> RewardValue
 rewardValue (Reward v) = v
 rewardValue RewardEmpty = 0
-rewardValue (RewardFuture _ _) = error "reward value of RewardFutureState not known for calculation"
+rewardValue (RewardFuture _) = error "reward value of RewardFutureState not known for calculation"
 
 
 mapReward :: (RewardFuture s') => (StoreType s -> StoreType s') -> Reward s -> Reward s'
-mapReward f (RewardFuture storage storageWorkers) = RewardFuture (f storage) (f storageWorkers)
+mapReward f (RewardFuture storage) = RewardFuture (f storage)
 mapReward _ (Reward v)             = Reward v
 mapReward _ RewardEmpty            = RewardEmpty

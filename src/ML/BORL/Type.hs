@@ -628,7 +628,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
-    AlgDQNAvgRewAdjusted _ _ _ -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
+    AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
     _ -> scalingByMaxAbsReward onlyPositive maxR
   where
     maxW = 50 * maxR
