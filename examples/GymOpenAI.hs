@@ -138,7 +138,7 @@ getGlobalVar = join <$> tryReadMVar globalVar
 
 action :: Gym -> Maybe T.Text -> Integer -> Action St
 action gym mName idx =
-  flip Action (fromMaybe (T.pack $ show idx) mName) $ \oldSt@(St render _) -> do
+  flip Action (fromMaybe (T.pack $ show idx) mName) $ \agentType oldSt@(St render _) -> do
     res <- stepGymRender render gym idx
     rew <- rewardFunction gym oldSt (fromIntegral idx) res
     obs <-

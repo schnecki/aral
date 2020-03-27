@@ -453,12 +453,12 @@ actFilter st
 actFilter _  = False : repeat True
 
 
-moveRand :: St -> IO (Reward St, St, EpisodeEnd)
+moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 moveRand = moveUp
 
 
-goalState :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
-goalState f st = do
+goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
+goalState f tp st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Double)
@@ -468,29 +468,29 @@ goalState f st = do
       | x' == goalX && y' == goalY ->
                                    -- return (Reward 10, fromIdx (x, y), True)
                                    return (Reward 10, fromIdx (x, y), False)
-    _ -> stepRew <$> f st
+    _ -> stepRew <$> f tp st
 
 
-moveUp :: St -> IO (Reward St,St, EpisodeEnd)
-moveUp st
+moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveUp _ st
     | m == 0 = return (Reward (-1), st, False)
     | otherwise = return (Reward 0, fromIdx (m-1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveDown :: St -> IO (Reward St,St, EpisodeEnd)
-moveDown st
+moveDown :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveDown _ st
     | m == maxX = return (Reward (-1), st, False)
     | otherwise = return (Reward 0, fromIdx (m+1,n), False)
   where (m,n) = getCurrentIdx st
 
-moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
-moveLeft st
+moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveLeft _ st
     | n == 0 = return (Reward (-1), st, False)
     | otherwise = return (Reward 0, fromIdx (m,n-1), False)
   where (m,n) = getCurrentIdx st
 
-moveRight :: St -> IO (Reward St,St, EpisodeEnd)
-moveRight st
+moveRight :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveRight _ st
     | n == maxY = return (Reward (-1), st, False)
     | otherwise = return (Reward 0, fromIdx (m,n+1), False)
   where (m,n) = getCurrentIdx st

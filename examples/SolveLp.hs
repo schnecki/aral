@@ -243,7 +243,7 @@ thd3 (_,_,x) = x
 
 makeReward :: (BorlLp s) => Int -> s -> IO [((State s, Action s), Double, EpisodeEnd)]
 makeReward repetitionsReward s = do
-  xss <- mapM ((\a -> replicateM repetitionsReward (a s)) . actionFunction) acts
+  xss <- mapM ((\a -> replicateM repetitionsReward (a MainAgent s)) . actionFunction) acts
   return $ zipWith (\a xs -> ((s, a), round' $ sum (map (fromReward . fst3) xs) / fromIntegral (length xs), getEpsEnd (map thd3 xs))) acts xss
   where
     round' x = (/100) . fromIntegral $ round (x * 100)

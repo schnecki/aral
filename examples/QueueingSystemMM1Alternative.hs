@@ -360,9 +360,9 @@ queueLenFilePath = "queueLength"
 actions :: [Action St]
 actions = zipWith Action (map appendQueueLenFile [reject, admit, reject]) names
 
-  where appendQueueLenFile f st@(St len _) = do
-          appendFile queueLenFilePath (show len ++ "\n")
-          f st
+  where appendQueueLenFile f tp st@(St len _) = do
+          when (tp == MainAgent) $ appendFile queueLenFilePath (show len ++ "\n")
+          f tp st
 
 
 actFilter :: St -> [Bool]
@@ -383,11 +383,11 @@ rewardFunction (St s True) Reject = do
 data ChosenAction = Reject | Admit
   deriving (Eq)
 
-reject :: St -> IO (Reward St, St, EpisodeEnd)
-reject st@(St len True) = do
+reject :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
+reject _ st@(St len True) = do
   reward <- rewardFunction st Reject
   return (reward, St len False, False)
-reject st@(St len False) = do
+reject _ st@(St len False) = do
   reward <- rewardFunction st Reject
   r <- randomRIO (0, 1 :: Double) -- case for continue (only the reject action is allowed)
   return $ if r <= lambda / (lambda + mu)
@@ -395,8 +395,8 @@ reject st@(St len False) = do
     else (reward, St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
 
 
-admit :: St -> IO (Reward St, St, EpisodeEnd)
-admit st@(St len True) = do
+admit :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
+admit _ st@(St len True) = do
   reward <- rewardFunction st Admit
   return (reward, St (len+1) False, False) -- admit + new arrival
-admit _ = error "admit function called with no arrival available. This function is only to be called when an order arrived."
+admit _ _ = error "admit function called with no arrival available. This function is only to be called when an order arrived."

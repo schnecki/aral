@@ -259,8 +259,8 @@ actionFilter Bottom{} = [False, True]
 actionFilter End      = [True, False]
 
 
-moveUp :: St -> IO (Reward St,St, EpisodeEnd)
-moveUp s =
+moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveUp _ s =
   return $
   case s of
     Start               -> (Reward 0, Top 1, False)
@@ -270,8 +270,8 @@ moveUp s =
     Top{}               -> (Reward 0, End, False)
     End                 -> (Reward 0, Start, False)
 
-moveDown :: St -> IO (Reward St,St, EpisodeEnd)
-moveDown s =
+moveDown :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveDown _ s =
   return $
   case s of
     Start                  -> (Reward (-2), Bottom 1, False)

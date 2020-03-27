@@ -236,21 +236,21 @@ actionFilter Left{}  = [True, False]
 actionFilter Right{} = [False, True]
 
 
-moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
-moveLeft s =
+moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveLeft tp s =
   case s of
     One    -> return (0, Left 2, False)
     Left 5 -> return (5, One, False)
     Left x -> return (0, Left (x+1), False)
-    _      -> moveRight s
+    _      -> moveRight tp s
 
-moveRight :: St -> IO (Reward St,St, EpisodeEnd)
-moveRight s =
+moveRight :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveRight tp s =
   case s of
     One      -> return (0, Right 2, False)
     Right 10 -> return (20, One, False)
     Right x  -> return (0, Right (x + 1), False)
-    _        -> moveLeft s
+    _        -> moveLeft tp s
 
 
 encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a

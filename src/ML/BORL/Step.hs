@@ -136,7 +136,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions)
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
   workerReplMemFuture <- liftIO $ doFork $ runWorkerActions borl workerActions
-  (reward, stateNext, episodeEnd) <- liftIO $ action state
+  (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
   let applyToReward (RewardFuture storage) = applyState storage state
       applyToReward r                      = r
       updateFutures = map (over futureReward applyToReward)
@@ -161,7 +161,7 @@ runWorkerActions borl acts = do
   (,futureRews') <$> zipWithM (foldM addExperience) (borl ^. workers.traversed.workersReplayMemories) rewards
   where runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
         runWorkerAction state (randomAction, (aNr, Action action _)) = do
-          (reward, stateNext, episodeEnd) <- liftIO $ action state
+          (reward, stateNext, episodeEnd) <- liftIO $ action WorkerAgent state
           return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
         applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
         applyToReward _ r                                 = r

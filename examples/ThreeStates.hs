@@ -82,7 +82,6 @@ nnConfig =
     , _workersMinExploration = []
     }
 
-
 netInp :: St -> [Double]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
 
@@ -244,16 +243,16 @@ actionFilter B = [False, True]
 actionFilter C = [True, False]
 
 
-moveLeft :: St -> IO (Reward St,St, EpisodeEnd)
-moveLeft s =
+moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveLeft _ s =
   return $
   case s of
     A -> (Reward 2, B, False)
     B -> error "not allowed"
     C -> (Reward 2, A, False)
 
-moveRight :: St -> IO (Reward St,St, EpisodeEnd)
-moveRight s =
+moveRight :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
+moveRight _ s =
   return $
   case s of
     A -> (Reward 0, C, False)

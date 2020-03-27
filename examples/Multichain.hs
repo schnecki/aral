@@ -113,17 +113,17 @@ instance RewardFuture St where
 actions :: [Action St]
 actions =  [Action (addReset move) "move"]
 
-addReset :: (St -> IO (Reward St, St, EpisodeEnd)) -> St -> IO (Reward St, St, EpisodeEnd)
-addReset f st = do
+addReset :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
+addReset f tp st = do
   r <- randomRIO (0,1)
   if r < (0.01 :: Double)
     then do
     x <- randomRIO (4,5)
     return (Reward 0, St x, True)
-    else f st
+    else f tp st
 
-move :: St -> IO (Reward St,St,EpisodeEnd)
-move s = do
+move :: AgentType -> St -> IO (Reward St,St,EpisodeEnd)
+move _ s = do
   rand <- randomRIO (0, 1 :: Double)
   let possMove = case s of
          St 1 -> [(1.0, (Reward 2, St 1,False))]
