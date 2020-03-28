@@ -637,13 +637,14 @@ scalingByMaxAbsRewardAlg alg onlyPositive maxR =
 -- | Creates the workers data structure if applicable (i.e. there is a replay memory of size >1 AND the minimum
 -- expoloration rates are configured in NNConfig)
 mkWorkers :: InitialState s -> [Action s] -> NNConfig -> IO (Maybe (Workers s))
-mkWorkers s as nnConfig = do
+mkWorkers state as nnConfig = do
   let nr = length $ nnConfig ^. workersMinExploration
   if nr <= 0
     then return Nothing
     else do
-      repMems <- sequence <$> replicateM nr (mkReplayMemories as nnConfig { _replayMemoryMaxSize = nnConfig ^. replayMemoryMaxSize `div` nr})
-      return $ Workers (replicate nr s) (replicate nr []) <$> repMems
+      repMems <-
+        sequence <$> replicateM nr (mkReplayMemories as $ set replayMemoryStrategy ReplayMemorySingle $ set replayMemoryMaxSize (nnConfig ^. replayMemoryMaxSize `div` nr) nnConfig)
+      return $ Workers (replicate nr state) (replicate nr []) <$> repMems
 
 
 -------------------- Helpers --------------------
