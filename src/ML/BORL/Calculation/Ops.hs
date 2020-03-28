@@ -52,7 +52,6 @@ maximum [] = error "empty input to maximum in ML.BORL.Calculation.Ops"
 maximum xs = Data.List.maximum xs
 minimum [] = error "empty input to minimum in ML.BORL.Calculation.Ops"
 minimum xs = Data.List.minimum xs
-
 #else
 import           Data.List                      (maximumBy, minimumBy)
 #endif

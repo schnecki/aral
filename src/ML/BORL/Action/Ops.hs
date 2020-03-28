@@ -59,7 +59,6 @@ nextActionFor borl state explore
   where
     cfg = ActionPickingConfig state explore
     as = actionsIndexed borl state
-    state = borl ^. s
 
 data SelectedActions s = SelectedActions
   { maximised :: [(Double, ActionIndexed s)] -- ^ Choose actions by maximising objective

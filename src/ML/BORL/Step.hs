@@ -147,7 +147,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
 runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
-runWorkerActions _ [] = return Nothing
+runWorkerActions borl [] = return (borl ^. workers)
 runWorkerActions borl acts = do
   let states = borl ^. workers.traversed.workersS
   stepRewards <- zipWithM runWorkerAction states acts
