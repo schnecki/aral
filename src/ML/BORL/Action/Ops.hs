@@ -47,7 +47,7 @@ nextAction borl = do
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     maxExpl = max (params' ^. exploration)
 
-nextActionFor :: (MonadBorl' m) => BORL s -> s -> Double -> m (ActionChoice s)
+nextActionFor :: (MonadBorl' m) => BORL s -> s -> Float -> m (ActionChoice s)
 nextActionFor borl state explore
   | null as = error "Empty action list"
   | length as == 1 = return (False, head as)
@@ -61,23 +61,23 @@ nextActionFor borl state explore
     as = actionsIndexed borl state
 
 data SelectedActions s = SelectedActions
-  { maximised :: [(Double, ActionIndexed s)] -- ^ Choose actions by maximising objective
-  , minimised :: [(Double, ActionIndexed s)] -- ^ Choose actions by minimising objective
+  { maximised :: [(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
+  , minimised :: [(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
   }
 
 
 type UseRand = Bool
-type ActionSelection s = [[(Double, ActionIndexed s)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
-type RandomNormValue = Double
+type ActionSelection s = [[(Float, ActionIndexed s)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
+type RandomNormValue = Float
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do
-  r <- liftIO $ randomRIO (0 :: Double, 1)
+  r <- liftIO $ randomRIO (0 :: Float, 1)
   return $ SelectedActions (xs !! chooseByProbability r 0 0 probs) (reverse xs !! chooseByProbability r 0 0 probs)
   where
     probs = softmax temp $ map (fst . head) xs
 
-chooseByProbability :: RandomNormValue -> ActionIndex -> Double -> [Double] -> Int
+chooseByProbability :: RandomNormValue -> ActionIndex -> Float -> [Float] -> Int
 chooseByProbability r idx acc [] = error $ "no more options in chooseByProbability in Action.Ops: " ++ show (r, idx, acc)
 chooseByProbability r idx acc (v:vs)
   | acc + v >= r = idx
@@ -87,7 +87,7 @@ chooseByProbability r idx acc (v:vs)
 data ActionPickingConfig s =
   ActionPickingConfig
     { actPickState :: s
-    , actPickExpl  :: Double
+    , actPickExpl  :: Float
     }
 
 chooseAction :: (MonadBorl' m) => BORL s -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndexed s)

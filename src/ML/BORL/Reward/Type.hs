@@ -17,7 +17,7 @@ import           GHC.Generics
 import           Data.ByteString
 import           Data.Serialize
 
-type RewardValue = Double
+type RewardValue = Float
 
 
 -- ^ A result caused by an action can be a immediate reward, no reward or a future reward determined by the state.

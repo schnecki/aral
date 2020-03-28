@@ -21,23 +21,23 @@ type IsRandomAction = Bool
 type Period = Int
 type State s = s
 type StateNext s = s
-type PsisOld = (Double, Double, Double)
+type PsisOld = (Float, Float, Float)
 type PsisNew = PsisOld
 
-type FeatureExtractor s = s -> [Double]
-type GammaLow = Double
-type GammaHigh = Double
-type GammaMiddle = Double
-type Gamma = Double
+type FeatureExtractor s = s -> [Float]
+type GammaLow = Float
+type GammaHigh = Float
+type GammaMiddle = Float
+type Gamma = Float
 
 
-type StateFeatures = [Double]
-type StateNextFeatures = [Double]
+type StateFeatures = [Float]
+type StateNextFeatures = [Float]
 
 
-type MSE = Double               -- ^ Mean squared error
-type MaxValue = Double
-type MinValue = Double
+type MSE = Float               -- ^ Mean squared error
+type MaxValue n = n
+type MinValue n = n
 
 
 replace :: Int -> a -> [a] -> [a]

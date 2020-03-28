@@ -14,9 +14,9 @@ import           ML.BORL.NeuralNetwork.ReplayMemory
 import           ML.BORL.NeuralNetwork.Scaling
 import           ML.BORL.Types
 
-type NetInputWoAction = [Double]
-type NetInput = [Double]
-type NetInputWithAction = [Double]
+type NetInputWoAction = [Float]
+type NetInput = [Float]
+type NetInputWithAction = [Float]
 
 ------------------------------ Replay Memory Setup ------------------------------
 
@@ -35,7 +35,7 @@ data NNConfig = NNConfig
   , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
   , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
   , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.
-  , _stabilizationAdditionalRho      :: Double                   -- ^ Additional rho as a percantage of [minV, maxV] which is
+  , _stabilizationAdditionalRho      :: Float                    -- ^ Additional rho as a percantage of [minV, maxV] which is
                                                                  -- expected in the beginning.
   , _stabilizationAdditionalRhoDecay :: !DecaySetup              -- ^ Decay for stabilization
   , _updateTargetInterval            :: !Int                     -- ^ After how many steps should the target network be replaced by the worker?
@@ -44,7 +44,7 @@ data NNConfig = NNConfig
                                                                  -- the neural network once the replay memory is filled.
   , _setExpSmoothParamsTo1           :: !Bool                    -- ^ Set all exponential smoothing parameters to 1 and
                                                                  -- use ANN learning rate to decay learning solely.
-  , _workersMinExploration           :: ![Double]                -- ^ Set worker minimum exploration values.
+  , _workersMinExploration           :: ![Float]                 -- ^ Set worker minimum exploration values.
  }
 makeLenses ''NNConfig
 

@@ -197,19 +197,19 @@ makeConstraints ::
   => Int
   -> Maybe (State s, Action s)
   -> M.Map (s, T.Text) Int
-  -> [((State s, Action s), Double, EpisodeEnd)]
+  -> [((State s, Action s), Probability, EpisodeEnd)]
   -> ((State s, Action s), [((State s, Action s), Probability)])
   -> [Bound [(Double, Int)]]
 makeConstraints wMax mRefStAct stateActionIndices rewards (stAct, xs)
   | stAct `elem` map fst xs -- double occurance of variable is not allowed!
    =
-    [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: rewardValue stAct
+    [ ([1 # 1] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # stateIndex stateAction) xs') :==: realToFrac (rewardValue stAct)
     , ([1 # stateIndex stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wIndex stateAction) xs') :==: 0
     ] ++
     map (\nr -> ([1 # wNrIndex (nr - 1) stAct] ++ map (\(stateAction, prob) -> ite (stAct == stateAction) (1 - prob) (-prob) # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++
     stActCtr
   | otherwise =
-    [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: rewardValue stAct
+    [ ([1 # 1, 1 # stateIndex stAct] ++ map (\(stateAction, prob) -> -prob # stateIndex stateAction) xs') :==: realToFrac (rewardValue stAct)
     , ([1 # stateIndex stAct, 1 # wIndex stAct] ++ map (\(stateAction, prob) -> -prob # wIndex stateAction) xs') :==: 0
     ] ++
     map (\nr -> ([1 # wNrIndex (nr - 1) stAct, 1 # wNrIndex nr stAct] ++ map (\(stateAction, prob) -> -prob # wNrIndex nr stateAction) xs') :==: 0) [2 .. wMax] ++ stActCtr

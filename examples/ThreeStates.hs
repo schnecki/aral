@@ -82,13 +82,13 @@ nnConfig =
     , _workersMinExploration = []
     }
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
 
-maxVal :: Double
+maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
-minVal :: Double
+minVal :: Float
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64
@@ -200,34 +200,9 @@ decay =
       }
 
 
--- decay :: Decay
--- decay = -- exponentialDecayParameters (Just minValues) 0.05 100000
---   exponentialDecayParameters Nothing 0.05 100000
---   where
---     minValues =
---       Parameters
---         { _alpha = 0
---         , _alphaANN = 0
---         , _beta = 0
---         , _betaANN = 0
---         , _delta = 0
---         , _deltaANN = 0
---         , _gamma = 0
---         , _gammaANN = 0
---         , _epsilon = 0.1
---         , _exploration = 0.01
---         , _learnRandomAbove = 0
---         , _zeta = 0
---         , _xi = 0
---         , _disableAllLearning = False
---         }
-
-
 -- State
 data St = B | A | C
   deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
-type R = Double
-type P = Double
 
 -- Actions
 actions :: [Action St]

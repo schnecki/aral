@@ -18,15 +18,15 @@ import           Debug.Trace
 
 -------------------- Conversion --------------------
 
-toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> [Double] -> S (Head shapes)
-toHeadShapes _ inp = S1D $ vector inp
+toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> [Float] -> S (Head shapes)
+toHeadShapes _ inp = S1D $ vector $ map realToFrac inp
 
-toLastShapes :: (KnownNat nr, 'D1 nr ~ Last shapes) => Network layers shapes -> [Double] -> S (Last shapes)
-toLastShapes _ inp = S1D $ vector inp
+toLastShapes :: (KnownNat nr, 'D1 nr ~ Last shapes) => Network layers shapes -> [Float] -> S (Last shapes)
+toLastShapes _ inp = S1D $ vector $ map realToFrac inp
 
 
-fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Double])
-fromLastShapes _ (tapes, S1D out) = (tapes, DV.toList $ extract out)
+fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Float])
+fromLastShapes _ (tapes, S1D out) = (tapes, fmap realToFrac $ DV.toList $ extract out)
 fromLastShapes _ _                = error "NN output currently not supported."
 
 

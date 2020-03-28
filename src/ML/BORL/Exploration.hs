@@ -13,7 +13,7 @@ import           GHC.Generics
 
 import           ML.BORL.NeuralNetwork.Scaling
 
-type TemperatureInitFactor = Double -- ^ Will be decayed by multiplying with the exploration value of the parameters.
+type TemperatureInitFactor = Float -- ^ Will be decayed by multiplying with the exploration value of the parameters.
 
 data ExplorationStrategy
   = EpsilonGreedy                          -- ^ Use Epsilon greedy algorithm
@@ -24,7 +24,7 @@ data ExplorationStrategy
 
 
 -- | This normalises the input and returns a softmax using the Bolzmann distribution with given temperature.
-softmax :: Double -> [Double] -> [Double]
+softmax :: (Ord n, Floating n) => n -> [n] -> [n]
 softmax _ [] = []
 softmax temp xs
   | all (== head xs) (tail xs) = replicate (length xs) (1 / genericLength xs)
@@ -36,7 +36,7 @@ softmax temp xs
     eps = 1e-2
 
 -- | Normalise the input list to (-1, 1).
-normalise :: [Double] -> [Double]
+normalise :: (Ord n, Fractional n) => [n] -> [n]
 normalise [] = error "empty input to normalise in ML.BORL.Exploration"
 normalise xs = map (scaleZeroOneValue (minV, maxV)) xs
   where minV = minimum xs

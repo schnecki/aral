@@ -58,19 +58,19 @@ nestCols = 75
 wideStyle :: Style
 wideStyle = Style { lineLength = 300, ribbonsPerLine = 200, mode = PageMode }
 
-printFloat :: Double -> Doc
+printFloat :: Float -> Doc
 printFloat = text . showFloat
 
-showFloat :: Double -> String
+showFloat :: (PrintfArg n, Fractional n) => n -> String
 showFloat = printf ("%+." ++ show commas ++ "f")
 
-showFloatList :: [Double] -> String
+showFloatList :: (PrintfArg n, Fractional n) => [n] -> String
 showFloatList xs = "[" ++ intercalate "," (map showFloat xs) ++ "]"
 
-printFloatWith :: Int -> Double -> Doc
+printFloatWith :: Int -> Float -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
-type Modifier m = LookupType -> ([Double], ActionIndex) -> Double -> m Double
+type Modifier m = LookupType -> ([Float], ActionIndex) -> Float -> m Float
 
 noMod :: (Monad m) => Modifier m
 noMod _ _ = return
@@ -107,7 +107,7 @@ mkListFromNeuralNetwork ::
   -> Bool
   -> Modifier m
   -> P.Proxy
-  -> m [(ActionIndex -> Doc, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
+  -> m [(ActionIndex -> Doc, ([(ActionIndex, Float)], [(ActionIndex, Float)]))]
 mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
   let subPr
         | isCombinedProxy pr = pr ^?! proxySub
@@ -192,7 +192,7 @@ prettyComparison EpsilonSensitive = "optimising by epsilon-sensitive comparison"
 prettyComparison Exact            = "optimising by exact comparison"
 
 
-prettyRefState :: (Show a) => ([Double] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
+prettyRefState :: (Show a) => ([Float] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
 prettyRefState _ _ Nothing = mempty
 prettyRefState prettyState prettyAction (Just (stFeat,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState stFeat) <> " - " <> prettyAction aNr
 
@@ -205,7 +205,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
   parens (text "Period 0" <> colon <+> printFloat ratio <> "*state values + " <> printFloat (1 - ratio) <> "*reward")
   where
     ratio' = decaySetup decay period ratio
-prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
+prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> float x
 
 
 prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
@@ -245,7 +245,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
-mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Double] -> Maybe (Maybe st, String)
+mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Float] -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
     Nothing  -> Just (Nothing, showFloatList netinp)
@@ -257,7 +257,7 @@ prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> 
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
-prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> ([Double] -> Maybe (Maybe s, String)) -> BORL s -> m Doc
+prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> ([Float] -> Maybe (Maybe s, String)) -> BORL s -> m Doc
 prettyBORLHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
@@ -341,7 +341,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        px -> text "Workers Minimum Exploration" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration)))
+        px -> text "Workers Minimum Exploration" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration))) <+>
+              text "each with replay memory size" <+> int (maybe 0 (replayMemoriesSize . head) $ borl ^? workers.traversed.workersReplayMemories)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -413,12 +414,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textGrenadeConf conf =
           let LearningParameters l0 m0 l20 = conf ^. grenadeLearningParams
               dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              LearningParameters l m l2 = LearningParameters (dec l0) m0 l20
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 l, printFloatWith 8 m, printFloatWith 8 l2)))
+              LearningParameters l m l2 = LearningParameters (realToFrac $ dec $ realToFrac l0) m0 l20
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac m), printFloatWith 8 (realToFrac l2))))
         textTensorflow conf =
           let LearningParameters l0 _ _ = conf ^. grenadeLearningParams
               dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              l = dec l0
+              l = dec $ realToFrac l0
            in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
 
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s

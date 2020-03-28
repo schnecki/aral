@@ -75,13 +75,13 @@ maxQueueSize :: Int
 maxQueueSize = 10
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
-lambda, mu, fixedPayoffR, c :: Double
+lambda, mu, fixedPayoffR, c :: Float
 lambda = 5                      -- arrival rate/time
 mu = 5                          -- service rate/time
 fixedPayoffR = 12               -- fixed payoff
 c = 1                           -- holding cost per order
 
-costFunctionF :: Int -> IO Double
+costFunctionF :: Int -> IO Float
 costFunctionF j = do
   -- x <- randomRIO (0.25, 1.75)
   return $ c * fromIntegral j -- (j+1) - fromIntegral j * x -- holding cost function
@@ -156,14 +156,14 @@ policy maxAdmit (St s incoming) act
   | incoming && act == admitAct = [((St (s + 1) False, contAct), 1)]
   | otherwise = error "unexpected case in policy"
   where
-    pMu = mu / (lambda + mu)
-    pLambda = lambda / (lambda + mu)
+    pMu = realToFrac $ mu / (lambda + mu)
+    pLambda = realToFrac $ lambda / (lambda + mu)
     contAct = actions !! 2
     admitAct = actions !! 1
     rejectAct = head actions
 
 
-allStateInputs :: M.Map [Double] St
+allStateInputs :: M.Map [Float] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
@@ -187,11 +187,12 @@ instance ExperimentDef (BORL St)
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
+          val l = realToFrac (rl' ^?! l)
           results =
-            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
-            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
-            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
-            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
+            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (val $  proxies . rho . proxyScalar)
+            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (val $  psis . _1)
+            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t)   (val $  psis . _2)
+            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t)   (val $  psis . _3)
             , StepResult "avgEpisodeLength" (Just $ fromIntegral $ rl' ^. t) eLength
             , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
             ]
@@ -340,10 +341,10 @@ nnConfig =
     , _workersMinExploration = []
     }
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
 
-tblInp :: St -> [Double]
+tblInp :: St -> [Float]
 tblInp (St len arr)        = [fromIntegral len, fromIntegral $ fromEnum arr]
 
 
@@ -389,7 +390,7 @@ reject _ st@(St len True) = do
   return (reward, St len False, False)
 reject _ st@(St len False) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Double) -- case for continue (only the reject action is allowed)
+  r <- randomRIO (0, 1 :: Float) -- case for continue (only the reject action is allowed)
   return $ if r <= lambda / (lambda + mu)
     then (reward, St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward, St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)

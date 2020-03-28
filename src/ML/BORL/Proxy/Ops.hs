@@ -68,7 +68,7 @@ data LookupType = Target | Worker
   deriving (Eq, Ord)
 
 
-mkStateActs :: BORL s -> s -> s -> ([Double], ([Double], [ActionIndex]), ([Double], [ActionIndex]))
+mkStateActs :: BORL s -> s -> s -> (StateFeatures, (StateFeatures, [ActionIndex]), (StateNextFeatures, [ActionIndex]))
 mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
     where
     sActIdxes = map fst $ actionsIndexed borl state
@@ -217,28 +217,28 @@ insert borl period state aNr randAct rew stateNext episodeEnd getCalc pxs@(Proxi
 -- | Caching of results
 type CacheKey = (LookupType, ProxyType, StateFeatures)
 
-cacheMVar :: MVar (M.Map CacheKey [Double])
+cacheMVar :: MVar (M.Map CacheKey [Float])
 cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}
 
 emptyCache :: MonadBorl' m => m ()
 emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
 
-addCache :: (MonadBorl' m) => CacheKey -> [Double] -> m ()
+addCache :: (MonadBorl' m) => CacheKey -> [Float] -> m ()
 addCache k v = liftIO $ modifyMVar_ cacheMVar (return . M.insert k v)
 
-lookupCache :: (MonadBorl' m) => CacheKey -> m (Maybe [Double])
+lookupCache :: (MonadBorl' m) => CacheKey -> m (Maybe [Float])
 lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
-insertProxy :: (MonadBorl' m) => Period -> StateFeatures -> ActionIndex -> Double -> Proxy -> m Proxy
+insertProxy :: (MonadBorl' m) => Period -> StateFeatures -> ActionIndex -> Float -> Proxy -> m Proxy
 insertProxy p st aNr val = insertProxyMany p [((st, aNr), val)]
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
-insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
+insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
 insertProxyMany _ xs (Scalar _) = return $ Scalar (snd $ last xs)
 insertProxyMany _ xs (Table m def) = return $! force $! Table (foldl' (\m' ((st,aNr),v') -> M.insert (map trunc st, aNr) v' m') m xs) def
   where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
@@ -303,7 +303,7 @@ updateNNTargetNet forceReset period px
 
 
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
-trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Double)] -> Proxy -> m Proxy
+trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
 trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) = do
   let netW' = foldl' (trainGrenade lp) netW (map return trainingInstances')
   return $ Grenade netT netW' tab tp config nrActs
@@ -311,7 +311,7 @@ trainBatch period trainingInstances px@(Grenade netT netW tab tp config nrActs) 
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
     dec = decaySetup (config ^. learningParamsDecay) period
-    lp = LearningParameters (dec lRate) momentum l2
+    lp = LearningParameters (realToFrac $ dec $ realToFrac lRate) momentum l2
 trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   if period == px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -319,7 +319,7 @@ trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config 
       lrs <- getLearningRates netW
       when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"
       when (length lrs > 1) $ error "Cannot handle multiple Tensorflow optimizers (multiple learning rates) in Proxy.Ops"
-      return $ TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (head lrs) 0 0 $ config) nrActs
+      return $ TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (realToFrac $ head lrs) 0 0 $ config) nrActs
     else do
       when (period `mod` 1000 == 0 && dec lRate /= lRate) $
         setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
@@ -329,12 +329,13 @@ trainBatch period trainingInstances px@(TensorflowProxy netT netW tab tp config 
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     dec = decaySetup (config ^. learningParamsDecay) period
-    LearningParameters lRate _ _ = config ^. grenadeLearningParams
+    LearningParameters lRateDb _ _ = config ^. grenadeLearningParams
+    lRate = realToFrac lRateDb
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
 -- | Train until MSE hits the value given in NNConfig.
-trainMSE :: (MonadBorl' m) => Maybe Int -> [(([Double], ActionIndex), Double)] -> LearningParameters -> Proxy -> m Proxy
+trainMSE :: (MonadBorl' m) => Maybe Int -> [(([Float], ActionIndex), Float)] -> LearningParameters -> Proxy -> m Proxy
 trainMSE _ _ _ px@Table{} = return px
 trainMSE mIteration dataset lp px@(Grenade _ netW tab tp config nrActs)
   | isNothing (config ^. trainMSEMax) = return px
@@ -392,7 +393,7 @@ trainMSE mIteration dataset lp px@(TensorflowProxy netT netW tab tp config nrAct
 trainMSE _ _ _ _ = error "trainMSE should not have been callable with this type of proxy. programming error!"
 
 -- | Retrieve a value.
-lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
+lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupProxy _ _ _ (Scalar x) = return x
 lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
 lookupProxy period lkType k@(feat, actIdx) px
@@ -408,17 +409,17 @@ lookupProxy period lkType k@(feat, actIdx) px
 
 -- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an
 -- error is thrown. The returned value is up-scaled to the original interval before returned.
-lookupNeuralNetwork :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
+lookupNeuralNetwork :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupNeuralNetwork tp k px = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
 
 -- | Retrieve all values of one feature from a neural network proxy. The output is sclaed to the original range. For
 -- other proxies an error is thrown. The returned value is up-scaled to the original interval before returned.
-lookupActionsNeuralNetwork :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
+lookupActionsNeuralNetwork :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Float]
 lookupActionsNeuralNetwork tp k px = map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
 
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
-lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Double
+lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupNeuralNetworkUnscaled tp (st, actIdx) px@Grenade{} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) px@TensorflowProxy {} = (!! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled tp (st, actIdx) p@(CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
@@ -428,7 +429,8 @@ headLookupActions :: [p] -> p
 headLookupActions []    = error "head: empty input data in lookupActionsNeuralNetworkUnscaled"
 headLookupActions (x:_) = x
 
-cached :: (MonadBorl' m) => (LookupType, ProxyType, StateFeatures) -> m [Double] -> m [Double]
+-- | Get output of function f, if possible from cache according to key (st).
+cached :: (MonadBorl' m) => (LookupType, ProxyType, StateFeatures) -> m [Float] -> m [Float]
 cached st f = do
   c <- lookupCache st
   case c of
@@ -439,7 +441,7 @@ cached st f = do
     Just res -> return res
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
-lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Double]
+lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m [Float]
 lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (Worker, tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
 lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
@@ -454,7 +456,7 @@ lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled ca
 
 
 -- | Finds the correct value for scaling.
-getMinMaxVal :: Proxy -> Maybe (MinValue, MaxValue)
+getMinMaxVal :: Proxy -> Maybe (MinValue Float, MaxValue Float)
 getMinMaxVal Table{} = error "getMinMaxVal called for Table"
 getMinMaxVal p =
   case unCombine (p ^?! proxyType) of
@@ -476,7 +478,7 @@ getMinMaxVal p =
 
 
 -- | This function retrieves the data and builds a table like return value.
-mkNNList :: (MonadBorl' m) => BORL k -> Bool -> Proxy -> m [(NetInputWoAction, ([(ActionIndex, Double)], [(ActionIndex, Double)]))]
+mkNNList :: (MonadBorl' m) => BORL k -> Bool -> Proxy -> m [(NetInputWoAction, ([(ActionIndex, Float)], [(ActionIndex, Float)]))]
 mkNNList borl scaled pr =
   mapM
     (\st -> do
@@ -496,7 +498,7 @@ mkNNList borl scaled pr =
     conf = pr ^?! proxyNNConfig
     actIdxs = [0 .. (pr ^?! proxyNrActions - 1)]
     useTable = borl ^. t == fromIntegral (pr ^?! proxyNNConfig . replayMemoryMaxSize) && (pr ^?! proxyNNConfig . trainBatchSize) /= 1
-    lookupTable :: Bool -> [Double] -> [Double]
+    lookupTable :: Bool -> [Float] -> [Float]
     lookupTable scale st
       | scale = val -- values are being unscaled, thus let table value be unscaled
       | otherwise = map (scaleValue (getMinMaxVal pr)) val

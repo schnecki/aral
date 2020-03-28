@@ -19,14 +19,14 @@ import           Grenade
 
 import           Debug.Trace
 
-trainMaxVal :: Double
+trainMaxVal :: Float
 trainMaxVal = 0.98
 
 trainGrenade ::
      (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
   => LearningParameters
   -> Network layers shapes
-  -> [(([Double], ActionIndex), Double)]
+  -> [(([Float], ActionIndex), Float)]
   -> Network layers shapes
 trainGrenade lp net chs = applyUpdate lp net $ foldl1 (|+) $ zipWith mkGradients chs $ tapesAndActual chs
   where

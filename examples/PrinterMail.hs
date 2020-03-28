@@ -84,17 +84,17 @@ nnConfig =
     }
 
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
 
-tblInp :: St -> [Double]
+tblInp :: St -> [Float]
 tblInp st = [fromIntegral $ fromEnum st]
 
 
-maxVal :: Double
+maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
-minVal :: Double
+minVal :: Float
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64
@@ -220,9 +220,6 @@ instance Bounded St where
   minBound = One
   maxBound = Right 10
 
-
-type R = Double
-type P = Double
 
 -- Actions
 actions :: [Action St]

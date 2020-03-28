@@ -36,7 +36,7 @@ import qualified TensorFlow.Core       as TF
 
 type ActionList s = [ActionIndexed s]
 type ActionFilter s = s -> [Bool]
-type ProxyNetInput s = s -> [Double]
+type ProxyNetInput s = s -> [Float]
 
 
 data BORLSerialisable s = BORLSerialisable
@@ -48,13 +48,13 @@ data BORLSerialisable s = BORLSerialisable
   , serRewardFutures  :: [RewardFutureData s]
 
   -- define algorithm to use
-  , serAlgorithm      :: !(Algorithm [Double])
+  , serAlgorithm      :: !(Algorithm [Float])
   , serObjective      :: !Objective
 
   -- Values:
-  , serLastVValues    :: ![Double]                 -- ^ List of X last V values
-  , serLastRewards    :: ![Double]                 -- ^ List of X last rewards
-  , serPsis           :: !(Double, Double, Double)  -- ^ Exponentially smoothed psi values.
+  , serLastVValues    :: ![Float]                 -- ^ List of X last V values
+  , serLastRewards    :: ![Float]                 -- ^ List of X last rewards
+  , serPsis           :: !(Float, Float, Float)  -- ^ Exponentially smoothed psi values.
   , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
@@ -179,7 +179,7 @@ instance Serialize ReplayMemory where
   get = do
     sz <- get
     idx <- get
-    xs :: [((StateFeatures, [ActionIndex]), ActionIndex, Bool, Double, (StateNextFeatures, [ActionIndex]), EpisodeEnd)] <- get
+    xs :: [((StateFeatures, [ActionIndex]), ActionIndex, Bool, Float, (StateNextFeatures, [ActionIndex]), EpisodeEnd)] <- get
     maxIdx <- get
     return $
       unsafePerformIO $ do

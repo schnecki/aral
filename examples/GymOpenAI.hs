@@ -84,7 +84,7 @@ modelBuilder gym initSt nrActions outCols =
     inpLen = genericLength (netInp False gym initSt)
 
 
-nnConfig :: Gym -> Double -> NNConfig
+nnConfig :: Gym -> Float -> NNConfig
 nnConfig gym maxRew =
   NNConfig
     { _replayMemoryMaxSize = 10000
@@ -126,13 +126,13 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
   where ys = combinations xss
 
 
-globalVar :: MVar (Maybe Double)
+globalVar :: MVar (Maybe Float)
 globalVar = unsafePerformIO $ newMVar Nothing
 {-# NOINLINE globalVar #-}
-setGlobalVar :: Maybe Double -> IO ()
+setGlobalVar :: Maybe Float -> IO ()
 setGlobalVar x = modifyMVar_ globalVar (return . const x)
 {-# NOINLINE setGlobalVar #-}
-getGlobalVar :: IO (Maybe Double)
+getGlobalVar :: IO (Maybe Float)
 getGlobalVar = join <$> tryReadMVar globalVar
 {-# NOINLINE getGlobalVar #-}
 
@@ -151,13 +151,13 @@ action gym mName idx =
 rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
 rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
   case alg of
-    AlgDQN {} -> return $ Reward rew
+    AlgDQN {} -> return $ Reward $ realToFrac rew
     AlgDQNAvgRewAdjusted  {}
       | name gym == "CartPole-v1" -> do
         epsStep <- getElapsedSteps gym
         let rad = xs !! 3 -- (-0.418879, 0.418879) .. 24 degrees in rad
             pos = xs !! 1 -- (-4.8, 4.8)
-        return $ Reward $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879 / 4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
+        return $ Reward $ realToFrac $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879 / 4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
     AlgDQNAvgRewAdjusted {}
       | name gym == "MountainCar-v0" -> do
         let pos = head xs
@@ -169,16 +169,16 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         setGlobalVar (Just $ step + 1)
         let movGoal = min 0.5 (5e-6 * step - 0.3)
         epsStep <- getElapsedSteps gym
-        return $ Reward $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) id $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
+        return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) id $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
     AlgDQNAvgRewAdjusted  {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
-         in return $ Reward $ (* 20) $ -cosS0 - cos (acos cosS0 + acos cosS1)
+         in return $ Reward $ realToFrac $ (* 20) $ -cosS0 - cos (acos cosS0 + acos cosS1)
                            -- -cos(s[0]) - cos(s[1] + s[0])
     AlgDQNAvgRewAdjusted {}
-      | name gym == "Copy-v0" -> return $ Reward rew
+      | name gym == "Copy-v0" -> return $ Reward $ realToFrac rew
     AlgDQNAvgRewAdjusted {}
-      | name gym == "Pong-ram-v0" -> return $ Reward rew
+      | name gym == "Pong-ram-v0" -> return $ Reward $ realToFrac rew
   where
     xs = gymObservationToDoubleList obs
     ite True x _  = x
@@ -187,7 +187,7 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
 
 rewardFunction gym _ _ _ = error $ "rewardFunction not yet defined for this environment: " ++ T.unpack (name gym)
 
-maxReward :: Gym -> Double
+maxReward :: Gym -> Float
 maxReward _ | isAlgDqn alg = 10
 maxReward gym | name gym == "CartPole-v1" = 50
               | name gym == "MountainCar-v0" = 200
@@ -199,9 +199,9 @@ maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for t
 
 
 -- | Scales values to (-1, 1).
-netInp :: Bool -> Gym -> St -> [Double]
+netInp :: Bool -> Gym -> St -> [Float]
 netInp isTabular gym (St _ st)
-  | not isTabular = zipWith3 (\l u -> scaleValue (Just (l, u))) lowerBounds upperBounds st
+  | not isTabular = zipWith3 (\l u -> realToFrac . scaleValue (Just (realToFrac l, realToFrac  u))) lowerBounds upperBounds st
   | isTabular = map (rnd . fst) $ filter snd (stSelector st)
   where
     rnd x = fromIntegral (round (x * 10)) / 10
@@ -210,15 +210,15 @@ netInp isTabular gym (St _ st)
       -- | name gym == "MountainCar-v0" = [(head xs, True), (5 * (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
-observationSpaceBounds :: Gym -> ([Double], [Double])
-observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+observationSpaceBounds :: Gym -> ([Float], [Float])
+observationSpaceBounds gym = map (realToFrac . max (-maxVal)) *** map (realToFrac . min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
   where
     maxVal | name gym == "CartPole-v1" = 5
            | otherwise = 1000
 
 
 mInverseSt :: Gym -> Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
+mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> realToFrac $ unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
   where
     (lowerBounds, upperBounds) = observationSpaceBounds gym
 
@@ -272,7 +272,7 @@ main = do
 
 
  -- | BORL Parameters.
-params :: Gym -> Double -> ParameterInitValues
+params :: Gym -> Float -> ParameterInitValues
 params gym maxRew =
   Parameters
     { _alpha               = 0.03

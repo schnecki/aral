@@ -127,7 +127,7 @@ data BORL s = BORL
   , _s                :: !s                    -- ^ Current state.
   , _workers          :: Maybe (Workers s)     -- ^ Additional workers.
 
-  , _featureExtractor :: !(s -> [Double])      -- ^ Function that extracts the features of a state.
+  , _featureExtractor :: !(s -> StateFeatures) -- ^ Function that extracts the features of a state.
   , _t                :: !Int                  -- ^ Current time t.
   , _episodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
   , _parameters       :: !ParameterInitValues  -- ^ Parameter setup.
@@ -135,13 +135,13 @@ data BORL s = BORL
   , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
 
   -- define algorithm to use
-  , _algorithm        :: !(Algorithm [Double]) -- ^ What algorithm to use.
-  , _objective        :: !Objective            -- ^ Objective to minimise or maximise.
+  , _algorithm        :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
+  , _objective        :: !Objective                 -- ^ Objective to minimise or maximise.
 
   -- Values:
-  , _lastVValues      :: ![Double]                 -- ^ List of X last V values (head is last seen value)
-  , _lastRewards      :: ![Double]                 -- ^ List of X last rewards (head is last received reward)
-  , _psis             :: !(Double, Double, Double) -- ^ Exponentially smoothed psi values.
+  , _lastVValues      :: ![Float]                 -- ^ List of X last V values (head is last seen value)
+  , _lastRewards      :: ![Float]                 -- ^ List of X last rewards (head is last received reward)
+  , _psis             :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
   , _proxies          :: Proxies                   -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
@@ -171,12 +171,12 @@ idxStart :: Int
 idxStart = 0
 
 data InitValues = InitValues
-  { defaultRho        :: Double -- ^ Starting rho value [Default: 0]
-  , defaultRhoMinimum :: Double -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
-  , defaultV          :: Double -- ^ Starting V value [Default: 0]
-  , defaultW          :: Double -- ^ Starting W value [Default: 0]
-  , defaultR0         :: Double -- ^ Starting R0 value [Default: 0]
-  , defaultR1         :: Double -- ^ starting R1 value [Default: 0]
+  { defaultRho        :: Float -- ^ Starting rho value [Default: 0]
+  , defaultRhoMinimum :: Float -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
+  , defaultV          :: Float -- ^ Starting V value [Default: 0]
+  , defaultW          :: Float -- ^ Starting W value [Default: 0]
+  , defaultR0         :: Float -- ^ Starting R0 value [Default: 0]
+  , defaultR1         :: Float -- ^ starting R1 value [Default: 0]
   }
 
 
@@ -200,7 +200,7 @@ flipObjective borl = case borl ^. objective of
 
 -- Tabular representations
 
-convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Double]
+convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Float]
 convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s, a))) = AlgBORL g0 g1 avgRew (Just (ftExt s, a))
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
 convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
@@ -237,7 +237,7 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
-mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> [Double] -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
+mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> [Float] -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
 mkTensorflowModel as tp scope netInpInitState modelBuilderFun = do
       !model <- prependName (proxyTypeName tp <> scope) <$> liftTensorflow modelBuilderFun
       saveModel
@@ -617,7 +617,7 @@ mkReplayMemory sz = do
 -------------------- Other Constructors --------------------
 
 -- | Infer scaling by maximum reward.
-scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
+scalingByMaxAbsReward :: Bool -> Float -> ScalingNetOutParameters
 scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
@@ -625,7 +625,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
 
-scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
+scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Float -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
     AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
@@ -643,7 +643,8 @@ mkWorkers state as nnConfig = do
     then return Nothing
     else do
       repMems <-
-        sequence <$> replicateM nr (mkReplayMemories as $ set replayMemoryStrategy ReplayMemorySingle $ set replayMemoryMaxSize (nnConfig ^. replayMemoryMaxSize `div` nr) nnConfig)
+        sequence <$> replicateM nr (mkReplayMemories as $ -- set replayMemoryStrategy ReplayMemorySingle $
+                                    set replayMemoryMaxSize (nnConfig ^. replayMemoryMaxSize `div` nr) nnConfig)
       return $ Workers (replicate nr state) (replicate nr []) <$> repMems
 
 

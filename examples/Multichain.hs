@@ -102,8 +102,6 @@ decay =
 
 -- State
 newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)
-type R = Double
-type P = Double
 
 instance RewardFuture St where
   type StoreType St = ()

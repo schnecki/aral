@@ -168,11 +168,12 @@ instance ExperimentDef (BORL St) where
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
+          val l = realToFrac (rl' ^?! l)
           results =
-            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! proxies . rho . proxyScalar)
-            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _1)
-            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _2)
-            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (rl' ^?! psis . _3)
+            [ StepResult "avgRew" (Just $ fromIntegral $ rl' ^. t) (val $ proxies . rho . proxyScalar)
+            , StepResult "psiRho" (Just $ fromIntegral $ rl' ^. t) (val $ psis . _1)
+            , StepResult "psiV" (Just $ fromIntegral $ rl' ^. t) (val $ psis . _2)
+            , StepResult "psiW" (Just $ fromIntegral $ rl' ^. t) (val $ psis . _3)
             , StepResult "avgEpisodeLength" (Just $ fromIntegral $ rl' ^. t) eLength
             , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
             ]
@@ -358,10 +359,10 @@ modelBuilder colOut =
   where inpLen = genericLength (netInp initState)
 
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
-tblInp :: St -> [Double]
+tblInp :: St -> [Float]
 tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
 names = ["random", "up   ", "down ", "left ", "right"]
@@ -409,7 +410,7 @@ goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType ->
 goalState f agentType st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
-  r <- randomRIO (0, 8 :: Double)
+  r <- randomRIO (0, 8 :: Float)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (0, 2) -> return (Reward 10, fromIdx (x, y), True)
@@ -448,7 +449,7 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
   where base = replicate 5 [0,0,0,0,0]
 
 
-allStateInputs :: M.Map [Double] St
+allStateInputs :: M.Map [Float] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))

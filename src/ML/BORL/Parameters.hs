@@ -15,8 +15,8 @@ import           ML.BORL.Decay.Type
 import           ML.BORL.Exploration
 import           ML.BORL.InftyVector
 
-type ParameterInitValues = Parameters Double
-type ParameterDecayedValues = Parameters Double
+type ParameterInitValues = Parameters Float
+type ParameterDecayedValues = Parameters Float
 type ParameterDecaySetting = Parameters DecaySetup
 
 

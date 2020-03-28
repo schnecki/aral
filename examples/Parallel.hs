@@ -66,19 +66,16 @@ instance Enum St where
   fromEnum (Bottom nr) = nr + maxSt
   fromEnum End         = 2*maxSt +1
 
-type R = Double
-type P = Double
-
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
 
-maxVal :: Double
+maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
-minVal :: Double
+minVal :: Float
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64

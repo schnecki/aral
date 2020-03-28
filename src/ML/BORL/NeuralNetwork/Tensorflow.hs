@@ -192,16 +192,16 @@ getControlNodeTensorFromName :: Text -> TF.ControlNode
 getControlNodeTensorFromName = TF.ControlNode . TF.NodeName
 
 
-setLearningRates :: (MonadBorl' m) => [Double] -> TensorflowModel' -> m ()
-setLearningRates learningRates model = liftTf $ zipWithM TF.assign lrRefs (map (TF.scalar . realToFrac) learningRates) >>= TF.run_
+setLearningRates :: (MonadBorl' m) => [Float] -> TensorflowModel' -> m ()
+setLearningRates learningRates model = liftTf $ zipWithM TF.assign lrRefs (map TF.scalar learningRates) >>= TF.run_
   where
     lrRefs = concatMap getLearningRateRef (optimizerVariables $ tensorflowModel model)
 
-getLearningRates :: (MonadBorl' m) => TensorflowModel' -> m [Double]
+getLearningRates :: (MonadBorl' m) => TensorflowModel' -> m [Float]
 getLearningRates model =
   liftTf $ do
     lrValues <- TF.run lrRefs
-    return $ map (realToFrac . V.head) (lrValues :: [V.Vector Float])
+    return $ map V.head (lrValues :: [V.Vector Float])
   where
     lrRefs = concatMap getLearningRateRef (optimizerVariables $ tensorflowModel model)
 
@@ -233,20 +233,13 @@ forwardRun model inp =
       | otherwise = separateInputRows len (drop len xs) (take len xs : acc)
 
 
-backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Double], ActionIndex), Double)] -> m ()
+backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Float], ActionIndex), Float)] -> m ()
 backwardRunRepMemData model values = do
-  let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) (map realToFrac inp) [(act, realToFrac out)] m) mempty values
+  let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty values
   let inputs = M.keys valueMap
-        -- map (map realToFrac.fst.fst) values
   outputs <- forwardRun model inputs
   let minmax = max (-trainMaxVal) . min trainMaxVal
-  -- let labels = zipWith (\((_,idx), val) outp -> replace idx (minmax $ realToFrac val) outp) values outputs
   let labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> replace idx (minmax groundTruth) vec))) (M.elems valueMap) outputs
-  -- liftIO $
-  --   zipWithM_
-  --     (\(((_, idx), val), o) (inp, l) -> putStrLn $ show idx ++ ": " ++ show inp ++ " \tout: " ++ show o ++ " l: " ++ show l ++ " val: " ++ show val)
-  --     (zip values outputs)
-  --     (zip inputs labels)
   backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.

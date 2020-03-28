@@ -149,26 +149,28 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
 runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
 runWorkerActions borl [] = return (borl ^. workers)
 runWorkerActions borl acts = do
-  let states = borl ^. workers.traversed.workersS
+  let states = borl ^. workers . traversed . workersS
   stepRewards <- zipWithM runWorkerAction states acts
   let statesNext = map (view futureStateNext) stepRewards
-  let futureRews = borl ^. workers.traversed.workersFutureRewards
+  let futureRews = borl ^. workers . traversed . workersFutureRewards
   let updateFuturesWith f = map (over futureReward f)
   let futureRewsTmp = zipWith3 (\state fs r -> updateFuturesWith (applyToReward state) (fs ++ [r])) states futureRews stepRewards
   let (rewards, futureRews') = unzip $ map splitMaterialisedFutures futureRewsTmp
-  Just . Workers statesNext futureRews' <$> zipWithM (foldM addExperience) (borl ^. workers.traversed.workersReplayMemories) rewards
-  where runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
-        runWorkerAction state (randomAction, (aNr, Action action _)) = do
-          (reward, stateNext, episodeEnd) <- liftIO $ action WorkerAgent state
-          return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
-        applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
-        applyToReward _ r                                 = r
-        splitMaterialisedFutures fs = let xs = takeWhile (not . isRewardFuture . view futureReward) fs
-          in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
-        addExperience replMem (RewardFutureData _ state aNr randomAction (Reward reward) stateNext episodeEnd) = do
-          let (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
-          liftIO $ addToReplayMemories (stateActs, aNr, randomAction, reward, stateNextActs, episodeEnd) replMem
-        addExperience _ _ = error "Unexpected Reward in calcExperience of runWorkerActions! "
+  Just . Workers statesNext futureRews' <$> zipWithM (foldM addExperience) (borl ^. workers . traversed . workersReplayMemories) rewards
+  where
+    runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
+    runWorkerAction state (randomAction, (aNr, Action action _)) = do
+      (reward, stateNext, episodeEnd) <- liftIO $ action WorkerAgent state
+      return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
+    applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
+    applyToReward _ r                                 = r
+    splitMaterialisedFutures fs =
+      let xs = takeWhile (not . isRewardFuture . view futureReward) fs
+       in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
+    addExperience replMem (RewardFutureData _ state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+      let (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
+      liftIO $ addToReplayMemories (stateActs, aNr, randomAction, reward, stateNextActs, episodeEnd) replMem
+    addExperience _ _ = error "Unexpected Reward in calcExperience of runWorkerActions! "
 
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
@@ -293,7 +295,7 @@ writeDebugFiles borl = do
     mkListStr f = intercalate "\t" . map f
     shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs
                | otherwise = xs
-    printFloat :: [Double] -> String
+    printFloat :: [Float] -> String
     printFloat xs = "[" <> intercalate "," (map (printf "%.2f") xs) <> "]"
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)

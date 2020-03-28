@@ -38,7 +38,7 @@ instance NFData ReplayMemories where
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, [ActionIndex]), ActionIndex, IsRandomAction, Double, (StateNextFeatures, [ActionIndex]), EpisodeEnd)
+type Experience = ((StateFeatures, [ActionIndex]), ActionIndex, IsRandomAction, Float, (StateNextFeatures, [ActionIndex]), EpisodeEnd)
 
 data ReplayMemory = ReplayMemory
   { _replayMemoryVector :: V.IOVector Experience
@@ -77,4 +77,10 @@ getRandomReplayMemoryElements bs (ReplayMemory vec _ _ maxIdx) = do
 getRandomReplayMemoriesElements :: Batchsize -> ReplayMemories -> IO [Experience]
 getRandomReplayMemoriesElements bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements bs rm
 getRandomReplayMemoriesElements bs (ReplayMemoriesPerActions rs) = concat <$> mapM (getRandomReplayMemoryElements nr) rs
-  where nr = ceiling (fromIntegral bs / genericLength rs :: Double)
+  where nr = ceiling (fromIntegral bs / genericLength rs :: Float)
+
+-- | Size of replay memory (combined if it is a per action replay memory).
+replayMemoriesSize :: ReplayMemories -> Int
+replayMemoriesSize (ReplayMemoriesUnified m)     = m ^. replayMemorySize
+replayMemoriesSize (ReplayMemoriesPerActions ms) = sum $ map (view replayMemorySize) ms
+

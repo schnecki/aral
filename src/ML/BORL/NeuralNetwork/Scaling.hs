@@ -11,40 +11,39 @@ import           Data.Serialize
 import           GHC.Generics
 
 data ScalingNetOutParameters = ScalingNetOutParameters
-  { _scaleMinVValue  :: MinValue
-  , _scaleMaxVValue  :: MaxValue
-  , _scaleMinWValue  :: MinValue
-  , _scaleMaxWValue  :: MaxValue
-  , _scaleMinR0Value :: MinValue
-  , _scaleMaxR0Value :: MaxValue
-  , _scaleMinR1Value :: MinValue
-  , _scaleMaxR1Value :: MaxValue
+  { _scaleMinVValue  :: MinValue Float
+  , _scaleMaxVValue  :: MaxValue Float
+  , _scaleMinWValue  :: MinValue Float
+  , _scaleMaxWValue  :: MaxValue Float
+  , _scaleMinR0Value :: MinValue Float
+  , _scaleMaxR0Value :: MaxValue Float
+  , _scaleMinR1Value :: MinValue Float
+  , _scaleMaxR1Value :: MaxValue Float
   } deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 makeLenses ''ScalingNetOutParameters
 
 
-multiplyScale :: Double -> ScalingNetOutParameters -> ScalingNetOutParameters
+multiplyScale :: Float -> ScalingNetOutParameters -> ScalingNetOutParameters
 multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minR0 maxR0 minR1 maxR1) =
   ScalingNetOutParameters (v * minV) (v * maxV) (v * minW) (v * maxW) (v * minR0) (v * maxR0) (v * minR1) (v * maxR1)
 
 
-scaleValue :: Maybe (MinValue,MaxValue) -> Double -> Double
+scaleValue :: (Fractional n) => Maybe (MinValue n, MaxValue n) -> n -> n
 scaleValue = maybe id scaleNegPosOne
 
-unscaleValue :: Maybe (MinValue,MaxValue) -> Double -> Double
+unscaleValue :: (Fractional n) => Maybe (MinValue n, MaxValue n) -> n -> n
 unscaleValue = maybe id unscaleNegPosOne
 
-scaleZeroOneValue :: (MinValue,MaxValue) -> Double -> Double
+scaleZeroOneValue :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 scaleZeroOneValue (mn,mx) val = (val - mn) / (mx-mn)
 
-unscaleZeroOneValue :: (MinValue,MaxValue) -> Double -> Double
+unscaleZeroOneValue :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 unscaleZeroOneValue (mn,mx) val = val * (mx-mn) + mn
 
-
-scaleNegPosOne :: (MinValue,MaxValue) -> Double -> Double
+scaleNegPosOne :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 scaleNegPosOne (mn,mx) val = 2 * (val - mn) / (mx-mn) - 1
 
-unscaleNegPosOne :: (MinValue,MaxValue) -> Double -> Double
+unscaleNegPosOne :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 unscaleNegPosOne (mn,mx) val = (val + 1) / 2 * (mx-mn) + mn
 
 

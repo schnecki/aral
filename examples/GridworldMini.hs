@@ -194,18 +194,19 @@ instance ExperimentDef (BORL St)
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
+        val l = realToFrac (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (head (rl' ^. lastRewards))
+                  [ StepResult "reward" p (val $ lastRewards._head)
                   , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
-                  [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
-                  , StepResult "psiRho" p (rl' ^?! psis . _1)
-                  , StepResult "psiV" p (rl' ^?! psis . _2)
-                  , StepResult "psiW" p (rl' ^?! psis . _3)
+                  [ StepResult "reward" p (val $ lastRewards._head)
+                  , StepResult "avgRew" p (val $ proxies . rho . proxyScalar)
+                  , StepResult "psiRho" p (val $ psis . _1)
+                  , StepResult "psiV" p (val $ psis . _2)
+                  , StepResult "psiW" p (val $ psis . _3)
                   , StepResult "avgEpisodeLength" p eLength
                   , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
-                  , StepResult "reward" p (head (rl' ^. lastRewards))
                   ] -- ++
                   -- concatMap
                   --   (\s ->
@@ -241,7 +242,7 @@ nnConfig =
     , _updateTargetIntervalDecay = NoDecay
     , _trainMSEMax = Nothing -- Just 0.03
     , _setExpSmoothParamsTo1 = True
-    , _workersMinExploration = [0.3]
+    , _workersMinExploration = [0.3, 0.2, 0.1]
     }
 
 
@@ -408,10 +409,10 @@ modelBuilder colOut =
   where inpLen = genericLength (netInp initState)
 
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
-tblInp :: St -> [Double]
+tblInp :: St -> [Float]
 tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
 names = ["random", "up   ", "down ", "left ", "right"]
@@ -461,7 +462,7 @@ goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType ->
 goalState f tp st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
-  r <- randomRIO (0, 8 :: Double)
+  r <- randomRIO (0, 8 :: Float)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
@@ -503,7 +504,7 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
   where base = replicate 5 [0,0,0,0,0]
 
 
-allStateInputs :: M.Map [Double] St
+allStateInputs :: M.Map [Float] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))

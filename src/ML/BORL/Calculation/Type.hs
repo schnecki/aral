@@ -16,23 +16,23 @@ type ReplMemFun s
 
 
 data Calculation = Calculation
-  { getRhoMinimumVal' :: Maybe Double
-  , getRhoVal'        :: Maybe Double
-  , getPsiVValState'  :: Maybe Double -- ^ Deviation of this state
-  , getVValState'     :: Maybe Double
-  , getPsiWValState'  :: Maybe Double -- ^ Deviation of this state
-  , getWValState'     :: Maybe Double
-  , getR0ValState'    :: Maybe Double
-  , getR1ValState'    :: Maybe Double
-  , getPsiValRho'     :: Maybe Double  -- ^ Scalar deviation over all states (for output only)
-  , getPsiValV'       :: Maybe Double  -- ^ Scalar deviation over all states (for output only)
-  , getPsiValW'       :: Maybe Double -- ^ Scalar deviation over all states (for output only)
-  , getLastVs'        :: Maybe [Double]
+  { getRhoMinimumVal' :: Maybe Float
+  , getRhoVal'        :: Maybe Float
+  , getPsiVValState'  :: Maybe Float -- ^ Deviation of this state
+  , getVValState'     :: Maybe Float
+  , getPsiWValState'  :: Maybe Float -- ^ Deviation of this state
+  , getWValState'     :: Maybe Float
+  , getR0ValState'    :: Maybe Float
+  , getR1ValState'    :: Maybe Float
+  , getPsiValRho'     :: Maybe Float  -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'       :: Maybe Float  -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'       :: Maybe Float -- ^ Scalar deviation over all states (for output only)
+  , getLastVs'        :: Maybe [Float]
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
   } deriving (Show, Generic, NFData)
 
-fmapCalculation :: (Double -> Double) -> Calculation -> Calculation
+fmapCalculation :: (Float -> Float) -> Calculation -> Calculation
 fmapCalculation f calc =
   Calculation
     { getRhoMinimumVal' = f <$> getRhoMinimumVal' calc

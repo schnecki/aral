@@ -78,13 +78,13 @@ maxQueueSize :: Int
 maxQueueSize = 5 -- was 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
-lambda, mu, fixedPayoffR, c :: Double
+lambda, mu, fixedPayoffR, c :: Float
 lambda = 5                      -- arrival rate/time
 mu = 5                          -- service rate/time
 fixedPayoffR = 12               -- fixed payoff
 c = 1                           -- holding cost per order
 
-costFunctionF :: Int -> IO Double
+costFunctionF :: Int -> IO Float
 costFunctionF j = -- do
   -- x <- randomRIO (0.25, 1.75)
   return $ c * fromIntegral j -- (j+1) - fromIntegral j * x -- holding cost function
@@ -180,8 +180,8 @@ policy maxAdmit (St s incoming) act
     pReject s
       | pAdmit s == 1 = 0
       | otherwise = 1
-    pMu = mu / (lambda + mu)
-    pLambda = lambda / (lambda + mu)
+    pMu = realToFrac $ mu / (lambda + mu)
+    pLambda = realToFrac $ lambda / (lambda + mu)
     condAdmit s =
       if pAdmit s == 1
         then admitAct
@@ -203,22 +203,23 @@ instance ExperimentDef (BORL St) where
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let p = Just $ fromIntegral $ rl' ^. t
+          val l = realToFrac (rl' ^?! l)
           results =
             [
               StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            , StepResult "reward" p (head (rl' ^. lastRewards))
+            , StepResult "reward" p (val $ lastRewards._head)
             ]
             ++
-            [ StepResult "avgRew" p (rl' ^?! proxies . rho . proxyScalar)
-            -- , StepResult "psiRho" p (rl' ^?! psis . _1)
-            -- , StepResult "psiV" p (rl' ^?! psis . _2)
-            -- , StepResult "psiW" p (rl' ^?! psis . _3)
+            [ StepResult "avgRew" p (val $ proxies . rho . proxyScalar)
+            -- , StepResult "psiRho" p (val $ psis . _1)
+            -- , StepResult "psiV" p   (val $ psis . _2)
+            -- , StepResult "psiW" p   (val $ psis . _3)
             | phase == EvaluationPhase
             ]
             ++
             concatMap
               (\s ->
-                 map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
@@ -372,7 +373,7 @@ alg =
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
-allStateInputs :: M.Map [Double] St
+allStateInputs :: M.Map [Float] St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
@@ -411,10 +412,10 @@ modelBuilder colOut =
   where inpLen = genericLength (netInp initState)
         nrActs = genericLength actions
 
-netInp :: St -> [Double]
+netInp :: St -> [Float]
 netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
 
-tblInp :: St -> [Double]
+tblInp :: St -> [Float]
 tblInp (St len arr)        = [fromIntegral len, fromIntegral $ fromEnum arr]
 
 
@@ -457,13 +458,13 @@ data ChosenAction = Reject | Admit
 reject :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 reject _ st@(St len True) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Double)
+  r <- randomRIO (0, 1 :: Float)
   return $ if r <= lambda / (lambda + mu)
     then (reward, St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward, St (max 0 (len-1)) False, False) -- no new arrival with probability: mu / (lambda+mu)
 reject _ st@(St len False) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Double) -- case for continue (only the reject action is allowed)
+  r <- randomRIO (0, 1 :: Float) -- case for continue (only the reject action is allowed)
   return $ if r <= lambda / (lambda + mu)
     then (reward,St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward,St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
@@ -472,7 +473,7 @@ reject _ st@(St len False) = do
 admit :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 admit _ st@(St len True) = do
   reward <- rewardFunction st Admit
-  r <- randomRIO (0, 1 :: Double)
+  r <- randomRIO (0, 1 :: Float)
   return $ if r <= lambda / (lambda + mu)
     then (reward, St (len+1) True, False)  -- admit + new arrival
     else (reward, St len False, False)     -- admit + no new arrival
