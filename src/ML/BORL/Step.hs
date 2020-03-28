@@ -126,11 +126,10 @@ stepsM (force -> borl) nr = do
   where maxNr = 1000
 
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
-stepExecute borl ((randomAction, (aNr, Action action _)), workerActions)
-  -- File IO Operations
- = do
+stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
+  -- File IO Operations
   when (period == 0) $ do
     liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
@@ -142,23 +141,22 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions)
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
-  (workerReplMems', workerFutureRewards') <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
-  return $
-    force $
-    set (workers . traversed . workersReplayMemories) workerReplMems' $
-    set (workers . traversed . workersFutureRewards) workerFutureRewards' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+  workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
+  return $ force $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
-runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO ([ReplayMemories], [[RewardFutureData s]])
+runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
+runWorkerActions _ [] = return Nothing
 runWorkerActions borl acts = do
   let states = borl ^. workers.traversed.workersS
   stepRewards <- zipWithM runWorkerAction states acts
+  let statesNext = map (view futureStateNext) stepRewards
   let futureRews = borl ^. workers.traversed.workersFutureRewards
   let updateFuturesWith f = map (over futureReward f)
   let futureRewsTmp = zipWith3 (\state fs r -> updateFuturesWith (applyToReward state) (fs ++ [r])) states futureRews stepRewards
   let (rewards, futureRews') = unzip $ map splitMaterialisedFutures futureRewsTmp
-  (,futureRews') <$> zipWithM (foldM addExperience) (borl ^. workers.traversed.workersReplayMemories) rewards
+  Just . Workers statesNext futureRews' <$> zipWithM (foldM addExperience) (borl ^. workers.traversed.workersReplayMemories) rewards
   where runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
         runWorkerAction state (randomAction, (aNr, Action action _)) = do
           (reward, stateNext, episodeEnd) <- liftIO $ action WorkerAgent state

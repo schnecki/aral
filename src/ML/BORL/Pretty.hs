@@ -29,6 +29,7 @@ import           ML.BORL.Proxy.Type
 import           ML.BORL.SaveRestore
 import           ML.BORL.Type
 import           ML.BORL.Types
+import           ML.BORL.Workers.Type
 
 import           Control.Arrow         (first, second, (&&&), (***))
 import           Control.Lens
@@ -277,7 +278,10 @@ prettyBORLHead' printRho prettyStateFun borl = do
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$ text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
+  return $ text "\n" $+$
+    text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$
+    maybe mempty (vcat . map (\(wId,st) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text (show st))) . zip [1..] . view workersS) (borl ^. workers)$+$
+    text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
     colon $$
     nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alphaANN alpha)) $+$

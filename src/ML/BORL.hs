@@ -16,3 +16,4 @@ import           ML.BORL.Serialisable  as BORL
 import           ML.BORL.Step          as BORL
 import           ML.BORL.Type          as BORL
 import           ML.BORL.Types         as BORL
+import           ML.BORL.Workers       as BORL
