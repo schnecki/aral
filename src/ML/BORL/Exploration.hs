@@ -37,6 +37,7 @@ softmax temp xs
 
 -- | Normalise the input list to (-1, 1).
 normalise :: [Double] -> [Double]
+normalise [] = error "empty input to normalise in ML.BORL.Exploration"
 normalise xs = map (scaleZeroOneValue (minV, maxV)) xs
   where minV = minimum xs
         maxV = maximum xs

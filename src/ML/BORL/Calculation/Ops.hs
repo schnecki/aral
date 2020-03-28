@@ -36,9 +36,26 @@ import           Control.Monad                  (when)
 import           Control.Monad.IO.Class         (liftIO)
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Function                  (on)
-import           Data.List                      (maximumBy, minimumBy, sortBy)
 import           Data.Maybe                     (fromMaybe)
 import           System.Random                  (randomRIO)
+#ifdef DEBUG
+import Prelude hiding (maximum, minimum)
+import qualified Prelude (maximum, minimum)
+import qualified Data.List 
+maximumBy, minimumBy :: (a -> a -> Ordering) -> [a] -> a
+maximumBy _ [] = error "empty input to maximumBy in ML.BORL.Calculation.Ops"
+maximumBy f xs = Data.List.maximumBy f xs
+minimumBy _ [] = error "empty input to minimumBy in ML.BORL.Calculation.Ops"
+minimumBy f xs = Data.List.minimumBy f xs
+maximum, minimum :: (Ord a) => [a] -> a
+maximum [] = error "empty input to maximum in ML.BORL.Calculation.Ops"
+maximum xs = Data.List.maximum xs
+minimum [] = error "empty input to minimum in ML.BORL.Calculation.Ops"
+minimum xs = Data.List.minimum xs
+
+#else
+import           Data.List                      (maximumBy, minimumBy)
+#endif
 
 
 -- | Used to select a discount factor.
