@@ -304,6 +304,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
+    nnWorkers $+$
     algDoc
       (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
        parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. learnRandomAbove))) $+$
@@ -317,7 +318,6 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    nnWorkers $+$
     algDoc
       (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
        parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
