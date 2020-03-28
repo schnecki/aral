@@ -642,7 +642,7 @@ mkWorkers s as nnConfig = do
   if nr <= 0
     then return Nothing
     else do
-      repMems <- sequence <$> replicateM nr (mkReplayMemories as nnConfig)
+      repMems <- sequence <$> replicateM nr (mkReplayMemories as nnConfig { _replayMemoryMaxSize = nnConfig ^. replayMemoryMaxSize `div` nr})
       return $ Workers (replicate nr s) (replicate nr []) <$> repMems
 
 
