@@ -90,7 +90,9 @@ import qualified Data.Proxy                   as Type
 import           Data.Serialize
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                    as T
-import qualified Data.Vector.Mutable          as V
+import qualified Data.Vector                  as VB
+import qualified Data.Vector.Mutable          as VM
+import qualified Data.Vector.Storable         as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
@@ -115,6 +117,7 @@ import           Debug.Trace
 -------------------- Main RL Datatype --------------------
 
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
+type FilteredActions s = VB.Vector (ActionIndexed s)
 
 data Objective
   = Minimise
@@ -122,12 +125,12 @@ data Objective
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s = BORL
-  { _actionList       :: ![ActionIndexed s]    -- ^ List of possible actions in state s.
-  , _actionFilter     :: !(s -> [Bool])        -- ^ Function to filter actions in state s.
-  , _s                :: !s                    -- ^ Current state.
-  , _workers          :: Maybe (Workers s)     -- ^ Additional workers.
+  { _actionList       :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s.
+  , _actionFilter     :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
+  , _s                :: !s                             -- ^ Current state.
+  , _workers          :: Maybe (Workers s)              -- ^ Additional workers.
 
-  , _featureExtractor :: !(s -> StateFeatures) -- ^ Function that extracts the features of a state.
+  , _featureExtractor :: !(FeatureExtractor s) -- ^ Function that extracts the features of a state.
   , _t                :: !Int                  -- ^ Current time t.
   , _episodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
   , _parameters       :: !ParameterInitValues  -- ^ Parameter setup.
@@ -153,16 +156,19 @@ instance (NFData s) => NFData (BORL s) where
 
 ------------------------------ Indexed Action ------------------------------
 
+-- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
+actionsIndexed :: BORL s -> s -> FilteredActions s
+actionsIndexed borl state = VB.ifilter (\idx _ -> filterVals V.! idx) (borl ^. actionList)
+  where
+    filterVals = (borl ^. actionFilter) state
 
-actionsIndexed :: BORL s -> s -> [ActionIndexed s]
-actionsIndexed borl state = map snd $ filter fst $ zip ((borl ^. actionFilter) state) (borl ^. actionList)
+-- | Get a list of filtered actions with the actions list and the filter function for the current given state.
+filteredActions :: [Action a] -> (s -> V.Vector Bool) -> s -> [Action a]
+filteredActions actions actFilter state = map snd $ filter (\(idx, _) -> actFilter state V.! idx) $ zip [(0 :: Int) ..] actions
 
-
-filteredActions :: [Action a] -> (s -> [Bool]) -> s -> [Action a]
-filteredActions actions actFilter state = map (snd.snd) $ filter fst $ zip (actFilter state) (zip [(0::Int)..] actions)
-
-filteredActionIndexes :: [Action a] -> (s -> [Bool]) -> s -> [ActionIndex]
-filteredActionIndexes actions actFilter state = map (fst.snd) $ filter fst $ zip (actFilter state) (zip [(0::Int)..] actions)
+-- | Get a list of filtered action indices with the actions list and the filter function for the current given state.
+filteredActionIndexes :: [Action a] -> (s -> V.Vector Bool) -> s -> [ActionIndex]
+filteredActionIndexes actions actFilter state = map fst $ filter (\(idx,_) -> actFilter state V.! idx) $ zip [(0::Int)..] actions
 
 
 ------------------------------ Initial Values ------------------------------
@@ -200,7 +206,7 @@ flipObjective borl = case borl ^. objective of
 
 -- Tabular representations
 
-convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm [Float]
+convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm StateFeatures
 convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s, a))) = AlgBORL g0 g1 avgRew (Just (ftExt s, a))
 convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
 convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
@@ -209,10 +215,10 @@ convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 
-mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
+mkUnichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
   BORL
-    (zip [idxStart ..] as)
+    (VB.fromList $ zip [idxStart ..] as)
     asFilter
     initialState
     Nothing
@@ -237,13 +243,13 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
-mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> [Float] -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
+mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> V.Vector Float -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
 mkTensorflowModel as tp scope netInpInitState modelBuilderFun = do
-      !model <- prependName (proxyTypeName tp <> scope) <$> liftTensorflow modelBuilderFun
-      saveModel
-        (TensorflowModel' model Nothing (Just (map realToFrac netInpInitState, replicate (length as) 0)) modelBuilderFun)
-        [map realToFrac netInpInitState]
-        [replicate (length as) 0]
+  !model <- prependName (proxyTypeName tp <> scope) <$> liftTensorflow modelBuilderFun
+  saveModel
+    (TensorflowModel' model Nothing (Just (netInpInitState, V.replicate (length as) 0)) modelBuilderFun)
+    [netInpInitState]
+    [V.replicate (length as) 0]
   where
     prependName txt model =
       model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
@@ -255,7 +261,7 @@ mkUnichainTensorflowM ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
@@ -282,7 +288,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       return $
         force $
         BORL
-          (zip [idxStart ..] as)
+          (VB.fromList $ zip [idxStart ..] as)
           asFilter
           initialState
           workers
@@ -309,7 +315,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       return $
         force $
         BORL
-          (zip [idxStart ..] as)
+          (VB.fromList $ zip [idxStart ..] as)
           asFilter
           initialState
           workers
@@ -337,7 +343,7 @@ mkUnichainTensorflowCombinedNetM ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
@@ -365,7 +371,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   return $
     force $
     BORL
-      (zip [idxStart ..] as)
+      (VB.fromList $ zip [idxStart ..] as)
       asFilter
       initialState
       workers
@@ -394,7 +400,7 @@ mkUnichainTensorflow ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
@@ -412,7 +418,7 @@ mkUnichainTensorflowCombinedNet ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> ModelBuilderFunction
@@ -423,10 +429,10 @@ mkUnichainTensorflowCombinedNet alg initialState ftExt as asFilter params decayF
   runMonadBorlTF (mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 
-mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> (s -> [Bool]) -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
+mkMultichainTabular :: Algorithm s -> InitialState s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> Decay -> Maybe InitValues -> BORL s
 mkMultichainTabular alg initialState ftExt as asFilter params decayFun initValues =
   BORL
-    (zip [0 ..] as)
+    (VB.fromList $ zip [0 ..] as)
     asFilter
     initialState
     Nothing
@@ -459,7 +465,7 @@ mkUnichainGrenade ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> Network layers shapes
@@ -479,7 +485,7 @@ mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfi
   return $
     checkGrenade net 1 nnConfig $
     BORL
-      (zip [idxStart ..] as)
+      (VB.fromList $ zip [idxStart ..] as)
       asFilter
       initialState
       workers
@@ -505,7 +511,7 @@ mkUnichainGrenadeCombinedNet ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> Network layers shapes
@@ -525,7 +531,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
   return $
     checkGrenade net nrNets nnConfig $
     BORL
-      (zip [idxStart ..] as)
+      (VB.fromList $ zip [idxStart ..] as)
       asFilter
       initialState
       workers
@@ -562,7 +568,7 @@ mkMultichainGrenade ::
   -> InitialState s
   -> FeatureExtractor s
   -> [Action s]
-  -> (s -> [Bool])
+  -> ActionFilter s
   -> ParameterInitValues
   -> Decay
   -> Network layers shapes
@@ -583,7 +589,7 @@ mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnCon
   return $
     checkGrenade net 1 nnConfig $
     BORL
-      (zip [0 ..] as)
+      (VB.fromList $ zip [0 ..] as)
       asFilter
       initialState
       workers
@@ -610,7 +616,7 @@ mkReplayMemories as nnConfig = case nnConfig ^. replayMemoryStrategy of
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
 mkReplayMemory sz | sz <= 1 = return Nothing
 mkReplayMemory sz = do
-  vec <- V.new sz
+  vec <- VM.new sz
   return $ Just $ ReplayMemory vec sz 0 (-1)
 
 
@@ -665,8 +671,8 @@ checkGrenade _ mult nnConfig borl
   where
     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
-    stInp = length ((borl ^. featureExtractor) (borl ^. s))
-    nrActs = length (borl ^. actionList)
+    stInp = V.length ((borl ^. featureExtractor) (borl ^. s))
+    nrActs = VB.length (borl ^. actionList)
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s

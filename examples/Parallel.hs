@@ -19,7 +19,7 @@ import           Control.Lens
 import           Data.Int               (Int64)
 import           Data.List              (genericLength)
 import           Data.Text              (Text)
-import qualified Data.Vector            as V
+import qualified Data.Vector.Storable   as V
 import           GHC.Exts               (fromList)
 import           GHC.Generics
 import           Grenade                hiding (train)
@@ -69,8 +69,8 @@ instance Enum St where
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-netInp :: St -> [Float]
-netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
+netInp :: St -> V.Vector Float
+netInp st = V.singleton (scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st))
 
 maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
@@ -81,14 +81,15 @@ minVal = fromIntegral $ fromEnum (minBound :: St)
 numActions :: Int64
 numActions = genericLength actions
 
-numInputs :: Int64
-numInputs = genericLength (netInp initState)
 
 modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
 modelBuilder cols =
   buildModel $
   inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions, cols] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  where
+    numInputs = fromIntegral $ V.length (netInp initState)
+
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -218,29 +219,6 @@ decay =
       }
 
 
--- decay :: Decay
--- decay = -- exponentialDecayParameters (Just minValues) 0.05 100000
---   exponentialDecayParameters Nothing 0.05 100000
---   where
---     minValues =
---       Parameters
---         { _alpha = 0
---         , _alphaANN = 0
---         , _beta = 0
---         , _betaANN = 0
---         , _delta = 0
---         , _deltaANN = 0
---         , _gamma = 0
---         , _gammaANN = 0
---         , _epsilon = 0.1
---         , _exploration = 0.01
---         , _learnRandomAbove = 0
---         , _zeta = 0
---         , _xi = 0
---         , _disableAllLearning = False
---         }
-
-
 -- Actions
 actions :: [Action St]
 actions = [up, down]
@@ -249,11 +227,11 @@ down,up :: Action St
 up = Action moveUp "up  "
 down = Action moveDown "down"
 
-actionFilter :: St -> [Bool]
-actionFilter Start    = [True, True]
-actionFilter Top{}    = [True, False]
-actionFilter Bottom{} = [False, True]
-actionFilter End      = [True, False]
+actionFilter :: St -> V.Vector Bool
+actionFilter Start    = V.fromList [True, True]
+actionFilter Top{}    = V.fromList [True, False]
+actionFilter Bottom{} = V.fromList [False, True]
+actionFilter End      = V.fromList [True, False]
 
 
 moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
@@ -279,20 +257,3 @@ moveDown _ s =
     End                    -> (Reward 0, Start, False)
 
 
-encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a
-encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
--- encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
-
-setCheckFile :: FilePath -> TensorflowModel' -> TensorflowModel'
-setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
-
-prependName :: Text -> TensorflowModel' -> TensorflowModel'
-prependName txt model =
-  model
-    { tensorflowModel =
-        (tensorflowModel model)
-          { inputLayerName = txt <> "/" <> inputLayerName (tensorflowModel model)
-          , outputLayerName = txt <> "/" <> outputLayerName (tensorflowModel model)
-          , labelLayerName = txt <> "/" <> labelLayerName (tensorflowModel model)
-          }
-    }

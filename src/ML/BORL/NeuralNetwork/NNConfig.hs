@@ -14,9 +14,6 @@ import           ML.BORL.NeuralNetwork.ReplayMemory
 import           ML.BORL.NeuralNetwork.Scaling
 import           ML.BORL.Types
 
-type NetInputWoAction = [Float]
-type NetInput = [Float]
-type NetInputWithAction = [Float]
 
 ------------------------------ Replay Memory Setup ------------------------------
 

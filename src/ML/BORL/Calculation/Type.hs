@@ -3,16 +3,17 @@
 {-# LANGUAGE RankNTypes     #-}
 module ML.BORL.Calculation.Type where
 
-import           ML.BORL.Reward
-import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           GHC.Generics
 
+import           ML.BORL.Reward
+import           ML.BORL.Types
+
 
 type ReplMemFun s
    = forall m. (MonadBorl' m) =>
-                 (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
+                 (StateFeatures, FilteredActionIndices) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, FilteredActionIndices) -> EpisodeEnd -> m Calculation
 
 
 data Calculation = Calculation

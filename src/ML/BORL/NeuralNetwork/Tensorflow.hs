@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies        #-}
 module ML.BORL.NeuralNetwork.Tensorflow where
 
+import           Control.Arrow
 import           Control.DeepSeq
 import           Control.Monad          (unless, void, zipWithM)
 import           Control.Monad.IO.Class (liftIO)
@@ -20,7 +21,8 @@ import           Data.Maybe             (fromMaybe, isJust)
 import           Data.Serialize
 import           Data.Serialize.Text    ()
 import           Data.Text              (Text)
-import qualified Data.Vector            as V
+import qualified Data.Vector.Generic    as VG
+import qualified Data.Vector.Storable   as V
 import           System.Directory
 import           System.IO.Temp
 import           System.IO.Unsafe
@@ -39,9 +41,9 @@ import           Debug.Trace
 import           ML.BORL.Types
 
 
-type Outputs = [[Float]]        -- ^ 1st level: number of input rows, 2nd level: number of actions
-type Inputs = [[Float]]
-type Labels = [[Float]]
+type Outputs = [V.Vector Float]        -- ^ 1st level: number of input rows, 2nd level: number of actions
+type Inputs = [V.Vector Float]
+type Labels = [V.Vector Float]
 
 trainMaxVal :: Float
 trainMaxVal = 0.95
@@ -117,13 +119,13 @@ instance Serialize OptimizerRefs where
 data TensorflowModel' = TensorflowModel'
   { tensorflowModel        :: TensorflowModel
   , checkpointBaseFileName :: Maybe FilePath
-  , lastInputOutputTuple   :: Maybe ([Float], [Float])
+  , lastInputOutputTuple   :: Maybe (V.Vector Float, V.Vector Float)
   , tensorflowModelBuilder :: TF.Session TensorflowModel
   }
 
 instance Serialize TensorflowModel' where
-  put tf@(TensorflowModel' (TensorflowModel inp out label train nnVars trVars optRefs) _ lastIO builder) = do
-    put inp >> put out >> put label >> put (getTensorControlNodeName train) >> put lastIO
+  put tf@(TensorflowModel' (TensorflowModel inp out label train nnVars trVars optRefs) _ mLastIO builder) = do
+    put inp >> put out >> put label >> put (getTensorControlNodeName train) >> put (fmap (V.toList *** V.toList) mLastIO)
     put $ map getTensorRefNodeName nnVars
     put $ map getTensorRefNodeName trVars
     put optRefs
@@ -147,7 +149,7 @@ instance Serialize TensorflowModel' where
     out <- get
     label <- get
     train <- getControlNodeTensorFromName <$> get
-    lastIO <- get
+    lastIO <- fmap (V.fromList *** V.fromList) <$> get
     nnVars <- map getRefTensorFromName <$> get
     trVars <- map getRefTensorFromName <$> get
     optRefs <- get
@@ -201,19 +203,20 @@ getLearningRates :: (MonadBorl' m) => TensorflowModel' -> m [Float]
 getLearningRates model =
   liftTf $ do
     lrValues <- TF.run lrRefs
-    return $ map V.head (lrValues :: [V.Vector Float])
+    return $ fmap V.head (lrValues :: [V.Vector Float])
   where
     lrRefs = concatMap getLearningRateRef (optimizerVariables $ tensorflowModel model)
 
 
 encodeInputBatch :: Inputs -> TF.TensorData Float
-encodeInputBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head' xs)] (V.fromList $ mconcat xs)
-  where head' []    = error "head: empty input data in encodeInputBatch"
-        head' (x:_) = x
+encodeInputBatch xs = TF.encodeTensorData [genericLength xs, fromIntegral $ V.length (head' xs)] (mconcat xs)
+  where
+        head' []    = error "head: empty input data in encodeInputBatch"
+        head' (v:_) = v
 
 
 encodeLabelBatch :: Labels -> TF.TensorData Float
-encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, genericLength (head' xs)] (V.fromList $ mconcat xs)
+encodeLabelBatch xs = TF.encodeTensorData [genericLength xs, fromIntegral $ V.length (head' xs)] (mconcat xs)
   where head' []    = error "head: empty input data in encodeLabelBatch"
         head' (x:_) = x
 
@@ -224,33 +227,33 @@ forwardRun model inp =
       outRef = getRef (outputLayerName $ tensorflowModel model)
       inpT = encodeInputBatch inp
       nrOuts = length inp
-   in do res <- V.toList <$> TF.runWithFeeds [TF.feed inRef inpT] outRef
-         return $ separateInputRows (length res `div` nrOuts) res []
+   in do (res :: V.Vector Float) <- TF.runWithFeeds [TF.feed inRef inpT] outRef
+         return $ separateInputRows 0 (V.length res `div` nrOuts) res []
   where
-    separateInputRows _ [] acc = reverse acc
-    separateInputRows len xs acc
-      | length xs < len = error $ "error in separate (in Tensorflow.forwardRun), not enough values: " ++ show xs ++ " - len: " ++ show len
-      | otherwise = separateInputRows len (drop len xs) (take len xs : acc)
+    separateInputRows i len vec acc
+      | V.length vec == i = reverse acc
+      | V.length vec < i = error $ "error in separate (in Tensorflow.forwardRun), number of values did not match: " ++ show vec ++ " - len: " ++ show len
+      | otherwise = separateInputRows (i + len) len vec (V.slice i len vec : acc)
 
 
-backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [(([Float], ActionIndex), Float)] -> m ()
+backwardRunRepMemData :: (MonadBorl' m) => TensorflowModel' -> [((NetInputWoAction, ActionIndex), Float)] -> m ()
 backwardRunRepMemData model values = do
   let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty values
   let inputs = M.keys valueMap
   outputs <- forwardRun model inputs
   let minmax = max (-trainMaxVal) . min trainMaxVal
-  let labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> replace idx (minmax groundTruth) vec))) (M.elems valueMap) outputs
+  let labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> vec V.// [(idx, minmax groundTruth)]))) (M.elems valueMap) outputs
   backwardRun model inputs labels
 
 -- | Train tensorflow model with checks.
 backwardRun :: (MonadBorl' m) => TensorflowModel' -> Inputs -> Labels -> m ()
 backwardRun model inp lab
-  | null inp || any null inp || null lab = error $ "Empty parameters in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
+  | null inp || any V.null inp || null lab = error $ "Empty parameters in backwardRun not allowed! inp: " ++ show inp ++ ", lab: " ++ show lab
   | otherwise =
     let inRef = getRef (inputLayerName $ tensorflowModel model)
         labRef = getRef (labelLayerName $ tensorflowModel model)
         inpT = encodeInputBatch inp
-        labT = encodeLabelBatch $ map (map (max (-trainMaxVal) . min trainMaxVal)) lab
+        labT = encodeLabelBatch $ map (V.map (max (-trainMaxVal) . min trainMaxVal)) lab
     in liftTf $ TF.runWithFeeds_ [TF.feed inRef inpT, TF.feed labRef labT] (trainingNode $ tensorflowModel model)
        -- aft <- forwardRunSession model inp
        -- Simple $ putStrLn $ "Input/Output: " <> show inp <> " - " ++ show lab ++ "\tBefore/After: " <> show bef ++ " - " ++ show aft

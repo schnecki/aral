@@ -24,6 +24,8 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
+import           Debug.Trace
+
 askUser ::
      (NFData s, Ord s, Show s, RewardFuture s)
   => Maybe (NetInputWoAction -> Maybe (Either String s))
@@ -69,22 +71,26 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
           putStr "How often shall I repeat this? [1] " >> hFlush stdout
           l <- getLine
           case reads l :: [(Integer, String)] of
-            [(often, _)] -> do
-              ql' <-
-                runMonadBorlTF $ do
-                  restoreTensorflowModels True ql
-                  borl' <-
+            [(often, _)] ->
+              let runner borl = do
                     foldM
                       (\q _ -> do
                          q' <- stepsM q nr
-                         let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (ql ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
+                         let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (borl ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
                          output <- prettyBORLMWithStInverse mInverse qPP
                          liftIO $ print output >> hFlush stdout
                          return q')
-                      ql
+                      borl
                       [1 .. often]
-                  saveTensorflowModels borl'
-              askUser mInverse False addUsage cmds qlCmds ql'
+               in case find isTensorflow (allProxies $ ql ^. proxies) of
+                    Nothing -> runMonadBorlIO $ runner ql >>= askUser mInverse False addUsage cmds qlCmds
+                    Just {} -> do
+                      ql' <-
+                        runMonadBorlTF $ do
+                          restoreTensorflowModels True ql
+                          borl' <- runner ql
+                          saveTensorflowModels borl'
+                      askUser mInverse False addUsage cmds qlCmds ql'
              -- -> do
              --  ql' <-
              --    foldM

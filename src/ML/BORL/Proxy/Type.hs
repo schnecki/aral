@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 module ML.BORL.Proxy.Type
@@ -43,6 +42,7 @@ import qualified Data.Map.Strict              as M
 import           Data.Serialize
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                    as Text
+import qualified Data.Vector.Storable         as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
@@ -77,7 +77,7 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                { _proxyScalar :: !Float
                }
              | Table            -- ^ Representation using a table.
-               { _proxyTable   :: !(M.Map ([Float], ActionIndex) Float)
+               { _proxyTable   :: !(M.Map (V.Vector Float, ActionIndex) Float)
                , _proxyDefault :: !Float
                }
              | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, GNum (Gradients layers),
@@ -85,7 +85,7 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)
-                , _proxyNNStartup :: !(M.Map ([Float], ActionIndex) Float)
+                , _proxyNNStartup :: !(M.Map (StateFeatures, ActionIndex) Float)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
@@ -93,23 +93,22 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
                 { _proxyTFTarget  :: !TensorflowModel'
                 , _proxyTFWorker  :: !TensorflowModel'
-                , _proxyNNStartup :: !(M.Map ([Float], ActionIndex) Float)
+                , _proxyNNStartup :: !(M.Map (StateFeatures, ActionIndex) Float)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
                 }
              | CombinedProxy
-                { _proxySub            :: Proxy                                    -- ^ The actual proxy holding all combined values.
-                , _proxyOutCol         :: Int                                      -- ^ Output column/row of the data.
+                { _proxySub            :: Proxy                                   -- ^ The actual proxy holding all combined values.
+                , _proxyOutCol         :: Int                                     -- ^ Output column/row of the data.
                 , _proxyExpectedOutput :: [((StateFeatures, ActionIndex), Float)] -- ^ Used to save the data for learning.
                 }
--- makeLenses ''Proxy
 
 proxyScalar :: Traversal' Proxy Float
 proxyScalar f (Scalar x) = Scalar <$> f x
 proxyScalar _ p          = pure p
 
-proxyTable :: Traversal' Proxy (M.Map ([Float], ActionIndex) Float)
+proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) Float)
 proxyTable f (Table m d) = flip Table d <$> f m
 proxyTable  _ p          = pure p
 
@@ -125,7 +124,7 @@ proxyTFWorker :: Traversal' Proxy TensorflowModel'
 proxyTFWorker f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
 proxyTFWorker _ p = pure p
 
-proxyNNStartup :: Traversal' Proxy (M.Map ([Float], ActionIndex) Float)
+proxyNNStartup :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) Float)
 proxyNNStartup f (Grenade t w s tp conf acts) = (\s' -> Grenade t w s' tp conf acts) <$> f s
 proxyNNStartup f (TensorflowProxy t w s tp conf acts) = (\s' -> TensorflowProxy t w s' tp conf acts) <$> f s
 proxyNNStartup f (CombinedProxy p c out) = (\s' -> CombinedProxy (p { _proxyNNStartup = s'}) c out) <$> f (_proxyNNStartup p)

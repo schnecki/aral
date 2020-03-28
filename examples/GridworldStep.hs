@@ -33,6 +33,7 @@ import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import qualified Data.Text                as T
 import           Data.Text.Encoding       as E
+import qualified Data.Vector.Storable     as V
 import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
 import           GHC.TypeLits
@@ -203,14 +204,14 @@ modelBuilder colOut =
   inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
-  where inpLen = genericLength (netInp initState)
+  where inpLen = fromIntegral $ V.length $ netInp initState
 
 
-netInp :: St -> [Float]
-netInp st = [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp :: St -> V.Vector Float
+netInp st = V.fromList [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
-tblInp :: St -> [Float]
-tblInp st = [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
+tblInp :: St -> V.Vector Float
+tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
 names = ["random", "up   ", "down ", "left ", "right"]
 
@@ -245,10 +246,10 @@ actions = zipWith Action
   (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
   names
 
-actFilter :: St -> [Bool]
+actFilter :: St -> V.Vector Bool
 actFilter st
-  | st == fromIdx (goalX, goalY) = True : repeat False
-actFilter _  = False : repeat True
+  | st == fromIdx (goalX, goalY) = True `V.cons` V.replicate (length actions - 1) False
+actFilter _  = False `V.cons` V.replicate (length actions - 1) True
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
@@ -298,7 +299,7 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
   where base = replicate 5 [0,0,0,0,0]
 
 
-allStateInputs :: M.Map [Float] St
+allStateInputs :: M.Map NetInputWoAction St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))

@@ -11,8 +11,9 @@ module ML.BORL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Data.List           (genericLength)
-import qualified Data.Vector.Mutable as V
+import           Data.List            (genericLength)
+import qualified Data.Vector.Mutable  as VM
+import qualified Data.Vector.Storable as V
 import           GHC.Generics
 import           System.Random
 
@@ -38,10 +39,10 @@ instance NFData ReplayMemories where
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, [ActionIndex]), ActionIndex, IsRandomAction, Float, (StateNextFeatures, [ActionIndex]), EpisodeEnd)
+type Experience = ((StateFeatures, V.Vector ActionIndex), ActionIndex, IsRandomAction, RewardValue, (StateNextFeatures, V.Vector ActionIndex), EpisodeEnd)
 
 data ReplayMemory = ReplayMemory
-  { _replayMemoryVector :: V.IOVector Experience
+  { _replayMemoryVector :: VM.IOVector Experience
   , _replayMemorySize   :: Int  -- size
   , _replayMemoryIdx    :: Int  -- index to use when adding the next element
   , _replayMemoryMaxIdx :: Int  -- in {0,..,size-1}
@@ -62,7 +63,7 @@ addToReplayMemories e@(_, idx, _, _, _, _) (ReplayMemoriesPerActions rs) = do
 -- reached.
 addToReplayMemory :: Experience -> ReplayMemory -> IO ReplayMemory
 addToReplayMemory e (ReplayMemory vec sz idx maxIdx) = do
-  V.write vec (fromIntegral idx) e
+  VM.write vec (fromIntegral idx) e
   return $ ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
 -- | Get a list of random input-output tuples from the replay memory.
@@ -71,7 +72,7 @@ getRandomReplayMemoryElements bs (ReplayMemory vec _ _ maxIdx) = do
   let len = min bs maxIdx
   g <- newStdGen
   let rands = take len $ randomRs (0,maxIdx) g
-  mapM (V.read vec) rands
+  mapM (VM.read vec) rands
 
 -- | Get a list of random input-output tuples from the replay memory.
 getRandomReplayMemoriesElements :: Batchsize -> ReplayMemories -> IO [Experience]

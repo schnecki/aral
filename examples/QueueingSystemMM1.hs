@@ -32,6 +32,7 @@ import           Data.Serialize
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Data.Text.Encoding     as E
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           Grenade
@@ -373,7 +374,7 @@ alg =
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
-allStateInputs :: M.Map [Float] St
+allStateInputs :: M.Map NetInputWoAction St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
@@ -409,14 +410,14 @@ modelBuilder colOut =
   inputLayer1D inpLen >> fullyConnected [3*(inpLen + nrActs)] TF.relu' >> fullyConnected [2*nrActs] TF.relu' >> fullyConnected [2*nrActs] TF.relu' >> fullyConnected [nrActs, colOut] TF.tanh' >>
   trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
-  where inpLen = genericLength (netInp initState)
+  where inpLen = fromIntegral $ V.length (netInp initState)
         nrActs = genericLength actions
 
-netInp :: St -> [Float]
-netInp (St len arr) = [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
+netInp :: St -> V.Vector Float
+netInp (St len arr) = V.fromList [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
 
-tblInp :: St -> [Float]
-tblInp (St len arr)        = [fromIntegral len, fromIntegral $ fromEnum arr]
+tblInp :: St -> V.Vector Float
+tblInp (St len arr)        = V.fromList [fromIntegral len, fromIntegral $ fromEnum arr]
 
 
 names :: [Text]
@@ -437,10 +438,10 @@ actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
       f tp st
 
 
-actFilter :: St -> [Bool]
-actFilter (St _ False)  = [True, False]
-actFilter (St len True) | len >= maxQueueSize = [True, False]
-actFilter _             = [True, True]
+actFilter :: St -> V.Vector Bool
+actFilter (St _ False)  = V.fromList [True, False]
+actFilter (St len True) | len >= maxQueueSize  = V.fromList [True, False]
+actFilter _             = V.fromList [True, True]
 
 rewardFunction :: St -> ChosenAction -> IO (Reward  St)
 rewardFunction (St 0 _) Reject = return $ Reward 0

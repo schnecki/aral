@@ -23,11 +23,6 @@
 --
 module Main where
 
-import           ML.BORL
-import           ML.Gym
-
-import           Helper
-
 import           Control.Arrow           ((***))
 import           Control.Concurrent.MVar
 import           Control.DeepSeq         (NFData)
@@ -36,9 +31,11 @@ import           Control.Monad           (join, when)
 import           Data.List               (genericLength, sort)
 import           Data.Maybe              (fromMaybe)
 import qualified Data.Text               as T
+import qualified Data.Vector.Storable    as V
 import           GHC.Generics
 import           GHC.Int                 (Int64)
 import           Grenade
+import           ML.BORL
 import           System.Environment      (getArgs)
 import           System.IO.Unsafe        (unsafePerformIO)
 
@@ -46,11 +43,16 @@ import qualified TensorFlow.Core         as TF hiding (value)
 import qualified TensorFlow.GenOps.Core  as TF (relu', tanh')
 import qualified TensorFlow.Minimize     as TF
 
+import           ML.Gym
+
+import           Helper
+
+
 import           Debug.Trace
 
 type Render = Bool
 
-data St = St Render [Double]
+data St = St Render [Float]
   deriving (Generic, NFData)
 
 instance Eq St where
@@ -81,7 +83,7 @@ modelBuilder gym initSt nrActions outCols =
   -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   trainingByGradientDescent 0.01
   where
-    inpLen = genericLength (netInp False gym initSt)
+    inpLen = fromIntegral $ V.length $ netInp False gym initSt
 
 
 nnConfig :: Gym -> Float -> NNConfig
@@ -92,7 +94,7 @@ nnConfig gym maxRew =
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
-    , _prettyPrintElems = map (zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
+    , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25* maxRew)
     , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
@@ -145,7 +147,7 @@ action gym mName idx =
       if episodeDone res
         then resetGym gym
         else return (observation res)
-    return (rew, St render (gymObservationToDoubleList obs), episodeDone res)
+    return (rew, St render (gymObservationToFloatList obs), episodeDone res)
 
 
 rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
@@ -180,7 +182,7 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
     AlgDQNAvgRewAdjusted {}
       | name gym == "Pong-ram-v0" -> return $ Reward $ realToFrac rew
   where
-    xs = gymObservationToDoubleList obs
+    xs = gymObservationToFloatList obs
     ite True x _  = x
     ite False _ x = x
     maxEpsSteps = maximumEpisodeSteps (name gym)
@@ -199,10 +201,10 @@ maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for t
 
 
 -- | Scales values to (-1, 1).
-netInp :: Bool -> Gym -> St -> [Float]
+netInp :: Bool -> Gym -> St -> V.Vector Float
 netInp isTabular gym (St _ st)
-  | not isTabular = zipWith3 (\l u -> realToFrac . scaleValue (Just (realToFrac l, realToFrac  u))) lowerBounds upperBounds st
-  | isTabular = map (rnd . fst) $ filter snd (stSelector st)
+  | not isTabular = V.fromList $ zipWith3 (\l u -> scaleValue (Just (l, u))) lowerBounds upperBounds st
+  | isTabular = V.fromList $ map (rnd . fst) $ filter snd (stSelector st)
   where
     rnd x = fromIntegral (round (x * 10)) / 10
     (lowerBounds, upperBounds) = observationSpaceBounds gym
@@ -211,14 +213,14 @@ netInp isTabular gym (St _ st)
       | otherwise = zip xs (repeat True)
 
 observationSpaceBounds :: Gym -> ([Float], [Float])
-observationSpaceBounds gym = map (realToFrac . max (-maxVal)) *** map (realToFrac . min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
+observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToFloatLists $ getGymRangeFromSpace $ observationSpace gym
   where
     maxVal | name gym == "CartPole-v1" = 5
            | otherwise = 1000
 
 
 mInverseSt :: Gym -> Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> realToFrac $ unscaleValue (Just (l, u)) x) lowerBounds upperBounds xs
+mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds (V.toList xs)
   where
     (lowerBounds, upperBounds) = observationSpaceBounds gym
 
@@ -252,9 +254,11 @@ main = do
   setMaxEpisodeSteps gym (maximumEpisodeSteps name)
   let inputNodes = spaceSize (observationSpace gym)
       actionNodes = spaceSize (actionSpace gym)
-      initState = St False (gymObservationToDoubleList obs)
+      initState = St False (gymObservationToFloatList obs)
       actNames = actionNames name
       actions = zipWith (action gym) (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
+      actFilter :: St -> V.Vector Bool
+      actFilter _  = V.replicate (length actions) True
       initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
@@ -321,9 +325,6 @@ decay gym =
           | name gym == "MountainCar-v0" = 3
           | otherwise = 1
 
-
-actFilter :: St -> [Bool]
-actFilter _  = repeat True -- [True, False, True]
 
 maximumEpisodeSteps :: T.Text -> Integer
 maximumEpisodeSteps "CartPole-v1" = 50000

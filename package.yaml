@@ -152,23 +152,6 @@ executables:
     - experimenter
     - hmatrix-glpk
 
-  queuing-system-alt:
-    main:                QueueingSystemMM1Alternative.hs
-    other-modules:
-      - Helper
-      - SolveLp
-    source-dirs:         examples
-    default-extensions: CPP
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - borl
-    - experimenter
-    - hmatrix-glpk
-
-
   gym:
     main:                GymOpenAI.hs
     other-modules:       Helper

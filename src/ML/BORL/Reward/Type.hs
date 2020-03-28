@@ -12,13 +12,11 @@
 module ML.BORL.Reward.Type where
 
 import           Control.DeepSeq
-import           GHC.Generics
-
 import           Data.ByteString
 import           Data.Serialize
+import           GHC.Generics
 
-type RewardValue = Float
-
+import           ML.BORL.Types
 
 -- ^ A result caused by an action can be a immediate reward, no reward or a future reward determined by the state.
 data Reward s

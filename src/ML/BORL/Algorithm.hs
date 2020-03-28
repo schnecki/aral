@@ -5,6 +5,7 @@ module ML.BORL.Algorithm where
 
 import           ML.BORL.Types
 
+import           Control.Arrow      (first)
 import           Control.DeepSeq
 import           Data.Serialize
 import           GHC.Generics
@@ -45,6 +46,12 @@ data Algorithm s
   | AlgDQN Gamma Comparison
   | AlgDQNAvgRewAdjusted GammaMiddle GammaHigh AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
+
+mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'
+mapAlgorithmState f (AlgBORL gl gh avg mSt) = AlgBORL gl gh avg (first f <$> mSt)
+mapAlgorithmState f (AlgBORLVOnly avg mSt) = AlgBORLVOnly avg (first f <$> mSt)
+mapAlgorithmState _ (AlgDQN g c) = AlgDQN g c
+mapAlgorithmState _ (AlgDQNAvgRewAdjusted gm gh avg) = AlgDQNAvgRewAdjusted gm gh avg
 
 
 isAlgBorl :: Algorithm s -> Bool

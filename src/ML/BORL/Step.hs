@@ -37,6 +37,8 @@ import           Data.List                          (find, groupBy, intercalate,
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Serialize
+import qualified Data.Vector                        as VB
+import qualified Data.Vector.Storable               as V
 import           GHC.Generics
 import           System.Directory
 import           System.IO
@@ -241,7 +243,7 @@ writeDebugFiles borl = do
         | isAnn = borl
         | otherwise = setAllProxies proxyTable xs' borl
         where
-          xs' = M.fromList $ zip (map (\xs -> (init xs, round (last xs))) xs) (repeat 0)
+          xs' = M.fromList $ zip (map (\xs -> (V.init xs, round (V.last xs))) xs) (repeat 0)
   borl' <-
     if borl ^. t > 0
       then return borl
@@ -261,7 +263,7 @@ writeDebugFiles borl = do
               | otherwise = getStateFeatList (borl' ^. proxies . v)
         setStateFeatures stateFeats
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printFloat) stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printStateFeat) stateFeats <> "\n")
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
           else do
@@ -276,27 +278,27 @@ writeDebugFiles borl = do
         | otherwise = False
   stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (init xs) (round $ last xs) else vValueWith Worker borl' (init xs) (round $ last xs)) stateFeats
-    stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (init xs) (round $ last xs)) stateFeats
+    stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats
+    stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
       liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
-      psiVValues <- mapM (\xs -> psiVFeat borl' (init xs) (round $ last xs)) stateFeats
+      psiVValues <- mapM (\xs -> psiVFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
       liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
-      psiWValues <- mapM (\xs -> psiWFeat borl' (init xs) (round $ last xs)) stateFeats
+      psiWValues <- mapM (\xs -> psiWFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
       liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
   return borl'
   where
     getStateFeatList Scalar {} = []
-    getStateFeatList (Table t _) = map (\(xs, y) -> xs ++ [fromIntegral y]) (M.keys t)
-    getStateFeatList nn = concatMap (\xs -> map (\(idx, _) -> xs ++ [fromIntegral idx]) acts) (nn ^. proxyNNConfig . prettyPrintElems)
-    acts = borl ^. actionList
+    getStateFeatList (Table t _) = map (\(xs, y) -> V.snoc xs (fromIntegral y)) (M.keys t)
+    getStateFeatList nn = concatMap (\xs -> map (\(idx, _) -> V.snoc xs (fromIntegral idx)) acts) (nn ^. proxyNNConfig . prettyPrintElems)
+    acts = VB.toList $ borl ^. actionList
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
     shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs
                | otherwise = xs
-    printFloat :: [Float] -> String
-    printFloat xs = "[" <> intercalate "," (map (printf "%.2f") xs) <> "]"
+    printStateFeat :: StateFeatures -> String
+    printStateFeat xs = "[" <> intercalate "," (map (printf "%.2f") (V.toList xs)) <> "]"
     psiVFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiV)
     psiWFeat borl stateFeat aNr = P.lookupProxy (borl ^. t) Worker (stateFeat, aNr) (borl ^. proxies . psiW)
 

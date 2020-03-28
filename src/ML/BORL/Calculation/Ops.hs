@@ -16,28 +16,23 @@ module ML.BORL.Calculation.Ops
     , RSize (..)
     ) where
 
+import           Control.Lens
+import qualified Data.Vector.Storable as V
+import           Control.Parallel.Strategies    hiding (r0)
+import           Data.Maybe                     (fromMaybe)
+
+
 import           Control.DeepSeq
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
-import           ML.BORL.Decay                  (DecaySetup (..), decaySetup,
-                                                 exponentialDecayValue)
+import           ML.BORL.Decay                  (decaySetup)
 import           ML.BORL.NeuralNetwork.NNConfig
-import           ML.BORL.NeuralNetwork.Scaling  (scaleMaxVValue, scaleMinVValue)
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                  as P
-import           ML.BORL.Reward
 import           ML.BORL.Type
 import           ML.BORL.Types
 
-import           Control.Arrow                  (first)
-import           Control.Lens
-import           Control.Monad                  (when)
-import           Control.Monad.IO.Class         (liftIO)
-import           Control.Parallel.Strategies    hiding (r0)
-import           Data.Function                  (on)
-import           Data.Maybe                     (fromMaybe)
-import           System.Random                  (randomRIO)
 #ifdef DEBUG
 import Prelude hiding (maximum, minimum)
 import qualified Prelude (maximum, minimum)
@@ -69,7 +64,16 @@ expSmthPsi = 0.001
 keepXLastValues :: Int
 keepXLastValues = 100
 
-mkCalculation :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, [ActionIndex]) -> EpisodeEnd -> m Calculation
+mkCalculation ::
+     (MonadBorl' m)
+  => BORL s
+  -> (StateFeatures, FilteredActionIndices)
+  -> ActionIndex
+  -> Bool
+  -> RewardValue
+  -> (StateNextFeatures, FilteredActionIndices)
+  -> EpisodeEnd
+  -> m Calculation
 mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
   mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
 
@@ -91,11 +95,11 @@ rhoMinimumState' borl rhoVal' =
 mkCalculation' ::
      (MonadBorl' m)
   => BORL s
-  -> (StateFeatures, [ActionIndex])
+  -> (StateFeatures, FilteredActionIndices)
   -> ActionIndex
   -> Bool
   -> RewardValue
-  -> (StateNextFeatures, [ActionIndex])
+  -> (StateNextFeatures, FilteredActionIndices)
   -> EpisodeEnd
   -> Algorithm NetInputWoAction
   -> m Calculation
@@ -409,16 +413,16 @@ rhoValue borl s a = rhoValueWith Worker borl (ftExt s) a
 rhoValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 rhoValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rho)
 
-rhoStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m Float
+rhoStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
 rhoStateValue borl (state, actIdxes) =
   case borl ^. proxies . rho of
     Scalar r -> return r
-    _        -> maxOrMin <$> mapM (rhoValueWith Target borl state) actIdxes
+    _        -> maxOrMin <$> V.mapM (rhoValueWith Target borl state) actIdxes
   where
     maxOrMin =
       case borl ^. objective of
-        Maximise -> maximum
-        Minimise -> minimum
+        Maximise -> V.maximum
+        Minimise -> V.minimum
 
 -- | Bias value from Worker net.
 vValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
@@ -431,15 +435,13 @@ vValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionI
 vValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
 
 -- | Get maximum bias value of state of specified net.
-vStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> (StateFeatures, [ActionIndex]) -> m Float
-vStateValueWith lkTp borl (state, asIdxes) = do
-  xs <- mapM (vValueWith lkTp borl state) asIdxes
-  return $ snd $ maxOrMin (compare `on` snd) $ zip asIdxes xs
+vStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
+vStateValueWith lkTp borl (state, asIdxes) = maxOrMin <$> V.mapM (vValueWith lkTp borl state) asIdxes
   where
     maxOrMin =
       case borl ^. objective of
-        Maximise -> maximumBy
-        Minimise -> minimumBy
+        Maximise -> V.maximum
+        Minimise -> V.minimum
 
 
 -- psiVValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
@@ -457,13 +459,13 @@ wValueFeat = wValueWith Worker
 wValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . w)
 
-wStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, [ActionIndex]) -> m Float
-wStateValue borl (state, asIdxes) = maxOrMin <$> mapM (wValueWith Target borl state) asIdxes
+wStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
+wStateValue borl (state, asIdxes) = maxOrMin <$> V.mapM (wValueWith Target borl state) asIdxes
   where
     maxOrMin =
       case borl ^. objective of
-        Maximise -> maximum
-        Minimise -> minimum
+        Maximise -> V.maximum
+        Minimise -> V.minimum
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
@@ -482,11 +484,11 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
         RSmall -> borl ^. proxies.r0
         RBig   -> borl ^. proxies.r1
 
-rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, [ActionIndex]) -> m Float
-rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> mapM (rValueWith lkTp borl size state) actIdxes
+rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, FilteredActionIndices) -> m Float
+rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> V.mapM (rValueWith lkTp borl size state) actIdxes
   where maxOrMin = case borl ^. objective of
-          Maximise -> maximum
-          Minimise -> minimum
+          Maximise -> V.maximum
+          Minimise -> V.minimum
 
 
 -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).

@@ -7,15 +7,17 @@ module ML.BORL.NeuralNetwork.Grenade
     ( trainGrenade
     ) where
 
-import           ML.BORL.NeuralNetwork.Conversion
-import           ML.BORL.Types
-
 
 import           Control.Parallel.Strategies
 import           Data.List                        (foldl', foldl1)
 import           Data.Singletons.Prelude.List
+import qualified Data.Vector.Storable             as V
 import           GHC.TypeLits
 import           Grenade
+
+import           ML.BORL.NeuralNetwork.Conversion
+import           ML.BORL.Types
+
 
 import           Debug.Trace
 
@@ -26,7 +28,7 @@ trainGrenade ::
      (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
   => LearningParameters
   -> Network layers shapes
-  -> [(([Float], ActionIndex), Float)]
+  -> [((StateFeatures, ActionIndex), Float)]
   -> Network layers shapes
 trainGrenade lp net chs = applyUpdate lp net $ foldl1 (|+) $ zipWith mkGradients chs $ tapesAndActual chs
   where
@@ -35,7 +37,7 @@ trainGrenade lp net chs = applyUpdate lp net $ foldl1 (|+) $ zipWith mkGradients
     mkGradients ((_, idx), target) (tape, output) = fst $ runGradient net tape loss
       where
         loss = mkLoss (toLastShapes net output) (toLastShapes net (toLabel idx target output))
-    toLabel idx target output = map (max (-trainMaxVal) . min trainMaxVal) (replace idx target output)
+    toLabel idx target output = V.map (max (-trainMaxVal) . min trainMaxVal) (output V.// [(idx, target)])
 
 
 mkLoss :: (Fractional a) => a -> a -> a

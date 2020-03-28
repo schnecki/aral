@@ -8,25 +8,24 @@ module ML.BORL.NeuralNetwork.Conversion
     ) where
 
 import           Data.Singletons.Prelude.List
-import qualified Data.Vector.Storable         as DV
+import qualified Data.Vector.Storable         as V
 import           GHC.TypeLits
 import           Grenade
 import           Numeric.LinearAlgebra.Static
--- import           Unsafe.Coerce
 
-import           Debug.Trace
+import           ML.BORL.Types
 
 -------------------- Conversion --------------------
 
-toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> [Float] -> S (Head shapes)
-toHeadShapes _ inp = S1D $ vector $ map realToFrac inp
+toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> StateFeatures -> S (Head shapes)
+toHeadShapes _ inp = S1D $ vector $ map realToFrac $ V.toList inp
 
-toLastShapes :: (KnownNat nr, 'D1 nr ~ Last shapes) => Network layers shapes -> [Float] -> S (Last shapes)
-toLastShapes _ inp = S1D $ vector $ map realToFrac inp
+toLastShapes :: (KnownNat nr, 'D1 nr ~ Last shapes) => Network layers shapes -> StateFeatures -> S (Last shapes)
+toLastShapes _ inp = S1D $ vector $ map realToFrac $ V.toList inp
 
 
-fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Float])
-fromLastShapes _ (tapes, S1D out) = (tapes, fmap realToFrac $ DV.toList $ extract out)
+fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, V.Vector Float)
+fromLastShapes _ (tapes, S1D out) = (tapes, V.map realToFrac $ extract out)
 fromLastShapes _ _                = error "NN output currently not supported."
 
 

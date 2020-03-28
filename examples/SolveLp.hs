@@ -25,6 +25,8 @@ import           Data.List
 import qualified Data.Map.Strict           as M
 import           Data.Maybe                (fromMaybe)
 import qualified Data.Text                 as T
+import qualified Data.Vector               as VB
+import qualified Data.Vector.Storable      as V
 import           Numeric.LinearProgramming
 import           System.IO                 (hFlush, stdout)
 
@@ -36,7 +38,7 @@ type NextState st = st
 
 class (Ord st, Enum st, Bounded st, Show st) => BorlLp st where
   lpActions :: [Action st]
-  lpActionFilter :: st -> [Bool]
+  lpActionFilter :: st -> V.Vector Bool
 
 data LpResult st = LpResult
   { givenPolicy     :: [((st, T.Text), [((st, T.Text), Probability)])]
@@ -130,7 +132,8 @@ runBorlLpInferWithRewardRepetWMax wMax repetitionsReward policy mRefStAct = do
   let transitionProbs =
         map (\xs@(x:_) -> (fst x, map snd xs)) $
         groupBy ((==) `on` second actionName . fst) $
-        sortBy (compare `on` second actionName . fst) $ concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (lpActionFilter s) lpActions]
+        sortBy (compare `on` second actionName . fst) $
+        concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (V.toList $ lpActionFilter s) lpActions]
       transProbSums = map (\(x, ps) -> (x, sum $ map snd ps)) transitionProbs
   mapM_ (\(a, p) -> when (abs (1 - p) > 0.001) $ error $ "transition probabilities do not sum up to 1 for state-action: " ++ show a) transProbSums
   let stateActions = map fst transitionProbs
@@ -247,7 +250,7 @@ makeReward repetitionsReward s = do
   return $ zipWith (\a xs -> ((s, a), round' $ sum (map (fromReward . fst3) xs) / fromIntegral (length xs), getEpsEnd (map thd3 xs))) acts xss
   where
     round' x = (/100) . fromIntegral $ round (x * 100)
-    acts = map snd $ filter fst $ zip (lpActionFilter s) lpActions
+    acts = map snd $ filter fst $ zip (V.toList $ lpActionFilter s) lpActions
     getEpsEnd xs
       | length trues >= length false = True
       | otherwise = False

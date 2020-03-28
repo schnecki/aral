@@ -27,31 +27,31 @@
 
 module Main where
 
-import           ML.BORL
-
-import           Helper
-
-import           Control.Arrow   (first, second)
-import           Control.DeepSeq (NFData)
-import           Control.Lens    (set, (^.))
-import           Control.Monad   (foldM, unless, when)
-import           Data.List       (foldl')
+import           Control.Arrow        (first, second)
+import           Control.DeepSeq      (NFData)
+import           Control.Lens         (set, (^.))
+import           Control.Monad        (foldM, unless, when)
+import           Data.List            (foldl')
+import qualified Data.Vector.Storable as V
 import           GHC.Generics
 import           System.IO
 import           System.Random
+
+import           ML.BORL
+
+import           Helper
 
 alg :: Algorithm St
 alg = AlgBORL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
-
-  let rl = mkMultichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
-  -- let rl = mkUnichainTabular alg initState (\(St x) -> [fromIntegral x]) actions (const $ repeat True) params decay Nothing
-  askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
-
-  where cmds = []
-        usage = []
+  let rl = mkMultichainTabular alg initState (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
+  -- let rl = mkUnichainTabular alg initState (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
+  askUser Nothing True usage cmds [] rl -- maybe increase learning by setting estimate of rho
+  where
+    cmds = []
+    usage = []
 
 initState :: St
 initState = St 5
@@ -113,14 +113,14 @@ actions =  [Action (addReset move) "move"]
 
 addReset :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 addReset f tp st = do
-  r <- randomRIO (0,1)
+  r <- randomRIO (0, 1)
   if r < (0.01 :: Double)
     then do
-    x <- randomRIO (4,5)
-    return (Reward 0, St x, True)
+      x <- randomRIO (4, 5)
+      return (Reward 0, St x, True)
     else f tp st
 
-move :: AgentType -> St -> IO (Reward St,St,EpisodeEnd)
+move :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 move _ s = do
   rand <- randomRIO (0, 1 :: Double)
   let possMove = case s of

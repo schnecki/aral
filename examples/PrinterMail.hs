@@ -34,9 +34,8 @@ import           Prelude                hiding (Left, Right)
 import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Data.Int               (Int64)
-import           Data.List              (genericLength)
 import           Data.Text              (Text)
-import qualified Data.Vector            as V
+import qualified Data.Vector.Storable   as V
 import           GHC.Exts               (fromList)
 import           GHC.Generics
 import           Grenade                hiding (train)
@@ -84,11 +83,11 @@ nnConfig =
     }
 
 
-netInp :: St -> [Float]
-netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
+netInp :: St -> V.Vector Float
+netInp st = V.singleton (scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st))
 
-tblInp :: St -> [Float]
-tblInp st = [fromIntegral $ fromEnum st]
+tblInp :: St -> V.Vector Float
+tblInp st = V.singleton (fromIntegral $ fromEnum st)
 
 
 maxVal :: Float
@@ -98,10 +97,10 @@ minVal :: Float
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64
-numActions = genericLength actions
+numActions = fromIntegral $ length actions
 
 numInputs :: Int64
-numInputs = genericLength (netInp initState)
+numInputs = fromIntegral $ V.length (netInp initState)
 
 modelBuilder :: (TF.MonadBuild m) => m TensorflowModel
 modelBuilder =
@@ -127,8 +126,8 @@ alg =
         -- AlgBORL 0.5 0.8 ByStateValues  (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 mRefStateAct :: Maybe (St, ActionIndex)
-mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
--- mRefStateAct = Nothing
+-- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
+mRefStateAct = Nothing
 
 
 main :: IO ()
@@ -227,10 +226,10 @@ actions =
   [ Action moveLeft "left "
   , Action moveRight "right"]
 
-actionFilter :: St -> [Bool]
-actionFilter One     = [True, True]
-actionFilter Left{}  = [True, False]
-actionFilter Right{} = [False, True]
+actionFilter :: St -> V.Vector Bool
+actionFilter One     = V.fromList [True, True]
+actionFilter Left{}  = V.fromList [True, False]
+actionFilter Right{} = V.fromList [False, True]
 
 
 moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
@@ -249,18 +248,4 @@ moveRight tp s =
     Right x  -> return (0, Right (x + 1), False)
     _        -> moveLeft tp s
 
-
-encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a
-encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
--- encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
-
-setCheckFile :: FilePath -> TensorflowModel' -> TensorflowModel'
-setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
-
-prependName :: Text -> TensorflowModel' -> TensorflowModel'
-prependName txt model = model { tensorflowModel = (tensorflowModel model)
-        { inputLayerName = txt <> "/" <> (inputLayerName $ tensorflowModel model)
-        , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
-        , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
-        }}
 

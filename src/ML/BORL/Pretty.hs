@@ -15,6 +15,25 @@ module ML.BORL.Pretty
     ) where
 
 
+import           Control.Arrow         (first, second, (&&&), (***))
+import           Control.Lens
+import           Control.Monad         (when)
+import           Data.Function         (on)
+import           Data.List             (find, foldl', intercalate, intersperse, sort,
+                                        sortBy)
+import qualified Data.Map.Strict       as M
+import           Data.Maybe            (fromMaybe, isJust)
+import qualified Data.Set              as S
+import qualified Data.Text             as T
+import qualified Data.Vector           as VB
+import qualified Data.Vector.Storable  as V
+import           Grenade
+import           Prelude               hiding ((<>))
+import           System.IO.Unsafe      (unsafePerformIO)
+import           Text.PrettyPrint      as P
+import           Text.Printf
+
+
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Decay
@@ -31,21 +50,6 @@ import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
 
-import           Control.Arrow         (first, second, (&&&), (***))
-import           Control.Lens
-import           Control.Monad         (when)
-import           Data.Function         (on)
-import           Data.List             (find, foldl', intercalate, intersperse, sort,
-                                        sortBy)
-import qualified Data.Map.Strict       as M
-import           Data.Maybe            (fromMaybe, isJust)
-import qualified Data.Set              as S
-import qualified Data.Text             as T
-import           Grenade
-import           Prelude               hiding ((<>))
-import           System.IO.Unsafe      (unsafePerformIO)
-import           Text.PrettyPrint      as P
-import           Text.Printf
 
 import           Debug.Trace
 
@@ -70,7 +74,7 @@ showFloatList xs = "[" ++ intercalate "," (map showFloat xs) ++ "]"
 printFloatWith :: Int -> Float -> Doc
 printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
-type Modifier m = LookupType -> ([Float], ActionIndex) -> Float -> m Float
+type Modifier m = LookupType -> (NetInputWoAction, ActionIndex) -> Float -> m Float
 
 noMod :: (Monad m) => Modifier m
 noMod _ _ = return
@@ -87,8 +91,8 @@ prettyTableRows :: (MonadBorl' m, Show k, Ord k) => BORL k -> (NetInputWoAction 
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ ->
-      let mkAct idx = actionName $ snd $ (borl ^. actionList) !! (idx `mod` length (borl ^. actionList))
-          mkInput k = text (filter (/= '"') $ show $ map printFloat k)
+      let mkAct idx = actionName $ snd $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
+          mkInput k = text (filter (/= '"') $ show $ map printFloat (V.toList k))
       in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> text (T.unpack $ mkAct idx) <> colon <+> printFloat v)) $
       sortBy (compare `on`  fst.fst) $ M.toList m
     pr -> do
@@ -140,7 +144,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
   Nothing               -> mempty
   Just (Just st, stRep) | actIdx < length bools && bools !! actIdx -> text stRep <> colon <+> pActIdx actIdx
                         | otherwise -> mempty
-    where bools = take (length $ borl ^. actionList) $ (borl ^. actionFilter) st
+    where bools = take (length $ borl ^. actionList) $ V.toList $ (borl ^. actionFilter) st
   Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
 
 
@@ -192,7 +196,7 @@ prettyComparison EpsilonSensitive = "optimising by epsilon-sensitive comparison"
 prettyComparison Exact            = "optimising by exact comparison"
 
 
-prettyRefState :: (Show a) => ([Float] -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
+prettyRefState :: (Show a) => (NetInputWoAction -> a) -> (t -> Doc) -> Maybe (NetInputWoAction, t) -> Doc
 prettyRefState _ _ Nothing = mempty
 prettyRefState prettyState prettyAction (Just (stFeat,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState stFeat) <> " - " <> prettyAction aNr
 
@@ -245,10 +249,10 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
     prettyState = mkPrettyState mStInverse
     prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
 
-mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> [Float] -> Maybe (Maybe st, String)
+mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> NetInputWoAction -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
-    Nothing  -> Just (Nothing, showFloatList netinp)
+    Nothing  -> Just (Nothing, showFloatList $ V.toList netinp)
     Just inv -> fromEither <$> inv netinp
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
@@ -257,7 +261,7 @@ prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> 
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
-prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> ([Float] -> Maybe (Maybe s, String)) -> BORL s -> m Doc
+prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s -> m Doc
 prettyBORLHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))

@@ -13,6 +13,7 @@ import           Control.Monad.Trans.Class      (lift)
 import           Control.Monad.Trans.Reader
 import           Data.Function                  (on)
 import           Data.List                      (groupBy, partition, sortBy)
+import qualified Data.Vector                    as VB
 import           System.Random
 
 
@@ -39,21 +40,21 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction borl = do
-  mainAgent <- nextActionFor borl (borl ^. s) (params' ^. exploration)
+  mainAgent <- nextActionFor borl (borl ^. parameters . explorationStrategy) (borl ^. s) (params' ^. exploration)
   let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
-  ws <- zipWithM (nextActionFor borl) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
+  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
   return (mainAgent, ws)
   where
     params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
     maxExpl = max (params' ^. exploration)
 
-nextActionFor :: (MonadBorl' m) => BORL s -> s -> Float -> m (ActionChoice s)
-nextActionFor borl state explore
-  | null as = error "Empty action list"
-  | length as == 1 = return (False, head as)
+nextActionFor :: (MonadBorl' m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
+nextActionFor borl strategy state explore
+  | VB.null as = error "Empty action list"
+  | VB.length as == 1 = return (False, VB.head as)
   | otherwise =
     flip runReaderT cfg $
-    case borl ^. parameters . explorationStrategy of
+    case strategy of
       EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
       SoftmaxBoltzmann t0 -> chooseAction borl False (chooseBySoftmax (t0 * explore))
   where
@@ -95,7 +96,7 @@ chooseAction borl useRand selFromList = do
   rand <- liftIO $ randomRIO (0, 1)
   state <- asks actPickState
   explore <- asks actPickExpl
-  let as = actionsIndexed borl state
+  let as = VB.toList $ actionsIndexed borl state
   lift $
     if useRand && rand < explore
       then do

@@ -10,29 +10,41 @@ import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Class    (liftIO)
 import           Control.Monad.IO.Unlift
 import           Control.Monad.Trans.Class (lift)
+import qualified Data.Vector               as VB
+import qualified Data.Vector.Storable      as V
 import qualified TensorFlow.Core           as TF
 import qualified TensorFlow.Session        as TF
 
+type FilteredActionIndices = V.Vector ActionIndex
 type ActionIndex = Int
+type IsRandomAction = Bool
+type ActionFilter s = s -> V.Vector Bool
+
+
 type Batchsize = Int
 type EpisodeEnd = Bool
 type InitialState s = s         -- ^ Initial state
-type IsRandomAction = Bool
 type Period = Int
 type State s = s
 type StateNext s = s
 type PsisOld = (Float, Float, Float)
 type PsisNew = PsisOld
+type RewardValue = Float
 
-type FeatureExtractor s = s -> [Float]
+
+type FeatureExtractor s = s -> StateFeatures
 type GammaLow = Float
 type GammaHigh = Float
 type GammaMiddle = Float
 type Gamma = Float
 
 
-type StateFeatures = [Float]
-type StateNextFeatures = [Float]
+type StateFeatures = V.Vector Float
+type StateNextFeatures = StateFeatures
+type NetInputWoAction = StateFeatures
+type NetInput = StateFeatures
+type NetInputWithAction = StateFeatures
+type NetOutput = V.Vector Float
 
 
 type MSE = Float               -- ^ Mean squared error

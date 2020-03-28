@@ -25,17 +25,13 @@
 
 module Main where
 
-import           ML.BORL                hiding (actionFilter)
-import           SolveLp
-
-import           Helper
 
 import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Data.Int               (Int64)
 import           Data.List              (genericLength)
 import           Data.Text              (Text)
-import qualified Data.Vector            as V
+import qualified Data.Vector.Storable   as V
 import           GHC.Exts               (fromList)
 import           GHC.Generics
 import           Grenade                hiding (train)
@@ -61,6 +57,14 @@ import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
                                                tensorValueFromName)
 
 
+import           ML.BORL                hiding (actionFilter)
+import           SolveLp
+
+import           Helper
+
+import           Debug.Trace
+
+
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig
@@ -75,15 +79,15 @@ nnConfig =
     , _scaleParameters = scalingByMaxAbsReward False 2
     , _stabilizationAdditionalRho = 0.25
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 1000
+    , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
-    , _trainMSEMax = Just 0.03
+    , _trainMSEMax = Nothing -- Just 0.03
     , _setExpSmoothParamsTo1 = True
     , _workersMinExploration = []
     }
 
-netInp :: St -> [Float]
-netInp st = [scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st)]
+netInp :: St -> V.Vector Float
+netInp st = V.singleton (scaleNegPosOne (minVal, maxVal) (fromIntegral $ fromEnum st))
 
 maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
@@ -95,7 +99,7 @@ numActions :: Int64
 numActions = genericLength actions
 
 numInputs :: Int64
-numInputs = genericLength (netInp initState)
+numInputs = fromIntegral $ V.length $ netInp initState
 
 modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
 modelBuilder cols =
@@ -142,8 +146,8 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
-  -- rl <- mkUnichainTensorflow alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
+  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
   -- let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
 
@@ -212,10 +216,10 @@ left,right :: Action St
 left = Action moveLeft "left "
 right = Action moveRight "right"
 
-actionFilter :: St -> [Bool]
-actionFilter A = [True, True]
-actionFilter B = [False, True]
-actionFilter C = [True, False]
+actionFilter :: St -> V.Vector Bool
+actionFilter A = V.fromList [True, True]
+actionFilter B = V.fromList [False, True]
+actionFilter C = V.fromList [True, False]
 
 
 moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
@@ -234,18 +238,4 @@ moveRight _ s =
     B -> (Reward 0, A, False)
     C -> error "not allowed"
 
-
-encodeImageBatch :: TF.TensorDataType V.Vector a => [[a]] -> TF.TensorData a
-encodeImageBatch xs = TF.encodeTensorData [genericLength xs, 2] (V.fromList $ mconcat xs)
--- encodeLabelBatch xs = TF.encodeTensorData [genericLength xs] (V.fromList xs)
-
-setCheckFile :: FilePath -> TensorflowModel' -> TensorflowModel'
-setCheckFile tempDir model = model { checkpointBaseFileName = Just tempDir }
-
-prependName :: Text -> TensorflowModel' -> TensorflowModel'
-prependName txt model = model { tensorflowModel = (tensorflowModel model)
-        { inputLayerName = txt <> "/" <> (inputLayerName $ tensorflowModel model)
-        , outputLayerName = txt <> "/" <> (outputLayerName $ tensorflowModel model)
-        , labelLayerName = txt <> "/" <> (labelLayerName $ tensorflowModel model)
-        }}
 
