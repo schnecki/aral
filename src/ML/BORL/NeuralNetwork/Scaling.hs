@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE DeriveAnyClass  #-}
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -11,14 +12,14 @@ import           Data.Serialize
 import           GHC.Generics
 
 data ScalingNetOutParameters = ScalingNetOutParameters
-  { _scaleMinVValue  :: MinValue Float
-  , _scaleMaxVValue  :: MaxValue Float
-  , _scaleMinWValue  :: MinValue Float
-  , _scaleMaxWValue  :: MaxValue Float
-  , _scaleMinR0Value :: MinValue Float
-  , _scaleMaxR0Value :: MaxValue Float
-  , _scaleMinR1Value :: MinValue Float
-  , _scaleMaxR1Value :: MaxValue Float
+  { _scaleMinVValue  :: !(MinValue Float)
+  , _scaleMaxVValue  :: !(MaxValue Float)
+  , _scaleMinWValue  :: !(MinValue Float)
+  , _scaleMaxWValue  :: !(MaxValue Float)
+  , _scaleMinR0Value :: !(MinValue Float)
+  , _scaleMaxR0Value :: !(MaxValue Float)
+  , _scaleMinR1Value :: !(MinValue Float)
+  , _scaleMaxR1Value :: !(MaxValue Float)
   } deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 makeLenses ''ScalingNetOutParameters
 

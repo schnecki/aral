@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE DeriveAnyClass  #-}
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -26,13 +27,13 @@ import           ML.BORL.Types
 -------------------- Main RL Datatype --------------------
 
 data RewardFutureData s = RewardFutureData
-                { _futurePeriod       :: Period
-                , _futureState        :: State s
-                , _futureActionNr     :: ActionIndex
-                , _futureRandomAction :: IsRandomAction
-                , _futureReward       :: Reward s
-                , _futureStateNext    :: StateNext s
-                , _futureEpisodeEnd   :: Bool
+                { _futurePeriod       :: !Period
+                , _futureState        :: !(State s)
+                , _futureActionNr     :: !ActionIndex
+                , _futureRandomAction :: !IsRandomAction
+                , _futureReward       :: !(Reward s)
+                , _futureStateNext    :: !(StateNext s)
+                , _futureEpisodeEnd   :: !Bool
                 } deriving (Generic, NFData, Serialize)
 makeLenses ''RewardFutureData
 

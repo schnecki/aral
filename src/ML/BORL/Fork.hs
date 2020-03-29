@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module ML.BORL.Fork
     ( doFork
     , collectForkResult
@@ -10,16 +11,16 @@ import           Data.IORef
 
 
 doFork :: NFData a => IO a -> IO (IORef (ThreadState a))
-doFork f = do
+doFork !f = do
   ref <- newIORef NotReady
   void $ forkIO (f >>= writeIORef ref . Ready . force)
   return ref
 
 collectForkResult :: IORef (ThreadState a) -> IO a
-collectForkResult ref = do
+collectForkResult !ref = do
   mRes <- readIORef ref
   case mRes of
     NotReady -> yield >> collectForkResult ref
     Ready a  -> return a
 
-data ThreadState a = NotReady | Ready a
+data ThreadState a = NotReady | Ready !a

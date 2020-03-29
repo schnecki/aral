@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE RankNTypes     #-}
@@ -17,20 +18,20 @@ type ReplMemFun s
 
 
 data Calculation = Calculation
-  { getRhoMinimumVal' :: Maybe Float
-  , getRhoVal'        :: Maybe Float
-  , getPsiVValState'  :: Maybe Float -- ^ Deviation of this state
-  , getVValState'     :: Maybe Float
-  , getPsiWValState'  :: Maybe Float -- ^ Deviation of this state
-  , getWValState'     :: Maybe Float
-  , getR0ValState'    :: Maybe Float
-  , getR1ValState'    :: Maybe Float
-  , getPsiValRho'     :: Maybe Float  -- ^ Scalar deviation over all states (for output only)
-  , getPsiValV'       :: Maybe Float  -- ^ Scalar deviation over all states (for output only)
-  , getPsiValW'       :: Maybe Float -- ^ Scalar deviation over all states (for output only)
-  , getLastVs'        :: Maybe [Float]
-  , getLastRews'      :: [RewardValue]
-  , getEpisodeEnd     :: Bool
+  { getRhoMinimumVal' :: !(Maybe Float)
+  , getRhoVal'        :: !(Maybe Float)
+  , getPsiVValState'  :: !(Maybe Float) -- ^ Deviation of this state
+  , getVValState'     :: !(Maybe Float)
+  , getPsiWValState'  :: !(Maybe Float) -- ^ Deviation of this state
+  , getWValState'     :: !(Maybe Float)
+  , getR0ValState'    :: !(Maybe Float)
+  , getR1ValState'    :: !(Maybe Float)
+  , getPsiValRho'     :: !(Maybe Float)  -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'       :: !(Maybe Float)  -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'       :: !(Maybe Float) -- ^ Scalar deviation over all states (for output only)
+  , getLastVs'        :: !(Maybe [Float])
+  , getLastRews'      :: ![RewardValue]
+  , getEpisodeEnd     :: !Bool
   } deriving (Show, Generic, NFData)
 
 fmapCalculation :: (Float -> Float) -> Calculation -> Calculation

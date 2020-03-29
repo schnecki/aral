@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveAnyClass            #-}
 {-# LANGUAGE DeriveGeneric             #-}
@@ -58,7 +59,7 @@ data ProxyType
   | PsiWTable
   | CombinedUnichain
 --  | CombinedUnichainScaleAs ProxyType
-  | NoScaling ProxyType
+  | NoScaling !ProxyType
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 proxyTypeName :: ProxyType -> Text.Text

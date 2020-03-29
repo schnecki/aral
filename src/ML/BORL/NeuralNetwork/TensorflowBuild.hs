@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE ExplicitForAll    #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedLists   #-}
@@ -73,21 +74,21 @@ type OutputLayerColumns = Int64
 type ModelBuilderFunction = forall m . (TF.MonadBuild m) => OutputLayerColumns -> m TensorflowModel
 
 data BuildInfo = BuildInfo
-  { _inputName         :: Maybe Text
-  , _outputName        :: Maybe Text
-  , _labelName         :: Maybe Text
-  , _maybeTrainingNode :: Maybe TF.ControlNode
-  , _nnVars            :: [TF.Tensor TF.Ref Float]
-  , _trainVars         :: [TF.Tensor TF.Ref Float]
-  , _optimizerVars     :: [OptimizerRefs]
-  , _nrUnitsLayer      :: [[Int64]]
-  , _lastTensor        :: Maybe (Int64, TF.Tensor TF.Value Float)
-  , _nrLayers          :: Int
+  { _inputName         :: !(Maybe Text)
+  , _outputName        :: !(Maybe Text)
+  , _labelName         :: !(Maybe Text)
+  , _maybeTrainingNode :: !(Maybe TF.ControlNode)
+  , _nnVars            :: ![TF.Tensor TF.Ref Float]
+  , _trainVars         :: ![TF.Tensor TF.Ref Float]
+  , _optimizerVars     :: ![OptimizerRefs]
+  , _nrUnitsLayer      :: ![[Int64]]
+  , _lastTensor        :: !(Maybe (Int64, TF.Tensor TF.Value Float))
+  , _nrLayers          :: !Int
   }
 makeLenses ''BuildInfo
 
 data BuildSetup = BuildSetup
- { _scaleWeights :: Float
+ { _scaleWeights :: !Float
  }
 makeLenses ''BuildSetup
 

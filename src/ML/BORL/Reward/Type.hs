@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -20,9 +21,9 @@ import           ML.BORL.Types
 
 -- ^ A result caused by an action can be a immediate reward, no reward or a future reward determined by the state.
 data Reward s
-  = Reward RewardValue
+  = Reward !RewardValue
   | RewardEmpty
-  | (RewardFuture s) => RewardFuture (StoreType s)
+  | (RewardFuture s) => RewardFuture !(StoreType s)
 
 isRewardFuture :: Reward s -> Bool
 isRewardFuture RewardFuture{} = True

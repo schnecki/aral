@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 module ML.BORL.Algorithm where
@@ -18,8 +19,8 @@ data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
-  | ByStateValuesAndReward FractionStateValue DecaySetup
-  | Fixed Float
+  | ByStateValuesAndReward !FractionStateValue !DecaySetup
+  | Fixed !Float
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
@@ -38,13 +39,13 @@ type EpsilonMiddle = Float
 
 
 data Algorithm s
-  = AlgBORL GammaLow
-            GammaHigh
-            AvgReward
-            (Maybe (s, ActionIndex))
-  | AlgBORLVOnly AvgReward (Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
-  | AlgDQN Gamma Comparison
-  | AlgDQNAvgRewAdjusted GammaMiddle GammaHigh AvgReward
+  = AlgBORL !GammaLow
+            !GammaHigh
+            !AvgReward
+            !(Maybe (s, ActionIndex))
+  | AlgBORLVOnly !AvgReward !(Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
+  | AlgDQN !Gamma !Comparison
+  | AlgDQNAvgRewAdjusted !GammaMiddle !GammaHigh !AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'

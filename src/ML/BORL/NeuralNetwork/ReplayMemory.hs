@@ -24,8 +24,8 @@ import           Debug.Trace
 ------------------------------ Replay Memories ------------------------------
 
 data ReplayMemories
-  = ReplayMemoriesUnified ReplayMemory      -- ^ All experiences are saved in a single replay memory.
-  | ReplayMemoriesPerActions [ReplayMemory] -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
+  = ReplayMemoriesUnified !ReplayMemory      -- ^ All experiences are saved in a single replay memory.
+  | ReplayMemoriesPerActions ![ReplayMemory] -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
   deriving (Generic)
 
 replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
@@ -42,10 +42,10 @@ instance NFData ReplayMemories where
 type Experience = ((StateFeatures, V.Vector ActionIndex), ActionIndex, IsRandomAction, RewardValue, (StateNextFeatures, V.Vector ActionIndex), EpisodeEnd)
 
 data ReplayMemory = ReplayMemory
-  { _replayMemoryVector :: VM.IOVector Experience
-  , _replayMemorySize   :: Int  -- size
-  , _replayMemoryIdx    :: Int  -- index to use when adding the next element
-  , _replayMemoryMaxIdx :: Int  -- in {0,..,size-1}
+  { _replayMemoryVector :: !(VM.IOVector Experience)
+  , _replayMemorySize   :: !Int  -- size
+  , _replayMemoryIdx    :: !Int  -- index to use when adding the next element
+  , _replayMemoryMaxIdx :: !Int  -- in {0,..,size-1}
   }
 makeLenses ''ReplayMemory
 

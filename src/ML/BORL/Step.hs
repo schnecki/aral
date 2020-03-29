@@ -93,42 +93,42 @@ fileEpisodeLength = "episodeLength"
 
 
 steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
-steps (force -> borl) nr =
+steps !borl nr =
   case find isTensorflow (allProxies $ borl ^. proxies) of
     Nothing -> runMonadBorlIO $ force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
     Just _ ->
-      runMonadBorlTF $ do
+      runMonadBorlTF $! do
         void $ restoreTensorflowModels True borl
         !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
         force <$> saveTensorflowModels borl'
 
 
 step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
-step (force -> borl) =
+step !borl =
   case find isTensorflow (allProxies $ borl ^. proxies) of
     Nothing -> nextAction borl >>= stepExecute borl
     Just _ ->
-      runMonadBorlTF $ do
+      runMonadBorlTF $! do
         void $ restoreTensorflowModels True borl
         !borl' <- nextAction borl >>= stepExecute borl
         force <$> saveTensorflowModels borl'
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
 stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
-stepM (force -> borl) = nextAction (force borl) >>= stepExecute borl
+stepM !borl = nextAction (force borl) >>= stepExecute borl
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
 -- evaluation of the data structure every 1000 periods.
 stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
-stepsM (force -> borl) nr = do
-  !borl' <- force <$> foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [1 .. min maxNr nr]
+stepsM !borl nr = do
+  !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [1 .. min maxNr nr]
   if nr > maxNr
     then stepsM borl' (nr - maxNr)
     else return borl'
   where maxNr = 1000
 
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
-stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
+stepExecute !borl ((!randomAction, (!aNr, Action !action _)), !workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
@@ -143,14 +143,14 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
       updateFutures = map (over futureReward applyToReward)
   let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
-  workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
-  return $ force $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+  !workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
+  return $! force $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
 runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
-runWorkerActions borl [] = return (borl ^. workers)
-runWorkerActions borl acts = do
+runWorkerActions !borl [] = return (borl ^. workers)
+runWorkerActions !borl !acts = do
   let states = borl ^. workers . traversed . workersS
   stepRewards <- zipWithM runWorkerAction states acts
   let statesNext = map (view futureStateNext) stepRewards
@@ -191,30 +191,30 @@ stepExecuteMaterialisedFutures (nr, _, borl) dt =
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
 execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
-execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+execute borl (RewardFutureData !period !state !aNr !randomAction (Reward !reward) !stateNext !episodeEnd) = do
 #ifdef DEBUG
   when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
     liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
   borl <- writeDebugFiles borl
 #endif
-  (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
-  let lastVsLst = fromMaybe [0] (getLastVs' calc)
-  let strRho = show (fromMaybe 0 (getRhoVal' calc))
-      strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
-      strVAvg = show (avg lastVsLst)
-      strR0 = show $ fromMaybe 0 (getR0ValState' calc)
-      strR1 = show $ fromMaybe 0 (getR1ValState' calc)
-      avg xs = sum xs / fromIntegral (length xs)
+  (!proxies', !calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
+  let !lastVsLst = fromMaybe [0] (getLastVs' calc)
+  let !strRho = show (fromMaybe 0 (getRhoVal' calc))
+      !strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
+      !strVAvg = show (avg lastVsLst)
+      !strR0 = show $ fromMaybe 0 (getR0ValState' calc)
+      !strR1 = show $ fromMaybe 0 (getR1ValState' calc)
+      avg !xs = sum xs / fromIntegral (length xs)
   liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
-  let (eNr, eStart) = borl ^. episodeNrStart
-      eLength = borl ^. t - eStart
+  let (!eNr, !eStart) = borl ^. episodeNrStart
+      !eLength = borl ^. t - eStart
   when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
   liftIO $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
   -- update values
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
-  return $
+  return $! force $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"

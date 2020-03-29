@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module ML.BORL.Action.Ops
   ( NextActions
   , ActionChoice
@@ -62,8 +63,8 @@ nextActionFor borl strategy state explore
     as = actionsIndexed borl state
 
 data SelectedActions s = SelectedActions
-  { maximised :: [(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
-  , minimised :: [(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
+  { maximised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
+  , minimised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
   }
 
 
@@ -87,8 +88,8 @@ chooseByProbability r idx acc (v:vs)
 
 data ActionPickingConfig s =
   ActionPickingConfig
-    { actPickState :: s
-    , actPickExpl  :: Float
+    { actPickState :: !s
+    , actPickExpl  :: !Float
     }
 
 chooseAction :: (MonadBorl' m) => BORL s -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndexed s)

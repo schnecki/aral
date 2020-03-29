@@ -128,7 +128,7 @@ data BORL s = BORL
   { _actionList       :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s.
   , _actionFilter     :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
   , _s                :: !s                             -- ^ Current state.
-  , _workers          :: Maybe (Workers s)              -- ^ Additional workers.
+  , _workers          :: !(Maybe (Workers s))           -- ^ Additional workers.
 
   , _featureExtractor :: !(FeatureExtractor s) -- ^ Function that extracts the features of a state.
   , _t                :: !Int                  -- ^ Current time t.
@@ -145,7 +145,7 @@ data BORL s = BORL
   , _lastVValues      :: ![Float]                 -- ^ List of X last V values (head is last seen value)
   , _lastRewards      :: ![Float]                 -- ^ List of X last rewards (head is last received reward)
   , _psis             :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
-  , _proxies          :: Proxies                   -- ^ Scalar, Tables and Neural Networks
+  , _proxies          :: !Proxies                   -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
 
@@ -177,12 +177,12 @@ idxStart :: Int
 idxStart = 0
 
 data InitValues = InitValues
-  { defaultRho        :: Float -- ^ Starting rho value [Default: 0]
-  , defaultRhoMinimum :: Float -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
-  , defaultV          :: Float -- ^ Starting V value [Default: 0]
-  , defaultW          :: Float -- ^ Starting W value [Default: 0]
-  , defaultR0         :: Float -- ^ Starting R0 value [Default: 0]
-  , defaultR1         :: Float -- ^ starting R1 value [Default: 0]
+  { defaultRho        :: !Float -- ^ Starting rho value [Default: 0]
+  , defaultRhoMinimum :: !Float -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
+  , defaultV          :: !Float -- ^ Starting V value [Default: 0]
+  , defaultW          :: !Float -- ^ Starting W value [Default: 0]
+  , defaultR0         :: !Float -- ^ Starting R0 value [Default: 0]
+  , defaultR1         :: !Float -- ^ starting R1 value [Default: 0]
   }
 
 

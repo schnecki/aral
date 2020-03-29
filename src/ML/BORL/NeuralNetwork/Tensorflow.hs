@@ -50,13 +50,13 @@ trainMaxVal = 0.95
 
 
 data TensorflowModel = TensorflowModel
-  { inputLayerName         :: Text                     -- ^ Input layer name for feeding input.
-  , outputLayerName        :: Text                     -- ^ Output layer name for predictions.
-  , labelLayerName         :: Text                     -- ^ Labels input layer name for training.
-  , trainingNode           :: TF.ControlNode           -- ^ Training node.
-  , neuralNetworkVariables :: [TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
-  , trainingVariables      :: [TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
-  , optimizerVariables     :: [OptimizerRefs]
+  { inputLayerName         :: !Text                     -- ^ Input layer name for feeding input.
+  , outputLayerName        :: !Text                     -- ^ Output layer name for predictions.
+  , labelLayerName         :: !Text                     -- ^ Labels input layer name for training.
+  , trainingNode           :: !TF.ControlNode           -- ^ Training node.
+  , neuralNetworkVariables :: ![TF.Tensor TF.Ref Float] -- ^ Neural network variables for saving and restoring.
+  , trainingVariables      :: ![TF.Tensor TF.Ref Float] -- ^ Training data/settings for saving and restoring.
+  , optimizerVariables     :: ![OptimizerRefs]
   }
 
 instance NFData TensorflowModel where
@@ -65,13 +65,13 @@ instance NFData TensorflowModel where
 
 data OptimizerRefs
   = GradientDescentRefs
-      { gradientDescentLearningRateRef :: TF.Tensor TF.Ref Float
+      { gradientDescentLearningRateRef :: !(TF.Tensor TF.Ref Float)
       }
   | AdamRefs
-      { adamLearningRateRef :: TF.Tensor TF.Ref Float
+      { adamLearningRateRef :: !(TF.Tensor TF.Ref Float)
       }
   | RmsPropRefs
-      { rmsPropLearningRateRef :: TF.Tensor TF.Ref Float
+      { rmsPropLearningRateRef :: !(TF.Tensor TF.Ref Float)
       }
 
 prettyOptimizerNames :: OptimizerRefs -> String
@@ -117,10 +117,10 @@ instance Serialize OptimizerRefs where
 
 
 data TensorflowModel' = TensorflowModel'
-  { tensorflowModel        :: TensorflowModel
-  , checkpointBaseFileName :: Maybe FilePath
-  , lastInputOutputTuple   :: Maybe (V.Vector Float, V.Vector Float)
-  , tensorflowModelBuilder :: TF.Session TensorflowModel
+  { tensorflowModel        :: !TensorflowModel
+  , checkpointBaseFileName :: !(Maybe FilePath)
+  , lastInputOutputTuple   :: !(Maybe (V.Vector Float, V.Vector Float))
+  , tensorflowModelBuilder :: !(TF.Session TensorflowModel)
   }
 
 instance Serialize TensorflowModel' where

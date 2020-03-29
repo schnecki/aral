@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE TypeFamilies   #-}
@@ -14,7 +15,7 @@ import           GHC.Generics
 
 
 -- | Infinite vector for which the last element is repeated endlessly.
-data InftyVector a = Cons a (InftyVector a) | Last a
+data InftyVector a = Cons !a !(InftyVector a) | Last !a
   deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 
 
