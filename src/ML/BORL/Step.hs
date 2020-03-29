@@ -213,7 +213,7 @@ execute borl (RewardFutureData !period !state !aNr !randomAction (Reward !reward
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
-  return !$ force $
+  return $! force $
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"
