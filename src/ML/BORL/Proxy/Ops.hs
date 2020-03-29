@@ -127,7 +127,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !config = pV ^?! proxyNNConfig --  ## TODO why not r1
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -184,7 +184,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !config = proxy ^?! proxyNNConfig
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     let mkCalc (!s, !idx, !rand, !rew, !s', !epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy !mVal !px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
