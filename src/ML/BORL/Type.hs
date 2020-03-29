@@ -145,7 +145,7 @@ data BORL s = BORL
   , _lastVValues      :: ![Float]               -- ^ List of X last V values (head is last seen value)
   , _lastRewards      :: ![Float]               -- ^ List of X last rewards (head is last received reward)
   , _psis             :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
-  , _proxies          :: !Proxies                   -- ^ Scalar, Tables and Neural Networks
+  , _proxies          :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
 
