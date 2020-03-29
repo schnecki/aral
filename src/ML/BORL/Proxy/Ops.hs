@@ -128,6 +128,8 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (mems ++ concat workerMems)
+    mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, pPsiV, pV, pPsiW, pW, pR0, pR1]
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -185,6 +187,8 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (mems ++ concat workerMems)
+    mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, proxy]
     let mkCalc (!s, !idx, !rand, !rew, !s', !epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
     let mInsertProxy !mVal !px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
@@ -442,17 +446,37 @@ cached st f = do
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m NetOutput
-lookupActionsNeuralNetworkUnscaled Worker !st (Grenade !_ !netW !_ !tp !_ !_) = cached (Worker, tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
-lookupActionsNeuralNetworkUnscaled Target !st !px@(Grenade !netT !_ !_ !tp !config !_)
+lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached (Worker, tp, st) (return $ snd $ fromLastShapes netW $ runNetwork netW (toHeadShapes netW st))
+lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
   | otherwise = cached (Target, tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
-lookupActionsNeuralNetworkUnscaled Worker !st !(TensorflowProxy !_ !netW !_ !tp !_ !_) = cached (Worker, tp, st) (headLookupActions <$> forwardRun netW [st])
-lookupActionsNeuralNetworkUnscaled Target !st !px@(TensorflowProxy !netT !_ !_ !tp !config !_)
+lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (Worker, tp, st) (headLookupActions <$> forwardRun netW [st])
+lookupActionsNeuralNetworkUnscaled Target st px@(TensorflowProxy netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
   | otherwise = cached (Target, tp, st) (headLookupActions <$> forwardRun netT [st])
-lookupActionsNeuralNetworkUnscaled !tp !st !(CombinedProxy !px !nr !_) = V.slice (nr*nrActs) nrActs <$> cached (tp, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaled tp st px)
+lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = V.slice (nr*nrActs) nrActs <$> cached (tp, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaled tp st px)
   where nrActs = px ^?! proxyNrActions
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+
+loadValuesIntoCache :: (MonadBorl' m) => [StateFeatures] -> Proxy -> m ()
+loadValuesIntoCache !sts (TensorflowProxy netT netW _ tp config _) = do
+  netWVals <- forwardRun netW sts
+  zipWithM_ (\st val -> addCache (Worker, tp, st) val) sts netWVals
+  unless (config ^. updateTargetInterval <= 1) $ do
+    netTVals <- forwardRun netT sts
+    zipWithM_ (\st val -> addCache (Target, tp, st) val) sts netTVals
+loadValuesIntoCache sts (CombinedProxy (TensorflowProxy netT netW _ _ config _) _ _) = do
+  netWVals <- forwardRun netW sts
+  zipWithM_ (\st val -> addCache (Worker, CombinedUnichain, st) val) sts netWVals
+  unless (config ^. updateTargetInterval <= 1) $ do
+    netTVals <- forwardRun netT sts
+    zipWithM_ (\st val -> addCache (Target, CombinedUnichain, st) val) sts netTVals
+loadValuesIntoCache _ _ = return () -- only a single row allowed in grenade
+
+
+--   let netW = px ^?! proxyNNWorker
+--       netT = px ^?! proxyNNTarget
+--   cached (tp, CombinedUnichain, st) (loadValuesIntoCache sts px)
 
 
 -- | Finds the correct value for scaling.
