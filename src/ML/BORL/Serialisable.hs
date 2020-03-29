@@ -92,7 +92,7 @@ fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t
         flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) $
         flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) borl
   restoreTensorflowModels False borl'
-  return $ force borl'
+  return borl'
 
 
 instance Serialize Proxies

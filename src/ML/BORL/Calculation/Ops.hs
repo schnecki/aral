@@ -218,7 +218,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       , getPsiValRho' = Just psiValRho'
       , getPsiValV' = Just psiValV'
       , getPsiValW' = Just psiValW'
-      , getLastVs' = force $ Just lastVs'
+      , getLastVs' = Just (force lastVs')
       , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
@@ -287,7 +287,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
       , getLastVs' = Nothing
-      , getLastRews' = lastRews'
+      , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) = do
@@ -351,8 +351,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getPsiValRho' = Nothing
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
-      , getLastVs' = Just lastVs'
-      , getLastRews' = lastRews'
+      , getLastVs' = Just $ force lastVs'
+      , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
 
@@ -388,7 +388,7 @@ mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episo
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
       , getLastVs' = Nothing
-      , getLastRews' = lastRews'
+      , getLastRews' = force lastRews'
       , getEpisodeEnd = episodeEnd
       }
 
