@@ -27,16 +27,29 @@ data ExplorationStrategy
 -- | This normalises the input and returns a softmax using the Bolzmann distribution with given temperature.
 softmax :: (Ord n, Floating n) => n -> [n] -> [n]
 softmax _ [] = []
-softmax temp xs = map (/ max eps s) xs'
+softmax temp xs
+  | all (== head xs) (tail xs) = replicate (length xs) (1 / genericLength xs)
+  | otherwise = map (/ max eps s) xs'
+  where
+    normed = normalise xs
+    xs' = map (exp . (/ max eps temp)) normed
+    s = sum xs'
+    eps = 1e-4
+
+-- | Normalise the input list to (-1, 1).
+normalise :: (Ord n, Fractional n) => [n] -> [n]
+normalise [] = error "empty input to normalise in ML.BORL.Exploration"
+normalise xs = map (scaleZeroOneValue (minV, maxV)) xs
+  where minV = minimum xs
+        maxV = maximum xs
+
+
+-- | This (actual correct version withouth normalisation) does not work as the probabilities are to close to 1.
+softmaxNonNormalised :: (Ord n, Floating n) => n -> [n] -> [n]
+softmaxNonNormalised _ [] = []
+softmaxNonNormalised temp xs = map (/ max eps s) xs'
   where
     maxVal = maximum xs
     xs' = map (exp . (/ max eps temp) . subtract maxVal) xs
     s = sum xs'
     eps = 1e-4
-
--- -- | Normalise the input list to (-1, 1).
--- normalise :: (Ord n, Fractional n) => [n] -> [n]
--- normalise [] = error "empty input to normalise in ML.BORL.Exploration"
--- normalise xs = map (scaleZeroOneValue (minV, maxV)) xs
---   where minV = minimum xs
---         maxV = maximum xs
