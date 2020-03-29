@@ -127,7 +127,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !config = pV ^?! proxyNNConfig --  ## TODO why not r1
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (mems ++ concat workerMems)
     mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, pPsiV, pV, pPsiW, pW, pR0, pR1]
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
@@ -186,7 +186,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     let !config = proxy ^?! proxyNNConfig
     let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
     !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. trainBatchSize)) workerReplMems -- (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (mems ++ concat workerMems)
     mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, proxy]
     let mkCalc (!s, !idx, !rand, !rew, !s', !epiEnd) = getCalc s idx rand rew s' epiEnd

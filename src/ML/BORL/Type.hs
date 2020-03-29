@@ -142,8 +142,8 @@ data BORL s = BORL
   , _objective        :: !Objective                 -- ^ Objective to minimise or maximise.
 
   -- Values:
-  , _lastVValues      :: ![Float]               -- ^ List of X last V values (head is last seen value)
-  , _lastRewards      :: ![Float]               -- ^ List of X last rewards (head is last received reward)
+  , _lastVValues      :: ![Float]                 -- ^ List of X last V values (head is last seen value)
+  , _lastRewards      :: ![Float]                 -- ^ List of X last rewards (head is last received reward)
   , _psis             :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
   , _proxies          :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
@@ -286,6 +286,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       r1 <- liftIO $ nnSA VTable 0
       buildTensorflowModel (r0 ^?! proxyTFTarget)
       return $
+        force $
         BORL
           (VB.fromList $ zip [idxStart ..] as)
           asFilter
@@ -312,6 +313,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       psiW <- liftIO $ nnSA PsiWTable 10
       buildTensorflowModel (v ^?! proxyTFTarget)
       return $
+        force $
         BORL
           (VB.fromList $ zip [idxStart ..] as)
           asFilter
@@ -367,6 +369,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   workers <- liftIO $ mkWorkers initialState as nnConfig
   buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
+    force $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
       asFilter
@@ -645,9 +648,7 @@ mkWorkers state as nnConfig = do
   if nr <= 0
     then return Nothing
     else do
-      repMems <-
-        sequence <$> replicateM nr (mkReplayMemories as $ -- set replayMemoryStrategy ReplayMemorySingle $
-                                    set replayMemoryMaxSize (nnConfig ^. replayMemoryMaxSize `div` nr) nnConfig)
+      repMems <- sequence <$> replicateM nr (mkReplayMemories as nnConfig) -- set replayMemoryStrategy ReplayMemorySingle $ set replayMemoryMaxSize (nnConfig ^. replayMemoryMaxSize) nnConfig) -- `div` nr) nnConfig)
       return $ Workers (replicate nr state) (replicate nr []) <$> repMems
 
 
