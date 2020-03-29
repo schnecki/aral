@@ -41,7 +41,7 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction borl = do
-  mainAgent <- nextActionFor borl (borl ^. parameters . explorationStrategy) (borl ^. s) (params' ^. exploration)
+  mainAgent <- nextActionFor borl (borl ^. parameters . explorationStrategy) (borl ^. s) 0 -- (params' ^. exploration)
   let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
   ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
   return (mainAgent, ws)
@@ -57,6 +57,7 @@ nextActionFor borl strategy state explore
     flip runReaderT cfg $
     case strategy of
       EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
+      SoftmaxBoltzmann{} | explore == 0 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
       SoftmaxBoltzmann t0 -> chooseAction borl False (chooseBySoftmax (t0 * explore))
   where
     cfg = ActionPickingConfig state explore
