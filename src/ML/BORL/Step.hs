@@ -93,37 +93,39 @@ fileEpisodeLength = "episodeLength"
 
 steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
 steps !borl nr =
+  fmap force $!
   case find isTensorflow (allProxies $ borl ^. proxies) of
     Nothing -> runMonadBorlIO $ foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
     Just _ ->
       runMonadBorlTF $! do
         void $ restoreTensorflowModels True borl
-        !borl' <- foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
+        !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [0 .. nr - 1]
         saveTensorflowModels borl'
 
 
 step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
 step !borl =
+  fmap force $!
   case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> nextAction borl >>= stepExecute borl
+    Nothing -> nextAction (force borl) >>= stepExecute borl
     Just _ ->
       runMonadBorlTF $! do
         void $ restoreTensorflowModels True borl
-        !borl' <- nextAction borl >>= stepExecute borl
+        !borl' <- nextAction (force borl) >>= stepExecute borl
         saveTensorflowModels borl'
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
 stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
-stepM !borl = nextAction borl >>= stepExecute borl
+stepM !borl = fmap force <$> nextAction (force borl) >>= stepExecute borl
 
 -- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
 -- evaluation of the data structure every 1000 periods.
 stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
 stepsM !borl nr = do
-  !borl' <- foldM (\b _ -> nextAction b >>= stepExecute b) borl [1 .. min maxNr nr]
+  !borl' <- foldM (\b _ -> nextAction (force b) >>= stepExecute b) borl [1 .. min maxNr nr]
   if nr > maxNr
-    then stepsM borl' (nr - maxNr)
-    else return borl'
+    then stepsM (force borl') (nr - maxNr)
+    else return (force borl')
   where maxNr = 1000
 
 stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
@@ -140,8 +142,8 @@ stepExecute !borl ((!randomAction, (!aNr, Action !action _)), !workerActions) = 
   let applyToReward (RewardFuture storage) = applyState storage state
       applyToReward r                      = r
       updateFutures = map (over futureReward applyToReward)
-  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
-  (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
+  let !borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
+  (!dropLen, _, !borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
   !workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
   return $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
 
@@ -213,7 +215,7 @@ execute borl (RewardFutureData !period !state !aNr !randomAction (Reward !reward
   let setEpisode curEp
         | getEpisodeEnd calc = (eNr + 1, borl ^. t)
         | otherwise = curEp
-  return $! force $
+  return $!
     set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
     set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
 execute _ _ = error "Exectue on invalid data structure. This is a bug!"

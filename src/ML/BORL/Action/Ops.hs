@@ -40,7 +40,7 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
-nextAction borl = do
+nextAction !borl = do
   mainAgent <- nextActionFor borl (borl ^. parameters . explorationStrategy) (borl ^. s) (params' ^. exploration)
   let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
   ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
