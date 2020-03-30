@@ -151,6 +151,7 @@ stepExecute !borl ((!randomAction, (!aNr, Action !action _)), !workerActions) = 
 -- lists.
 runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
 runWorkerActions !borl [] = return (borl ^. workers)
+runWorkerActions !borl _ | borl ^. parameters . disableAllLearning = return (borl ^. workers)
 runWorkerActions !borl !acts = do
   let states = borl ^. workers . traversed . workersS
   stepRewards <- zipWithM runWorkerAction states acts
