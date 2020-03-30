@@ -85,3 +85,8 @@ replayMemoriesSize :: ReplayMemories -> Int
 replayMemoriesSize (ReplayMemoriesUnified m)     = m ^. replayMemorySize
 replayMemoriesSize (ReplayMemoriesPerActions ms) = sum $ map (view replayMemorySize) ms
 
+replayMemoriesSubSize :: ReplayMemories -> Int
+replayMemoriesSubSize (ReplayMemoriesUnified m)        = m ^. replayMemorySize
+replayMemoriesSubSize (ReplayMemoriesPerActions (m:_)) = m ^. replayMemorySize
+replayMemoriesSubSize (ReplayMemoriesPerActions [])    = 0
+

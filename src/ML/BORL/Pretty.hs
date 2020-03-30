@@ -17,7 +17,7 @@ module ML.BORL.Pretty
 
 import           Control.Arrow         (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad         (when)
+import           Control.Monad         (join, when)
 import           Data.Function         (on)
 import           Data.List             (find, foldl', intercalate, intersperse, sort,
                                         sortBy)
@@ -346,7 +346,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
         px -> text "Workers Minimum Exploration" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration))) <+>
-              text "each with replay memory size" <+> int (maybe 0 (replayMemoriesSize . head) $ borl ^? workers.traversed.workersReplayMemories)
+              maybe mempty (\ms -> text "Replay memories:" <+> textReplayMemoryType ms) (preview (workersReplayMemories . _head) =<< borl ^. workers)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -402,10 +402,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> empty
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <> textReplayMemoryType (borl ^. proxies . replayMemory)
-        textReplayMemoryType (Just ReplayMemoriesUnified {}) = text " [unified replay memory]"
-        textReplayMemoryType (Just mem@(ReplayMemoriesPerActions (r:_))) = text " [per actions each of size " <> int (replayMemoriesSize mem) <> "]" -- r ^. replayMemorySize) <> "]"
-        textReplayMemoryType _ = mempty
+        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <> maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
+    textReplayMemoryType ReplayMemoriesUnified {} = text " unified replay memory"
+    textReplayMemoryType mem@ReplayMemoriesPerActions{} = text " per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {} -> empty
