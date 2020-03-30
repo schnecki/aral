@@ -57,8 +57,10 @@ nextActionFor borl strategy state explore
     flip runReaderT cfg $
     case strategy of
       EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
-      SoftmaxBoltzmann{} | explore == 0 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
-      SoftmaxBoltzmann t0 -> chooseAction borl False (chooseBySoftmax (t0 * explore))
+      SoftmaxBoltzmann t0
+        | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
+        | otherwise -> chooseAction borl False (chooseBySoftmax temp)
+        where temp = t0 * explore
   where
     cfg = ActionPickingConfig state explore
     as = actionsIndexed borl state

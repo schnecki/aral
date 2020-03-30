@@ -32,9 +32,9 @@ softmax temp xs
   | otherwise = map (/ max eps s) xs'
   where
     normed = normalise xs
-    xs' = map (exp . (/ max eps temp)) normed
+    xs' = map (exp . (/ max eps temp) . subtract 1) normed
     s = sum xs'
-    eps = 1e-4
+    eps = 1e-3
 
 -- | Normalise the input list to (-1, 1).
 normalise :: (Ord n, Fractional n) => [n] -> [n]
