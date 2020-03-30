@@ -345,7 +345,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        px -> text "Workers Minimum Exploration" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration))) <+>
+        px -> text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration))) <+>
               maybe mempty (\ms -> text "Replay memories:" <+> textReplayMemoryType ms) (preview (workersReplayMemories . _head) =<< borl ^. workers)
     scalingText =
       case borl ^. proxies . v of
