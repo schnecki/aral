@@ -402,9 +402,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> empty
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <> maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
+        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+> maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
     textReplayMemoryType ReplayMemoriesUnified {} = text " unified replay memory"
-    textReplayMemoryType mem@ReplayMemoriesPerActions{} = text " per actions each of size " <> int (replayMemoriesSubSize mem)
+    textReplayMemoryType mem@ReplayMemoriesPerActions{} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {} -> empty
