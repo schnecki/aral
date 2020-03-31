@@ -48,6 +48,7 @@ import qualified Data.Vector.Storable         as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import qualified HighLevelTensorflow          as TF
 import           System.IO.Unsafe             (unsafePerformIO)
 import           System.Random.Shuffle
 
@@ -287,9 +288,9 @@ updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
 updateNNTargetNet !forceReset !period !px
   | config ^. updateTargetInterval <= 1 || currentUpdateInterval <= 1 = return px
-  | forceReset = copyValues
+  | forceReset = liftTf copyValues
   | period <= memSize = return px
-  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 = copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
+  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 = liftTf copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -299,7 +300,7 @@ updateNNTargetNet !forceReset !period !px
       case px of
         (Grenade _ netW' tab' tp' config' nrActs) -> return $! Grenade netW' netW' tab' tp' config' nrActs
         (TensorflowProxy netT' netW' tab' tp' config' nrActs) -> do
-          copyValuesFromTo netW' netT'
+          liftTf $ TF.copyValuesFromTo netW' netT'
           return $! TensorflowProxy netT' netW' tab' tp' config' nrActs
         CombinedProxy {} -> error "Combined proxy in updateNNTargetNet. Should not happen!"
         Table {} -> error "not possible"
@@ -320,13 +321,13 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tab !tp 
   backwardRunRepMemData netW trainingInstances'
   if period == px ^?! proxyNNConfig . replayMemoryMaxSize
     then do
-      lrs <- getLearningRates netW
+      lrs <- liftTf $ TF.getLearningRates netW
       when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"
       when (length lrs > 1) $ error "Cannot handle multiple Tensorflow optimizers (multiple learning rates) in Proxy.Ops"
       return $! TensorflowProxy netT netW tab tp (grenadeLearningParams .~ LearningParameters (realToFrac $ head lrs) 0 0 $ config) nrActs
     else do
       when (period `mod` 1000 == 0 && dec lRate /= lRate) $
-        setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
+        liftTf $ TF.setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
       -- when (period `mod` 100 == 0) $
       --   getLearningRates netW >>= liftIO . print
       return $! TensorflowProxy netT netW tab tp config nrActs
@@ -370,7 +371,7 @@ trainMSE !mIteration !dataset !lp !px@(TensorflowProxy !netT !netW !tab !tp !con
   | mIteration > Just 200 = do
       liftIO $ putStrLn "Giving up after 200 Iterartions :-(   Think about changing your network topography and/or scaling settings!"
       return px
-  | otherwise = do
+  | otherwise = liftTf $ do
     datasetShuffled <- liftIO $ shuffleM dataset
     let mseMax = fromJust (config ^. trainMSEMax)
         kFullScaled = map fst datasetShuffled :: [(StateFeatures, ActionIndex)]
@@ -381,15 +382,15 @@ trainMSE !mIteration !dataset !lp !px@(TensorflowProxy !netT !netW !tab !tp !con
         vScaled = map realToFrac vScaledDbl
         -- vUnscaled = map (realToFrac . snd) dataset
         -- datasetRepMem = map (first (first (map realToFrac))) datasetShuffled
-    current <- forwardRun netW kScaled
-    zipWithM_ (backwardRun netW) (map return kScaled) (map return $ zipWith (V.//) current (map return $ zip actIdxs vScaled))
+    current <- TF.forwardRun netW kScaled
+    zipWithM_ (TF.backwardRun netW) (map return kScaled) (map return $ zipWith (V.//) current (map return $ zip actIdxs vScaled))
     -- backwardRunRepMemData netW datasetRepMem
     let forward k = realToFrac <$> lookupNeuralNetworkUnscaled Worker k px -- lookupNeuralNetworkUnscaled Worker k px -- scaled or unscaled ones?
     mse <- ((1 / fromIntegral (length datasetShuffled)) *) . sum <$> zipWithM (\k v -> (** 2) . (v-) <$> forward k) (map fst datasetShuffled) (map (min 1 . max (-1)) vScaledDbl) -- scaled or unscaled ones?
     if realToFrac mse < mseMax
       then do
       liftIO $ putStrLn ("Final MSE for " ++ show tp ++ ": " ++ show mse)
-      void $ saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
+      void $ TF.saveModelWithLastIO netW -- Save model to ensure correct values when reading from another session
       return px
       else do
       when (maybe False ((== 0) . (`mod` 5)) mIteration) $ liftIO $ putStrLn $ "Current MSE for " ++ show tp ++ ": " ++ show mse
@@ -450,26 +451,26 @@ lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW _ tp _ _) = cached 
 lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
   | otherwise = cached (Target, tp, st) (return $ snd $ fromLastShapes netT $ runNetwork netT (toHeadShapes netT st))
-lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = cached (Worker, tp, st) (headLookupActions <$> forwardRun netW [st])
+lookupActionsNeuralNetworkUnscaled Worker st (TensorflowProxy _ netW _ tp _ _) = liftTf $ cached (Worker, tp, st) (headLookupActions <$> TF.forwardRun netW [st])
 lookupActionsNeuralNetworkUnscaled Target st px@(TensorflowProxy netT _ _ tp config _)
   | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
-  | otherwise = cached (Target, tp, st) (headLookupActions <$> forwardRun netT [st])
+  | otherwise = liftTf $ cached (Target, tp, st) (headLookupActions <$> TF.forwardRun netT [st])
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = V.slice (nr*nrActs) nrActs <$> cached (tp, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaled tp st px)
   where nrActs = px ^?! proxyNrActions
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 loadValuesIntoCache :: (MonadBorl' m) => [StateFeatures] -> Proxy -> m ()
-loadValuesIntoCache !sts (TensorflowProxy netT netW _ tp config _) = do
-  netWVals <- forwardRun netW sts
+loadValuesIntoCache !sts (TensorflowProxy netT netW _ tp config _) = liftTf $ do
+  netWVals <- TF.forwardRun netW sts
   zipWithM_ (\st val -> addCache (Worker, tp, st) val) sts netWVals
   unless (config ^. updateTargetInterval <= 1) $ do
-    netTVals <- forwardRun netT sts
+    netTVals <- TF.forwardRun netT sts
     zipWithM_ (\st val -> addCache (Target, tp, st) val) sts netTVals
-loadValuesIntoCache sts (CombinedProxy (TensorflowProxy netT netW _ _ config _) _ _) = do
-  netWVals <- forwardRun netW sts
+loadValuesIntoCache sts (CombinedProxy (TensorflowProxy netT netW _ _ config _) _ _) = liftTf $ do
+  netWVals <- TF.forwardRun netW sts
   zipWithM_ (\st val -> addCache (Worker, CombinedUnichain, st) val) sts netWVals
   unless (config ^. updateTargetInterval <= 1) $ do
-    netTVals <- forwardRun netT sts
+    netTVals <- TF.forwardRun netT sts
     zipWithM_ (\st val -> addCache (Target, CombinedUnichain, st) val) sts netTVals
 loadValuesIntoCache _ _ = return () -- only a single row allowed in grenade
 

@@ -21,8 +21,8 @@ import qualified Data.Vector           as VB
 import qualified Data.Vector.Mutable   as VM
 import qualified Data.Vector.Storable  as V
 import           GHC.Generics
+import qualified HighLevelTensorflow   as TF
 import           System.IO.Unsafe
-import qualified TensorFlow.Core       as TF
 
 import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
@@ -66,7 +66,7 @@ toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par _ _ alg obj v rew ps
   BORL _ _ s workers _ t eNr par _ future alg obj v rew psis prS <- saveTensorflowModels borl
   return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
@@ -77,7 +77,7 @@ fromSerialisableWith ::
   -> ActionFilter s
   -> Decay
   -> FeatureExtractor s
-  -> ModelBuilderFunction
+  -> TF.ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
 fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t e par future alg obj lastV rew psis prS) = do
@@ -91,7 +91,7 @@ fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t
       borl' =
         flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) $
         flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) borl
-  restoreTensorflowModels False borl'
+  liftTf $ restoreTensorflowModels False borl'
   return borl'
 
 

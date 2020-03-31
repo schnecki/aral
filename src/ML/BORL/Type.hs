@@ -96,8 +96,8 @@ import qualified Data.Vector.Storable         as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
-import qualified TensorFlow.Core              as TF
-import qualified TensorFlow.Session           as TF
+import qualified HighLevelTensorflow          as TF
+
 
 import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
@@ -243,16 +243,18 @@ mkUnichainTabular alg initialState ftExt as asFilter params decayFun initVals =
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
 
-mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> V.Vector Float -> TF.SessionT IO TensorflowModel -> m TensorflowModel'
-mkTensorflowModel as tp scope netInpInitState modelBuilderFun = do
-  !model <- prependName (proxyTypeName tp <> scope) <$> liftTensorflow modelBuilderFun
-  saveModel
-    (TensorflowModel' model Nothing (Just (netInpInitState, V.replicate (length as) 0)) modelBuilderFun)
-    [netInpInitState]
-    [V.replicate (length as) 0]
+mkTensorflowModel :: (MonadBorl' m) => [a2] -> ProxyType -> T.Text -> V.Vector Float -> TF.SessionT IO TF.TensorflowModel -> m TensorflowModel'
+mkTensorflowModel as tp scope netInpInitState modelBuilderFun =
+  liftTf $ do
+    !model <- prependName (proxyTypeName tp <> scope) <$> modelBuilderFun
+    TF.saveModel (TensorflowModel' model Nothing (Just (netInpInitState, V.replicate (length as) 0)) modelBuilderFun) [netInpInitState] [V.replicate (length as) 0]
   where
     prependName txt model =
-      model {inputLayerName = txt <> "/" <> inputLayerName model, outputLayerName = txt <> "/" <> outputLayerName model, labelLayerName = txt <> "/" <> labelLayerName model}
+      model
+        { TF.inputLayerName = txt <> "/" <> TF.inputLayerName model
+        , TF.outputLayerName = txt <> "/" <> TF.outputLayerName model
+        , TF.labelLayerName = txt <> "/" <> TF.labelLayerName model
+        }
 
 
 mkUnichainTensorflowM ::
@@ -264,7 +266,7 @@ mkUnichainTensorflowM ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> ModelBuilderFunction
+  -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
@@ -284,7 +286,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
     then do
       r0 <- liftIO $ nnSA R0Table 4
       r1 <- liftIO $ nnSA VTable 0
-      buildTensorflowModel (r0 ^?! proxyTFTarget)
+      liftTf $ TF.buildTensorflowModel (r0 ^?! proxyTFTarget)
       return $
         force $
         BORL
@@ -311,7 +313,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       r1 <- liftIO $ nnSA R1Table 6
       psiV <- liftIO $ nnSA PsiVTable 8
       psiW <- liftIO $ nnSA PsiWTable 10
-      buildTensorflowModel (v ^?! proxyTFTarget)
+      liftTf $ TF.buildTensorflowModel (v ^?! proxyTFTarget)
       return $
         force $
         BORL
@@ -346,7 +348,7 @@ mkUnichainTensorflowCombinedNetM ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> ModelBuilderFunction
+  -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> m (BORL s)
@@ -367,7 +369,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
   proxy <- liftIO $ nnSA nnType 0
   repMem <- liftIO $ mkReplayMemories as nnConfig
   workers <- liftIO $ mkWorkers initialState as nnConfig
-  buildTensorflowModel (proxy ^?! proxyTFTarget)
+  liftTf $ TF.buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
     BORL
@@ -403,7 +405,7 @@ mkUnichainTensorflow ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> ModelBuilderFunction
+  -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
@@ -421,7 +423,7 @@ mkUnichainTensorflowCombinedNet ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> ModelBuilderFunction
+  -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
@@ -653,6 +655,7 @@ mkWorkers state as nnConfig = do
 
 
 -------------------- Helpers --------------------
+
 
 -- | Checks the neural network setup and throws an error in case of a faulty number of input or output nodes.
 checkGrenade ::

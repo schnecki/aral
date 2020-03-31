@@ -51,16 +51,7 @@ dependencies:
   - temporary
   - mtl
   - unix
-  - tensorflow
-  - tensorflow-core-ops
-  # - tensorflow-logging
-  - tensorflow-mnist-input-data
-  - tensorflow-mnist
-  # - tensorflow-opgen
-  - tensorflow-ops
-  - tensorflow-proto
-  # - tensorflow-records-conduit
-  # - tensorflow-records
+  - high-level-tensorflow
   - HUnit
   - cereal
   - cereal-text
@@ -226,16 +217,6 @@ executables:
     - borl
     - experimenter
     - hmatrix-glpk
-
-
-  tensorflow-test:
-    main:                Tensorflow.hs
-    source-dirs:         examples
-    other-modules: []
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
 
 
 tests:

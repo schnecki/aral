@@ -26,38 +26,20 @@
 module Main where
 
 
-import           Control.DeepSeq        (NFData)
+import           Control.DeepSeq      (NFData)
 import           Control.Lens
-import           Data.Int               (Int64)
-import           Data.List              (genericLength)
-import           Data.Text              (Text)
-import qualified Data.Vector.Storable   as V
-import           GHC.Exts               (fromList)
+import           Data.Int             (Int64)
+import           Data.List            (genericLength)
+import           Data.Text            (Text)
+import qualified Data.Vector.Storable as V
+import           GHC.Exts             (fromList)
 import           GHC.Generics
-import           Grenade                hiding (train)
+import           Grenade              hiding (train)
+
+import qualified HighLevelTensorflow  as TF
 
 
-import qualified TensorFlow.Build       as TF (addNewOp, evalBuildT, explicitName, opDef,
-                                               opDefWithName, opType, runBuildT, summaries)
-import qualified TensorFlow.Core        as TF hiding (value)
-import qualified TensorFlow.GenOps.Core as TF (abs, add, approximateEqual,
-                                               approximateEqual, assign, cast,
-                                               getSessionHandle, getSessionTensor,
-                                               identity', lessEqual, matMul, mul,
-                                               readerSerializeState, relu', shape, square,
-                                               sub, tanh, tanh', truncatedNormal)
-import qualified TensorFlow.Minimize    as TF
-import qualified TensorFlow.Ops         as TF (initializedVariable, initializedVariable',
-                                               placeholder, placeholder', reduceMean,
-                                               reduceSum, restore, save, scalar, vector,
-                                               zeroInitializedVariable,
-                                               zeroInitializedVariable')
-import qualified TensorFlow.Tensor      as TF (Ref (..), collectAllSummaries,
-                                               tensorNodeName, tensorRefFromName,
-                                               tensorValueFromName)
-
-
-import           ML.BORL                hiding (actionFilter)
+import           ML.BORL              hiding (actionFilter)
 import           SolveLp
 
 import           Helper
@@ -101,11 +83,14 @@ numActions = genericLength actions
 numInputs :: Int64
 numInputs = fromIntegral $ V.length $ netInp initState
 
-modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder :: TF.ModelBuilderFunction
 modelBuilder cols =
-  buildModel $
-  inputLayer1D numInputs >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [numActions, cols] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  TF.buildModel $
+  TF.inputLayer1D numInputs >>
+  TF.fullyConnected [20] TF.relu' >>
+  TF.fullyConnected [10] TF.relu' >>
+  TF.fullyConnected [numActions, cols] TF.tanh' >>
+  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 instance RewardFuture St where
   type StoreType St = ()

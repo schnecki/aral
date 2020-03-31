@@ -38,33 +38,7 @@ import           Grenade
 import           System.IO
 import           System.Random
 
-
-import qualified TensorFlow.Build         as TF (addNewOp, evalBuildT, explicitName, opDef,
-                                                 opDefWithName, opType, runBuildT,
-                                                 summaries)
-import qualified TensorFlow.Core          as TF hiding (value)
--- import qualified TensorFlow.GenOps.Core                         as TF (square)
-import qualified TensorFlow.GenOps.Core   as TF (abs, add, approximateEqual,
-                                                 approximateEqual, assign, cast,
-                                                 getSessionHandle, getSessionTensor,
-                                                 identity', lessEqual, matMul, mul,
-                                                 readerSerializeState, relu, relu', shape,
-                                                 square, sub, tanh, tanh', truncatedNormal)
-import qualified TensorFlow.Minimize      as TF
--- import qualified TensorFlow.Ops                                 as TF (abs, add, assign,
---                                                                        cast, identity',
---                                                                        matMul, mul, relu,
---                                                                        sub,
---                                                                        truncatedNormal)
-import qualified TensorFlow.Ops           as TF (initializedVariable, initializedVariable',
-                                                 placeholder, placeholder', reduceMean,
-                                                 reduceSum, restore, save, scalar, vector,
-                                                 zeroInitializedVariable,
-                                                 zeroInitializedVariable')
-import qualified TensorFlow.Session       as TF
-import qualified TensorFlow.Tensor        as TF (Ref (..), collectAllSummaries,
-                                                 tensorNodeName, tensorRefFromName,
-                                                 tensorValueFromName)
+import qualified HighLevelTensorflow      as TF
 
 import           Debug.Trace
 
@@ -401,11 +375,15 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
 
-modelBuilder :: (TF.MonadBuild m) => Int64 -> m TensorflowModel
+modelBuilder :: (TF.MonadBuild m) => Int64 -> m TF.TensorflowModel
 modelBuilder colOut =
-  buildModel $
-  inputLayer1D inpLen >> fullyConnected [20] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [10] TF.relu' >> fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  TF.buildModel $
+  TF.inputLayer1D inpLen >>
+  TF.fullyConnected [20] TF.relu' >>
+  TF.fullyConnected [10] TF.relu' >>
+  TF.fullyConnected [10] TF.relu' >>
+  TF.fullyConnected [genericLength actions, colOut] TF.tanh' >>
+  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = fromIntegral $ V.length $ netInp initState
 

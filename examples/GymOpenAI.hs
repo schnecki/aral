@@ -39,9 +39,7 @@ import           ML.BORL
 import           System.Environment      (getArgs)
 import           System.IO.Unsafe        (unsafePerformIO)
 
-import qualified TensorFlow.Core         as TF hiding (value)
-import qualified TensorFlow.GenOps.Core  as TF (relu', tanh')
-import qualified TensorFlow.Minimize     as TF
+import qualified HighLevelTensorflow     as TF
 
 import           ML.Gym
 
@@ -75,13 +73,16 @@ type NN = Network
           '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
 
 
-modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TensorflowModel
+modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TF.TensorflowModel
 modelBuilder gym initSt nrActions outCols =
-  buildModel $
-  inputLayer1D inpLen >> fullyConnected [10 * inpLen] TF.relu' >> fullyConnected [5 * inpLen] TF.relu' >> fullyConnected [5 * inpLen] TF.relu' >>
-  fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
-  -- trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  trainingByGradientDescent 0.01
+  TF.buildModel $
+  TF.inputLayer1D inpLen >>
+  TF.fullyConnected [10 * inpLen] TF.relu' >>
+  TF.fullyConnected [5 * inpLen] TF.relu' >>
+  TF.fullyConnected [5 * inpLen] TF.relu' >>
+  TF.fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
+  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
+  -- TF.trainingByGradientDescent 0.01
   where
     inpLen = fromIntegral $ V.length $ netInp False gym initSt
 

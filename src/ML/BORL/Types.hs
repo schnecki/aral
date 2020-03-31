@@ -12,8 +12,7 @@ import           Control.Monad.IO.Unlift
 import           Control.Monad.Trans.Class (lift)
 import qualified Data.Vector               as VB
 import qualified Data.Vector.Storable      as V
-import qualified TensorFlow.Core           as TF
-import qualified TensorFlow.Session        as TF
+import qualified HighLevelTensorflow       as TF
 
 type FilteredActionIndices = V.Vector ActionIndex
 type ActionIndex = Int
