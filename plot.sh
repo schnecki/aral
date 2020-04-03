@@ -37,3 +37,4 @@ fi
 
 # watch 'tail -n 10000 queueLength | awk "{ sum += \$1; n++ } END { if (n > 0) print sum / n ; }"'
 # watch 'tail -n 1000 episodeLength | awk "{ sum += \$2; n++ } END { if (n > 0) print sum / n ; }"'
+# watch 'pr -m -t reward costs | tail -n 1000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"; pr -m -t reward costs | tail -n 10000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"; pr -m -t reward costs | tail -n 100000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"'

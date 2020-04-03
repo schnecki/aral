@@ -120,6 +120,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       dltW = getExpSmthParam borl w delta
       gamR0 = getExpSmthParam borl r0 gamma
       gamR1 = getExpSmthParam borl r1 gamma
+      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
@@ -182,7 +183,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -231,8 +232,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-      alp = getExpSmthParam borl rho alpha
+  let alp = getExpSmthParam borl rho alpha
+      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0
@@ -263,7 +264,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
   let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga1 * r1StateNext - rhoVal')
   return $
@@ -284,10 +285,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getEpisodeEnd = episodeEnd
       }
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) = do
-  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let -- learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
-      period = borl ^. t
-      alp = getExpSmthParam borl rho alpha
+  let alp = getExpSmthParam borl rho alpha
+      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       bta = getExpSmthParam borl v beta
   let epsEnd
         | episodeEnd = 0
@@ -320,7 +319,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             ByMovAvg _ -> rhoState
             Fixed x    -> x
             _          -> (1 - alp) * rhoVal + alp * rhoState
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - expSmthPsi / 50) * rhoMinimumState + expSmthPsi / 50 * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
@@ -342,8 +341,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       }
 
 mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) = do
-  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-      gam = getExpSmthParam borl r1 gamma
+  let gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
