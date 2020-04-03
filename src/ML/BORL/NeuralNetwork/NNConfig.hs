@@ -20,7 +20,7 @@ import           ML.BORL.Types
 data ReplayMemoryStrategy
   = ReplayMemorySingle          -- ^ Use a single replay memory and store all experiences there.
   | ReplayMemoryPerAction       -- ^ Split experiences according to the chosen action and select `ceiling(batchsize/#actions)` experiences of each action.
-  deriving (Show, Eq, Generic, NFData, Serialize)
+  deriving (Show, Eq, Ord, Generic, NFData, Serialize)
 
 ------------------------------ NN Config ------------------------------
 
