@@ -1,10 +1,10 @@
 name:                borl
-version:             0.1.0.1
+version:             0.2.0.0
 github:              "github.com/schnecki"
 license:             AllRightsReserved
 author:              "Manuel Schneckenreither"
 maintainer:          "manuel.schneckenreither@uibk.ac.at"
-copyright:           "2018 Manuel Schneckenreither"
+copyright:           "2020 Manuel Schneckenreither"
 
 extra-source-files:
 - README.md
