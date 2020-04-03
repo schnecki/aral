@@ -61,13 +61,10 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha              = 0.01
-    , _alphaANN           = 0.5
+    , _alphaRhoMin = 2e-5
     , _beta               = 0.01
-    , _betaANN            = 1
     , _delta              = 0.01
-    , _deltaANN           = 1
     , _gamma              = 0.01
-    , _gammaANN           = 1
     , _epsilon            = 0.1
     , _explorationStrategy = EpsilonGreedy
     , _exploration        = 1.0
@@ -83,6 +80,7 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 0) 0.75 50000
+      , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-3) 0.75 50000
       , _delta            = ExponentialDecay (Just 1e-3) 0.75 50000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.75 50000
@@ -92,11 +90,6 @@ decay =
       , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 0.30) 0.75 150000
       , _learnRandomAbove = NoDecay
-      -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.01) 0.75 50000
-      , _betaANN          = ExponentialDecay (Just 0.01) 0.75 50000
-      , _deltaANN         = ExponentialDecay (Just 0.01) 0.75 50000
-      , _gammaANN         = ExponentialDecay (Just 0.01) 0.75 50000
       }
 
 

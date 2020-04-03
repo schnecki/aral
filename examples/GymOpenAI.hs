@@ -101,8 +101,8 @@ nnConfig gym maxRew =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 15000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
-    , _trainMSEMax = Nothing -- Just 0.05
-    , _setExpSmoothParamsTo1 = False
+
+
     , _workersMinExploration = []
     }
   where
@@ -281,6 +281,7 @@ params :: Gym -> Float -> ParameterInitValues
 params gym maxRew =
   Parameters
     { _alpha               = 0.03
+    , _alphaRhoMin = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
@@ -292,10 +293,8 @@ params gym maxRew =
     , _xi                  = 0.005
     , _disableAllLearning  = False
     -- ANN
-    , _alphaANN            = 0.5 -- only used for multichain
-    , _betaANN             = 1.0
-    , _deltaANN            = 1.0
-    , _gammaANN            = 1.0
+
+
     }
   where eps | name gym == "MountainCar-v0" = 0.25
             | otherwise = min 1.0 $ max 0.05 $ 0.005 * maxRew
@@ -305,6 +304,7 @@ decay gym =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 30000
+      , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-2) 0.5 50000
       , _delta            = ExponentialDecay (Just 1e-2) 0.5 150000
       , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000
@@ -314,11 +314,6 @@ decay gym =
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 0.03) 0.05 15000
       , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
       , _learnRandomAbove = NoDecay
-      -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.15) 0.75 150000
-      , _betaANN          = ExponentialDecay (Just 0.15) 0.75 150000
-      , _deltaANN         = ExponentialDecay (Just 0.15) 0.75 150000
-      , _gammaANN         = ExponentialDecay (Just 0.15) 0.75 150000
       }
   where minExp | name gym == "MountainCar-v0" = 0.001
                | otherwise = 0.01

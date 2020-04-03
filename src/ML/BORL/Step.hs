@@ -257,9 +257,7 @@ writeDebugFiles borl = do
         borl' <-
           if isAnn
             then return borl
-            else stepsM
-                   (setAllProxies (proxyNNConfig . trainMSEMax) Nothing $ setAllProxies (proxyNNConfig . replayMemoryMaxSize) 1000 $ set t 1 borl)
-                   debugStepsCount -- run steps to fill the table with (hopefully) all states
+            else stepsM (setAllProxies (proxyNNConfig . replayMemoryMaxSize) 1000 $ set t 1 borl) debugStepsCount -- run steps to fill the table with (hopefully) all states
         let stateFeats
               | isDqn = getStateFeatList (borl' ^. proxies . r1)
               | otherwise = getStateFeatList (borl' ^. proxies . v)

@@ -155,8 +155,8 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
-    , _trainMSEMax = Nothing -- Just 0.03
-    , _setExpSmoothParamsTo1 = True
+
+
     , _workersMinExploration = []
     }
 
@@ -166,13 +166,10 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha = 0.005
-    , _alphaANN = 1
+    , _alphaRhoMin = 2e-5
     , _beta = 0.01
-    , _betaANN = 1
     , _delta = 0.01
-    , _deltaANN = 1
     , _gamma = 0.01
-    , _gammaANN = 1
     , _epsilon = 0.1
     , _explorationStrategy = EpsilonGreedy
     , _exploration = 1.0
@@ -188,6 +185,7 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-3) 0.05 100000
+      , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-3) 0.05 100000
       , _delta            = ExponentialDecay (Just 1e-3) 0.05 100000
       , _gamma            = ExponentialDecay (Just 1e-2) 0.05 100000
@@ -197,11 +195,6 @@ decay =
       , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
       , _learnRandomAbove = NoDecay
-      -- ANN
-      , _alphaANN         = ExponentialDecay (Just 0.3) 0.75 150000
-      , _betaANN          = ExponentialDecay (Just 0.3) 0.75 150000
-      , _deltaANN         = ExponentialDecay (Just 0.3) 0.75 150000
-      , _gammaANN         = ExponentialDecay (Just 0.3) 0.75 150000
       }
 
 

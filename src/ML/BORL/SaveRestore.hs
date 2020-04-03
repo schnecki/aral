@@ -25,7 +25,7 @@ saveTensorflowModels borl = liftTf $ do
   where
     saveProxy px =
       case px of
-        TensorflowProxy netT netW _ _ _ _ -> TF.saveModelWithLastIO netT >> TF.saveModelWithLastIO netW >> return ()
+        TensorflowProxy netT netW _ _ _ -> TF.saveModelWithLastIO netT >> TF.saveModelWithLastIO netW >> return ()
         _ -> return ()
 
 type BuildModels = Bool
@@ -37,9 +37,9 @@ restoreTensorflowModels build borl = liftTf $ do
   where
     restoreProxy px =
       case px of
-        TensorflowProxy netT netW _ _ _ _ -> TF.restoreModelWithLastIO netT >> TF.restoreModelWithLastIO netW >> return ()
+        TensorflowProxy netT netW _ _ _ -> TF.restoreModelWithLastIO netT >> TF.restoreModelWithLastIO netW >> return ()
         _ -> return ()
     buildModels =
       case find isTensorflow (allProxies $ borl ^. proxies) of
-        Just (TensorflowProxy netT _ _ _ _ _) -> TF.buildTensorflowModel netT
-        _                                     -> return ()
+        Just (TensorflowProxy netT _ _ _ _) -> TF.buildTensorflowModel netT
+        _                                   -> return ()

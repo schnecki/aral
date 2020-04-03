@@ -116,15 +116,7 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
   let subPr
         | isCombinedProxy pr = pr ^?! proxySub
         | otherwise = pr
-  if borl ^. t <= pr ^?! proxyNNConfig . replayMemoryMaxSize && isJust (pr ^?! proxyNNConfig . trainMSEMax)
-    then do
-      let inp = map fst tbl
-      let mkVals x = do
-            val <- unscaleValue (getMinMaxVal pr) <$> lookupNeuralNetwork Worker x (set proxyType (NoScaling $ subPr ^?! proxyType) subPr)
-            modifier Worker x val
-      workerVals <- mapM mkVals inp
-      return $ finalize $ zipWith (\((feat, actIdx), tblV) workerV -> (feat, ([(actIdx, tblV)], [(actIdx, workerV)]))) tbl workerVals
-    else finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
+  finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
   where
     finalize = map (first $ prettyStateActionEntry borl prettyState prettyActionIdx)
     mkModification (inp, (xsT, xsW)) = do
@@ -133,11 +125,8 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
       return (inp, (xsT', xsW'))
     tbl =
       case pr of
-        P.Table t _                   -> M.toList t
-        P.Grenade _ _ p _ _ _         -> M.toList p
-        P.TensorflowProxy _ _ p _ _ _ -> M.toList p
-        P.CombinedProxy p _ _         -> M.toList (p ^?! proxyNNStartup)
-        _                             -> error "should not happen"
+        P.Table t _ -> M.toList t
+        _           -> error "should not happen"
 
 prettyStateActionEntry :: BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
 prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
@@ -159,24 +148,9 @@ prettyTablesState ::
   -> P.Proxy
   -> m Doc
 prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
-  rows1 <- prettyTableRows borl p1 pIdx noMod (if fromTable then tbl m1 else m1)
-  rows2 <- prettyTableRows borl p2 pIdx modifier2 (if fromTable then tbl m2 else m2)
+  rows1 <- prettyTableRows borl p1 pIdx noMod m1
+  rows2 <- prettyTableRows borl p2 pIdx modifier2 m2
   return $ vcat $ zipWith (\x y -> x $$ nest nestCols y) rows1 rows2
-  where fromTable = period < fromIntegral memSize
-        period = borl ^. t
-        memSize = case m1 of
-          P.Grenade _ _ _ _ cfg _         | isJust (cfg ^?! trainMSEMax) -> cfg ^?! replayMemoryMaxSize
-          P.TensorflowProxy _ _ _ _ cfg _ | isJust (cfg ^?! trainMSEMax) -> cfg ^?! replayMemoryMaxSize
-          P.CombinedProxy{}               | isJust (m1 ^?! proxyNNConfig. trainMSEMax) -> m1 ^?! proxyNNConfig.replayMemoryMaxSize
-          _                       -> -1
-        tbl px = case px of
-          p@P.Table{}                   -> p
-          P.Grenade _ _ p _ _ _         -> P.Table p 0
-          P.TensorflowProxy _ _ p _ _ _ -> P.Table p 0
-          P.CombinedProxy p nr _        -> P.Table (M.filterWithKey (\(_,aIdx) _ -> aIdx >= minKey && aIdx <= maxKey) (p ^?! proxyNNStartup)) 0
-            where nrActs = p ^?! proxyNrActions
-                  minKey = nr * nrActs
-                  maxKey = minKey + nrActs - 1
 
 prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRefState) =
@@ -269,34 +243,31 @@ prettyBORLHead' printRho prettyStateFun borl = do
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
   let prettyRhoVal =
-        case borl ^. proxies . rho of
-          Scalar val -> text "Rho" <> colon $$ nest nestCols (printFloatWith 8 val)
+        case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
+          (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatWith 8 val <> text "/" <> printFloatWith 8 valRhoMin)
           _          -> empty
-  let getExpSmthParam decayed p paramANN param
-        | isANN && useOne = 1
-        | decayed && isANN = params' ^. paramANN
-        | decayed && otherwise = params' ^. param
-        | isANN = borl ^. parameters . paramANN
+  let getExpSmthParam decayed p param
+        | isANN = 1
+        | decayed = params' ^. param
         | otherwise = borl ^. parameters . param
         where
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
-          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
           px = borl ^. proxies . p
   return $ text "\n" $+$
     text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$
     maybe mempty (vcat . map (\(wId,st) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text (show st))) . zip [1..] . view workersS) (borl ^. workers)$+$
-    text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$ text "Alpha" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ getExpSmthParam True rho alphaANN alpha) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alphaANN alpha)) $+$
+    text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
+    text "Alpha/AlphaRhoMin" <> colon $$
+    nest nestCols (printFloatWith 8 ( getExpSmthParam True rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam False rhoMinimum alphaRhoMin)) $+$
     algDoc
-      (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v betaANN beta) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v betaANN beta))) $+$
+      (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v beta) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v beta))) $+$
     algDoc
-      (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w deltaANN delta) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w deltaANN delta))) $+$
-    (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gammaANN gamma)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gammaANN gamma)) $+$
+      (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w delta) <+>
+       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w delta))) $+$
+    (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gamma)) <+>
+    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gamma)) $+$
     text "Epsilon" <>
     colon $$
     nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
@@ -403,15 +374,15 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+> maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
-    textReplayMemoryType ReplayMemoriesUnified {} = text " unified replay memory"
+    textReplayMemoryType ReplayMemoriesUnified {} = text "unified replay memory"
     textReplayMemoryType mem@ReplayMemoriesPerActions{} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {} -> empty
-        P.Grenade _ _ _ _ conf _ -> textGrenadeConf conf
-        P.TensorflowProxy _ _ _ _ conf _ -> textTensorflow conf
-        P.CombinedProxy (P.TensorflowProxy _ _ _ _ conf _) _ _ -> textTensorflow conf
-        P.CombinedProxy (P.Grenade _ _ _ _ conf _) _ _ -> textGrenadeConf conf
+        P.Grenade _ _ _ conf _ -> textGrenadeConf conf
+        P.TensorflowProxy _ _ _ conf _ -> textTensorflow conf
+        P.CombinedProxy (P.TensorflowProxy _ _ _ conf _) _ _ -> textTensorflow conf
+        P.CombinedProxy (P.Grenade _ _ _ conf _) _ _ -> textGrenadeConf conf
         _ -> error "nnLearningParams in Pretty.hs"
       where
         textGrenadeConf conf =

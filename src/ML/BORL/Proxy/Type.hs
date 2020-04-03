@@ -17,7 +17,6 @@ module ML.BORL.Proxy.Type
   , proxyDefault
   , proxyTFTarget
   , proxyTFWorker
-  , proxyNNStartup
   , proxyType
   , proxyNNConfig
   , proxyNrActions
@@ -86,7 +85,6 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)
-                , _proxyNNStartup :: !(M.Map (StateFeatures, ActionIndex) Float)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
@@ -94,7 +92,6 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
              | TensorflowProxy  -- ^ Use Tensorflow neural networks.
                 { _proxyTFTarget  :: !TensorflowModel'
                 , _proxyTFWorker  :: !TensorflowModel'
-                , _proxyNNStartup :: !(M.Map (StateFeatures, ActionIndex) Float)
                 , _proxyType      :: !ProxyType
                 , _proxyNNConfig  :: !NNConfig
                 , _proxyNrActions :: !Int
@@ -118,34 +115,28 @@ proxyDefault f (Table m d) = Table m <$> f d
 proxyDefault _ p           = pure p
 
 proxyTFTarget :: Traversal' Proxy TensorflowModel'
-proxyTFTarget f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
+proxyTFTarget f (TensorflowProxy t w tp conf acts) = (\t' -> TensorflowProxy t' w tp conf acts) <$> f t
 proxyTFTarget _ p = pure p
 
 proxyTFWorker :: Traversal' Proxy TensorflowModel'
-proxyTFWorker f (TensorflowProxy t w s tp conf acts) = (\t' -> TensorflowProxy t' w s tp conf acts) <$> f t
+proxyTFWorker f (TensorflowProxy t w tp conf acts) = (\t' -> TensorflowProxy t' w tp conf acts) <$> f t
 proxyTFWorker _ p = pure p
 
-proxyNNStartup :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) Float)
-proxyNNStartup f (Grenade t w s tp conf acts) = (\s' -> Grenade t w s' tp conf acts) <$> f s
-proxyNNStartup f (TensorflowProxy t w s tp conf acts) = (\s' -> TensorflowProxy t w s' tp conf acts) <$> f s
-proxyNNStartup f (CombinedProxy p c out) = (\s' -> CombinedProxy (p { _proxyNNStartup = s'}) c out) <$> f (_proxyNNStartup p)
-proxyNNStartup  _ p = pure p
-
 proxyType :: Traversal' Proxy ProxyType
-proxyType f (Grenade t w s tp conf acts) = (\tp' -> Grenade t w s tp' conf acts) <$> f tp
-proxyType f (TensorflowProxy t w s tp conf acts) = (\tp' -> TensorflowProxy t w s tp' conf acts) <$> f tp
+proxyType f (Grenade t w tp conf acts) = (\tp' -> Grenade t w tp' conf acts) <$> f tp
+proxyType f (TensorflowProxy t w tp conf acts) = (\tp' -> TensorflowProxy t w tp' conf acts) <$> f tp
 proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy (p { _proxyType = tp'}) c out) <$> f (_proxyType p)
 proxyType  _ p = pure p
 
 proxyNNConfig :: Traversal' Proxy NNConfig
-proxyNNConfig f (Grenade t w s tp conf acts) = (\conf' -> Grenade t w s tp conf' acts) <$> f conf
-proxyNNConfig f (TensorflowProxy t w s tp conf acts) = (\conf' -> TensorflowProxy t w s tp conf' acts) <$> f conf
+proxyNNConfig f (Grenade t w tp conf acts) = (\conf' -> Grenade t w tp conf' acts) <$> f conf
+proxyNNConfig f (TensorflowProxy t w tp conf acts) = (\conf' -> TensorflowProxy t w tp conf' acts) <$> f conf
 proxyNNConfig f (CombinedProxy p c out) = (\conf' -> CombinedProxy (p { _proxyNNConfig = conf'}) c out) <$> f (_proxyNNConfig p)
 proxyNNConfig  _ p = pure p
 
 proxyNrActions :: Traversal' Proxy Int
-proxyNrActions f (Grenade t w s tp conf acts) = (\acts' -> Grenade t w s tp conf acts') <$> f acts
-proxyNrActions f (TensorflowProxy t w s tp conf acts) = (\acts' -> TensorflowProxy t w s tp conf acts') <$> f acts
+proxyNrActions f (Grenade t w tp conf acts) = (\acts' -> Grenade t w tp conf acts') <$> f acts
+proxyNrActions f (TensorflowProxy t w tp conf acts) = (\acts' -> TensorflowProxy t w tp conf acts') <$> f acts
 proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
 proxyNrActions  _ p = pure p
 
@@ -173,14 +164,14 @@ prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{} = "Scalar"
 prettyProxyType Table{} = "Tabular"
 prettyProxyType Grenade{} = "Grenade with SGD (+ momentum + l2) optimizer"
-prettyProxyType (TensorflowProxy _ w _ _ _ _) = "Tensorflow with " ++ show (map prettyOptimizerNames (optimizerVariables $ tensorflowModel w)) ++ " optimizer"
+prettyProxyType (TensorflowProxy _ w _ _ _) = "Tensorflow with " ++ show (map prettyOptimizerNames (optimizerVariables $ tensorflowModel w)) ++ " optimizer"
 prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
 
 
 instance NFData Proxy where
   rnf (Table x def)           = rnf x `seq` rnf def
-  rnf (Grenade t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
-  rnf (TensorflowProxy t w tab tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tab `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
+  rnf (Grenade t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
+  rnf (TensorflowProxy t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
   rnf (CombinedProxy p nr xs) = rnf p `seq` rnf nr `seq` rnf xs
 

@@ -100,10 +100,8 @@ instance Serialize ReplayMemories
 instance (Serialize s, RewardFuture s) => Serialize (Workers s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param workerMinExp) =
+  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
     put memSz >> put memStrat >> put batchSz >> put lp >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >>
-    put trainMax >>
-    put param >>
     put workerMinExp
   get = do
     memSz <- get
@@ -117,17 +115,15 @@ instance Serialize NNConfig where
     stabDec <- get
     upInt <- get
     upIntDec <- get
-    trainMax <- get
-    param <- get
     workerMinExp <- get
-    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec trainMax param workerMinExp
+    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
 
 
 instance Serialize Proxy where
   put (Scalar x) = put (0 :: Int) >> put x
   put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) m) >> put d
-  put (Grenade t w st tp conf nr) = put (2 :: Int) >> put t >> put w >> put (M.mapKeys (first V.toList) st) >> put tp >> put conf >> put nr
-  put (TensorflowProxy t w st tp conf nr) = put (3 :: Int) >> put t >> put w >> put (M.mapKeys (first V.toList) st) >> put tp >> put conf >> put nr
+  put (Grenade t w tp conf nr) = put (2 :: Int) >> put t >> put w >> put tp >> put conf >> put nr
+  put (TensorflowProxy t w tp conf nr) = put (3 :: Int) >> put t >> put w >> put tp >> put conf >> put nr
   get = do
     (c :: Int) <- get
     case c of
@@ -141,19 +137,17 @@ instance Serialize Proxy where
         -- do
         -- t <- get
         -- w <- get
-        -- st <- M.mapKeys (first V.fromList) <$> get
         -- tp <- get
         -- conf <- get
         -- nr <- get
-        -- return $ Grenade t w st tp conf nr
+        -- return $ Grenade t w tp conf nr
       3 -> do
         t <- get
         w <- get
-        st <- M.mapKeys (first V.fromList) <$> get
         tp <- get
         conf <- get
         nr <- get
-        return $ TensorflowProxy t w st tp conf nr
+        return $ TensorflowProxy t w tp conf nr
       _ -> error "Unknown constructor for proxy"
 
 -- ^ Replay Memory

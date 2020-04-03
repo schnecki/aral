@@ -23,13 +23,10 @@ type ParameterDecaySetting = Parameters DecaySetup
 -- Parameters
 data Parameters a = Parameters
   { _alpha               :: !a             -- ^ for rho value
-  , _alphaANN            :: !a             -- ^ for rho value when training the ANN (e.g. after filling the replay memory)
+  , _alphaRhoMin         :: !a             -- ^ Alpha for minimum rho value.
   , _beta                :: !a             -- ^ for V values
-  , _betaANN             :: !a             -- ^ for V value when training the ANN (e.g. after filling the replay memory)
   , _delta               :: !a             -- ^ for W values
-  , _deltaANN            :: !a             -- ^ for W value when training the ANN
   , _gamma               :: !a             -- ^ Gamma values for R0/R1.
-  , _gammaANN            :: !a             -- ^ Gamma values for R0/R1 when using the ANN.
   , _epsilon             :: !(InftyVector a) -- ^ for comparison between state values
   , _explorationStrategy :: ExplorationStrategy -- ^ Strategy for exploration.
   , _exploration         :: !a             -- ^ exploration rate

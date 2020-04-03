@@ -279,7 +279,7 @@ mkUnichainTensorflowM alg initialState ftExt as asFilter params decayFun modelBu
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
+        return $ TensorflowProxy nnT nnW tp nnConfig (length as)
   repMem <- liftIO $ mkReplayMemories as nnConfig
   workers <- liftIO $ mkWorkers initialState as nnConfig
   if isAlgDqnAvgRewardFree alg
@@ -365,7 +365,7 @@ mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decay
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW mempty tp nnConfig (length as)
+        return $ TensorflowProxy nnT nnW tp nnConfig (length as)
   proxy <- liftIO $ nnSA nnType 0
   repMem <- liftIO $ mkReplayMemories as nnConfig
   workers <- liftIO $ mkWorkers initialState as nnConfig
@@ -475,7 +475,7 @@ mkUnichainGrenade ::
   -> Maybe InitValues
   -> IO (BORL s)
 mkUnichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfig initValues = do
-  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nnSA tp = Grenade net net tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -524,7 +524,7 @@ mkUnichainGrenadeCombinedNet alg initialState ftExt as asFilter params decayFun 
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
-  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nnSA tp = Grenade net net tp nnConfig (length as)
   let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
   let nn = nnSA nnType
@@ -577,7 +577,7 @@ mkMultichainGrenade ::
   -> NNConfig
   -> IO (BORL s)
 mkMultichainGrenade alg initialState ftExt as asFilter params decayFun net nnConfig = do
-  let nnSA tp = Grenade net net mempty tp nnConfig (length as)
+  let nnSA tp = Grenade net net tp nnConfig (length as)
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable

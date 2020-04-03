@@ -67,8 +67,8 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
-    , _trainMSEMax = Nothing -- Just 0.03
-    , _setExpSmoothParamsTo1 = True
+
+
     , _workersMinExploration = []
     }
 
@@ -78,6 +78,7 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha               = 0.01
+    , _alphaRhoMin = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
@@ -88,11 +89,7 @@ params =
     , _zeta                = 0.03
     , _xi                  = 0.005
     , _disableAllLearning  = False
-    -- ANN
-    , _alphaANN            = 0.5 -- only used for multichain
-    , _betaANN             = 0.5
-    , _deltaANN            = 0.5
-    , _gammaANN            = 0.5
+
     }
 
 -- | Decay function of parameters.
@@ -101,6 +98,7 @@ decay =
   decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 50000
       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 50000 -- 1e-3
@@ -110,11 +108,6 @@ decay =
       , _epsilon          = [NoDecay]
       , _exploration      = ExponentialDecay (Just 0.01) 0.50 30000
       , _learnRandomAbove = NoDecay
-      -- ANN
-      , _alphaANN         = ExponentialDecay Nothing 0.75 150000
-      , _betaANN          = ExponentialDecay Nothing 0.75 150000
-      , _deltaANN         = ExponentialDecay Nothing 0.75 150000
-      , _gammaANN         = ExponentialDecay Nothing 0.75 150000
       }
 
 

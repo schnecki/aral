@@ -92,6 +92,15 @@ rhoMinimumState' borl rhoVal' =
       | rhoVal' >= 0 -> min (rhoVal' + 2) (1.025 * rhoVal')
       | otherwise -> min (rhoVal' + 2) (0.975 * rhoVal')
 
+getExpSmthParam :: BORL s -> ((Proxy -> Const Proxy Proxy) -> Proxies -> Const Proxy Proxies) -> Getting Float (Parameters Float) Float -> Float
+getExpSmthParam borl p param
+  | isANN = 1
+  | otherwise = params' ^. param
+  where
+    isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
+    px = borl ^. proxies . p
+    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+
 mkCalculation' ::
      (MonadBorl' m)
   => BORL s
@@ -106,19 +115,11 @@ mkCalculation' ::
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let isRefState = mRefState == Just (state, aNr)
-  let getExpSmthParam p paramANN param
-        | isANN && useOne = 1
-        | isANN = params' ^. paramANN
-        | otherwise = params' ^. param
-        where
-          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
-          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
-          px = borl ^. proxies . p
-  let alp = getExpSmthParam rho alphaANN alpha
-      bta = getExpSmthParam v betaANN beta
-      dltW = getExpSmthParam w deltaANN delta
-      gamR0 = getExpSmthParam r0 gammaANN gamma
-      gamR1 = getExpSmthParam r1 gammaANN gamma
+  let alp = getExpSmthParam borl rho alpha
+      bta = getExpSmthParam borl v beta
+      dltW = getExpSmthParam borl w delta
+      gamR0 = getExpSmthParam borl r0 gamma
+      gamR1 = getExpSmthParam borl r1 gamma
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
@@ -231,16 +232,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let getExpSmthParam p paramANN param
-        | isANN && useOne = 1
-        | isANN = params' ^. paramANN
-        | otherwise = params' ^. param
-        where
-          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
-          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
-          px = borl ^. proxies . p
-      alp = getExpSmthParam rho alphaANN alpha
-      gam = getExpSmthParam r1 gammaANN gamma
+      alp = getExpSmthParam borl rho alpha
+      gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -294,16 +287,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
   let -- learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
       period = borl ^. t
-  let getExpSmthParam p paramANN param
-        | isANN && useOne = 1
-        | isANN = params' ^. paramANN
-        | otherwise = params' ^. param
-        where
-          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
-          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
-          px = borl ^. proxies . p
-      alp = getExpSmthParam rho alphaANN alpha
-      bta = getExpSmthParam v betaANN beta
+      alp = getExpSmthParam borl rho alpha
+      bta = getExpSmthParam borl v beta
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -358,15 +343,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
 
 mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) = do
   let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
-  let getExpSmthParam p paramANN param
-        | isANN && useOne = 1
-        | isANN = params' ^. paramANN
-        | otherwise = params' ^. param
-        where
-          isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
-          useOne = px ^?! proxyNNConfig . setExpSmoothParamsTo1
-          px = borl ^. proxies . p
-      gam = getExpSmthParam r1 gammaANN gamma
+      gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
