@@ -60,6 +60,7 @@ import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward
+import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types                as T
 import           ML.BORL.Workers.Type
@@ -97,7 +98,7 @@ insert ::
   -> Proxies
   -> m (Proxies, Calculation)
 insert borl _ state aNr randAct rew stateNext episodeEnd getCalc pxs
-  | borl ^. parameters . disableAllLearning = (pxs, ) <$> getCalc stateActs aNr randAct rew stateNextActs episodeEnd
+  | borl ^. settings . disableAllLearning = (pxs, ) <$> getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   where
     (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 !Nothing) = do

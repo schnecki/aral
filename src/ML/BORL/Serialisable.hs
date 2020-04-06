@@ -33,6 +33,7 @@ import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward.Type
 import           ML.BORL.SaveRestore
+import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
@@ -44,6 +45,7 @@ data BORLSerialisable s = BORLSerialisable
   , serT              :: !Int                  -- ^ Current time t.
   , serEpisodeNrStart :: !(Int, Int)           -- ^ Nr of Episode and start period.
   , serParameters     :: !ParameterInitValues  -- ^ Parameter setup.
+  , serSettings       :: !Settings  -- ^ Parameter setup.
   , serRewardFutures  :: [RewardFutureData s]
 
   -- define algorithm to use
@@ -62,9 +64,9 @@ toSerialisable = toSerialisableWith id id
 
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par _ _ alg obj v rew psis prS) = do
-  BORL _ _ s workers _ t eNr par _ future alg obj v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
+toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par setts _ _ alg obj v rew psis prS) = do
+  BORL _ _ s workers _ t eNr par setts _ future alg obj v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
 
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
@@ -80,9 +82,9 @@ fromSerialisableWith ::
   -> TF.ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t e par future alg obj lastV rew psis prS) = do
+fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t e par setts future alg obj lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par decay (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
+      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par setts decay (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2

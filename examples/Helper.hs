@@ -145,7 +145,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                  getIOMWithDefault Nothing
              "dislearn" -> do
                liftIO $ putStr "New value (True or False): " >> hFlush stdout
-               liftIO $ maybe ql (\v' -> parameters . disableAllLearning .~ v' $ ql) <$> getIOMWithDefault Nothing
+               liftIO $ maybe ql (\v' -> settings . disableAllLearning .~ v' $ ql) <$> getIOMWithDefault Nothing
              _ -> liftIO $ putStrLn "Did not understand the input" >> return ql
       askUser mInverse False addUsage cmds qlCmds ql'
     _ ->

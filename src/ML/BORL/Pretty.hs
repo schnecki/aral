@@ -46,6 +46,7 @@ import           ML.BORL.Proxy.Ops     (LookupType (..), getMinMaxVal, lookupNeu
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.SaveRestore
+import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
@@ -274,7 +275,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) <+>
     text "Strategy" <>
     colon <+>
-    text (show $ params' ^. explorationStrategy) $+$
+    text (show $ borl ^. settings . explorationStrategy) $+$
     text "Exploration" <>
     colon $$
     nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>

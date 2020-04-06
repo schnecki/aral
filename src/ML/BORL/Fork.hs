@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module ML.BORL.Fork
     ( doFork
+    , doForkFake
     , collectForkResult
     ) where
 
@@ -15,6 +16,14 @@ doFork !f = do
   ref <- newIORef NotReady
   void $ forkIO (f >>= writeIORef ref . Ready . force)
   return ref
+
+-- | Does not actually fork, thus runs sequentially, but does not force the result!
+doForkFake :: IO a -> IO (IORef (ThreadState a))
+doForkFake !f = do
+  ref <- newIORef NotReady
+  f >>= writeIORef ref . Ready
+  return ref
+
 
 collectForkResult :: IORef (ThreadState a) -> IO a
 collectForkResult !ref = do

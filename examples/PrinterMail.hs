@@ -120,9 +120,9 @@ main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  -- rl <- mkUnichainGrenade alg initState actions actionFilter params decay nn nnConfig
-  -- rl <- mkUnichainTensorflow alg initState actions actionFilter params decay modelBuilder nnConfig Nothing
-  let rl = mkUnichainTabular alg initState tblInp actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay nn nnConfig
+  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) actions actionFilter params decay modelBuilder nnConfig Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]
@@ -150,12 +150,12 @@ params = Parameters
   , _delta            = 0.005
   , _gamma            = 0.01
   , _epsilon          = 1.0
-  , _explorationStrategy = EpsilonGreedy
+
   , _exploration      = 1.0
   , _learnRandomAbove = 0.0
   , _zeta             = 0.0
   , _xi               = 0.0075
-  , _disableAllLearning = False
+
   }
 
 

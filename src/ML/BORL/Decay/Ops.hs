@@ -38,7 +38,7 @@ overrideDecayParameters t xs params0 params = foldl (\p (setter, getter, rate, s
 --     decayedVal minVal rate steps v = max minVal (v * decay rate steps)
 
 decaySetupParameters :: Parameters DecaySetup -> Decay
-decaySetupParameters (Parameters decAlp decAlpRhoMin decBet decDel decGa decEps _ decExp decRand decZeta decXi _) period (Parameters alp alpRhoMin bet del ga eps expStrat exp rand zeta xi disable) =
+decaySetupParameters (Parameters decAlp decAlpRhoMin decBet decDel decGa decEps decExp decRand decZeta decXi) period (Parameters alp alpRhoMin bet del ga eps exp rand zeta xi) =
   Parameters
     { _alpha = decaySetup decAlp period alp
     , _alphaRhoMin = decaySetup decAlpRhoMin period alpRhoMin
@@ -46,20 +46,18 @@ decaySetupParameters (Parameters decAlp decAlpRhoMin decBet decDel decGa decEps 
     , _delta = decaySetup decDel period del
     , _gamma = decaySetup decGa period ga
     , _epsilon = (\de e -> decaySetup de period e) <$> decEps <*> eps
-    , _explorationStrategy = expStrat
     , _exploration = decaySetup decExp period exp
     , _learnRandomAbove = decaySetup decRand period rand
     , _zeta = decaySetup decZeta period zeta
     , _xi = decaySetup decXi period xi
-    , _disableAllLearning = disable
     }
 
 
 -- | Exponential Decay with possible minimum values. All ANN parameters, the minimum learning rate for random actions,
 -- and zeta are not decayed!
 exponentialDecayParameters :: Maybe (Parameters Float) -> DecayRate -> DecaySteps -> Decay
-exponentialDecayParameters Nothing rate steps t p = exponentialDecayParameters (Just (Parameters 0 0 0 0 0 0 EpsilonGreedy  0 0 0 0 False)) rate steps t p
-exponentialDecayParameters (Just (Parameters mAlp mAlpRhoMin mBet mDel mGa mEps _ mExp mRand mZeta mXi _)) rate steps t (Parameters alp alpRhoMin bet del ga eps expStrat exp rand zeta xi disable) =
+exponentialDecayParameters Nothing rate steps t p = exponentialDecayParameters (Just (Parameters 0 0 0 0 0 0 0 0 0 0)) rate steps t p
+exponentialDecayParameters (Just (Parameters mAlp mAlpRhoMin mBet mDel mGa mEps mExp mRand mZeta mXi)) rate steps t (Parameters alp alpRhoMin bet del ga eps exp rand zeta xi) =
   Parameters
     (max mAlp $ decay * alp)
     (max mAlpRhoMin $ decay * alpRhoMin)
@@ -67,12 +65,10 @@ exponentialDecayParameters (Just (Parameters mAlp mAlpRhoMin mBet mDel mGa mEps 
     (max mDel $ decay * del)
     (max mGa $ decay * ga)
     (max <$> mEps <*> ((decay *) <$> eps))
-    expStrat
     (max mExp $ decay * exp)
     (max mRand rand) -- no decay
     (max mZeta $ decay * zeta) -- no decay
     (max mXi $ decay * xi)
-    disable
   where
     decay = rate ** (fromIntegral t / fromIntegral steps)
 

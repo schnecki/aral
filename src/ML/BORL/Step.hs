@@ -58,6 +58,7 @@ import           ML.BORL.Proxy                      as P
 import           ML.BORL.Reward
 import           ML.BORL.SaveRestore
 import           ML.BORL.Serialisable
+import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
@@ -137,7 +138,9 @@ stepExecute !borl ((!randomAction, (!aNr, Action !action _)), !workerActions) = 
     liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
-  workerReplMemFuture <- liftIO $ doFork $ runWorkerActions borl workerActions
+  let doFork' | borl ^. settings . useForking = doFork
+              | otherwise = doForkFake
+  workerReplMemFuture <- liftIO $ doFork' $ runWorkerActions borl workerActions
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
   let applyToReward (RewardFuture storage) = applyState storage state
       applyToReward r                      = r
@@ -151,10 +154,10 @@ stepExecute !borl ((!randomAction, (!aNr, Action !action _)), !workerActions) = 
 -- lists.
 runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
 runWorkerActions !borl [] = return (borl ^. workers)
-runWorkerActions !borl _ | borl ^. parameters . disableAllLearning = return (borl ^. workers)
+runWorkerActions !borl _ | borl ^. settings . disableAllLearning = return (borl ^. workers)
 runWorkerActions !borl !acts = do
   let states = borl ^. workers . traversed . workersS
-  stepRewards <- zipWithM runWorkerAction states acts
+  stepRewards <- zipWithM runWorkerAction (zip [1 ..] states) acts
   let statesNext = map (view futureStateNext) stepRewards
   let futureRews = borl ^. workers . traversed . workersFutureRewards
   let updateFuturesWith f = map (over futureReward f)
@@ -162,9 +165,9 @@ runWorkerActions !borl !acts = do
   let (rewards, futureRews') = unzip $ map splitMaterialisedFutures futureRewsTmp
   Just . Workers statesNext futureRews' <$> zipWithM (foldM addExperience) (borl ^. workers . traversed . workersReplayMemories) rewards
   where
-    runWorkerAction :: (MonadBorl' m) => State s -> WorkerActionChoice s -> m (RewardFutureData s)
-    runWorkerAction state (randomAction, (aNr, Action action _)) = do
-      (reward, stateNext, episodeEnd) <- liftIO $ action WorkerAgent state
+    runWorkerAction :: (MonadBorl' m) => (Int, State s) -> WorkerActionChoice s -> m (RewardFutureData s)
+    runWorkerAction (wNr, state) (randomAction, (aNr, Action action _)) = do
+      (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
       return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
     applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
     applyToReward _ r                                 = r

@@ -19,10 +19,23 @@ type ActionIndex = Int
 type IsRandomAction = Bool
 type ActionFilter s = s -> V.Vector Bool
 
+-- | Agent type. There is only one main agent, but there could be multiple workers (configured via NNConfig).
+data AgentType = MainAgent | WorkerAgent Int
+  deriving (Show, Read, Eq, Ord)
+
+instance Enum AgentType where
+  fromEnum MainAgent        = 0
+  fromEnum (WorkerAgent nr) = nr
+  toEnum nr = (MainAgent : map WorkerAgent [1..]) !! nr
+
 
 type Batchsize = Int
 type EpisodeEnd = Bool
-type InitialState s = s         -- ^ Initial state
+type InitialStateFun s = AgentType -> IO s         -- ^ Initial state
+
+liftInitSt :: s -> InitialStateFun s
+liftInitSt = const . return
+
 type Period = Int
 type State s = s
 type StateNext s = s

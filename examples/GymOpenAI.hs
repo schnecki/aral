@@ -81,6 +81,7 @@ modelBuilder gym initSt nrActions outCols =
   TF.fullyConnected [5 * inpLen] TF.relu' >>
   TF.fullyConnected [5 * inpLen] TF.relu' >>
   TF.fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
+  -- TF.fullyConnectedLinear [fromIntegral nrActions, outCols] >>
   TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- TF.trainingByGradientDescent 0.01
   where
@@ -91,26 +92,26 @@ nnConfig :: Gym -> Float -> NNConfig
 nnConfig gym maxRew =
   NNConfig
     { _replayMemoryMaxSize = 10000
-    , _replayMemoryStrategy = ReplayMemorySingle
+    , _replayMemoryStrategy = ReplayMemoryPerAction
     , _trainBatchSize = 8
     , _grenadeLearningParams = LearningParameters 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
-    , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25* maxRew)
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25 * maxRew)
     , _stabilizationAdditionalRho = 0.0
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
-    , _updateTargetInterval = 15000
+    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 50000
+    , _updateTargetInterval = 10000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
-
-
-    , _workersMinExploration = []
+    , _workersMinExploration = [0.30, 0.10, 0.05, 0.03]
     }
   where
     (lows, highs) = observationSpaceBounds gym
     mkParamList lo hi = sort $ takeMiddle 3 xs
-      where xs = map rnd [lo, lo + (hi - lo) / 10 .. hi]
-    vals | length lows > 4 = []
-         | otherwise = zipWith mkParamList lows highs
+      where
+        xs = map rnd [lo,lo + (hi - lo) / 10 .. hi]
+    vals
+      | length lows > 4 = []
+      | otherwise = zipWith mkParamList lows highs
     rnd x = fromIntegral (round (1000 * x)) / 1000
     ppSts = takeMiddle 20 $ combinations vals
 
@@ -139,9 +140,10 @@ getGlobalVar :: IO (Maybe Float)
 getGlobalVar = join <$> tryReadMVar globalVar
 {-# NOINLINE getGlobalVar #-}
 
-action :: Gym -> Maybe T.Text -> Integer -> Action St
-action gym mName idx =
+action :: Maybe T.Text -> Integer -> Action St
+action mName idx =
   flip Action (fromMaybe (T.pack $ show idx) mName) $ \agentType oldSt@(St render _) -> do
+    gym <- getGym (fromEnum agentType)
     res <- stepGymRender render gym idx
     rew <- rewardFunction gym oldSt (fromIntegral idx) res
     obs <-
@@ -187,13 +189,12 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
     ite True x _  = x
     ite False _ x = x
     maxEpsSteps = maximumEpisodeSteps (name gym)
-
 rewardFunction gym _ _ _ = error $ "rewardFunction not yet defined for this environment: " ++ T.unpack (name gym)
 
 maxReward :: Gym -> Float
 maxReward _ | isAlgDqn alg = 10
 maxReward gym | name gym == "CartPole-v1" = 50
-              | name gym == "MountainCar-v0" = 200
+              | name gym == "MountainCar-v0" = 50 -- 200
               | name gym == "Copy-v0" = 1.0
               | name gym == "Acrobot-v1" = 50
               -- | name gym == "Pendulum-v0" =
@@ -236,29 +237,56 @@ alg =
   -- AlgDQNAvgRewAdjusted Nothing 0.85 0.99 ByStateValues
   AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
 
+-- | Gyms.
+gymsMVar :: MVar [Gym]
+gymsMVar = unsafePerformIO $ newMVar mempty
+{-# NOINLINE gymsMVar #-}
+
+addGym :: Gym -> IO ()
+addGym v = modifyMVar_ gymsMVar (return . (++ [v]))
+
+getGym :: Int -> IO Gym
+getGym k = maybe (error "Could not get gym in getGym in GymOpenAI.hs") (!!k) <$> tryReadMVar gymsMVar
+
+getName :: IO T.Text
+getName = do
+  args <- getArgs
+  let name
+        | not (null args) = T.pack (head args)
+        | otherwise = "MountainCar-v0"
+             -- "CartPole-v1"
+  return name
+
+mkInitSt :: St -> AgentType -> IO St
+mkInitSt st MainAgent = return st
+mkInitSt _ _          = (\(_,_,st) -> st) <$> mkInitSt'
+
+mkInitSt' :: IO (Gym, Integer, St)
+mkInitSt' = do
+  name <- getName
+  (obs, gym) <- initGym name
+  addGym gym
+  putStrLn $ "Added Gym: " ++ show gym
+  maxEpsSteps <- getMaxEpisodeSteps gym
+  putStrLn $ "Default maximum episode steps: " ++ show maxEpsSteps
+  setMaxEpisodeSteps gym (maximumEpisodeSteps name)
+  let actionNodes = spaceSize (actionSpace gym)
+      initState = St False (gymObservationToFloatList obs)
+  return (gym, actionNodes, initState)
+
 
 main :: IO ()
 main = do
   args <- getArgs
   putStrLn $ "Received arguments: " ++ show args
-  let name
-        | not (null args) = T.pack (head args)
-        | otherwise = "MountainCar-v0"
-             -- "CartPole-v1"
-  (obs, gym) <- initGym name
+  (gym, actionNodes, initState) <- mkInitSt'
   let maxRew
         | length args >= 2 = read (args !! 1)
         | otherwise = maxReward gym
-  putStrLn $ "Gym: " ++ show gym
-  maxEpsSteps <- getMaxEpisodeSteps gym
-  putStrLn $ "Default maximum episode steps: " ++ show maxEpsSteps
-  setMaxEpisodeSteps gym (maximumEpisodeSteps name)
-  let inputNodes = spaceSize (observationSpace gym)
-      actionNodes = spaceSize (actionSpace gym)
-      initState = St False (gymObservationToFloatList obs)
-      actNames = actionNames name
-      actions = zipWith (action gym) (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
-      actFilter :: St -> V.Vector Bool
+  name <- getName
+  let actNames = actionNames name
+  let actions = zipWith action (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
+  let actFilter :: St -> V.Vector Bool
       actFilter _  = V.replicate (length actions) True
       initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
@@ -266,10 +294,10 @@ main = do
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith UniformInit :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
-  rl <- mkUnichainTensorflowCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   ---let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
-  askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
+  askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []
@@ -281,20 +309,15 @@ params :: Gym -> Float -> ParameterInitValues
 params gym maxRew =
   Parameters
     { _alpha               = 0.03
-    , _alphaRhoMin = 2e-5
+    , _alphaRhoMin         = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
     , _epsilon             = [eps, 0.01]
-    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 10 -- EpsilonGreedy
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
     , _zeta                = 0.03
     , _xi                  = 0.005
-    , _disableAllLearning  = False
-    -- ANN
-
-
     }
   where eps | name gym == "MountainCar-v0" = 0.25
             | otherwise = min 1.0 $ max 0.05 $ 0.005 * maxRew
@@ -312,13 +335,13 @@ decay gym =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 0.03) 0.05 15000
-      , _exploration      = ExponentialDecay (Just minExp) 0.50 (expFact * 50000)
+      , _exploration      = ExponentialDecay (Just minExp) 0.50 (round $ expFact * 50000)
       , _learnRandomAbove = NoDecay
       }
   where minExp | name gym == "MountainCar-v0" = 0.001
                | otherwise = 0.01
         expFact
-          | name gym == "MountainCar-v0" = 3
+          | name gym == "MountainCar-v0" = 1.3
           | otherwise = 1
 
 

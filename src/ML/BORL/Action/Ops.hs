@@ -27,6 +27,7 @@ import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
+import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
@@ -41,7 +42,7 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction !borl = do
-  mainAgent <- nextActionFor borl (borl ^. parameters . explorationStrategy) (borl ^. s) (params' ^. exploration)
+  mainAgent <- nextActionFor borl (borl ^. settings . explorationStrategy) (borl ^. s) (params' ^. exploration)
   let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
   ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
   return (mainAgent, ws)

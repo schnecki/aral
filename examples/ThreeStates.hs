@@ -129,9 +129,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade alg initState netInp actions actionFilter params decay nn nnConfig Nothing
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkUnichainTabular alg initState (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay nn nnConfig Nothing
+  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig Nothing
+  -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -153,12 +153,12 @@ params =
     , _delta = 0.01
     , _gamma = 0.01
     , _epsilon = 0.1
-    , _explorationStrategy = EpsilonGreedy
+
     , _exploration = 1.0
     , _learnRandomAbove = 0.5
     , _zeta = 0.15
     , _xi = 0.001
-    , _disableAllLearning = False
+
     }
 
 -- | Decay function of parameters.

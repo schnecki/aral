@@ -46,8 +46,8 @@ alg = AlgBORL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
-  let rl = mkMultichainTabular alg initState (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
-  -- let rl = mkUnichainTabular alg initState (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
+  rl <- mkMultichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
   askUser Nothing True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
@@ -66,12 +66,12 @@ params =
     , _delta              = 0.01
     , _gamma              = 0.01
     , _epsilon            = 0.1
-    , _explorationStrategy = EpsilonGreedy
+
     , _exploration        = 1.0
     , _learnRandomAbove   = 0.30
     , _zeta               = 0.03
     , _xi                 = 0.01
-    , _disableAllLearning = False
+
     }
 
 -- | Decay function of parameters.

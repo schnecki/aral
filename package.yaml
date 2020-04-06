@@ -58,6 +58,7 @@ dependencies:
   - unliftio-core
   - random
   - random-shuffle
+  - data-default
 
 
 library:

@@ -203,10 +203,10 @@ params =
     , _xi                  = 0.005
     -- Exploration
     , _epsilon             = 0.25
-    , _explorationStrategy = EpsilonGreedy -- SoftmaxBoltzmann 5
+
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.5
-    , _disableAllLearning  = False
+
     }
 
 -- | Decay function of parameters.
@@ -245,11 +245,11 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
   ---
-  -- let rl = mkUnichainTabular algBORL initState netInp actions actFilter params decay Nothing
+  -- let rl = mkUnichainTabular algBORL (liftInitSt initState) netInp actions actFilter params decay Nothing
   -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   -- let runner = runMonadBorlIO
   ---
-  let mkInitSt = mkUnichainTensorflowM algBORL initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  let mkInitSt = mkUnichainTensorflowM algBORL (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
   ---
@@ -285,14 +285,14 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   rl <-
     case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg initState netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg initState netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
+  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
