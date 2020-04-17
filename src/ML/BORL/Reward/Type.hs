@@ -1,5 +1,3 @@
-{-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DefaultSignatures         #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -13,9 +11,8 @@
 module ML.BORL.Reward.Type where
 
 import           Control.DeepSeq
-import           Data.ByteString
 import           Data.Serialize
-import           GHC.Generics
+import Data.Kind (Type) 
 
 import           ML.BORL.Types
 
@@ -35,7 +32,7 @@ isRewardEmpty _             = False
 
 -- ^ Class that defines the future reward state and storage type.
 class (NFData (StoreType s), Serialize (StoreType s)) => RewardFuture s where
-  type StoreType s :: *
+  type StoreType s :: Type
   applyState :: StoreType s -> s -> Reward s
 
 

@@ -282,9 +282,9 @@ updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
 updateNNTargetNet !forceReset !period !px
   | config ^. updateTargetInterval <= 1 || currentUpdateInterval <= 1 = return px
-  | forceReset = liftTf copyValues
+  | forceReset = copyValues
   | period <= memSize = return px
-  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 = liftTf copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
+  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 = copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -304,13 +304,13 @@ updateNNTargetNet !forceReset !period !px
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances !px@(Grenade !netT !netW !tp !config !nrActs) = do
-  let netW' = foldl' (trainGrenade lp) netW (map return trainingInstances')
+  let netW' = foldl' (trainGrenade opt) netW (map return trainingInstances')
   return $! Grenade netT netW' tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
-    LearningParameters lRate momentum l2 = config ^. grenadeLearningParams
+    lRate = getLearningRate (config ^. grenadeLearningParams)
     dec = decaySetup (config ^. learningParamsDecay) period
-    lp = LearningParameters (realToFrac $ dec $ realToFrac lRate) momentum l2
+    opt = setLearningRate (realToFrac $ dec $ realToFrac lRate)  (config ^. grenadeLearningParams)
 trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !config !nrActs) = do
   backwardRunRepMemData netW trainingInstances'
   if period == px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -318,7 +318,7 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
       lrs <- liftTf $ TF.getLearningRates netW
       when (null lrs) $ error "Could not get the Tensorflow learning rate in Proxy.Ops"
       when (length lrs > 1) $ error "Cannot handle multiple Tensorflow optimizers (multiple learning rates) in Proxy.Ops"
-      return $! TensorflowProxy netT netW tp (grenadeLearningParams .~ LearningParameters (realToFrac $ head lrs) 0 0 $ config) nrActs
+      return $! TensorflowProxy netT netW tp (grenadeLearningParams %~ setLearningRate (realToFrac $ head lrs) $ config) nrActs
     else do
       when (period `mod` 1000 == 0 && dec lRate /= lRate) $
         liftTf $ TF.setLearningRates [dec lRate] netW -- this seems to be an expensive operation!
@@ -328,11 +328,9 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
     dec = decaySetup (config ^. learningParamsDecay) period
-    LearningParameters lRateDb _ _ = config ^. grenadeLearningParams
+    lRateDb = getLearningRate (config ^. grenadeLearningParams)
     lRate = realToFrac lRateDb
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
-
-
 -- | Retrieve a value.
 lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupProxy !_ !_ !_ !(Scalar !x) = return x

@@ -2,14 +2,15 @@ flags: {}
 packages:
 - .
 - experimenter
-- grenade
+# - grenade
 - gym-haskell
 - gym-haskell/haskell-cpython
 - high-level-tensorflow
 extra-deps:
-- hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
+- git: https://github.com/schnecki/grenade
+  commit: c865ac9fc8a57878c7cec63f17e2256764e2bbac
 - git: https://github.com/tensorflow/haskell
-  commit: 8cde4d6a277f188ca495d29096a62b36e8534a3f
+  commit: 0f322b2e0611cbe7011c84ba8b6cb822e4725ebc
   subdirs:
   - tensorflow
   - tensorflow-core-ops
@@ -22,5 +23,12 @@ extra-deps:
   # - tensorflow-records
   # - tensorflow-records-conduit
   # - tensorflow-test
+
+- HaTeX-3.22.2.0@sha256:c491c38724d2c9beac25c5a11c1848e3e1e96bd08b3909bd9711870d3610a594,5407
+- hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
+- proto-lens-0.5.1.0@sha256:d959c40aabda1ab208a64b0c5abb5519e7956b665275b38beb4c812f51f95987,3266
+- proto-lens-protobuf-types-0.5.0.0@sha256:d2531abfc884a7dbc2a11f18b12cda8afb3063123713cfbfbd376110b1d2a53d,2333
+- proto-lens-runtime-0.5.0.0@sha256:cb39cf13ce4f7dac5414f94a7afe0adc9b831312e6b60588a23bd816accc385f,3132
+
 allow-newer: false
-resolver: lts-14.25
+resolver: lts-14.27

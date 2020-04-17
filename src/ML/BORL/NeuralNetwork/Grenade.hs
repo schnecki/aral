@@ -26,7 +26,7 @@ trainMaxVal = 0.98
 
 trainGrenade ::
      (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
-  => LearningParameters
+  => Optimizer opt
   -> Network layers shapes
   -> [((StateFeatures, ActionIndex), Float)]
   -> Network layers shapes

@@ -176,7 +176,8 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
-    , _grenadeLearningParams = LearningParameters 0.01 0.0 0.0001
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
+       -- OptSGD 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
@@ -291,7 +292,7 @@ usermode = do
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)

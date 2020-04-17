@@ -44,7 +44,6 @@ import           System.IO
 import           System.Random
 import           Text.Printf
 
-
 import           ML.BORL.Action
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation

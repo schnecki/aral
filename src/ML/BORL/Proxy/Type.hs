@@ -184,7 +184,7 @@ isNeuralNetwork _                     = False
 
 isTensorflow :: Proxy -> Bool
 isTensorflow TensorflowProxy{}     = True
-isTensorflow (CombinedProxy p _ _) = isNeuralNetwork p
+isTensorflow (CombinedProxy p _ _) = isTensorflow p
 isTensorflow _                     = False
 
 isCombinedProxy :: Proxy -> Bool

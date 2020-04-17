@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -21,6 +22,7 @@ import qualified Data.Vector           as VB
 import qualified Data.Vector.Mutable   as VM
 import qualified Data.Vector.Storable  as V
 import           GHC.Generics
+import           Grenade
 import qualified HighLevelTensorflow   as TF
 import           System.IO.Unsafe
 

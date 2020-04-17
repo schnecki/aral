@@ -6,7 +6,7 @@ module Helper
 
     ) where
 
-import           Grenade                (LearningParameters (..))
+import           Grenade
 import           ML.BORL
 import           ML.BORL.InftyVector
 
@@ -85,8 +85,11 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                in case find isTensorflow (allProxies $ ql ^. proxies) of
                     Nothing -> runMonadBorlIO $ runner ql >>= askUser mInverse False addUsage cmds qlCmds
                     Just {} -> do
+                      liftIO $ putStr "ASDFASDF"
                       ql' <-
+
                         runMonadBorlTF $ do
+
                           restoreTensorflowModels True ql
                           borl' <- runner ql
                           saveTensorflowModels borl'
@@ -140,7 +143,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                  maybe
                    ql
                    (\v' ->
-                      overAllProxies (proxyNNConfig . grenadeLearningParams) (\(LearningParameters _ m l2) -> LearningParameters v' m l2) $
+                      overAllProxies (proxyNNConfig . grenadeLearningParams) (setLearningRate v') $
                       overAllProxies (proxyNNConfig . learningParamsDecay) (const NoDecay) ql) <$>
                  getIOMWithDefault Nothing
              "dislearn" -> do

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP               #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 module ML.BORL.Pretty
@@ -380,21 +381,30 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {} -> empty
-        P.Grenade _ _ _ conf _ -> textGrenadeConf conf
-        P.TensorflowProxy _ _ _ conf _ -> textTensorflow conf
-        P.CombinedProxy (P.TensorflowProxy _ _ _ conf _) _ _ -> textTensorflow conf
-        P.CombinedProxy (P.Grenade _ _ _ conf _) _ _ -> textGrenadeConf conf
+        P.Grenade _ _ _ conf _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.TensorflowProxy _ _ _ conf _ -> textTensorflow conf (conf ^. grenadeLearningParams)
+        P.CombinedProxy (P.TensorflowProxy _ _ _ conf _) _ _ -> textTensorflow conf (conf ^. grenadeLearningParams)
+        P.CombinedProxy (P.Grenade _ _ _ conf _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _ -> error "nnLearningParams in Pretty.hs"
       where
-        textGrenadeConf conf =
-          let LearningParameters l0 m0 l20 = conf ^. grenadeLearningParams
-              dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              LearningParameters l m l2 = LearningParameters (realToFrac $ dec $ realToFrac l0) m0 l20
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac m), printFloatWith 8 (realToFrac l2))))
-        textTensorflow conf =
-          let LearningParameters l0 _ _ = conf ^. grenadeLearningParams
-              dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              l = dec $ realToFrac l0
+        textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
+        textGrenadeConf conf (OptSGD rate momentum l2) =
+          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
+              l = realToFrac $ dec $ realToFrac rate
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
+        textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon) =
+          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
+              l = realToFrac $ dec $ realToFrac alpha
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac beta1)
+                                                                                        , printFloatWith 8 (realToFrac beta2), printFloatWith 8 (realToFrac epsilon))))
+        textTensorflow :: NNConfig -> Optimizer opt -> Doc
+        textTensorflow conf (OptSGD rate _ _) =
+          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
+              l = dec $ realToFrac rate
+           in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
+        textTensorflow conf (OptAdam alpha _ _ _) =
+          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
+              l = realToFrac $ dec $ realToFrac alpha
            in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
 
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
