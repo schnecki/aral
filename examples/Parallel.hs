@@ -128,7 +128,7 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay nn nnConfig Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (const nn) nnConfig Nothing
   rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig Nothing
   -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho

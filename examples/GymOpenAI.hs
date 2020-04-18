@@ -73,7 +73,7 @@ type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, R
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
 
 -- modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecNetwork
--- modelBuilderGrenade gym initSt nrActions outcols
+-- modelBuilderGrenade gym initSt nrActions outcols =
 
 
 modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TF.TensorflowModel
@@ -304,13 +304,13 @@ main = do
     case alg of
       AlgBORL {} ->
         (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
       AlgDQNAvgRewAdjusted {} ->
         (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
       AlgDQN {} ->
         (randomNetworkInitWith UniformInit :: IO NN) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
   askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
   where
     cmds = []
