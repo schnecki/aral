@@ -1,6 +1,6 @@
 [submodule "grenade"]
 	path = grenade
-	url = https://github.com/schnecki/grenade.git
+	url = git@github.com:schnecki/grenade.git
 [submodule "tensorflow-haskell"]
 	path = tensorflow-haskell
 	url = https://github.com/schnecki/haskell.git

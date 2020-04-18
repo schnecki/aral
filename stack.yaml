@@ -2,13 +2,11 @@ flags: {}
 packages:
 - .
 - experimenter
-# - grenade
+- grenade
 - gym-haskell
 - gym-haskell/haskell-cpython
 - high-level-tensorflow
 extra-deps:
-- git: https://github.com/schnecki/grenade
-  commit: c865ac9fc8a57878c7cec63f17e2256764e2bbac
 - git: https://github.com/tensorflow/haskell
   commit: 0f322b2e0611cbe7011c84ba8b6cb822e4725ebc
   subdirs:
