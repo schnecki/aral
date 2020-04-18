@@ -163,7 +163,7 @@ instance Show Proxy where
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{} = "Scalar"
 prettyProxyType Table{} = "Tabular"
-prettyProxyType Grenade{} = "Grenade with SGD (+ momentum + l2) optimizer"
+prettyProxyType Grenade{} = "Grenade"
 prettyProxyType (TensorflowProxy _ w _ _ _) = "Tensorflow with " ++ show (map prettyOptimizerNames (optimizerVariables $ tensorflowModel w)) ++ " optimizer"
 prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
 

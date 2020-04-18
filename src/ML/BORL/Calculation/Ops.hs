@@ -235,6 +235,9 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let alp = getExpSmthParam borl rho alpha
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       gam = getExpSmthParam borl r1 gamma
+      expSmthRew = borl ^. psis . _1
+      params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+      exploreRate = params' ^. exploration
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -255,14 +258,18 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         case borl ^. objective of
           Maximise -> max
           Minimise -> min
+  let expSmthRew' | randomAction = expSmthRew
+                  | otherwise = (1 - alp) * expSmthRew + alp * reward
+      smoothRhoValWithActualRewards val = (1 - rate) * expSmthRew + rate * val
+        where rate = exploreRate -- max 0.5 exploreRate
   let rhoVal'
-        | randomAction = maxOrMin rhoMinimumState rhoVal
+        | randomAction = maxOrMin rhoMinimumState (smoothRhoValWithActualRewards rhoVal)
         | otherwise =
           maxOrMin rhoMinimumState $
           case avgRewardType of
-            ByMovAvg _ -> rhoState
+            ByMovAvg _ -> smoothRhoValWithActualRewards $ (1-exploreRate) * expSmthRew + exploreRate * rhoState
             Fixed x    -> x
-            _          -> (1 - alp) * rhoVal + alp * rhoState
+            _          -> smoothRhoValWithActualRewards $ (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
   let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let r0ValState' = (1 - gam) * r0ValState + gam * (reward + epsEnd * ga0 * r0StateNext - rhoVal')
@@ -277,7 +284,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       , getWValState' = Nothing
       , getR0ValState' = Just r0ValState' -- gamma low
       , getR1ValState' = Just r1ValState' -- gamma High
-      , getPsiValRho' = Nothing
+      , getPsiValRho' = Just expSmthRew'
       , getPsiValV' = Nothing
       , getPsiValW' = Nothing
       , getLastVs' = Nothing

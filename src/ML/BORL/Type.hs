@@ -476,7 +476,17 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun initVa
 -- Neural network approximations
 
 mkUnichainGrenade ::
-     forall nrH nrL s layers shapes. (GNum (Gradients layers), KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
+     forall nrH nrL s layers shapes.
+     ( GNum (Gradients layers)
+     , KnownNat nrH
+     , Head shapes ~ 'D1 nrH
+     , KnownNat nrL
+     , Last shapes ~ 'D1 nrL
+     , Ord s
+     , NFData (Tapes layers shapes)
+     , NFData (Network layers shapes)
+     , Serialize (Network layers shapes)
+     )
   => Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s

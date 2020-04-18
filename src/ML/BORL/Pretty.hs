@@ -391,11 +391,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac rate
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "SGD Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
         textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac alpha
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac beta1)
+           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Adam Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac beta1)
                                                                                         , printFloatWith 8 (realToFrac beta2), printFloatWith 8 (realToFrac epsilon))))
         textTensorflow :: NNConfig -> Optimizer opt -> Doc
         textTensorflow conf (OptSGD rate _ _) =

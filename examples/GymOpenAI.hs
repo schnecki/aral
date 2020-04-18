@@ -68,9 +68,12 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network
-          '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh]
-          '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
+type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
+type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
+type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
+
+-- modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecNetwork
+-- modelBuilderGrenade gym initSt nrActions outcols
 
 
 modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TF.TensorflowModel
@@ -287,23 +290,32 @@ main = do
   let actNames = actionNames name
   let actions = zipWith action (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
   let actFilter :: St -> V.Vector Bool
-      actFilter _  = V.replicate (length actions) True
+      actFilter _ = V.replicate (length actions) True
       initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
   putStrLn $ "Actions: " ++ show actions
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
-  nn <- randomNetworkInitWith UniformInit :: IO NN
+  nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
-  rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
+  -- rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  ---let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
+  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
+  rl <-
+    case alg of
+      AlgBORL {} ->
+        (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn ->
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+      AlgDQNAvgRewAdjusted {} ->
+        (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn ->
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
+      AlgDQN {} ->
+        (randomNetworkInitWith UniformInit :: IO NN) >>= \nn ->
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
   askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []
-    qlCmds = [ ("f", "flip rendering", s %~ (\(St r xs) -> St (not r) xs))]
-
-
+    qlCmds = [("f", "flip rendering", s %~ (\(St r xs) -> St (not r) xs))]
  -- | BORL Parameters.
 params :: Gym -> Float -> ParameterInitValues
 params gym maxRew =

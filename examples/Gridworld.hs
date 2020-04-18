@@ -187,7 +187,7 @@ nnConfig =
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
 
 
-    , _workersMinExploration = []
+    , _workersMinExploration = [0.4, 0.2, 0.1, 0.03]
     }
 
 
@@ -288,7 +288,7 @@ usermode = do
     case alg of
       AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
       AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-      AlgDQN{} ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
+      AlgDQN{} ->  (randomNetworkInitWith HeEtAl :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)

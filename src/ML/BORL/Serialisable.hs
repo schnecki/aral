@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -104,14 +106,16 @@ instance Serialize ReplayMemories
 instance (Serialize s, RewardFuture s) => Serialize (Workers s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
-    put memSz >> put memStrat >> put batchSz >> put lp >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >>
-    put workerMinExp
+  put (NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
+    -- case opt of
+    --   OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'SGD) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
+    --   OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'Adam) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
+    put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
   get = do
     memSz <- get
     memStrat <- get
     batchSz <- get
-    lp <- get
+    opt <- get
     decaySetup <- get
     prS <- map V.fromList <$> get
     scale <- get
@@ -120,7 +124,7 @@ instance Serialize NNConfig where
     upInt <- get
     upIntDec <- get
     workerMinExp <- get
-    return $ NNConfig memSz memStrat batchSz lp decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
+    return $ NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
 
 
 instance Serialize Proxy where
