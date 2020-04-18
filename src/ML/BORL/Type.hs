@@ -494,11 +494,12 @@ mkUnichainGrenade ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> Network layers shapes
+  -> (Integer -> Network layers shapes)
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig initValues = do
+mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
+  let net = netFun 1
   let nnSA tp = Grenade net net tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
@@ -542,14 +543,15 @@ mkUnichainGrenadeCombinedNet ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> Network layers shapes
+  -> (Integer -> Network layers shapes)
   -> NNConfig
   -> Maybe InitValues
   -> IO (BORL s)
-mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun net nnConfig initValues = do
+mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardFree alg = 2
              | otherwise = 6
+  let net = netFun nrNets
   let nnSA tp = Grenade net net tp nnConfig (length as)
   let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
