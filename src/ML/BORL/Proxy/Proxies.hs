@@ -17,21 +17,6 @@ import           Control.Lens
 import           GHC.Generics
 import           ML.BORL.Proxy.Type
 
-
--- class Proxies' pxs where
---   getRhoMinimum :: pxs -> Proxy
---   getRho :: pxs -> Proxy
---   getPsiV :: pxs -> Proxy
---   getV :: pxs -> Proxy
---   getPsiW :: pxs -> Proxy
---   getW :: pxs -> Proxy
---   getPsiW2 :: pxs -> Proxy
---   getW2 :: pxs -> Proxy
---   getR0 :: pxs -> Proxy
---   getR1 :: pxs -> Proxy
---   getReplayMemory :: pxs -> Proxy
-
-
 data Proxies =
   Proxies -- ^ This data type holds all data for BORL.
     { _rhoMinimum   :: !Proxy
@@ -113,5 +98,5 @@ replayMemory :: Lens' Proxies (Maybe ReplayMemories)
 replayMemory f px  = (\replayMemory' -> px { _replayMemory = replayMemory' }) <$> f (_replayMemory px)
 
 instance NFData Proxies where
-  rnf (Proxies rhoMin rho psiV v psiW w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf repMem
-  rnf (ProxiesCombinedUnichain rhoMin rho proxy replMem) = rnf rhoMin `seq` rnf rho `seq` rnf proxy `seq` rnf replMem
+  rnf (Proxies rhoMin rho psiV v psiW w r0 r1 repMem) = rnf rhoMin `seq` rnf rho `seq` rnf psiV `seq` rnf v `seq` rnf psiW `seq` rnf w `seq` rnf r0 `seq` rnf r1 `seq` rnf1 repMem
+  rnf (ProxiesCombinedUnichain rhoMin rho proxy replMem) = rnf rhoMin `seq` rnf rho `seq` rnf proxy `seq` rnf1 replMem

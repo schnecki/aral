@@ -32,7 +32,14 @@ data Calculation = Calculation
   , getLastVs'        :: Maybe [Float]
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
-  } deriving (Show, Generic, NFData)
+  } deriving (Show, Generic)
+
+instance NFData Calculation where
+  rnf calc =
+    rnf (getRhoMinimumVal' calc) `seq` rnf (getRhoVal' calc) `seq` rnf (getPsiVValState' calc) `seq` rnf (getVValState' calc) `seq` rnf (getPsiWValState' calc) `seq`
+    rnf (getWValState' calc) `seq` rnf (getR0ValState' calc) `seq` rnf (getR1ValState' calc) `seq`
+    rnf (getPsiValRho' calc) `seq` rnf (getPsiValV' calc) `seq` rnf (getPsiValW' calc) `seq` rnf1 (getLastVs' calc) `seq` rnf1 (getLastRews' calc) `seq` rnf (getEpisodeEnd calc)
+
 
 fmapCalculation :: (Float -> Float) -> Calculation -> Calculation
 fmapCalculation f calc =

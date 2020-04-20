@@ -125,10 +125,6 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
       xsT' <- mapM (\(idx, val) -> (idx,) <$> modifier Target (inp, idx) val) xsT
       xsW' <- mapM (\(idx, val) -> (idx,) <$> modifier Worker (inp, idx) val) xsW
       return (inp, (xsT', xsW'))
-    tbl =
-      case pr of
-        P.Table t _ -> M.toList t
-        _           -> error "should not happen"
 
 prettyStateActionEntry :: BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
 prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of

@@ -173,7 +173,7 @@ instance ExperimentDef (BORL St) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
+    { _replayMemoryMaxSize = 1000
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
@@ -280,15 +280,13 @@ alg =
   AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
+
 usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <-
-    case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      AlgDQN{} ->  (randomNetworkInitWith HeEtAl :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
+
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
@@ -313,10 +311,6 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
 
-type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
-type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
-type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
-
 modelBuilder :: (TF.MonadBuild m) => Int64 -> m TF.TensorflowModel
 modelBuilder colOut =
   TF.buildModel $
@@ -330,6 +324,20 @@ modelBuilder colOut =
   TF.trainingByRmsProp
   where inpLen = fromIntegral $ V.length (netInp initState)
 
+-- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
+modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade actions initState cols =
+  buildModelWith UniformInit $
+  specFullyConnected lenIn 20 |=> specRelu1D 20 |=> specDropout 20 0.90 Nothing |=> -- netSpecInner |=>
+  specFullyConnected 20 10 |=> specRelu1D 10 |=>
+  specFullyConnected 10 10 |=> specRelu1D 10 |=>
+  specFullyConnected 10 lenOut |=> specReshape (lenOut, 1, 1) (lenActs, cols, 1) |=> specTanh3D (lenActs, cols, 1) |=>
+  specNil (lenActs, cols, 1)
+  where
+    lenOut = lenActs * cols
+    lenIn = fromIntegral $ V.length (netInp initState)
+    lenActs = genericLength actions
+    buildModelWith init = networkFromSpecificationWith init
 
 netInp :: St -> V.Vector Float
 netInp st = V.fromList [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]

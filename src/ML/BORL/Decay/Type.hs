@@ -41,7 +41,6 @@ data DecaySetup
     , _increaseK    :: !Float         -- ^ k
     , _increaseStep :: !Int           -- ^ Step
     }
-
   deriving (Generic, Show, Eq, Ord, NFData, Serialize)
 makeLenses ''DecaySetup
 

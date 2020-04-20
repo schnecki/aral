@@ -317,9 +317,9 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   rl <-
     case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted {} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
+      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted {} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)

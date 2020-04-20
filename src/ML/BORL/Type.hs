@@ -90,6 +90,7 @@ import           Data.List                    (foldl')
 import           Data.Maybe                   (fromMaybe)
 import qualified Data.Proxy                   as Type
 import           Data.Serialize
+import           Data.Singletons              (SingI, sing)
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                    as T
 import qualified Data.Vector                  as VB
@@ -156,7 +157,7 @@ makeLenses ''BORL
 instance (NFData s) => NFData (BORL s) where
   rnf (BORL as af s ws ftExt t epNr par set dec fut alg ph lastVs lastRews psis proxies) =
     rnf as `seq` rnf af `seq` rnf s `seq` rnf ws `seq` rnf ftExt `seq` rnf t `seq`
-    rnf epNr `seq` rnf par `seq` rnf set `seq` rnf dec `seq` rnf fut `seq` rnf alg `seq` rnf ph `seq` rnf lastVs `seq` rnf lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+    rnf epNr `seq` rnf par `seq` rnf set `seq` rnf dec `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf1 lastVs `seq` rnf1 lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
 
 ------------------------------ Indexed Action ------------------------------
 
@@ -476,16 +477,74 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun initVa
 -- Neural network approximations
 
 mkUnichainGrenade ::
-     forall nrH nrL s layers shapes.
+     Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> [Action s]
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> Decay
+  -> (Integer -> IO SpecConcreteNetwork)
+  -> NNConfig
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
+  specNet <- netFun 1
+  case specNet of
+    SpecConcreteNetwork1D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    _ -> error "BORL currently requieres a 1D input and either 1D our 2D output"
+    -- SpecConcreteNetwork2D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+
+mkUnichainGrenadeCombinedNet ::
+     forall s .
+     Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> [Action s]
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> Decay
+  -> (Integer -> IO SpecConcreteNetwork)
+  -> NNConfig
+  -> Maybe InitValues
+  -> IO (BORL s)
+mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
+  let nrNets | isAlgDqn alg = 1
+             | isAlgDqnAvgRewardFree alg = 2
+             | otherwise = 6
+  specNet <- netFun nrNets
+  case specNet of
+    SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    _ -> error "BORL currently requieres a nrNetsD input and either nrNetsD our 2D output"
+    -- SpecConcreteNetwork2D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+
+
+mkUnichainGrenadeHelper ::
+     forall s layers shapes nrH.
      ( GNum (Gradients layers)
      , KnownNat nrH
      , Head shapes ~ 'D1 nrH
-     , KnownNat nrL
-     , Last shapes ~ 'D1 nrL
-     , Ord s
+     , SingI (Last shapes)
      , NFData (Tapes layers shapes)
      , NFData (Network layers shapes)
      , Serialize (Network layers shapes)
+     , Show (Network layers shapes)
+     , FromDynamicLayer (Network layers shapes)
+     , GNum (Network layers shapes)
      )
   => Algorithm s
   -> InitialStateFun s
@@ -494,29 +553,41 @@ mkUnichainGrenade ::
   -> ActionFilter s
   -> ParameterInitValues
   -> Decay
-  -> (Integer -> Network layers shapes)
   -> NNConfig
   -> Maybe InitValues
+  -> Network layers shapes
   -> IO (BORL s)
-mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
-  let net = netFun 1
-  let nnSA tp = Grenade net net tp nnConfig (length as)
+mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net = do
+  putStrLn "Using following Greande Specification: "
+  print $ networkToSpecification net
+  putStrLn "Net: "
+  print net
+  let nnSA tp = Grenade (0.05 |* net) (0.05 |* net) tp nnConfig (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
+  let nnType
+        | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
+        | otherwise = CombinedUnichain
+  let nnComb = nnSA nnType
   repMem <- mkReplayMemories as nnConfig
   initialState <- initialStateFun MainAgent
-  workers <- liftIO $ mkWorkers initialStateFun as nnConfig
+  workers' <- liftIO $ mkWorkers initialStateFun as nnConfig
+  let proxies' =
+        case (sing :: Sing (Last shapes)) of
+          D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
+          D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
+          _ -> error "3D output is not supported by BORL!"
   return $
     checkGrenade net 1 nnConfig $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
       asFilter
       initialState
-      workers
+      workers'
       ftExt
       0
       (0, 0)
@@ -529,59 +600,10 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun n
       mempty
       mempty
       (0, 0, 0)
-      (Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem)
+      proxies'
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
-
-mkUnichainGrenadeCombinedNet ::
-     forall nrH nrL s layers shapes. (GNum (Gradients layers), KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s, NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes))
-  => Algorithm s
-  -> InitialStateFun s
-  -> FeatureExtractor s
-  -> [Action s]
-  -> ActionFilter s
-  -> ParameterInitValues
-  -> Decay
-  -> (Integer -> Network layers shapes)
-  -> NNConfig
-  -> Maybe InitValues
-  -> IO (BORL s)
-mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
-  let nrNets | isAlgDqn alg = 1
-             | isAlgDqnAvgRewardFree alg = 2
-             | otherwise = 6
-  let net = netFun nrNets
-  let nnSA tp = Grenade net net tp nnConfig (length as)
-  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
-             | otherwise = CombinedUnichain
-  let nn = nnSA nnType
-  repMem <- mkReplayMemories as nnConfig
-  workers <- liftIO $ mkWorkers initialStateFun as nnConfig
-  initialState <- initialStateFun MainAgent
-  return $
-    checkGrenade net nrNets nnConfig $
-    BORL
-      (VB.fromList $ zip [idxStart ..] as)
-      asFilter
-      initialState
-      workers
-      ftExt
-      0
-      (0, 0)
-      params
-      def
-      decayFun
-      []
-      (convertAlgorithm ftExt alg)
-      Maximise
-      mempty
-      mempty
-      (0, 0, 0)
-      (ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nn repMem)
-  where
-    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
-    defRho = defaultRho (fromMaybe defInitValues initValues)
 
 
 mkMultichainGrenade ::
@@ -645,7 +667,7 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
 mkReplayMemories :: [Action s] -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories as nnConfig = case nnConfig ^. replayMemoryStrategy of
   ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
-  ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence <$> replicateM (length as) (mkReplayMemory (nnConfig ^. replayMemoryMaxSize `div` length as))
+  ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)))
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
 mkReplayMemory sz | sz <= 1 = return Nothing
@@ -692,22 +714,23 @@ mkWorkers state as nnConfig = do
 
 
 -- | Checks the neural network setup and throws an error in case of a faulty number of input or output nodes.
-checkGrenade ::
-     forall layers shapes nrH nrL s. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, Ord s)
-  => Network layers shapes
-  -> Integer
-  -> NNConfig
-  -> BORL s
-  -> BORL s
-checkGrenade _ mult nnConfig borl
-  | nnInpNodes /= stInp = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show stInp
-  | nnOutNodes /= mult * fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show (fromIntegral mult * nrActs)
-  | otherwise = borl
-  where
-    nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
-    nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
-    stInp = V.length ((borl ^. featureExtractor) (borl ^. s))
-    nrActs = VB.length (borl ^. actionList)
+checkGrenade _ _ _ = id
+-- checkGrenade ::
+--      forall layers shapes nrH nrL s. (KnownNat nrH, KnownNat nrL, Ord s)
+--   => Network layers shapes
+--   -> Integer
+--   -> NNConfig
+--   -> BORL s
+--   -> BORL s
+-- checkGrenade _ mult nnConfig borl
+--   | nnInpNodes /= stInp = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show stInp
+--   | nnOutNodes /= mult * fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show (fromIntegral mult * nrActs)
+--   | otherwise = borl
+--   where
+--     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
+--     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
+--     stInp = V.length ((borl ^. featureExtractor) (borl ^. s))
+--     nrActs = VB.length (borl ^. actionList)
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s

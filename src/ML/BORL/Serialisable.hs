@@ -102,7 +102,16 @@ fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t
 
 
 instance Serialize Proxies
-instance Serialize ReplayMemories
+instance Serialize ReplayMemories where
+  put (ReplayMemoriesUnified r)     = put (0 :: Int) >> put r
+  put (ReplayMemoriesPerActions xs) = put (1 :: Int) >> put (VB.toList xs)
+  get = do
+    nr <- get
+    case (nr :: Int) of
+      0 -> ReplayMemoriesUnified <$> get
+      1 -> ReplayMemoriesPerActions . VB.fromList <$> get
+      _ -> error "index error"
+
 instance (Serialize s, RewardFuture s) => Serialize (Workers s)
 
 instance Serialize NNConfig where

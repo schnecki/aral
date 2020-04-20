@@ -40,6 +40,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import qualified Data.Map.Strict              as M
 import           Data.Serialize
+import           Data.Singletons              (SingI)
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                    as Text
 import qualified Data.Vector.Storable         as V
@@ -47,6 +48,7 @@ import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 
+import           Debug.Trace
 
 -- | Type of approximation (needed for scaling of values).
 data ProxyType
@@ -80,7 +82,7 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                { _proxyTable   :: !(M.Map (V.Vector Float, ActionIndex) Float)
                , _proxyDefault :: !Float
                }
-             | forall nrL nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, KnownNat nrL, Last shapes ~ 'D1 nrL, GNum (Gradients layers),
+             | forall nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, GNum (Gradients layers), SingI (Last shapes),
                                               NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
@@ -154,11 +156,11 @@ proxyExpectedOutput _ p = pure p
 
 
 instance Show Proxy where
-  show (Scalar x)              = "Scalar: " ++ show x
-  show Table{}                 = "Table"
-  show Grenade{}               = "Grenade"
-  show TensorflowProxy{}       = "TensorflowProxy"
-  show (CombinedProxy p col _) = "CombinedProxy of " ++ show p ++ " at row " ++ show col
+  show (Scalar x)                  = "Scalar: " ++ show x
+  show Table{}                     = "Table"
+  show (Grenade _ _ t _ _)         = "Grenade " ++ show t
+  show (TensorflowProxy _ _ t _ _) = "TensorflowProxy " ++ show t
+  show (CombinedProxy p col _)     = "CombinedProxy of " ++ show p ++ " at column " ++ show col
 
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{} = "Scalar"
@@ -169,7 +171,7 @@ prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProx
 
 
 instance NFData Proxy where
-  rnf (Table x def)           = rnf x `seq` rnf def
+  rnf (Table x def) = rnf x `seq` rnf def
   rnf (Grenade t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (TensorflowProxy t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x

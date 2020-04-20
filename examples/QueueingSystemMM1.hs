@@ -13,12 +13,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL                as B
-import           SolveLp
-
-import           Experimenter
-
-import           Helper
 
 import           Control.Arrow          (first, second)
 import           Control.DeepSeq        (NFData)
@@ -40,7 +34,12 @@ import           System.Directory
 import           System.IO
 import           System.Random
 
+import           Experimenter
 import qualified HighLevelTensorflow    as TF
+import           ML.BORL                as B
+
+import           Helper
+import           SolveLp
 
 
 import           Debug.Trace
@@ -353,9 +352,9 @@ usermode = do
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
   rl <- do
     case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
-      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (const nn) nnConfig (Just initVals)
+      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)

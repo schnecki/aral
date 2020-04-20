@@ -1,15 +1,21 @@
-{-# LANGUAGE DataKinds        #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs            #-}
-{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Strict              #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module ML.BORL.NeuralNetwork.Grenade
     ( trainGrenade
     ) where
 
 
+import           Control.DeepSeq
 import           Control.Parallel.Strategies
-import           Data.List                        (foldl', foldl1)
+import           Data.List                        (foldl', foldl1, genericLength)
+import qualified Data.Map.Strict                  as M
+import           Data.Proxy
+import           Data.Singletons
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Storable             as V
 import           GHC.TypeLits
@@ -24,21 +30,24 @@ import           Debug.Trace
 trainMaxVal :: Float
 trainMaxVal = 0.98
 
-trainGrenade ::
-     (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, KnownNat nrL, 'D1 nrH ~ Head shapes, 'D1 nrL ~ Last shapes)
+trainGrenade :: forall layers shapes nrH opt .
+     (GNum (Gradients layers), NFData (Network layers shapes), NFData (Tapes layers shapes), KnownNat nrH, 'D1 nrH ~ Head shapes, SingI (Last shapes))
   => Optimizer opt
   -> Network layers shapes
   -> [((StateFeatures, ActionIndex), Float)]
   -> Network layers shapes
-trainGrenade lp net chs = applyUpdate lp net $ foldl1 (|+) $ zipWith mkGradients chs $ tapesAndActual chs
-  where
-    tapesAndActual = parMap rdeepseq runForward
-    runForward ((inp, _), _) = fromLastShapes net $ runNetwork net (toHeadShapes net inp)
-    mkGradients ((_, idx), target) (tape, output) = fst $ runGradient net tape loss
-      where
-        loss = mkLoss (toLastShapes net output) (toLastShapes net (toLabel idx target output))
-    toLabel idx target output = V.map (max (-trainMaxVal) . min trainMaxVal) (output V.// [(idx, target)])
+trainGrenade lp net chs =
+  let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty chs
+      inputs = M.keys valueMap
+      (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapes net . runNetwork net . toHeadShapes net) inputs
+      labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> vec V.// [(idx, groundTruth)]))) (M.elems valueMap) outputs
+      gradients = zipWith3 (\tape output label -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) tapes outputs labels
+      -- applyAndMkOut grads = map (snd . fromLastShapes net . runNetwork (foldl' (applyUpdate lp) net grads)) (map (toHeadShapes net) inputs)
+  in -- trace ("applyUpdate: " ++ show (applyAndMkOut gradients == applyAndMkOut [foldl1 (|+) gradients]))
 
+    -- foldl' (applyUpdate lp) net gradients   -- slow
+    force $ applyUpdate lp net $ 1/genericLength gradients |* foldl1 (|+) gradients
+    -- applyUpdate lp net $ foldl1 (|+) gradients  -- better to use avg: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
 
 mkLoss :: (Fractional a) => a -> a -> a
 mkLoss o t = let l = o-t in signum l * l^(2::Int)

@@ -1,6 +1,7 @@
 flags: {}
 packages:
 - .
+- examples/
 - experimenter
 - grenade
 - gym-haskell

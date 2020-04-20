@@ -1,0 +1,200 @@
+name:                borl-examples
+version:             0.2.0.0
+github:              "github.com/schnecki"
+license:             AllRightsReserved
+author:              "Manuel Schneckenreither"
+maintainer:          "manuel.schneckenreither@uibk.ac.at"
+copyright:           "2020 Manuel Schneckenreither"
+
+# Metadata used when publishing your package
+synopsis:            Blackwell optimal reinforcement learning examples
+category:            Machine Learning
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/borl#readme>
+
+flags:
+  fast:
+    description: Disables optimizations
+    manual: true
+    default: false
+  debug:
+    description: Turn on debug settings.
+    manual: false
+    default: false
+
+dependencies:
+  - base >= 4.7 && < 5
+  - containers
+  - random
+  - lens
+  - pretty
+  - text
+  - singletons
+  - hmatrix
+  - vector
+  - grenade
+  - bytestring
+  - exceptions
+  - directory
+  - transformers
+  - parallel
+  - deepseq
+  - time
+  - bytestring
+  - temporary
+  - mtl
+  - unix
+  - high-level-tensorflow
+  - HUnit
+  - cereal
+  - cereal-text
+  - unliftio-core
+  - random
+  - random-shuffle
+  - data-default
+  - borl
+
+executables:
+  gridworld:
+    main:                Gridworld.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+  gridworld-mini:
+    main:                GridworldMini.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+  gridworld-step:
+    main:                GridworldStep.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+  queuing-system:
+    main:                QueueingSystemMM1.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+  gym:
+    main:                GymOpenAI.hs
+    other-modules:       Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - gym-haskell
+    - experimenter
+    extra-libraries: python3.8
+
+
+  multichain:
+    main:                Multichain.hs
+    other-modules:       Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+
+  printer-mail:
+    main:                PrinterMail.hs
+    other-modules:
+    - Helper
+    - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - hmatrix-glpk
+
+  three-states:
+    main:                ThreeStates.hs
+    other-modules:
+    - Helper
+    - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+  parallel:
+    main:                Parallel.hs
+    other-modules:
+    - Helper
+    - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
+
+

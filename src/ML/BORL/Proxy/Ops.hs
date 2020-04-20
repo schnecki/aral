@@ -9,6 +9,8 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE Strict                    #-}
+{-# LANGUAGE StrictData                #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
@@ -32,13 +34,11 @@ import           Control.Arrow
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class       (liftIO)
 import           Control.Parallel.Strategies  hiding (r0)
 import           Data.Function                (on)
 import           Data.List                    (find, foldl', sortBy, transpose)
-import qualified Data.Map.Strict              as M
 import qualified Data.Map.Strict              as M
 import           Data.Maybe                   (fromJust, isJust, isNothing)
 import qualified Data.Set                     as S
@@ -105,15 +105,15 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
   calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
   -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftIO $ collectForkResult forkMv'
-  let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+  let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  pV' <- mInsertProxy (getVValState' calc) pV `using` rpar
-  pW' <- mInsertProxy (getWValState' calc) pW `using` rpar
+  pRho' <-  mInsertProxy (getRhoVal' calc) pRho `using` rpar
+  pV' <-    mInsertProxy (getVValState' calc) pV `using` rpar
+  pW' <-    mInsertProxy (getWValState' calc) pW `using` rpar
   pPsiV' <- mInsertProxy (getPsiVValState' calc) pPsiV `using` rpar
   pPsiW' <- mInsertProxy (getPsiWValState' calc) pPsiW `using` rpar
-  pR0' <- mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-  pR1' <- mInsertProxy (getR1ValState' calc) pR1 `using` rpar
+  pR0' <-   mInsertProxy (getR0ValState' calc) pR0 `using` rpar
+  pR1' <-   mInsertProxy (getR1ValState' calc) pR1 `using` rpar
   return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
@@ -134,7 +134,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, pPsiV, pV, pPsiW, pW, pR0, pR1]
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
-    let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calcs !px =
           maybe
             (return px)
@@ -152,26 +152,26 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
       if isNeuralNetwork pRho
         then mTrainBatch getRhoVal' calcs pRho `using` rpar
         else mInsertProxy (getRhoVal' calc) pRho `using` rpar
-    !pV' <- mTrainBatch getVValState' calcs pV `using` rpar
-    !pW' <- mTrainBatch getWValState' calcs pW `using` rpar
-    !pPsiV' <- mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
-    !pPsiW' <- mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
-    !pR0' <- mTrainBatch getR0ValState' calcs pR0 `using` rpar
-    !pR1' <- mTrainBatch getR1ValState' calcs pR1 `using` rpar
+    !pV' <-     mTrainBatch getVValState' calcs pV `using` rpar
+    !pW' <-     mTrainBatch getWValState' calcs pW `using` rpar
+    !pPsiV' <-  mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
+    !pPsiW' <-  mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
+    !pR0' <-    mTrainBatch getR0ValState' calcs pR0 `using` rpar
+    !pR1' <-    mTrainBatch getR1ValState' calcs pR1 `using` rpar
     return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMems'), calc)
   where
     (!stateFeat, !stateActs, !stateNextActs) = mkStateActs borl state stateNext
 insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy !Nothing) = do
   !calc <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd
-  let mInsertProxy !mVal !px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
-  !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  !pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
-  !pW' <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
-  !pPsiV' <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
-  !pPsiW' <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
-  !pR0' <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
-  !pR1' <- mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
+  let mInsertProxy !mVal !px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
+  !pRhoMin' <-  mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+  !pRho' <-     mInsertProxy (getRhoVal' calc) pRho `using` rpar
+  !pV' <-       mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
+  !pW' <-       mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
+  !pPsiV' <-    mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
+  !pPsiW' <-    mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
+  !pR0' <-      mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
+  !pR1' <-      mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
   !proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
@@ -193,7 +193,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, proxy]
     let mkCalc (!s, !idx, !rand, !rew, !s', !epiEnd) = getCalc s idx rand rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
-    let mInsertProxy !mVal !px = maybe (return px) (\val -> insertProxy period stateFeat aNr val px) mVal
+    let mInsertProxy !mVal !px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calcs !px =
           maybe
             (return px)
@@ -211,12 +211,12 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
       if isNeuralNetwork pRho
         then mTrainBatch getRhoVal' calcs pRho `using` rpar
         else mInsertProxy (getRhoVal' calc) pRho `using` rpar
-    !pV' <- mTrainBatch getVValState' calcs (pxs ^. v) `using` rpar
-    !pW' <- mTrainBatch getWValState' calcs (pxs ^. w) `using` rpar
-    !pPsiV' <- mTrainBatch getPsiVValState' calcs (pxs ^. psiV) `using` rpar
-    !pPsiW' <- mTrainBatch getPsiWValState' calcs (pxs ^. psiW) `using` rpar
-    !pR0' <- mTrainBatch getR0ValState' calcs (pxs ^. r0) `using` rpar
-    !pR1' <- mTrainBatch getR1ValState' calcs (pxs ^. r1) `using` rpar
+    !pV' <-     mTrainBatch getVValState' calcs (pxs ^. v) `using` rpar
+    !pW' <-     mTrainBatch getWValState' calcs (pxs ^. w) `using` rpar
+    !pPsiV' <-  mTrainBatch getPsiVValState' calcs (pxs ^. psiV) `using` rpar
+    !pPsiW' <-  mTrainBatch getPsiWValState' calcs (pxs ^. psiW) `using` rpar
+    !pR0' <-    mTrainBatch getR0ValState' calcs (pxs ^. r0) `using` rpar
+    !pR1' <-    mTrainBatch getR1ValState' calcs (pxs ^. r1) `using` rpar
     !proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
     return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' (Just replMems'), calc)
   where
@@ -247,17 +247,16 @@ insertProxy !p !st !aNr !val = insertProxyMany p [((st, aNr), val)]
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
-insertProxyMany _ !xs !(Scalar _) = return $ Scalar (snd $ last xs)
-insertProxyMany _ !xs !(Table !m !def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (V.map trunc st, aNr) v' m') m xs) def
+insertProxyMany _ !xs (Scalar _) = return $ Scalar (snd $ last xs)
+insertProxyMany _ !xs (Table !m !def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (V.map trunc st, aNr) v' m') m xs) def
   where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
         n = 3
-insertProxyMany !_ !xs !(CombinedProxy !subPx !col !vs) = return $ CombinedProxy subPx col (vs <> xs)
+insertProxyMany !_ !xs (CombinedProxy !subPx !col !vs) = return $ CombinedProxy subPx col (vs <> xs)
 insertProxyMany !period !xs !px
   | period < memSize - 1 = return px
   | period == memSize - 1 = emptyCache >> updateNNTargetNet True period px
   | otherwise = emptyCache >> trainBatch period xs px >>= updateNNTargetNet False period
   where
-    config = px ^?! proxyNNConfig
     memSize = fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize)
 
 
@@ -303,8 +302,8 @@ updateNNTargetNet !forceReset !period !px
 
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
-trainBatch !period !trainingInstances !px@(Grenade !netT !netW !tp !config !nrActs) = do
-  let netW' = foldl' (trainGrenade opt) netW (map return trainingInstances')
+trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs) = do
+  let netW' = trainGrenade opt netW trainingInstances'
   return $! Grenade netT netW' tp config nrActs
   where
     trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances

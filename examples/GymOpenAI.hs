@@ -304,13 +304,13 @@ main = do
     case alg of
       AlgBORL {} ->
         (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ -> return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
       AlgDQNAvgRewAdjusted {} ->
         (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ ->  return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
       AlgDQN {} ->
         (randomNetworkInitWith UniformInit :: IO NN) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (const nn) (nnConfig gym maxRew) initValues
+          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ ->  return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
   askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
   where
     cmds = []

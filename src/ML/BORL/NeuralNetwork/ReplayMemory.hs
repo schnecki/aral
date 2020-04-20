@@ -3,6 +3,8 @@
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE Strict          #-}
+{-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 
@@ -11,7 +13,7 @@ module ML.BORL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Data.List            (genericLength)
+import qualified Data.Vector          as VI
 import qualified Data.Vector.Mutable  as VM
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
@@ -19,18 +21,16 @@ import           System.Random
 
 import           ML.BORL.Types
 
-import           Debug.Trace
-
 ------------------------------ Replay Memories ------------------------------
 
 data ReplayMemories
-  = ReplayMemoriesUnified !ReplayMemory      -- ^ All experiences are saved in a single replay memory.
-  | ReplayMemoriesPerActions ![ReplayMemory] -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
+  = ReplayMemoriesUnified !ReplayMemory                -- ^ All experiences are saved in a single replay memory.
+  | ReplayMemoriesPerActions !(VI.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
   deriving (Generic)
 
 replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
 replayMemories _ f (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> f rm
-replayMemories idx f (ReplayMemoriesPerActions rs) = (\x -> ReplayMemoriesPerActions (take idx rs ++ x : drop (idx+1) rs)) <$> f (rs !! idx)
+replayMemories idx f (ReplayMemoriesPerActions rs) = (\x -> ReplayMemoriesPerActions (rs VI.// [(idx, x)])) <$> f (rs VI.! idx)
 
 
 instance NFData ReplayMemories where
@@ -55,9 +55,9 @@ instance NFData ReplayMemory where
 addToReplayMemories :: Experience -> ReplayMemories -> IO ReplayMemories
 addToReplayMemories e (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> addToReplayMemory e rm
 addToReplayMemories e@(_, idx, _, _, _, _) (ReplayMemoriesPerActions rs) = do
-  let r = rs !! idx
+  let r = rs VI.! idx
   r' <- addToReplayMemory e r
-  return $ ReplayMemoriesPerActions (take idx rs ++ r' : drop (idx + 1) rs)
+  return $!! ReplayMemoriesPerActions (rs VI.// [(idx, r')])
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
@@ -77,16 +77,16 @@ getRandomReplayMemoryElements bs (ReplayMemory vec _ _ maxIdx) = do
 -- | Get a list of random input-output tuples from the replay memory.
 getRandomReplayMemoriesElements :: Batchsize -> ReplayMemories -> IO [Experience]
 getRandomReplayMemoriesElements bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements bs rm
-getRandomReplayMemoriesElements bs (ReplayMemoriesPerActions rs) = concat <$> mapM (getRandomReplayMemoryElements nr) rs
-  where nr = ceiling (fromIntegral bs / genericLength rs :: Float)
+getRandomReplayMemoriesElements bs (ReplayMemoriesPerActions rs) = concat <$> mapM (getRandomReplayMemoryElements nr) (VI.toList rs)
+  where nr = ceiling (fromIntegral bs / fromIntegral (VI.length rs) :: Float)
 
 -- | Size of replay memory (combined if it is a per action replay memory).
 replayMemoriesSize :: ReplayMemories -> Int
 replayMemoriesSize (ReplayMemoriesUnified m)     = m ^. replayMemorySize
-replayMemoriesSize (ReplayMemoriesPerActions ms) = sum $ map (view replayMemorySize) ms
+replayMemoriesSize (ReplayMemoriesPerActions ms) = sum $ VI.map (view replayMemorySize) ms
 
 replayMemoriesSubSize :: ReplayMemories -> Int
 replayMemoriesSubSize (ReplayMemoriesUnified m)        = m ^. replayMemorySize
-replayMemoriesSubSize (ReplayMemoriesPerActions (m:_)) = m ^. replayMemorySize
-replayMemoriesSubSize (ReplayMemoriesPerActions [])    = 0
+replayMemoriesSubSize (ReplayMemoriesPerActions xs) | VI.null xs = 0
+                                                    | otherwise = (VI.head xs) ^. replayMemorySize
 

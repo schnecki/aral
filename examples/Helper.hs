@@ -83,9 +83,8 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                       borl
                       [1 .. often]
                in case find isTensorflow (allProxies $ ql ^. proxies) of
-                    Nothing -> runMonadBorlIO $ runner ql >>= askUser mInverse False addUsage cmds qlCmds
-                    Just {} -> do
-                      liftIO $ putStr "ASDFASDF"
+                    Nothing -> runMonadBorlIO $ time (runner ql) >>= askUser mInverse False addUsage cmds qlCmds
+                    Just {} -> time $ do
                       ql' <-
 
                         runMonadBorlTF $ do
