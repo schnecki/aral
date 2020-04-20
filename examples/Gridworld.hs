@@ -136,7 +136,7 @@ instance ExperimentDef (BORL St) where
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter netInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
@@ -173,7 +173,7 @@ instance ExperimentDef (BORL St) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1000
+    { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
@@ -211,9 +211,8 @@ params =
     }
 
 -- | Decay function of parameters.
-decay :: Decay
+decay :: ParameterDecaySetting
 decay =
-  decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _alphaRhoMin      = NoDecay

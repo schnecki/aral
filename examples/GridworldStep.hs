@@ -93,9 +93,8 @@ params =
     }
 
 -- | Decay function of parameters.
-decay :: Decay
+decay :: ParameterDecaySetting
 decay =
-  decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _alphaRhoMin      = NoDecay

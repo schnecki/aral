@@ -310,7 +310,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        else empty)
   where
     params = borl ^. parameters
-    params' = (borl ^. decayFunction) (borl ^. t) params
+    params' = decayedParameters borl
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty

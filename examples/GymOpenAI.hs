@@ -334,9 +334,8 @@ params gym maxRew =
   where eps | name gym == "MountainCar-v0" = 0.25
             | otherwise = min 1.0 $ max 0.05 $ 0.005 * maxRew
 
-decay :: Gym -> Decay
+decay :: Gym -> ParameterDecaySetting
 decay gym =
-  decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 30000
       , _alphaRhoMin      = NoDecay

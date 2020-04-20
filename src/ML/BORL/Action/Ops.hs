@@ -47,7 +47,7 @@ nextAction !borl = do
   ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
   return (mainAgent, ws)
   where
-    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    params' = decayedParameters borl
     maxExpl = max (params' ^. exploration)
 
 nextActionFor :: (MonadBorl' m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
@@ -169,7 +169,7 @@ chooseAction borl useRand selFromList = do
     headE (x:_) = x
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"
     headDqn (x:_) = x
-    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    params' = decayedParameters borl
     eps = params' ^. epsilon
     epsCompareN n = epsCompareWithN n 1
     epsCompareWithN n fact = epsCompareWith (fact * getNthElement n eps)

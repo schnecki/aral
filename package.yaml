@@ -74,12 +74,13 @@ library:
   default-extensions:
     - CPP
   when:
-    - condition: (flag(debug)) || (flag(fast))
+    - condition: flag(fast)
       then:
         ghc-options: -O0 # -fprof-auto
-        cpp-options: -DDEBUG
       else:
         ghc-options: -O2
+    - condition: flag(debug)
+      cpp-options: -DDEBUG
 
 tests:
   borl-test:

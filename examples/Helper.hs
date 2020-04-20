@@ -84,15 +84,14 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                       [1 .. often]
                in case find isTensorflow (allProxies $ ql ^. proxies) of
                     Nothing -> runMonadBorlIO $ time (runner ql) >>= askUser mInverse False addUsage cmds qlCmds
-                    Just {} -> time $ do
-                      ql' <-
-
-                        runMonadBorlTF $ do
-
-                          restoreTensorflowModels True ql
-                          borl' <- runner ql
-                          saveTensorflowModels borl'
-                      askUser mInverse False addUsage cmds qlCmds ql'
+                    Just {} ->
+                      time $ do
+                        ql' <-
+                          runMonadBorlTF $ do
+                            restoreTensorflowModels True ql
+                            borl' <- runner ql
+                            saveTensorflowModels borl'
+                        askUser mInverse False addUsage cmds qlCmds ql'
              -- -> do
              --  ql' <-
              --    foldM
@@ -125,30 +124,27 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
             sortBy (compare `on` fst) [("alpha", "alpha"), ("exp", "exploration rate"), ("eps", "epsilon"), ("lr", "learning rate"), ("dislearn", "Disable/Enable all learning")]
           liftIO $ putStr "Enter value: " >> hFlush stdout >> getLine
       ql' <-
-        do let modifyDecayFun f v' = decayFunction .~ (\t p -> f .~ v' $ (ql ^. decayFunction) t p)
-           case e of
-             "alpha" -> do
-               liftIO $ putStr "New value: " >> hFlush stdout
-               liftIO $ maybe ql (\v' -> modifyDecayFun alpha v' $ parameters . alpha .~ v' $ ql) <$> getIOMWithDefault Nothing
-             "exp" -> do
-               liftIO $ putStr "New value: " >> hFlush stdout
-               liftIO $ maybe ql (\v' -> modifyDecayFun exploration v' $ parameters . exploration .~ v' $ ql) <$> getIOMWithDefault Nothing
-             "eps" -> do
-               liftIO $ putStr "New value: " >> hFlush stdout
-               liftIO $ maybe ql (\v' -> modifyDecayFun epsilon (Last v') $ parameters . epsilon .~ Last (v' :: Float) $ ql) <$> getIOMWithDefault Nothing
-             "lr" -> do
-               liftIO $ putStr "New value: " >> hFlush stdout
-               liftIO $
-                 maybe
-                   ql
-                   (\v' ->
-                      overAllProxies (proxyNNConfig . grenadeLearningParams) (setLearningRate v') $
-                      overAllProxies (proxyNNConfig . learningParamsDecay) (const NoDecay) ql) <$>
-                 getIOMWithDefault Nothing
-             "dislearn" -> do
-               liftIO $ putStr "New value (True or False): " >> hFlush stdout
-               liftIO $ maybe ql (\v' -> settings . disableAllLearning .~ v' $ ql) <$> getIOMWithDefault Nothing
-             _ -> liftIO $ putStrLn "Did not understand the input" >> return ql
+        case e of
+          "alpha" -> do
+            liftIO $ putStr "New value: " >> hFlush stdout
+            liftIO $ maybe ql (\v' -> decaySetting . alpha .~ NoDecay $ parameters . alpha .~ v' $ ql) <$> getIOMWithDefault Nothing
+          "exp" -> do
+            liftIO $ putStr "New value: " >> hFlush stdout
+            liftIO $ maybe ql (\v' -> decaySetting . exploration .~ NoDecay $ parameters . exploration .~ v' $ ql) <$> getIOMWithDefault Nothing
+          "eps" -> do
+            liftIO $ putStr "New value: " >> hFlush stdout
+            liftIO $ maybe ql (\v' -> decaySetting . epsilon .~ Last NoDecay $ parameters . epsilon .~ Last (v' :: Float) $ ql) <$> getIOMWithDefault Nothing
+          "lr" -> do
+            liftIO $ putStr "New value: " >> hFlush stdout
+            liftIO $
+              maybe
+                ql
+                (\v' -> overAllProxies (proxyNNConfig . grenadeLearningParams) (setLearningRate v') $ overAllProxies (proxyNNConfig . learningParamsDecay) (const NoDecay) ql) <$>
+              getIOMWithDefault Nothing
+          "dislearn" -> do
+            liftIO $ putStr "New value (True or False): " >> hFlush stdout
+            liftIO $ maybe ql (\v' -> settings . disableAllLearning .~ v' $ ql) <$> getIOMWithDefault Nothing
+          _ -> liftIO $ putStrLn "Did not understand the input" >> return ql
       askUser mInverse False addUsage cmds qlCmds ql'
     _ ->
       case find ((== c) . fst) cmds of

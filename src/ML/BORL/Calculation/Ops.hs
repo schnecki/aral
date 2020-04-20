@@ -99,7 +99,7 @@ getExpSmthParam borl p param
   where
     isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
     px = borl ^. proxies . p
-    params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+    params' = decayedParameters borl
 
 mkCalculation' ::
      (MonadBorl' m)
@@ -113,7 +113,7 @@ mkCalculation' ::
   -> Algorithm NetInputWoAction
   -> m Calculation
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) = do
-  let params' = (borl ^. decayFunction) (borl ^. t) (borl ^. parameters)
+  let params' = decayedParameters borl
   let isRefState = mRefState == Just (state, aNr)
   let alp = getExpSmthParam borl rho alpha
       bta = getExpSmthParam borl v beta

@@ -48,23 +48,24 @@ import           ML.BORL.Workers.Type
 
 
 data BORLSerialisable s = BORLSerialisable
-  { serS              :: !s                    -- ^ Current state.
-  , serWorkers        :: !(Maybe (Workers s))  -- ^ Workers
-  , serT              :: !Int                  -- ^ Current time t.
-  , serEpisodeNrStart :: !(Int, Int)           -- ^ Nr of Episode and start period.
-  , serParameters     :: !ParameterInitValues  -- ^ Parameter setup.
-  , serSettings       :: !Settings  -- ^ Parameter setup.
-  , serRewardFutures  :: [RewardFutureData s]
+  { serS                :: !s                    -- ^ Current state.
+  , serWorkers          :: !(Maybe (Workers s))  -- ^ Workers
+  , serT                :: !Int                  -- ^ Current time t.
+  , serEpisodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
+  , serParameters       :: !ParameterInitValues  -- ^ Parameter setup.
+  , serParameterSetting :: !ParameterDecaySetting
+  , serSettings         :: !Settings  -- ^ Parameter setup.
+  , serRewardFutures    :: [RewardFutureData s]
 
   -- define algorithm to use
-  , serAlgorithm      :: !(Algorithm [Float])
-  , serObjective      :: !Objective
+  , serAlgorithm        :: !(Algorithm [Float])
+  , serObjective        :: !Objective
 
   -- Values:
-  , serLastVValues    :: ![Float]                 -- ^ List of X last V values
-  , serLastRewards    :: ![Float]                 -- ^ List of X last rewards
-  , serPsis           :: !(Float, Float, Float)  -- ^ Exponentially smoothed psi values.
-  , serProxies        :: Proxies                    -- ^ Scalar, Tables and Neural Networks
+  , serLastVValues      :: ![Float]                 -- ^ List of X last V values
+  , serLastRewards      :: ![Float]                 -- ^ List of X last rewards
+  , serPsis             :: !(Float, Float, Float)  -- ^ Exponentially smoothed psi values.
+  , serProxies          :: Proxies                    -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
 toSerialisable :: (MonadBorl' m, Ord s, RewardFuture s) => BORL s -> m (BORLSerialisable s)
@@ -73,10 +74,10 @@ toSerialisable = toSerialisableWith id id
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
 toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par setts _ _ alg obj v rew psis prS) = do
-  BORL _ _ s workers _ t eNr par setts _ future alg obj v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
+  BORL _ _ s workers _ t eNr par dec setts future alg obj v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> Decay -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
@@ -85,14 +86,13 @@ fromSerialisableWith ::
   -> (StoreType s' -> StoreType s)
   -> [Action s]
   -> ActionFilter s
-  -> Decay
   -> FeatureExtractor s
   -> TF.ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF decay ftExt builder (BORLSerialisable s workers t e par setts future alg obj lastV rew psis prS) = do
+fromSerialisableWith f g as aF ftExt builder (BORLSerialisable s workers t e par dec setts future alg obj lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par setts decay (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
+      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2

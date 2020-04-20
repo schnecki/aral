@@ -172,7 +172,7 @@ instance ExperimentDef (BORL St) where
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter decay tblInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter tblInp modelBuilder
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
@@ -258,9 +258,8 @@ params =
     }
 
 -- | Decay function of parameters.
-decay :: Decay
+decay :: ParameterDecaySetting
 decay =
-  decaySetupParameters
     Parameters
       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _alphaRhoMin = NoDecay

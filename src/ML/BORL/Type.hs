@@ -43,7 +43,8 @@ module ML.BORL.Type
   , episodeNrStart
   , parameters
   , settings
-  , decayFunction
+  , decaySetting
+  , decayedParameters
   , futureRewards
   , algorithm
   , objective
@@ -134,13 +135,14 @@ data BORL s = BORL
   , _s                :: !s                             -- ^ Current state.
   , _workers          :: !(Maybe (Workers s))           -- ^ Additional workers.
 
-  , _featureExtractor :: !(FeatureExtractor s) -- ^ Function that extracts the features of a state.
-  , _t                :: !Int                  -- ^ Current time t.
-  , _episodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
-  , _parameters       :: !ParameterInitValues  -- ^ Parameter setup.
-  , _settings         :: !Settings             -- ^ Parameter setup.
-  , _decayFunction    :: !Decay                -- ^ Decay function at period t.
-  , _futureRewards    :: ![RewardFutureData s] -- ^ List of future reward.
+  , _featureExtractor :: !(FeatureExtractor s)  -- ^ Function that extracts the features of a state.
+  , _t                :: !Int                   -- ^ Current time t.
+  , _episodeNrStart   :: !(Int, Int)            -- ^ Nr of Episode and start period.
+  , _parameters       :: !ParameterInitValues   -- ^ Parameter setup.
+  , _decaySetting     :: !ParameterDecaySetting -- ^ Decay Setup
+  , _settings         :: !Settings              -- ^ Parameter setup.
+  -- , _decayFunction    :: !Decay              -- ^ Decay function at period t.
+  , _futureRewards    :: ![RewardFutureData s]  -- ^ List of future reward.
 
   -- define algorithm to use
   , _algorithm        :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
@@ -157,7 +159,11 @@ makeLenses ''BORL
 instance (NFData s) => NFData (BORL s) where
   rnf (BORL as af s ws ftExt t epNr par set dec fut alg ph lastVs lastRews psis proxies) =
     rnf as `seq` rnf af `seq` rnf s `seq` rnf ws `seq` rnf ftExt `seq` rnf t `seq`
-    rnf epNr `seq` rnf par `seq` rnf set `seq` rnf dec `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf1 lastVs `seq` rnf1 lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+    rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf set `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf1 lastVs `seq` rnf1 lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+
+
+decayedParameters :: BORL s -> ParameterDecayedValues
+decayedParameters borl = decaySettingParameters (borl ^. decaySetting) (borl ^. t) (borl ^. parameters)
 
 ------------------------------ Indexed Action ------------------------------
 
@@ -220,7 +226,7 @@ convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 
-mkUnichainTabular :: Algorithm s -> InitialStateFun s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> Decay -> Maybe InitValues -> IO (BORL s)
+mkUnichainTabular :: Algorithm s -> InitialStateFun s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> ParameterDecaySetting -> Maybe InitValues -> IO (BORL s)
 mkUnichainTabular alg initialStateFun ftExt as asFilter params  decayFun initVals = do
   st <- initialStateFun MainAgent
   return $ BORL
@@ -232,8 +238,8 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params  decayFun initVal
     0
     (0, 0)
     params
-    def
     decayFun
+    def
     mempty
     (convertAlgorithm ftExt alg)
     Maximise
@@ -272,7 +278,7 @@ mkUnichainTensorflowM ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
@@ -306,8 +312,8 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           0
           (0, 0)
           params
-          def
           decayFun
+          def
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
@@ -334,8 +340,8 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           0
           (0, 0)
           params
-          def
           decayFun
+          def
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
@@ -357,7 +363,7 @@ mkUnichainTensorflowCombinedNetM ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
@@ -392,8 +398,8 @@ mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params de
       0
       (0, 0)
       params
-      def
       decayFun
+      def
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
@@ -416,7 +422,7 @@ mkUnichainTensorflow ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
@@ -434,7 +440,7 @@ mkUnichainTensorflowCombinedNet ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> TF.ModelBuilderFunction
   -> NNConfig
   -> Maybe InitValues
@@ -443,7 +449,8 @@ mkUnichainTensorflowCombinedNet alg initialState ftExt as asFilter params decayF
   runMonadBorlTF (mkUnichainTensorflowCombinedNetM alg initialState ftExt as asFilter params decayFun modelBuilder nnConfig initValues)
 
 
-mkMultichainTabular :: Algorithm s -> InitialStateFun s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> Decay -> Maybe InitValues -> IO (BORL s)
+mkMultichainTabular ::
+     Algorithm s -> InitialStateFun s -> FeatureExtractor s -> [Action s] -> ActionFilter s -> ParameterInitValues -> ParameterDecaySetting -> Maybe InitValues -> IO (BORL s)
 mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun initValues = do
   initialState <- initialStateFun MainAgent
   return $
@@ -456,8 +463,8 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun initVa
       0
       (0, 0)
       params
-      def
       decayFun
+      def
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
@@ -483,7 +490,7 @@ mkUnichainGrenade ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> (Integer -> IO SpecConcreteNetwork)
   -> NNConfig
   -> Maybe InitValues
@@ -510,7 +517,7 @@ mkUnichainGrenadeCombinedNet ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> (Integer -> IO SpecConcreteNetwork)
   -> NNConfig
   -> Maybe InitValues
@@ -552,7 +559,7 @@ mkUnichainGrenadeHelper ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> NNConfig
   -> Maybe InitValues
   -> Network layers shapes
@@ -592,8 +599,8 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
       0
       (0, 0)
       params
-      def
       decayFun
+      def
       []
       (convertAlgorithm ftExt alg)
       Maximise
@@ -624,7 +631,7 @@ mkMultichainGrenade ::
   -> [Action s]
   -> ActionFilter s
   -> ParameterInitValues
-  -> Decay
+  -> ParameterDecaySetting
   -> Network layers shapes
   -> NNConfig
   -> IO (BORL s)
@@ -652,8 +659,8 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
       0
       (0, 0)
       params
-      def
       decayFun
+      def
       []
       (convertAlgorithm ftExt alg)
       Maximise
