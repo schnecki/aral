@@ -59,6 +59,7 @@ dependencies:
   - random
   - random-shuffle
   - data-default
+  - constraints
 
 
 library:

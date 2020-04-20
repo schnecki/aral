@@ -613,10 +613,10 @@ mkMultichainGrenade ::
      , Head shapes ~ 'D1 nrH
      , KnownNat nrL
      , Last shapes ~ 'D1 nrL
-     , Ord s
      , NFData (Tapes layers shapes)
      , NFData (Network layers shapes)
      , Serialize (Network layers shapes)
+     , FromDynamicLayer (Network layers shapes)
      )
   => Algorithm s
   -> InitialStateFun s

@@ -82,8 +82,8 @@ data Proxy = Scalar             -- ^ Combines multiple proxies in one for perfor
                { _proxyTable   :: !(M.Map (V.Vector Float, ActionIndex) Float)
                , _proxyDefault :: !Float
                }
-             | forall nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, GNum (Gradients layers), SingI (Last shapes),
-                                              NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
+             | forall nrH shapes layers. (KnownNat nrH, Head shapes ~ 'D1 nrH, GNum (Gradients layers), SingI (Last shapes), FromDynamicLayer (Network layers shapes),
+                                           NFData (Tapes layers shapes), NFData (Network layers shapes), Serialize (Network layers shapes)) =>
                 Grenade         -- ^ Use Grenade neural networks.
                 { _proxyNNTarget  :: !(Network layers shapes)
                 , _proxyNNWorker  :: !(Network layers shapes)

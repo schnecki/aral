@@ -12,21 +12,25 @@
 
 module ML.BORL.Serialisable where
 
-import           Control.Arrow         (first, (&&&))
+import           Control.Arrow                (first, (&&&))
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad         (void, zipWithM, zipWithM_)
-import           Data.Int              (Int64)
-import           Data.List             (find, foldl')
-import qualified Data.Map              as M
+import           Control.Monad                (void, zipWithM, zipWithM_)
+import           Data.Constraint              (Dict (..))
+import           Data.Int                     (Int64)
+import           Data.List                    (find, foldl')
+import qualified Data.Map                     as M
 import           Data.Serialize
-import qualified Data.Vector           as VB
-import qualified Data.Vector.Mutable   as VM
-import qualified Data.Vector.Storable  as V
+import           Data.Singletons.Prelude.List
+import qualified Data.Vector                  as VB
+import qualified Data.Vector.Mutable          as VM
+import qualified Data.Vector.Storable         as V
 import           GHC.Generics
+import           GHC.TypeLits
 import           Grenade
-import qualified HighLevelTensorflow   as TF
+import qualified HighLevelTensorflow          as TF
 import           System.IO.Unsafe
+import           Unsafe.Coerce                (unsafeCoerce)
 
 import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
@@ -139,7 +143,7 @@ instance Serialize NNConfig where
 instance Serialize Proxy where
   put (Scalar x) = put (0 :: Int) >> put x
   put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) m) >> put d
-  put (Grenade t w tp conf nr) = put (2 :: Int) >> put t >> put w >> put tp >> put conf >> put nr
+  put (Grenade t w tp conf nr) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr
   put (TensorflowProxy t w tp conf nr) = put (3 :: Int) >> put t >> put w >> put tp >> put conf >> put nr
   get = do
     (c :: Int) <- get
@@ -149,15 +153,18 @@ instance Serialize Proxy where
         m <- M.mapKeys (first V.fromList) <$> get
         d <- get
         return $ Table m d
-      2 -> error "Deserialisation of Grenade proxies is currently no supported!"
-        -- Problem: how to save types?
-        -- do
-        -- t <- get
-        -- w <- get
-        -- tp <- get
-        -- conf <- get
-        -- nr <- get
-        -- return $ Grenade t w tp conf nr
+      2 -> do
+        (specT :: SpecNet) <- get
+        case (unsafePerformIO $ networkFromSpecificationGenericWith UniformInit specT) of
+          SpecNetwork (netT :: Network tLayers tShapes) -> do
+            case (unsafeCoerce (Dict :: Dict ()) :: Dict (Head tShapes ~ 'D1 th, KnownNat th)) of
+              Dict -> do
+                (t :: Network tLayers tShapes) <- get
+                (w :: Network tLayers tShapes) <- get
+                tp <- get
+                conf <- get
+                nr <- get
+                return $ Grenade t w tp conf nr
       3 -> do
         t <- get
         w <- get
