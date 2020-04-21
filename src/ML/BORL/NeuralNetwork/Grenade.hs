@@ -47,8 +47,8 @@ trainGrenade lp net chs =
     -- trace ("same? " ++ show (applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) gradients)] == applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) (take 2 gradients))]))
     -- foldl' (applyUpdate lp) net gradients   -- slow
 
-    -- force $ applyUpdate lp net $ foldl1 (|+) gradients
-    force $ applyUpdate lp net $ 1/genericLength gradients |* foldl1 (|+) gradients
+    force $ applyUpdate lp net $ foldl1 (|+) gradients
+    -- force $ applyUpdate lp net $ 1/genericLength gradients |* foldl1 (|+) gradients
 
     -- foldl' (applyUpdate lp) net $ replicate 8 $ 1/genericLength gradients |* foldl1 (|+) gradients
     -- applyUpdate lp net $ foldl1 (|+) gradients  -- better to use avg: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
