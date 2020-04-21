@@ -533,7 +533,7 @@ mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayF
     SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    _ -> error "BORL currently requieres a nrNetsD input and either nrNetsD our 2D output"
+    _ -> error "BORL currently requieres a 1D input and either 1D our 2D output"
     -- SpecConcreteNetwork2D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
@@ -676,6 +676,9 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
 mkReplayMemories :: [Action s] -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories as nnConfig = case nnConfig ^. replayMemoryStrategy of
   ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (max (nnConfig ^. replayMemoryMaxSize) (nnConfig ^. nStep))
+  ReplayMemoryPerAction | nnConfig ^. nStep > 1 -> do
+                               putStrLn "Cannot use ReplayMemoriesPerActions and nStep > 1. Thus using ReplayMemoriesUnified!"
+                               fmap ReplayMemoriesUnified <$> mkReplayMemory (max (nnConfig ^. replayMemoryMaxSize) (nnConfig ^. nStep))
   ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)))
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)

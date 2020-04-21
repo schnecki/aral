@@ -144,8 +144,9 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
       callWorkers -- make 2 steps to ensure the replay memory will not be offset
         | period == 0 = do
           workers' <- runWorkerActions borl workerActions
-          acts' <- snd <$> nextAction (set workers workers' borl)
-          doFork' $ runWorkerActions borl acts'
+          let borl' = set workers workers' borl
+          acts' <- snd <$> nextAction borl'
+          doFork' $ runWorkerActions borl' acts'
         | otherwise = liftIO $ doFork' $ runWorkerActions borl workerActions
   workerReplMemFuture <- liftIO callWorkers
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state

@@ -75,7 +75,7 @@ getRandomReplayMemoryElements 1 bs (ReplayMemory vec _ _ maxIdx) = do
   g <- newStdGen
   let rands = take len $ randomRs (0, maxIdx) g
   map return <$> mapM (VM.read vec) rands
-getRandomReplayMemoryElements nStep bs (ReplayMemory vec _ _ maxIdx) = do -- get consequitive experiences
+getRandomReplayMemoryElements nStep bs (ReplayMemory vec _ nxtIdx maxIdx) = do -- get consequitive experiences
   let len = min bs maxIdx
   g <- newStdGen
   let rands = take len $ randomRs (nStep - 1, maxIdx) g
