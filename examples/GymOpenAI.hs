@@ -72,8 +72,18 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
 
--- modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecNetwork
--- modelBuilderGrenade gym initSt nrActions outcols =
+modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade gym initState lenActs cols =
+  buildModel $
+  inputLayer1D lenIn >>
+  fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
+  fullyConnected (10 * lenIn) >> relu >>
+  fullyConnected (5 * lenIn) >> relu >>
+  fullyConnected (2*lenOut) >> relu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  where
+    lenOut = lenActs * cols
+    lenIn = fromIntegral $ V.length $ netInp False gym initState
 
 
 modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TF.TensorflowModel
@@ -300,17 +310,7 @@ main = do
   -- rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
-  rl <-
-    case alg of
-      AlgBORL {} ->
-        (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ -> return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
-      AlgDQNAvgRewAdjusted {} ->
-        (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ ->  return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
-      AlgDQN {} ->
-        (randomNetworkInitWith UniformInit :: IO NN) >>= \nn ->
-          mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (\_ ->  return $ SpecConcreteNetwork1D1D nn) (nnConfig gym maxRew) initValues
+  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) initValues
   askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
   where
     cmds = []

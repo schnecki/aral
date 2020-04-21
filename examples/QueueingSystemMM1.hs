@@ -349,11 +349,7 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- do
-    case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted{} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
-      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade ) nnConfig (Just initVals)
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
   -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
@@ -363,9 +359,19 @@ usermode = do
   where cmds = []
         usage = []
 
-type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
-type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 30, Relu, FullyConnected 30 12, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 30, 'D1 30, 'D1 12, 'D1 12]
-type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 4, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 4, 'D1 4]
+modelBuilderGrenade :: Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade cols =
+  buildModel $
+  inputLayer1D lenIn >>
+  fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
+  fullyConnected (10 * lenIn) >> relu >>
+  fullyConnected (5 * lenIn) >> relu >>
+  fullyConnected (2*lenOut) >> relu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  where
+    lenOut = lenActs * cols
+    lenIn = fromIntegral $ V.length (netInp initState)
+    lenActs = genericLength actions
 
 
 modelBuilder :: TF.ModelBuilderFunction

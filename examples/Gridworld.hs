@@ -326,17 +326,17 @@ modelBuilder colOut =
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  buildModelWith UniformInit $
-  specFullyConnected lenIn 20 |=> specRelu1D 20 |=> specDropout 20 0.90 Nothing |=> -- netSpecInner |=>
-  specFullyConnected 20 10 |=> specRelu1D 10 |=>
-  specFullyConnected 10 10 |=> specRelu1D 10 |=>
-  specFullyConnected 10 lenOut |=> specReshape (lenOut, 1, 1) (lenActs, cols, 1) |=> specTanh3D (lenActs, cols, 1) |=>
-  specNil (lenActs, cols, 1)
+  buildModel $
+  inputLayer1D lenIn >>
+  fullyConnected 20 >> relu >> dropout 0.90 >>
+  fullyConnected 10 >> relu >>
+  fullyConnected 10 >> relu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length (netInp initState)
     lenActs = genericLength actions
-    buildModelWith init = networkFromSpecificationWith init
+
 
 netInp :: St -> V.Vector Float
 netInp st = V.fromList [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]

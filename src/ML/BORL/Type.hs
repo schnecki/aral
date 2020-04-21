@@ -589,7 +589,6 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
   return $
-    checkGrenade net 1 nnConfig $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
       asFilter
@@ -649,7 +648,6 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
   initialState <- initialStateFun MainAgent
   workers <- liftIO $ mkWorkers initialStateFun as nnConfig
   return $
-    checkGrenade net 1 nnConfig $
     BORL
       (VB.fromList $ zip [0 ..] as)
       asFilter
@@ -719,25 +717,6 @@ mkWorkers state as nnConfig = do
 
 -------------------- Helpers --------------------
 
-
--- | Checks the neural network setup and throws an error in case of a faulty number of input or output nodes.
-checkGrenade _ _ _ = id
--- checkGrenade ::
---      forall layers shapes nrH nrL s. (KnownNat nrH, KnownNat nrL, Ord s)
---   => Network layers shapes
---   -> Integer
---   -> NNConfig
---   -> BORL s
---   -> BORL s
--- checkGrenade _ mult nnConfig borl
---   | nnInpNodes /= stInp = error $ "Number of input nodes for neural network is " ++ show nnInpNodes ++ " but should be " ++ show stInp
---   | nnOutNodes /= mult * fromIntegral nrActs = error $ "Number of output nodes for neural network is " ++ show nnOutNodes ++ " but should be " ++ show (fromIntegral mult * nrActs)
---   | otherwise = borl
---   where
---     nnInpNodes = fromIntegral $ natVal (Type.Proxy :: Type.Proxy nrH)
---     nnOutNodes = natVal (Type.Proxy :: Type.Proxy nrL)
---     stInp = V.length ((borl ^. featureExtractor) (borl ^. s))
---     nrActs = VB.length (borl ^. actionList)
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
 overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s

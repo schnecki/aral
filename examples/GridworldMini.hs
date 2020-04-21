@@ -314,11 +314,7 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <-
-    case alg of
-      AlgBORL{} -> (randomNetworkInitWith UniformInit :: IO NNCombined) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
-      AlgDQNAvgRewAdjusted {} -> (randomNetworkInitWith UniformInit :: IO NNCombinedAvgFree) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
-      _ ->  (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
@@ -354,6 +350,20 @@ modelBuilder colOut =
   TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
   -- trainingByGradientDescent 0.01
   where inpLen = fromIntegral $ V.length $ netInp initState
+
+-- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
+modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade actions initState cols =
+  buildModel $
+  inputLayer1D lenIn >>
+  fullyConnected 20 >> relu >> dropout 0.90 >>
+  fullyConnected 10 >> relu >>
+  fullyConnected 10 >> relu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  where
+    lenOut = lenActs * cols
+    lenIn = fromIntegral $ V.length (netInp initState)
+    lenActs = genericLength actions
 
 
 netInp :: St -> V.Vector Float

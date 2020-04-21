@@ -94,6 +94,16 @@ modelBuilder =
   TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
 
 
+modelBuilderGrenade :: Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade  cols =
+  buildModel $
+  inputLayer1D (fromIntegral numInputs) >>
+  fullyConnected 20 >> relu >> dropout 0.90 >>
+  fullyConnected 10 >> relu >>
+  fullyConnected 10 >> relu >>
+  fullyConnected (cols * fromIntegral numActions) >> reshape (fromIntegral numActions, cols, 1) >> tanhLayer
+
+
 instance RewardFuture St where
   type StoreType St = ()
 
@@ -120,7 +130,7 @@ main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay nn nnConfig
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig
   -- rl <- mkUnichainTensorflow alg (liftInitSt initState) actions actionFilter params decay modelBuilder nnConfig Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
