@@ -230,7 +230,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
-        , getExpectedValStateNextV = Nothing
+        , getExpectedValStateNextV = error "N-Step not implemented in AlgBORL"
         , getExpectedValStateNextW = Nothing
         , getExpectedValStateNextR0 = Nothing
         , getExpectedValStateNextR1 = Nothing
@@ -266,10 +266,6 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         case borl ^. objective of
           Maximise -> max
           Minimise -> min
-  -- let expSmthRew' | randomAction = expSmthRew
-  --                 | otherwise = (1 - alp) * expSmthRew + alp * reward
-  --     smoothRhoValWithActualRewards val = (1 - rate) * expSmthRew + rate * val
-  --       where rate = max 0.9 exploreRate -- max 0.5 exploreRate
   let rhoVal'
         | randomAction = maxOrMin rhoMinimumState rhoVal
         | otherwise =
@@ -312,7 +308,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getExpectedValStateNextR0 = Just expStateValR0
         , getExpectedValStateNextR1 = Just expStateValR1
         })
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) (ExpectedValuationNext mExpValStateNextRho mExpValStateNextV mExpValStateWNext mExpValStateNextR0 mExpValStateNextR1) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) expValStateNext = do
   let alp = getExpSmthParam borl rho alpha
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       bta = getExpSmthParam borl v beta
@@ -348,7 +344,10 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             Fixed x -> x
             _ -> (1 - alp) * rhoVal + alp * rhoState
   let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
-  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + epsEnd * vValStateNext)
+  let expStateNextValV | randomAction = epsEnd * vValStateNext
+                        | otherwise = fromMaybe (epsEnd * vValStateNext) (getExpectedValStateNextV expValStateNext)
+      expStateValV = reward - rhoVal' + expStateNextValV
+  let vValState' = (1 - bta) * vValState + bta * (reward - rhoVal' + expStateValV)
   let lastVs' = take keepXLastValues $ vValState' : borl ^. lastVValues
   return $
     ( Calculation
@@ -369,13 +368,13 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
-        , getExpectedValStateNextV = Nothing
+        , getExpectedValStateNextV = Just expStateValV
         , getExpectedValStateNextW = Nothing
         , getExpectedValStateNextR0 = Nothing
         , getExpectedValStateNextR1 = Nothing
         })
 
-mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) (ExpectedValuationNext mExpValStateNextRho mExpValStateNextV mExpValStateWNext mExpValStateNextR0 mExpValStateNextR1) = do
+mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) expValStateNext = do
   let gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0
@@ -383,10 +382,14 @@ mkCalculation' borl (state, _) aNr _ reward (stateNext, stateNextActIdxes) episo
   let lastRews' = take keepXLastValues $ reward : borl ^. lastRewards
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * ga * r1StateNext)
+  let expStateNextValR1 | randomAction = epsEnd * r1StateNext
+                        | otherwise = fromMaybe (epsEnd * r1StateNext) (getExpectedValStateNextR1 expValStateNext)
+      expStateValR1 = reward + ga * expStateNextValR1
+  let r1ValState' = (1 - gam) * r1ValState + gam * (reward + epsEnd * expStateValR1)
+      
   return 
     ( emptyCalculation {getR1ValState' = Just r1ValState', getLastRews' = force lastRews', getEpisodeEnd = episodeEnd}
-    , emptyExpectedValuationNext {getExpectedValStateNextR1 = Nothing})
+    , emptyExpectedValuationNext {getExpectedValStateNextR1 = Just expStateValR1})
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
 rhoMinimumValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
