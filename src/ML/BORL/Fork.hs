@@ -5,9 +5,10 @@ module ML.BORL.Fork
     , collectForkResult
     ) where
 
-import           Control.Concurrent (forkIO, yield)
+import           Control.Concurrent          (forkIO, yield)
 import           Control.DeepSeq
-import           Control.Monad      (void)
+import           Control.Monad               (void)
+import           Control.Parallel.Strategies
 import           Data.IORef
 
 
@@ -21,7 +22,7 @@ doFork !f = do
 doForkFake :: IO a -> IO (IORef (ThreadState a))
 doForkFake !f = do
   ref <- newIORef NotReady
-  f >>= writeIORef ref . Ready
+  (f >>= writeIORef ref . Ready) `using` rpar
   return ref
 
 
