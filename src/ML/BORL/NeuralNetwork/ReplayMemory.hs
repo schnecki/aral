@@ -66,19 +66,31 @@ addToReplayMemory e (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) e
   return $ ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
--- | Get a list of random input-output tuples from the replay memory.
-getRandomReplayMemoryElements :: Batchsize -> ReplayMemory -> IO [Experience]
-getRandomReplayMemoryElements bs (ReplayMemory vec _ _ maxIdx) = do
+-- | Get a list of random input-output tuples from the replay memory. Returns a list at least the length of the batch size with a list of consecutive experiences without a terminal state in between.
+-- In case a terminal state is detected the list is split and the first list exeecds the batchsize.
+getRandomReplayMemoryElements :: NStep -> Batchsize -> ReplayMemory -> IO [[Experience]]
+getRandomReplayMemoryElements _ _ (ReplayMemory _ _ _ 0) = return []
+getRandomReplayMemoryElements 1 bs (ReplayMemory vec _ _ maxIdx) = do
   let len = min bs maxIdx
   g <- newStdGen
-  let rands = take len $ randomRs (0,maxIdx) g
-  mapM (VM.read vec) rands
+  let rands = take len $ randomRs (0, maxIdx) g
+  map return <$> mapM (VM.read vec) rands
+getRandomReplayMemoryElements nStep bs (ReplayMemory vec _ _ maxIdx) = do -- get consequitive experiences
+  let len = min bs maxIdx
+  g <- newStdGen
+  let rands = take len $ randomRs (nStep - 1, maxIdx) g
+      idxes = map (\r -> filter (>= 0) [r - nStep + 1 .. r]) rands
+  concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
+  where
+    isTerminal (_, _, _, _, _, t) = t
+    splitTerminal xs = filter (not . null) [takeWhile (not . isTerminal) xs, dropWhile (not . isTerminal) xs]
 
 -- | Get a list of random input-output tuples from the replay memory.
-getRandomReplayMemoriesElements :: Batchsize -> ReplayMemories -> IO [Experience]
-getRandomReplayMemoriesElements bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements bs rm
-getRandomReplayMemoriesElements bs (ReplayMemoriesPerActions rs) = concat <$> mapM (getRandomReplayMemoryElements nr) (VI.toList rs)
+getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
+getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements nStep bs rm
+getRandomReplayMemoriesElements 1 bs (ReplayMemoriesPerActions rs) = concat <$> mapM (getRandomReplayMemoryElements 1 nr) (VI.toList rs)
   where nr = ceiling (fromIntegral bs / fromIntegral (VI.length rs) :: Float)
+getRandomReplayMemoriesElements _ _ ReplayMemoriesPerActions{}  = error "ReplayMemoriesPerActions does not work with nStep > 1!"
 
 -- | Size of replay memory (combined if it is a per action replay memory).
 replayMemoriesSize :: ReplayMemories -> Int
@@ -86,7 +98,7 @@ replayMemoriesSize (ReplayMemoriesUnified m)     = m ^. replayMemorySize
 replayMemoriesSize (ReplayMemoriesPerActions ms) = sum $ VI.map (view replayMemorySize) ms
 
 replayMemoriesSubSize :: ReplayMemories -> Int
-replayMemoriesSubSize (ReplayMemoriesUnified m)        = m ^. replayMemorySize
-replayMemoriesSubSize (ReplayMemoriesPerActions xs) | VI.null xs = 0
-                                                    | otherwise = (VI.head xs) ^. replayMemorySize
-
+replayMemoriesSubSize (ReplayMemoriesUnified m) = m ^. replayMemorySize
+replayMemoriesSubSize (ReplayMemoriesPerActions xs)
+  | VI.null xs = 0
+  | otherwise = VI.head xs ^. replayMemorySize

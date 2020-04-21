@@ -95,7 +95,7 @@ fromSerialisableWith f g as aF ftExt builder (BORLSerialisable s workers t e par
       borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
-                | isCombinedProxies pxs && isAlgDqnAvgRewardFree alg = 2
+                | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2
                 | isCombinedProxies pxs = 6
                 | otherwise = 1
       borl' =
@@ -119,14 +119,15 @@ instance Serialize ReplayMemories where
 instance (Serialize s, RewardFuture s) => Serialize (Workers s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
+  put (NNConfig memSz memStrat nStep batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
     -- case opt of
     --   OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'SGD) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
     --   OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'Adam) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
-    put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
+    put memSz >> put memStrat >> put nStep >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
   get = do
     memSz <- get
     memStrat <- get
+    nStep <- get
     batchSz <- get
     opt <- get
     decaySetup <- get
@@ -137,7 +138,7 @@ instance Serialize NNConfig where
     upInt <- get
     upIntDec <- get
     workerMinExp <- get
-    return $ NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
+    return $ NNConfig memSz memStrat nStep batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
 
 
 instance Serialize Proxy where

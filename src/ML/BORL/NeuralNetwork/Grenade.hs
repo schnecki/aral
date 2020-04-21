@@ -40,13 +40,17 @@ trainGrenade lp net chs =
   let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty chs
       inputs = M.keys valueMap
       (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapes net . runNetwork net . toHeadShapes net) inputs
-      labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> vec V.// [(idx, groundTruth)]))) (M.elems valueMap) outputs
+      labels = zipWith (V.//) outputs (M.elems valueMap)
       gradients = zipWith3 (\tape output label -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) tapes outputs labels
       -- applyAndMkOut grads = map (snd . fromLastShapes net . runNetwork (foldl' (applyUpdate lp) net grads)) (map (toHeadShapes net) inputs)
   in -- trace ("applyUpdate: " ++ show (applyAndMkOut gradients == applyAndMkOut [foldl1 (|+) gradients]))
-
+    -- trace ("same? " ++ show (applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) gradients)] == applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) (take 2 gradients))]))
     -- foldl' (applyUpdate lp) net gradients   -- slow
-    force $ applyUpdate lp net $ 1/genericLength gradients |* foldl1 (|+) gradients
+
+    force $ applyUpdate lp net $ foldl1 (|+) gradients
+    -- force $ applyUpdate lp net $ 1/genericLength gradients |* foldl1 (|+) gradients
+
+    -- foldl' (applyUpdate lp) net $ replicate 8 $ 1/genericLength gradients |* foldl1 (|+) gradients
     -- applyUpdate lp net $ foldl1 (|+) gradients  -- better to use avg: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
 
 mkLoss :: (Fractional a) => a -> a -> a

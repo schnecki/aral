@@ -288,15 +288,16 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
       scopes = concat $ repeat ["_target", "_worker"]
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) nnTypes scopes (repeat $ modelBuilder 1))
   initialState <- liftIO $ initialStateFun MainAgent
+  repMem <- liftIO $ mkReplayMemories as nnConfig
+  let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW tp nnConfig (length as)
-  repMem <- liftIO $ mkReplayMemories as nnConfig
-  workers <- liftIO $ mkWorkers initialStateFun as nnConfig
-  if isAlgDqnAvgRewardFree alg
+        return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
+  workers <- liftIO $ mkWorkers initialStateFun as nnConfig'
+  if isAlgDqnAvgRewardAdjusted alg
     then do
       r0 <- liftIO $ nnSA R0Table 4
       r1 <- liftIO $ nnSA VTable 0
@@ -370,22 +371,23 @@ mkUnichainTensorflowCombinedNetM ::
   -> m (BORL s)
 mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
-             | isAlgDqnAvgRewardFree alg = 2
+             | isAlgDqnAvgRewardAdjusted alg = 2
              | otherwise = 6
-  let nnType | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
+  let nnType | isAlgDqnAvgRewardAdjusted alg = CombinedUnichain -- ScaleAs VTable
              | otherwise = CombinedUnichain
       scopes = ["_target", "_worker"]
   initialState <- liftIO $ initialStateFun MainAgent
+  repMem <- liftIO $ mkReplayMemories as nnConfig
+  let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let fullModelInit = sequenceA (zipWith3 (\tp sc fun -> TF.withNameScope (proxyTypeName tp <> sc) fun) (repeat nnType) scopes (repeat (modelBuilder nrNets)))
   let netInpInitState = ftExt initialState
       nnSA :: ProxyType -> Int -> IO Proxy
       nnSA tp idx = do
         nnT <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
-        return $ TensorflowProxy nnT nnW tp nnConfig (length as)
+        return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
   proxy <- liftIO $ nnSA nnType 0
-  repMem <- liftIO $ mkReplayMemories as nnConfig
-  workers <- liftIO $ mkWorkers initialStateFun as nnConfig
+  workers <- liftIO $ mkWorkers initialStateFun as nnConfig'
   liftTf $ TF.buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
@@ -524,7 +526,7 @@ mkUnichainGrenadeCombinedNet ::
   -> IO (BORL s)
 mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig initValues = do
   let nrNets | isAlgDqn alg = 1
-             | isAlgDqnAvgRewardFree alg = 2
+             | isAlgDqnAvgRewardAdjusted alg = 2
              | otherwise = 6
   specNet <- netFun nrNets
   case specNet of
@@ -569,7 +571,9 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   print $ networkToSpecification net
   putStrLn "Net: "
   print net
-  let nnSA tp = Grenade (0.05 |* net) (0.05 |* net) tp nnConfig (length as)
+  repMem <- mkReplayMemories as nnConfig
+  let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
+  let nnSA tp = Grenade (0.05 |* net) (0.05 |* net) tp nnConfig' (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -577,12 +581,11 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
   let nnType
-        | isAlgDqnAvgRewardFree alg = CombinedUnichain -- ScaleAs VTable
+        | isAlgDqnAvgRewardAdjusted alg = CombinedUnichain -- ScaleAs VTable
         | otherwise = CombinedUnichain
   let nnComb = nnSA nnType
-  repMem <- mkReplayMemories as nnConfig
   initialState <- initialStateFun MainAgent
-  workers' <- liftIO $ mkWorkers initialStateFun as nnConfig
+  workers' <- liftIO $ mkWorkers initialStateFun as nnConfig'
   let proxies' =
         case (sing :: Sing (Last shapes)) of
           D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
@@ -635,7 +638,9 @@ mkMultichainGrenade ::
   -> NNConfig
   -> IO (BORL s)
 mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig = do
-  let nnSA tp = Grenade net net tp nnConfig (length as)
+  repMem <- mkReplayMemories as nnConfig
+  let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
+  let nnSA tp = Grenade net net tp nnConfig' (length as)
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable
@@ -644,9 +649,8 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
   let nnSAR1Table = nnSA R1Table
   let nnPsiV = nnSA PsiVTable
   let nnPsiW = nnSA PsiWTable
-  repMem <- mkReplayMemories as nnConfig
   initialState <- initialStateFun MainAgent
-  workers <- liftIO $ mkWorkers initialStateFun as nnConfig
+  workers <- liftIO $ mkWorkers initialStateFun as nnConfig'
   return $
     BORL
       (VB.fromList $ zip [0 ..] as)
@@ -671,7 +675,7 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
 
 mkReplayMemories :: [Action s] -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories as nnConfig = case nnConfig ^. replayMemoryStrategy of
-  ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (nnConfig ^. replayMemoryMaxSize)
+  ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (max (nnConfig ^. replayMemoryMaxSize) (nnConfig ^. nStep))
   ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)))
 
 mkReplayMemory :: Int -> IO (Maybe ReplayMemory)

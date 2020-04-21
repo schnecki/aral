@@ -19,6 +19,7 @@ import           Helper
 
 import           Control.Arrow            (first, second, (***))
 import           Control.DeepSeq          (NFData)
+import           Control.DeepSeq
 import           Control.Lens
 import           Control.Lens             (set, (^.))
 import           Control.Monad            (foldM, liftM, unless, when)
@@ -173,12 +174,13 @@ instance ExperimentDef (BORL St) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
+    { _replayMemoryMaxSize = 1
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _trainBatchSize = 8
+    , _nStep = 4
+    , _trainBatchSize = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
        -- OptSGD 0.01 0.0 0.0001
-    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
+    , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
     , _stabilizationAdditionalRho = 0.5
@@ -284,7 +286,7 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
+  rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
 
 
   -- Use an own neural network for every function to approximate
@@ -293,14 +295,14 @@ usermode = do
   -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- let rl = mkUnichainTabular alg initState tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
 
   askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds =
       zipWith3
         (\n (s, a) na -> (s, (n, Action a na)))
-        [0 ..]
+        [1 ..]
         [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
         (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]

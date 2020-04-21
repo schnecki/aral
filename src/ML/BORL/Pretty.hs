@@ -159,7 +159,7 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
 prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
-  text "Average reward freed DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
+  text "Average reward adjusted DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
   text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
@@ -286,6 +286,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
     nnTargetUpdate $+$
     nnBatchSize $+$
+    nnNStep $+$
     nnReplMemSize $+$
     nnLearningParams $+$
     text "Algorithm" <>
@@ -366,6 +367,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text "NN Batchsize" <> colon $$ nest nestCols (int $ conf ^. trainBatchSize)
+    nnNStep =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        px         -> textNNConf (px ^?! proxyNNConfig)
+      where
+        textNNConf conf = text "NStep" <> colon $$ nest nestCols (int $ conf ^. nStep)
     nnReplMemSize =
       case borl ^. proxies . v of
         P.Table {} -> empty

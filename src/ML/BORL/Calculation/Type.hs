@@ -14,7 +14,20 @@ import           ML.BORL.Types
 
 type ReplMemFun s
    = forall m. (MonadBorl' m) =>
-                 (StateFeatures, FilteredActionIndices) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, FilteredActionIndices) -> EpisodeEnd -> m Calculation
+                 (StateFeatures, FilteredActionIndices) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, FilteredActionIndices) -> EpisodeEnd -> ExpectedValuationNext -> m (Calculation, ExpectedValuationNext)
+
+data ExpectedValuationNext =
+  ExpectedValuationNext
+    { getExpectedValStateNextRho :: Maybe Float
+    , getExpectedValStateNextV   :: Maybe Float
+    , getExpectedValStateNextW   :: Maybe Float
+    , getExpectedValStateNextR0  :: Maybe Float
+    , getExpectedValStateNextR1  :: Maybe Float
+    }
+  deriving (Show, Generic, NFData)
+
+emptyExpectedValuationNext :: ExpectedValuationNext
+emptyExpectedValuationNext = ExpectedValuationNext Nothing Nothing Nothing Nothing Nothing
 
 
 data Calculation = Calculation
@@ -33,6 +46,10 @@ data Calculation = Calculation
   , getLastRews'      :: [RewardValue]
   , getEpisodeEnd     :: Bool
   } deriving (Show, Generic)
+
+
+emptyCalculation :: Calculation
+emptyCalculation = Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing [] True
 
 instance NFData Calculation where
   rnf calc =
@@ -79,4 +96,4 @@ avgCalculation xs =
     (map (avg . getLastRews') xs)
     (all getEpisodeEnd xs)
   where
-    avg xs = sum xs / fromIntegral (length xs)
+    avg xs' = sum xs' / fromIntegral (length xs')

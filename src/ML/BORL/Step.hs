@@ -138,9 +138,16 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
     liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
-  let doFork' | borl ^. settings . useForking = doFork
-              | otherwise = doForkFake
-  workerReplMemFuture <- liftIO $ doFork' $ runWorkerActions borl workerActions
+  let doFork'
+        | borl ^. settings . useForking = doFork
+        | otherwise = doForkFake
+      callWorkers -- make 2 steps to ensure the replay memory will not be offset
+        | period == 0 = do
+          workers' <- runWorkerActions borl workerActions
+          acts' <- snd <$> nextAction (set workers workers' borl)
+          doFork' $ runWorkerActions borl acts'
+        | otherwise = liftIO $ doFork' $ runWorkerActions borl workerActions
+  workerReplMemFuture <- liftIO callWorkers
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
   let applyToReward (RewardFuture storage) = applyState storage state
       applyToReward r                      = r
@@ -149,6 +156,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
   (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
   workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
   return $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
@@ -240,7 +248,7 @@ getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 writeDebugFiles :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 writeDebugFiles borl = do
-  let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardFree (borl ^. algorithm)
+  let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardAdjusted (borl ^. algorithm)
   let isAnn
         | isDqn = P.isNeuralNetwork (borl ^. proxies . r1)
         | otherwise = P.isNeuralNetwork (borl ^. proxies . v)

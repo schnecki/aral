@@ -24,7 +24,7 @@ instance Enum AgentType where
   fromEnum (WorkerAgent nr) = nr
   toEnum nr = (MainAgent : map WorkerAgent [1..]) !! nr
 
-
+type NStep = Int
 type Batchsize = Int
 type EpisodeEnd = Bool
 type InitialStateFun s = AgentType -> IO s         -- ^ Initial state

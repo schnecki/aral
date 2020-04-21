@@ -64,9 +64,9 @@ isAlgDqn :: Algorithm s -> Bool
 isAlgDqn AlgDQN{} = True
 isAlgDqn _        = False
 
-isAlgDqnAvgRewardFree :: Algorithm s -> Bool
-isAlgDqnAvgRewardFree AlgDQNAvgRewAdjusted{} = True
-isAlgDqnAvgRewardFree _                      = False
+isAlgDqnAvgRewardAdjusted :: Algorithm s -> Bool
+isAlgDqnAvgRewardAdjusted AlgDQNAvgRewAdjusted{} = True
+isAlgDqnAvgRewardAdjusted _                      = False
 
 -- blackwellOptimalVersion :: Algorithm s -> Bool
 -- blackwellOptimalVersion (AlgDQNAvgRewAdjusted Just{} _ _ _) = True
