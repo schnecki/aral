@@ -12,6 +12,7 @@ import           Control.Monad                  (zipWithM)
 import           Control.Monad.IO.Class         (liftIO)
 import           Control.Monad.Trans.Class      (lift)
 import           Control.Monad.Trans.Reader
+import           Control.Parallel.Strategies
 import           Data.Function                  (on)
 import           Data.List                      (groupBy, partition, sortBy)
 import qualified Data.Vector                    as VB
@@ -42,8 +43,8 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction !borl = do
-  mainAgent <- nextActionFor borl (borl ^. settings . explorationStrategy) (borl ^. s) (params' ^. exploration)
-  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration)
+  mainAgent <- nextActionFor borl (borl ^. settings . explorationStrategy) (borl ^. s) (params' ^. exploration)  `using` rparWith rpar
+  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
   return (mainAgent, ws)
   where
     params' = decayedParameters borl

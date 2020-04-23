@@ -24,7 +24,7 @@ doFork !f = do
 doForkFake :: IO a -> IO (IORef (ThreadState a))
 doForkFake !f = do
   ref <- newIORef NotReady
-  (f >>= writeIORef ref . Ready) `using` rpar
+  (f >>= writeIORef ref . Ready) `using` rparWith rpar
   return ref
 
 

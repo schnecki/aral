@@ -12,7 +12,7 @@ module ML.BORL.Proxy.Proxies where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Parallel.Strategies (rdeepseq, rpar, using)
+import           Control.Parallel.Strategies (rdeepseq, rpar, rparWith, using)
 import           Data.List                   (foldl', maximumBy)
 import           Data.Ord
 import           GHC.Generics
@@ -61,17 +61,21 @@ mergeProxiesInto alg px pxs = avgProxies $ foldl' addProxies px pxs
     avgProxies = scaleProxies (1 / (1 + fromIntegral (length pxs)))
     scaleProxies n (Proxies pRMin pRho pPsiV pV pPsiW pW pR0 pR1 rep) =
       Proxies
-        (multiplyWorkerProxy n pRMin                       `using` rdeepseq)
-        (multiplyWorkerProxy n pRho                        `using` rdeepseq)
-        (ifBorl2 multiplyWorkerProxy n pPsiV               `using` rdeepseq)
-        (ifBorl2 multiplyWorkerProxy n pV                  `using` rdeepseq)
-        (ifBorl2 multiplyWorkerProxy n pPsiW               `using` rdeepseq)
-        (ifBorl2 multiplyWorkerProxy n pW                  `using` rdeepseq)
-        (ifDqnAvgRewardAdjusted2 multiplyWorkerProxy n pR0 `using` rdeepseq)
-        (multiplyWorkerProxy n pR1                         `using` rdeepseq)
+        (multiplyWorkerProxy n pRMin                       `using` rparWith rdeepseq)
+        (multiplyWorkerProxy n pRho                        `using` rparWith rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pPsiV               `using` rparWith rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pV                  `using` rparWith rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pPsiW               `using` rparWith rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pW                  `using` rparWith rdeepseq)
+        (ifDqnAvgRewardAdjusted2 multiplyWorkerProxy n pR0 `using` rparWith rdeepseq)
+        (multiplyWorkerProxy n pR1                         `using` rparWith rdeepseq)
         rep
     scaleProxies n (ProxiesCombinedUnichain pRMin pRho pProxy rep) =
-      ProxiesCombinedUnichain (multiplyWorkerProxy n pRMin `using` rdeepseq) (multiplyWorkerProxy n pRho `using` rdeepseq) (multiplyWorkerProxy n pProxy `using` rdeepseq) rep
+      ProxiesCombinedUnichain
+        (multiplyWorkerProxy n pRMin  `using` rparWith rdeepseq)
+        (multiplyWorkerProxy n pRho   `using` rparWith rdeepseq)
+        (multiplyWorkerProxy n pProxy `using` rparWith rdeepseq)
+        rep
     addProxies px1@Proxies {} px2@Proxies {} =
       Proxies
         (addWorkerProxy (view rhoMinimum px1) (view rhoMinimum px2)         `using` rpar)

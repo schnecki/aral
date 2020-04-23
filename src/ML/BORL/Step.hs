@@ -195,13 +195,13 @@ runWorkerAction borl (WorkerState wNr state (Right oldPx) oldFutureRewards rew) 
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
   let borlAdapted = set proxies oldPx $ set workers [] $ set s state $ set futureRewards [] $ set (psis . _1) rew borl
   (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures workerType) (0, False, borlAdapted) newFuturesUndropped
-  return $ WorkerState wNr stateNext (Right $ borlNew ^. proxies) (drop dropLen $ borlNew ^. futureRewards) (borlNew ^. psis . _1)
+  return $ force $ WorkerState wNr stateNext (Right $ borlNew ^. proxies) (drop dropLen $ borlNew ^. futureRewards) (borlNew ^. psis . _1)
 runWorkerAction borl (WorkerState wNr state (Left replMem) oldFutureRewards rew) (randomAction, (aNr, Action action _)) = do
   (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
   newReplMem <- foldM addExperience replMem materialisedFutures
-  return $ WorkerState wNr stateNext (Left newReplMem) newFutures rew
+  return $ force $ WorkerState wNr stateNext (Left newReplMem) newFutures rew
   where
     splitMaterialisedFutures fs =
       let xs = takeWhile (not . isRewardFuture . view futureReward) fs

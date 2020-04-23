@@ -51,16 +51,16 @@ trainGrenade opt net chs =
 
 -- | Accumulate gradients for a list of n-step updates. The arrising gradients are summed up.
 makeGradients ::
-     forall layers shapes nrH. (GNum (Gradients layers), NFData (Tapes layers shapes), KnownNat nrH, 'D1 nrH ~ Head shapes, SingI (Last shapes))
+     forall layers shapes nrH. (GNum (Gradients layers), NFData (Tapes layers shapes), NFData (Gradients layers), KnownNat nrH, 'D1 nrH ~ Head shapes, SingI (Last shapes))
   => Network layers shapes
   -> [((StateFeatures, ActionIndex), Float)]
   -> Gradients layers
 makeGradients _ [] = error "Empty list of n-step updates in NeuralNetwork.Grenade"
 makeGradients net chs
-  | length chs == 1 = head $ zipWith3 (\tape output label -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) tapes outputs labels
+  | length chs == 1 = head $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   | otherwise =
     -- (1 / genericLength chs |*) $
-    foldl1 (|+) $ zipWith3 (\tape output label -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) tapes outputs labels
+    foldl1 (|+) $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
     valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, max (-trainMaxVal) $ min trainMaxVal out)] m) mempty chs
     inputs = M.keys valueMap

@@ -108,13 +108,13 @@ insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !ge
   -- mv' <- liftIO $ collectForkResult forkMv'
   let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  pRho' <-  mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  pV' <-    mInsertProxy (getVValState' calc) pV `using` rpar
-  pW' <-    mInsertProxy (getWValState' calc) pW `using` rpar
-  pPsiV' <- mInsertProxy (getPsiVValState' calc) pPsiV `using` rpar
-  pPsiW' <- mInsertProxy (getPsiWValState' calc) pPsiW `using` rpar
-  pR0' <-   mInsertProxy (getR0ValState' calc) pR0 `using` rpar
-  pR1' <-   mInsertProxy (getR1ValState' calc) pR1 `using` rpar
+  pRho' <-  mInsertProxy (getRhoVal' calc) pRho             `using` rpar
+  pV' <-    mInsertProxy (getVValState' calc) pV            `using` rpar
+  pW' <-    mInsertProxy (getWValState' calc) pW            `using` rpar
+  pPsiV' <- mInsertProxy (getPsiVValState' calc) pPsiV      `using` rpar
+  pPsiW' <- mInsertProxy (getPsiWValState' calc) pPsiW      `using` rpar
+  pR0' <-   mInsertProxy (getR0ValState' calc) pR0          `using` rpar
+  pR1' <-   mInsertProxy (getR1ValState' calc) pR1          `using` rpar
   return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
@@ -338,14 +338,9 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 -- | Retrieve a value.
 lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
-lookupProxy !_ !_ !_ !(Scalar !x) = return x
-lookupProxy !_ !_ !k !(Table !m !def) = return $! M.findWithDefault def k m
-lookupProxy !period !lkType !k@(feat, !actIdx) !px = lookupNeuralNetwork lkType k px
-  where
-    config = px ^?! proxyNNConfig
-    k' = case px of
-      CombinedProxy _ nr _ -> (feat, nr * px ^?! proxyNrActions + actIdx)
-      _                    -> k
+lookupProxy _ _ _ (Scalar x)    = return x
+lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
+lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
 
 
 -- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an
@@ -361,9 +356,9 @@ lookupActionsNeuralNetwork !tp !k !px = V.map (unscaleValue (getMinMaxVal px)) <
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
-lookupNeuralNetworkUnscaled !tp !(!st, !actIdx) px@Grenade{} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
-lookupNeuralNetworkUnscaled !tp !(!st, !actIdx) px@TensorflowProxy {} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
-lookupNeuralNetworkUnscaled !tp !(!st, !actIdx) p@(CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@TensorflowProxy {} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 headLookupActions :: [p] -> p
@@ -409,11 +404,6 @@ loadValuesIntoCache sts (CombinedProxy (TensorflowProxy netT netW _ config _) _ 
     netTVals <- TF.forwardRun netT sts
     zipWithM_ (\st val -> addCache (Target, CombinedUnichain, st) val) sts netTVals
 loadValuesIntoCache _ _ = return () -- only a single row allowed in grenade
-
-
---   let netW = px ^?! proxyNNWorker
---       netT = px ^?! proxyNNTarget
---   cached (tp, CombinedUnichain, st) (loadValuesIntoCache sts px)
 
 
 -- | Finds the correct value for scaling.
