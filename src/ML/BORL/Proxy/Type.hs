@@ -128,25 +128,25 @@ addWorkerProxy :: Proxy -> Proxy -> Proxy
 addWorkerProxy (Scalar x) (Scalar y)   = Scalar (x+y)
 addWorkerProxy (Table x d) (Table y _) = Table (mergeTables x y) d
 addWorkerProxy (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1) (Grenade (target2 :: Network layers2 shapes2) worker2 _ _ _) =
-  case cast worker2 of
-    Nothing -> error "cannot replace worker1 of different type"
-    Just worker2' ->
+  case (cast worker2, cast target2) of
+    (Just worker2', Just target2') ->
       Grenade
-        target1  -- (disabled in multiplyWorkerProxy)
+        (target1 |+ target2')  -- (disabled in multiplyWorkerProxy)
         (worker1 |+ worker2')
         tp1
         nnCfg1
         nrActs1
+    _ -> error "cannot replace worker1 of different type"
 addWorkerProxy TensorflowProxy{} _ = error "addWorkerProxy does not work on Tensorflow Proxies"
 addWorkerProxy (CombinedProxy px1 outCol1 expOut1) (CombinedProxy px2 _ _) = CombinedProxy (addWorkerProxy px1 px2) outCol1 expOut1
 addWorkerProxy x1 x2 = error $ "Cannot add proxies of differnt types: " ++ show (x1, x2)
 
 multiplyWorkerProxy :: Float -> Proxy -> Proxy
-multiplyWorkerProxy n (Scalar x)   = Scalar (n*x)
+multiplyWorkerProxy n (Scalar x)  = Scalar (n*x)
 multiplyWorkerProxy n (Table x d) = Table (M.map (*n) x) d
 multiplyWorkerProxy n (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1) =
   Grenade
-    target1 -- (disabled in addWorkerProxy)
+    (toRational n |* target1) -- (disabled in addWorkerProxy)
     (toRational n |* worker1)
     tp1 nnCfg1 nrActs1
 multiplyWorkerProxy n TensorflowProxy{} = error "multiplyWorkerProxy does not work on Tensorflow Proxies"

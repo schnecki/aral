@@ -120,16 +120,17 @@ instance Serialize ReplayMemories where
 instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec) =
+  put (NNConfig memSz memStrat batchSz opt smooth decaySetup prS scale stab stabDec upInt upIntDec) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put o >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
-      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put o >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
     -- put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
   get = do
     memSz <- get
     memStrat <- get
     batchSz <- get
     opt <- get
+    smooth <- get
     decaySetup <- get
     prS <- map V.fromList <$> get
     scale <- get
@@ -137,7 +138,7 @@ instance Serialize NNConfig where
     stabDec <- get
     upInt <- get
     upIntDec <- get
-    return $ NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec
+    return $ NNConfig memSz memStrat batchSz opt smooth decaySetup prS scale stab stabDec upInt upIntDec
 
 
 instance Serialize Proxy where

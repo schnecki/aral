@@ -180,6 +180,7 @@ nnConfig =
     , _trainBatchSize = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
        -- OptSGD 0.01 0.0 0.0001
+    , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
@@ -192,7 +193,7 @@ nnConfig =
 borlSettings :: Settings
 borlSettings = def {_workersMinExploration = replicate 7 0.01 --  []} -- [0.4, 0.2, 0.1, 0.03]}
                    , _nStep = 4
-                   , _workersUpdatePeriods = 1000
+                   , _workersUpdateInterval = 1000
                    }
 
 

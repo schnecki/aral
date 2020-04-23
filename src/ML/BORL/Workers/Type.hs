@@ -39,6 +39,7 @@ data WorkerState s =
     , _workerProxies       :: !(Either ReplayMemories Proxies)
     , _workerFutureRewards :: ![RewardFutureData s]
     , _workerExpSmthReward :: Float
+    -- , _workerGradients     :: forall layers . [Gradients layers]
     }
   deriving (Generic)
 makeLenses ''WorkerState

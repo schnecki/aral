@@ -108,6 +108,7 @@ nnConfig gym maxRew =
     , _replayMemoryStrategy = ReplayMemoryPerAction
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.9 0.0001
+    , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25 * maxRew)

@@ -35,6 +35,7 @@ data NNConfig =
     , _replayMemoryStrategy            :: !ReplayMemoryStrategy    -- ^ How to store experiences. @ReplayMemoryPerAction@ only works with n-step=1.
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
+    , _grenadeSmoothTargetUpdate       :: Rational                 -- ^ Rate of smooth updates of the target network.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
     , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.
@@ -48,8 +49,8 @@ makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat tr !lp dec pp sc stab stabDec up upDec) =
-    rnf rep `seq` rnf repStrat `seq` rnf tr `seq` rnf lp `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec
+  rnf (NNConfig rep repStrat tr !lp smooth dec pp sc stab stabDec up upDec) =
+    rnf rep `seq` rnf repStrat `seq` rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

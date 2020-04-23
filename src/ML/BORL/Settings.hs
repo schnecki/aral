@@ -17,7 +17,7 @@ import           ML.BORL.Exploration
 data Settings = Settings
   { _explorationStrategy   :: !ExplorationStrategy -- ^ Strategy for exploration.
   , _workersMinExploration :: ![Float]             -- ^ Set worker minimum exploration values.
-  , _workersUpdatePeriods  :: !Int                 -- ^ Number of periods before workers report results and are updated with the latest.
+  , _workersUpdateInterval :: !Int                 -- ^ Number of periods before workers report results and are updated with the latest.
   , _nStep                 :: !Int                 -- ^ N-Step Q-Learning. 1 means no N-step Q-learning. Only works with @ReplayMemorySingle@!
   , _disableAllLearning    :: !Bool                -- ^ Completely disable learning (e.g. for evaluation). Enabling increases performance.
   , _useForking            :: !Bool                -- ^ Fork where possible.
@@ -26,5 +26,5 @@ makeLenses ''Settings
 
 
 instance Default Settings where
-  def = Settings EpsilonGreedy [] 100 1 False True
+  def = Settings EpsilonGreedy [] 1000 1 False True
 

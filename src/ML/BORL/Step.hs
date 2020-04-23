@@ -31,13 +31,13 @@ import           Control.Monad
 import           Control.Monad.IO.Class             (liftIO)
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
+import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
 import           Data.List                          (find, groupBy, intercalate, maximumBy,
                                                      partition, sortBy, transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
-import           Data.Ord                           (comparing)
 import           Data.Serialize
 import qualified Data.Vector                        as VB
 import qualified Data.Vector.Storable               as V
@@ -145,20 +145,23 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
   let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
   newWorkerStates <- liftIO $ collectWorkers workerRefs
-  let updateFromWorkers = (borl ^. t) `mod` borl ^. settings . workersUpdatePeriods == 0
+  let updateFromWorkers = (borl ^. t) `mod` borl ^. settings . workersUpdateInterval == 0
   let allWorkerProxies = newWorkerStates ^.. traversed . workerProxies . _Right
       allWorkerExpSmoothedReward = newWorkerStates ^.. traversed . workerExpSmthReward
-      maxExpSmthReward = maximum $ (borl ^. psis . _1) : allWorkerExpSmoothedReward
+      avgExpSmthReward = avg $ (borl ^. psis . _1) : allWorkerExpSmoothedReward
+      avg xs = sum xs / fromIntegral (length xs)
       newProxies
+        | updateFromWorkers && (null newWorkerStates || isLeft (head newWorkerStates ^. workerProxies)) = borlNew ^. proxies
         | updateFromWorkers =
           -- choose workers by exponentially smoothed average reward (only those within 10% of best, except if their minimum exploration rate is reached)
-          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take (ceiling $ fromIntegral (length allWorkerProxies) / 2) $ sortBy (comparing (Down . fst)) $ zip allWorkerExpSmoothedReward allWorkerProxies
+          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take
+          (max 1 $ round $ fromIntegral (length allWorkerProxies) / (4 :: Float)) $ sortBy (comparing (Down . fst)) $ zip allWorkerExpSmoothedReward allWorkerProxies
           -- mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) allWorkerProxies
         | otherwise = borlNew ^. proxies
       setNewWorkerProxies (Right oldProxies) = Right $ set replayMemory (oldProxies ^. replayMemory) newProxies
       setNewWorkerProxies (Left experience) = Left experience
       newWorkers
-        | updateFromWorkers = map (over workerProxies setNewWorkerProxies) newWorkerStates
+        | updateFromWorkers = map (set workerExpSmthReward avgExpSmthReward . over workerProxies setNewWorkerProxies) newWorkerStates
         | otherwise = newWorkerStates
   return $ set workers newWorkers $ set proxies newProxies $ over futureRewards (drop dropLen) $ set s stateNext borlNew
   where
@@ -221,12 +224,12 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
   case view futureReward dt of
     RewardEmpty     -> return (nr, False, borl)
     RewardFuture {} -> return (nr, True, borl)
-    Reward {}       -> (nr+1, False, ) <$> execute agent borl dt
+    Reward {}       -> (nr+1, False, ) <$> execute borl agent dt
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => AgentType -> BORL s -> RewardFutureData s -> m (BORL s)
-execute agent borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> AgentType -> RewardFutureData s -> m (BORL s)
+execute borl agent (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
           then do
@@ -235,7 +238,7 @@ execute agent borl (RewardFutureData period state aNr randomAction (Reward rewar
             writeDebugFiles borl
           else return borl
 #endif
-  (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
+  (proxies', calc) <- P.insert borl agent period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
   let strRho = show (fromMaybe 0 (getRhoVal' calc))
       strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))

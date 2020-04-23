@@ -23,6 +23,11 @@ isMainAgent :: AgentType -> Bool
 isMainAgent MainAgent = True
 isMainAgent _         = False
 
+isWorkerAgent :: AgentType -> Bool
+isWorkerAgent MainAgent = False
+isWorkerAgent _         = True
+
+
 instance Enum AgentType where
   fromEnum MainAgent        = 0
   fromEnum (WorkerAgent nr) = nr

@@ -60,15 +60,15 @@ instance Default (Parameters Double) where
 instance Default (Parameters DecaySetup) where
   def =
     Parameters
-      { _alpha = ExponentialDecay (Just 1e-7) 0.5 50000 -- 5e-4
-      , _alphaRhoMin = NoDecay
-      , _beta = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _delta = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
-      , _zeta = ExponentialDecay (Just 0) 0.5 150000
-      , _xi = NoDecay
+      { _alpha            = ExponentialDecay (Just 1e-7) 0.5 50000 -- 5e-4
+      , _alphaRhoMin      = NoDecay
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+      , _xi               = NoDecay
       -- Exploration
-      , _epsilon = [NoDecay]
-      , _exploration = ExponentialDecay (Just 0.01) 0.50 100000
+      , _epsilon          = [NoDecay]
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }

@@ -622,7 +622,8 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
           D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
-  workers' <- liftIO $ mkWorkers (Just proxies') initialStateFun as (Just nnConfig') settings
+  workers' <- liftIO $ mkWorkers Nothing -- (Just proxies')
+    initialStateFun as (Just nnConfig') settings
   return $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
