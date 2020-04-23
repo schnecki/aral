@@ -28,6 +28,10 @@ data ReplayMemories
   | ReplayMemoriesPerActions !(VI.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
   deriving (Generic)
 
+instance Show ReplayMemories where
+  show (ReplayMemoriesUnified r)     = "Unified " <> show r
+  show (ReplayMemoriesPerActions rs) = "Per Action " <> show (VI.head rs)
+
 replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
 replayMemories _ f (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> f rm
 replayMemories idx f (ReplayMemoriesPerActions rs) = (\x -> ReplayMemoriesPerActions (rs VI.// [(idx, x)])) <$> f (rs VI.! idx)
@@ -48,6 +52,9 @@ data ReplayMemory = ReplayMemory
   , _replayMemoryMaxIdx :: !Int  -- in {0,..,size-1}
   }
 makeLenses ''ReplayMemory
+
+instance Show ReplayMemory where
+  show (ReplayMemory _ sz idx maxIdx) = "Replay Memory with size " <> show sz <> ". Next index: " <> show idx <> "/" <> show maxIdx
 
 instance NFData ReplayMemory where
   rnf (ReplayMemory !_ s idx mx) = rnf s `seq` rnf idx `seq` rnf mx

@@ -9,10 +9,10 @@ import qualified HighLevelTensorflow  as TF
 
 import           ML.BORL.Types
 
-backwardRunRepMemData :: (MonadBorl' m) => TF.TensorflowModel' -> [((NetInputWoAction, ActionIndex), Float)] -> m ()
+backwardRunRepMemData :: (MonadBorl' m) => TF.TensorflowModel' -> [[((NetInputWoAction, ActionIndex), Float)]] -> m ()
 backwardRunRepMemData model values =
   liftTf $ do
-    let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty values
+    let valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, out)] m) mempty (concat values)
     let inputs = M.keys valueMap
     outputs <- TF.forwardRun model inputs
     let labels = zipWith (flip (foldl' (\vec (idx, groundTruth) -> vec V.// [(idx, groundTruth)]))) (M.elems valueMap) outputs

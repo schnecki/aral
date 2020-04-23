@@ -24,6 +24,7 @@ import           Control.Lens
 import           Control.Lens             (set, (^.))
 import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
+import           Data.Default
 import           Data.Function            (on)
 import           Data.List                (genericLength, groupBy, sortBy)
 import qualified Data.Map.Strict          as M
@@ -176,21 +177,23 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 1
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _nStep = 4
     , _trainBatchSize = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
        -- OptSGD 0.01 0.0 0.0001
     , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
-    , _stabilizationAdditionalRho = 0.5
+    , _stabilizationAdditionalRho = 0.0
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 10000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
-
-
-    , _workersMinExploration = [0.4, 0.2, 0.1, 0.03]
     }
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = replicate 7 0.01 --  []} -- [0.4, 0.2, 0.1, 0.03]}
+                   , _nStep = 4
+                   , _workersUpdatePeriods = 1000
+                   }
 
 
 -- | BORL Parameters.
@@ -251,7 +254,7 @@ experimentMode = do
   -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   -- let runner = runMonadBorlIO
   ---
-  let mkInitSt = mkUnichainTensorflowM algBORL (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  let mkInitSt = mkUnichainTensorflowM algBORL (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
   (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   let runner = runMonadBorlTF
   ---
@@ -286,16 +289,16 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
+  rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
 
   -- Use an own neural network for every function to approximate
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
 
   askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where

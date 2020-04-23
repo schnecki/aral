@@ -19,6 +19,10 @@ type ActionFilter s = s -> V.Vector Bool
 data AgentType = MainAgent | WorkerAgent Int
   deriving (Show, Read, Eq, Ord)
 
+isMainAgent :: AgentType -> Bool
+isMainAgent MainAgent = True
+isMainAgent _         = False
+
 instance Enum AgentType where
   fromEnum MainAgent        = 0
   fromEnum (WorkerAgent nr) = nr

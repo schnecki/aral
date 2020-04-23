@@ -28,6 +28,7 @@ import           Control.Concurrent.MVar
 import           Control.DeepSeq         (NFData)
 import           Control.Lens
 import           Control.Monad           (join, when)
+import           Data.Default
 import           Data.List               (genericLength, sort)
 import           Data.Maybe              (fromMaybe)
 import qualified Data.Text               as T
@@ -35,15 +36,14 @@ import qualified Data.Vector.Storable    as V
 import           GHC.Generics
 import           GHC.Int                 (Int64)
 import           Grenade
-import           ML.BORL
 import           System.Environment      (getArgs)
 import           System.IO.Unsafe        (unsafePerformIO)
 
 import qualified HighLevelTensorflow     as TF
 
-import           ML.Gym
-
 import           Helper
+import           ML.BORL
+import           ML.Gym
 
 
 import           Debug.Trace
@@ -106,7 +106,6 @@ nnConfig gym maxRew =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemoryPerAction
-    , _nStep = 1
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
@@ -116,7 +115,6 @@ nnConfig gym maxRew =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 50000
     , _updateTargetInterval = 10000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
-    , _workersMinExploration = [0.30, 0.10, 0.05, 0.03]
     }
   where
     (lows, highs) = observationSpaceBounds gym
@@ -128,6 +126,10 @@ nnConfig gym maxRew =
       | otherwise = zipWith mkParamList lows highs
     rnd x = fromIntegral (round (1000 * x)) / 1000
     ppSts = takeMiddle 20 $ combinations vals
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = [0.4, 0.2, 0.1, 0.03], _useForking = False, _nStep = 1}
+
 
 takeMiddle :: Int -> [a] -> [a]
 takeMiddle _ [] = []
@@ -307,12 +309,12 @@ main = do
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) initValues
-  -- rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) initValues
-  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) initValues
-  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) initValues
-  askUser (mInverseSt gym) True usage cmds qlCmds (settings . useForking .~ False $ rl) -- maybe increase learning by setting estimate of rho
+  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
+  -- rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
+  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []

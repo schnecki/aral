@@ -253,7 +253,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
           px = borl ^. proxies . p
   return $ text "\n" $+$
     text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$
-    maybe mempty (vcat . map (\(wId,st) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text (show st))) . zip [1..] . view workersS) (borl ^. workers)$+$
+    vcat (map (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printFloat rew) (borl ^. workers)) $+$
     text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
     text "Alpha/AlphaRhoMin" <> colon $$
     nest nestCols (printFloatWith 8 ( getExpSmthParam True rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
@@ -315,8 +315,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        px -> text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (px ^. proxyNNConfig . workersMinExploration))) <+>
-              maybe mempty (\ms -> text "Replay memories:" <+> textReplayMemoryType ms) (preview (workersReplayMemories . _head) =<< borl ^. workers)
+        px -> text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
+              maybe mempty (\(WorkerState _ _ px _ _) -> case px of
+                               Left ms -> text "Replay memories:" <+> textReplayMemoryType ms
+                               Right{} -> text "Using own ANNs/Proxies "
+                           ) (borl ^? workers._head)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -370,7 +373,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnNStep =
       case borl ^. proxies . v of
         P.Table {} -> empty
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        px         -> textNNConf (borl ^. settings)
       where
         textNNConf conf = text "NStep" <> colon $$ nest nestCols (int $ conf ^. nStep)
     nnReplMemSize =

@@ -43,8 +43,7 @@ type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction !borl = do
   mainAgent <- nextActionFor borl (borl ^. settings . explorationStrategy) (borl ^. s) (params' ^. exploration)
-  let nnConfigs = head $ concatMap (\l -> borl ^.. proxies . l . proxyNNConfig) (allProxiesLenses (borl ^. proxies))
-  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^. workers . traversed . workersS) (map maxExpl $ nnConfigs ^. workersMinExploration)
+  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration)
   return (mainAgent, ws)
   where
     params' = decayedParameters borl

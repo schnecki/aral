@@ -33,7 +33,6 @@ data NNConfig =
   NNConfig
     { _replayMemoryMaxSize             :: !Int                     -- ^ Maximum size of the replay memory.
     , _replayMemoryStrategy            :: !ReplayMemoryStrategy    -- ^ How to store experiences. @ReplayMemoryPerAction@ only works with n-step=1.
-    , _nStep                           :: !Int                     -- ^ N-Step Q-Learning. 1 means no N-step Q-learning. Only works with @ReplayMemorySingle@!
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
@@ -44,14 +43,13 @@ data NNConfig =
     , _stabilizationAdditionalRhoDecay :: !DecaySetup              -- ^ Decay for stabilization
     , _updateTargetInterval            :: !Int                     -- ^ After how many steps should the target network be replaced by the worker?
     , _updateTargetIntervalDecay       :: !DecaySetup              -- ^ After how many steps should the target network be replaced by the worker?
-    , _workersMinExploration           :: ![Float]                 -- ^ Set worker minimum exploration values.
     }
 makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat nstep tr !lp dec pp sc stab stabDec up upDec workers) =
-    rnf rep `seq` rnf repStrat `seq` rnf nstep `seq` rnf tr `seq` rnf lp `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec `seq` rnf workers
+  rnf (NNConfig rep repStrat tr !lp dec pp sc stab stabDec up upDec) =
+    rnf rep `seq` rnf repStrat `seq` rnf tr `seq` rnf lp `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

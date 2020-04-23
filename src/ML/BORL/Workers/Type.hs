@@ -19,27 +19,40 @@ module ML.BORL.Workers.Type where
 
 import           Control.DeepSeq
 import           Control.Lens
+import           Data.Either           (isRight)
 import           Data.Serialize
 import           GHC.Generics
 
 import           ML.BORL.Action.Type
 import           ML.BORL.NeuralNetwork
+import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Reward.Type
 import           ML.BORL.RewardFuture
 import           ML.BORL.Types
 
+type Workers s = [WorkerState s]
 
-data Workers s =
-  Workers
-    { _workersS              :: ![s]
-    , _workersFutureRewards  :: ![[RewardFutureData s]]
-    , _workersReplayMemories :: ![ReplayMemories]
+data WorkerState s =
+  WorkerState
+    { _workerNumber        :: Int
+    , _workerS             :: !s
+    , _workerProxies       :: !(Either ReplayMemories Proxies)
+    , _workerFutureRewards :: ![RewardFutureData s]
+    , _workerExpSmthReward :: Float
     }
   deriving (Generic)
-makeLenses ''Workers
+makeLenses ''WorkerState
+
+independentWorkers :: Workers s -> Bool
+independentWorkers []    = True
+independentWorkers (x:_) = isRight (x ^. workerProxies)
+
 
 mapWorkers :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> Workers s -> Workers s'
-mapWorkers f g (Workers ss fss repMem) = Workers (map f ss) (map (map (mapRewardFutureData f g)) fss) repMem
+mapWorkers f g = map (mapWorkerState f g)
 
-instance NFData s => NFData (Workers s) where
-  rnf (Workers states fut rep) = rnf1 states `seq` rnf1 fut `seq` rnf1 rep
+mapWorkerState :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> WorkerState s -> WorkerState s'
+mapWorkerState f g (WorkerState nr s px futs rew) = WorkerState nr (f s) px (map (mapRewardFutureData f g) futs) rew
+
+instance NFData s => NFData (WorkerState s) where
+  rnf (WorkerState nr state px fut rew) = rnf nr `seq` rnf state `seq` rnf px `seq` rnf1 fut `seq` rnf rew

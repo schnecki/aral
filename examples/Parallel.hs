@@ -16,6 +16,7 @@ import           Helper
 
 import           Control.DeepSeq      (NFData)
 import           Control.Lens
+import           Data.Default
 import           Data.Int             (Int64)
 import           Data.List            (genericLength)
 import           Data.Text            (Text)
@@ -23,7 +24,6 @@ import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
 import           Grenade              hiding (train)
-
 
 import qualified HighLevelTensorflow  as TF
 
@@ -128,9 +128,9 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig Nothing
-  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig Nothing
-  -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
+  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
+  -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -146,7 +146,6 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _nStep = 1
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
@@ -156,10 +155,10 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
-
-
-    , _workersMinExploration = []
     }
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
 -- | BORL Parameters.

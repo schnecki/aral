@@ -29,16 +29,16 @@ import           ML.BORL              hiding (actionFilter)
 
 import           Helper
 
-import           Prelude              hiding (Left, Right)
-
 import           Control.DeepSeq      (NFData)
 import           Control.Lens
+import           Data.Default
 import           Data.Int             (Int64)
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
 import           Grenade              hiding (train)
+import           Prelude              hiding (Left, Right)
 
 import qualified HighLevelTensorflow  as TF
 
@@ -50,7 +50,6 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _nStep = 1
     , _trainBatchSize = 32
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.9 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
@@ -60,10 +59,10 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 100
     , _updateTargetIntervalDecay = NoDecay
-
-
-    , _workersMinExploration = []
     }
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
 netInp :: St -> V.Vector Float
@@ -131,9 +130,9 @@ main = do
   -- createModel >>= mapM_ testRun
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) actions actionFilter params decay modelBuilder nnConfig Nothing
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
+  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]

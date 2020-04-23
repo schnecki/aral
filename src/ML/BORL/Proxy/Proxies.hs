@@ -10,12 +10,17 @@
 
 module ML.BORL.Proxy.Proxies where
 
-import           ML.BORL.NeuralNetwork
-
 import           Control.DeepSeq
 import           Control.Lens
+import           Control.Parallel.Strategies (rdeepseq, rpar, using)
+import           Data.List                   (foldl', maximumBy)
+import           Data.Ord
 import           GHC.Generics
 import           ML.BORL.Proxy.Type
+
+import           ML.BORL.Algorithm
+import           ML.BORL.NeuralNetwork
+
 
 data Proxies =
   Proxies -- ^ This data type holds all data for BORL.
@@ -34,18 +39,97 @@ data Proxies =
     , _proxy        :: !Proxy
     , _replayMemory :: !(Maybe ReplayMemories)
     }
-  deriving (Generic)
+  deriving (Generic, Show)
+
+-- | Merge the proxies of a list of proxies. The replay memory will not be merged, but the one of the first element is returned!
+mergeProxiesInto :: Algorithm s -> Proxies -> [Proxies] -> Proxies
+mergeProxiesInto _ px [] = px
+mergeProxiesInto alg px pxs = -- (px:pxs) !! bestPerforming
+  avgProxies $ foldl' addProxies px pxs
+  -- addProxies (scaleProxies 0.99 px) (scaleProxies (0.01/fromIntegral (length pxs)) $ foldl' addProxies (head pxs) (tail pxs))
+  where
+    bestPerforming = fst $ maximumBy (comparing ((\(Scalar x) -> x) . view rho . snd )) (zip [0..] (px:pxs))
+    ifBorl2 f x1 x2
+      | isAlgBorl alg = f x1 x2
+      | otherwise = x2
+    ifDqnAvgRewardAdjusted2 f x1 x2
+      | isAlgDqnAvgRewardAdjusted alg = f x1 x2
+      | otherwise = x2
+    ifBorl1 f x1 x2
+      | isAlgBorl alg = f x1 x2
+      | otherwise = x1
+    ifDqnAvgRewardAdjusted1 f x1 x2
+      | isAlgDqnAvgRewardAdjusted alg = f x1 x2
+      | otherwise = x1
+    avgProxies = scaleProxies (1 / (1 + fromIntegral (length pxs)))
+    scaleProxies n (Proxies pRMin pRho pPsiV pV pPsiW pW pR0 pR1 rep) =
+      Proxies
+        (multiplyWorkerProxy n pRMin                       `using` rdeepseq)
+        (multiplyWorkerProxy n pRho                        `using` rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pPsiV               `using` rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pV                  `using` rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pPsiW               `using` rdeepseq)
+        (ifBorl2 multiplyWorkerProxy n pW                  `using` rdeepseq)
+        (ifDqnAvgRewardAdjusted2 multiplyWorkerProxy n pR0 `using` rdeepseq)
+        (multiplyWorkerProxy n pR1                         `using` rdeepseq)
+        rep
+    scaleProxies n (ProxiesCombinedUnichain pRMin pRho pProxy rep) =
+      ProxiesCombinedUnichain (multiplyWorkerProxy n pRMin `using` rdeepseq) (multiplyWorkerProxy n pRho `using` rdeepseq) (multiplyWorkerProxy n pProxy `using` rdeepseq) rep
+    addProxies px1@Proxies {} px2@Proxies {} =
+      Proxies
+        (addWorkerProxy (view rhoMinimum px1) (view rhoMinimum px2)         `using` rpar)
+        (addWorkerProxy (view rho px1) (view rho px2)                       `using` rpar)
+        (ifBorl1 addWorkerProxy (view psiV px1) (view psiV px2)             `using` rpar)
+        (ifBorl1 addWorkerProxy (view v px1) (view v px2)                   `using` rpar)
+        (ifBorl1 addWorkerProxy (view psiW px1) (view psiW px2)             `using` rpar)
+        (ifBorl1 addWorkerProxy (view w px1) (view w px2)                   `using` rpar)
+        (ifDqnAvgRewardAdjusted1 addWorkerProxy (view r0 px1) (view r0 px2) `using` rpar)
+        (addWorkerProxy (view r1 px1) (view r1 px2)                         `using` rpar)
+        (view replayMemory px1)
+    addProxies px1@ProxiesCombinedUnichain {} px2@ProxiesCombinedUnichain {} =
+      ProxiesCombinedUnichain
+        (addWorkerProxy (view rhoMinimum px1) (view rhoMinimum px2) `using` rpar)
+        (addWorkerProxy (view rho px1) (view rho px2)               `using` rpar)
+        (addWorkerProxy (view proxy px1) (view proxy px2)           `using` rpar)
+        (view replayMemory px1)
+    addProxies px1 px2 = error $ "Cannot merge proxies of different types: " ++ show (px1, px2)
+
+-- | Replaces only the target networks, scalars and tables from the first proxies to the second one. Everything else stays untouched.
+replaceTargetProxiesFromTo :: Algorithm s -> Proxies -> Proxies -> Proxies
+replaceTargetProxiesFromTo alg px1@Proxies {} px2@Proxies {} =
+  Proxies
+    (replaceTargetProxyFromTo (view rhoMinimum px1) (view rhoMinimum px2))
+    (replaceTargetProxyFromTo (view rho px1) (view rho px2))
+    (ifBorl1 replaceTargetProxyFromTo (view psiV px1) (view psiV px2))
+    (ifBorl1 replaceTargetProxyFromTo (view v px1) (view v px2))
+    (ifBorl1 replaceTargetProxyFromTo (view psiW px1) (view psiW px2))
+    (ifBorl1 replaceTargetProxyFromTo (view w px1) (view w px2))
+    (ifDqnAvgRewardAdjusted1 replaceTargetProxyFromTo (view r0 px1) (view r0 px2))
+    (replaceTargetProxyFromTo (view r1 px1) (view r1 px2))
+    (view replayMemory px2)
+  where
+    ifBorl1 f x1 x2
+      | isAlgBorl alg = f x1 x2
+      | otherwise = x1
+    ifDqnAvgRewardAdjusted1 f x1 x2
+      | isAlgDqnAvgRewardAdjusted alg = f x1 x2
+      | otherwise = x1
+replaceTargetProxiesFromTo alg px1@ProxiesCombinedUnichain {} px2@ProxiesCombinedUnichain {} =
+      ProxiesCombinedUnichain
+        (replaceTargetProxyFromTo (view rhoMinimum px1) (view rhoMinimum px2))
+        (replaceTargetProxyFromTo (view rho px1) (view rho px2))
+        (replaceTargetProxyFromTo (view proxy px1) (view proxy px2))
+        (view replayMemory px1)
+replaceTargetProxiesFromTo _ px1 px2 = error $ "Cannot replace proxies of different types: " ++ show (px1, px2)
+
 
 isCombinedProxies :: Proxies -> Bool
 isCombinedProxies Proxies{}                 = False
 isCombinedProxies ProxiesCombinedUnichain{} = True
 
-
--- allProxiesLenses :: [(Proxies -> f Proxy) -> Proxies -> f Proxy]
 allProxiesLenses :: Functor f => Proxies -> [(Proxy -> f Proxy) -> Proxies -> f Proxies]
 allProxiesLenses Proxies {}                 = [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 allProxiesLenses ProxiesCombinedUnichain {} = [rhoMinimum, rho, proxy]
-
 
 rhoMinimum :: Lens' Proxies Proxy
 rhoMinimum f px@Proxies{}  = (\rhoMinimum' -> px { _rhoMinimum = rhoMinimum' }) <$> f (_rhoMinimum px)

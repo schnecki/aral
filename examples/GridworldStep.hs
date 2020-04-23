@@ -26,6 +26,7 @@ import           Control.Lens
 import           Control.Lens             (set, (^.))
 import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
+import           Data.Default
 import           Data.Function            (on)
 import           Data.List                (genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
@@ -58,7 +59,6 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _nStep = 1
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
@@ -68,10 +68,10 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
-
-
-    , _workersMinExploration = []
     }
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
 -- | BORL Parameters.
@@ -136,15 +136,15 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use an own neural network for every function to approximate
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
 
   askUser mInverseSt True usage cmds [] (flipObjective rl)
   where

@@ -20,6 +20,7 @@ import           Control.Lens
 import           Control.Lens           (set, (^.))
 import           Control.Monad          (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
+import           Data.Default
 import           Data.List              (genericLength, sort)
 import qualified Data.Map.Strict        as M
 import           Data.Serialize
@@ -224,7 +225,6 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _nStep = 1
     , _trainBatchSize = 8
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.0 0.0001
     , _learningParamsDecay = ExponentialDecay (Just 1e-4) 0.05 150000
@@ -234,10 +234,12 @@ nnConfig =
     , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
     , _updateTargetInterval = 1 -- 300
     , _updateTargetIntervalDecay = NoDecay
-
-
-    , _workersMinExploration = []
     }
+
+borlSettings :: Settings
+borlSettings = def {_workersMinExploration = []
+                   , _nStep = 1
+                   }
 
 
 -- | BORL Parameters.
@@ -292,11 +294,11 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
+  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
   let runner = runMonadBorlIO
   ---
-  -- let mkInitSt = mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- let mkInitSt = mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings  (Just initVals)
   -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
   -- let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
@@ -349,12 +351,12 @@ usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade ) nnConfig (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade ) nnConfig borlSettings  (Just initVals)
 
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig (Just initVals)
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  (Just initVals)
+  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds [] rl
   where cmds = []

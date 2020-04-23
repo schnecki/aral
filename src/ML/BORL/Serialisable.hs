@@ -22,6 +22,7 @@ import           Data.List                    (find, foldl')
 import qualified Data.Map                     as M
 import           Data.Serialize
 import           Data.Singletons.Prelude.List
+import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Mutable          as VM
 import qualified Data.Vector.Storable         as V
@@ -49,7 +50,7 @@ import           ML.BORL.Workers.Type
 
 data BORLSerialisable s = BORLSerialisable
   { serS                :: !s                    -- ^ Current state.
-  , serWorkers          :: !(Maybe (Workers s))  -- ^ Workers
+  , serWorkers          :: !(Workers s)          -- ^ Workers
   , serT                :: !Int                  -- ^ Current time t.
   , serEpisodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
   , serParameters       :: !ParameterInitValues  -- ^ Parameter setup.
@@ -73,9 +74,9 @@ toSerialisable = toSerialisableWith id id
 
 
 toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _ s workers _ t eNr par setts _ _ alg obj v rew psis prS) = do
-  BORL _ _ s workers _ t eNr par dec setts future alg obj v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f s) (mapWorkers f g <$> workers) t eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
+toSerialisableWith f g borl = do
+  BORL _ _ state workers' _ time eNr par dec setts future alg obj v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
 
 fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
@@ -90,9 +91,9 @@ fromSerialisableWith ::
   -> TF.ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF ftExt builder (BORLSerialisable s workers t e par dec setts future alg obj lastV rew psis prS) = do
+fromSerialisableWith f g as aF ftExt builder (BORLSerialisable s workers' t e par dec setts future alg obj lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g <$> workers) ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
+      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g workers') ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2
@@ -116,18 +117,17 @@ instance Serialize ReplayMemories where
       1 -> ReplayMemoriesPerActions . VB.fromList <$> get
       _ -> error "index error"
 
-instance (Serialize s, RewardFuture s) => Serialize (Workers s)
+instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat nStep batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp) =
-    -- case opt of
-    --   OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'SGD) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
-    --   OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put (opt :: Optimizer 'Adam) >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
-    put memSz >> put memStrat >> put nStep >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec >> put workerMinExp
+  put (NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec) =
+    case opt of
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put o >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put o >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+    -- put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
   get = do
     memSz <- get
     memStrat <- get
-    nStep <- get
     batchSz <- get
     opt <- get
     decaySetup <- get
@@ -137,8 +137,7 @@ instance Serialize NNConfig where
     stabDec <- get
     upInt <- get
     upIntDec <- get
-    workerMinExp <- get
-    return $ NNConfig memSz memStrat nStep batchSz opt decaySetup prS scale stab stabDec upInt upIntDec workerMinExp
+    return $ NNConfig memSz memStrat batchSz opt decaySetup prS scale stab stabDec upInt upIntDec
 
 
 instance Serialize Proxy where
@@ -156,9 +155,9 @@ instance Serialize Proxy where
         return $ Table m d
       2 -> do
         (specT :: SpecNet) <- get
-        case (unsafePerformIO $ networkFromSpecificationGenericWith UniformInit specT) of
+        case unsafePerformIO (networkFromSpecificationGenericWith UniformInit specT) of
           SpecNetwork (netT :: Network tLayers tShapes) -> do
-            case (unsafeCoerce (Dict :: Dict ()) :: Dict (Head tShapes ~ 'D1 th, KnownNat th)) of
+            case (unsafeCoerce (Dict :: Dict ()) :: Dict (Head tShapes ~ 'D1 th, KnownNat th, Typeable tLayers, Typeable tShapes)) of
               Dict -> do
                 (t :: Network tLayers tShapes) <- get
                 (w :: Network tLayers tShapes) <- get

@@ -40,7 +40,7 @@ import           Control.Parallel.Strategies  hiding (r0)
 import           Data.Function                (on)
 import           Data.List                    (find, foldl', sortBy, transpose)
 import qualified Data.Map.Strict              as M
-import           Data.Maybe                   (fromJust, isJust, isNothing)
+import           Data.Maybe                   (catMaybes, fromJust, isJust, isNothing)
 import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector                  as VB
@@ -69,7 +69,7 @@ import           Debug.Trace
 
 -- ^ Lookup Type for neural networks.
 data LookupType = Target | Worker
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Show, Read)
 
 
 mkStateActs :: BORL s -> s -> s -> (StateFeatures, (StateFeatures, FilteredActionIndices), (StateNextFeatures, FilteredActionIndices))
@@ -105,7 +105,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
   (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
   -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftIO $ collectForkResult forkMv'
-  let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
+  let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy (borl ^. settings) period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
   pRho' <-  mInsertProxy (getRhoVal' calc) pRho `using` rpar
   pV' <-    mInsertProxy (getVValState' calc) pV `using` rpar
@@ -118,26 +118,25 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
-  | (1+period) `mod` (pV ^?! proxyNNConfig . nStep) /= 0 || period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
+  | (1 + period) `mod` (borl ^. settings . nStep) /= 0 || period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
     replMem' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (pxs', calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
-    return (replayMemory ?~ replMem' $ pxs', calc)
+    (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    return (replayMemory ?~ replMem' $ pxs, calc)
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (~calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
     let !config = pV ^?! proxyNNConfig --  ## TODO why not r1
-    let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
-    !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. nStep) (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. nStep) (config ^. trainBatchSize)) workerReplMems -- max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    let !workerReplMems = borl ^.. workers.traversed.workerProxies._Left
+    !mems <- liftIO $ getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize) replMems'
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems -- max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     when  (isTensorflow pV) $ do
       let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (concat mems ++ concat (concat workerMems))
       mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, pPsiV, pV, pPsiW, pW, pR0, pR1]
     let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
-    -- !calcs <- parMap rdeepseq force <$> mapM (\m@((s, _), idx, _, _, _, _) -> mkCalc m >>= \v -> return ((s, idx), v)) (mems ++ concat workerMems)
-    !calcs <- parMap rdeepseq force <$> fmap concat (mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems))
-    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
+    !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
+    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy (borl ^. settings) period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calcs !px =
-          maybe (return px) (\xs -> insertProxyMany period xs px) (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out)) calcs)
+          maybe (return px) (\xs -> insertProxyMany (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
         then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
@@ -157,40 +156,39 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     (!stateFeat, !stateActs, !stateNextActs) = mkStateActs borl state stateNext
 insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy Nothing) = do
   (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
-  let mInsertProxy !mVal !px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
-  !pRhoMin' <-  mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  !pRho' <-     mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  !pV' <-       mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
-  !pW' <-       mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
-  !pPsiV' <-    mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
-  !pPsiW' <-    mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
-  !pR0' <-      mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
-  !pR1' <-      mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
-  !proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
+  let mInsertProxy !mVal !px = maybe (return px) (\val -> insertProxy (borl ^. settings) period stateFeat aNr val px) mVal
+  !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+  !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+  !pV' <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
+  !pW' <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
+  !pPsiV' <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
+  !pPsiW' <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
+  !pR0' <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
+  !pR1' <- mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
+  !proxy' <- insertCombinedProxies (borl ^. settings) period [pR0', pR1', pPsiV', pV', pPsiW', pW']
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy (Just !replMems))
-  -- | proxy ^?! proxyNNConfig . replayMemoryMaxSize <= 1 = insert borl period state aNr randAct rew stateNext episodeEnd getCalc (ProxiesCombinedUnichain pRhoMin pRho proxy Nothing)
-  | (1+period) `mod` (proxy ^?! proxyNNConfig. nStep) /= 0 || period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
+  | (1+period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replMems ^. replayMemories idxStart . replayMemorySize) - 1 = do
     !replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (!pxs', !calc) <- insert borl period state aNr randAct rew stateNext episodeEnd getCalc (replayMemory .~ Nothing $ pxs)
-    return (replayMemory ?~ replMems' $ pxs', calc)
+    (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    return (replayMemory ?~ replMems' $ pxs, calc)
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (~calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
     let !config = proxy ^?! proxyNNConfig
-    let !workerReplMems = borl ^. workers.traversed.workersReplayMemories
-    !mems <- liftIO $ getRandomReplayMemoriesElements (config ^. nStep) (config ^. trainBatchSize) replMems'
-    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (config ^. nStep) (config ^. trainBatchSize)) workerReplMems -- (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
+    let !workerReplMems = borl ^.. workers.traversed.workerProxies._Left
+    !mems <- liftIO $ getRandomReplayMemoriesElements (borl ^. settings . nStep) (config ^. trainBatchSize) replMems'
+    !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems -- (max 1 $ config ^. trainBatchSize `div` length workerReplMems)) workerReplMems
     when  (isTensorflow proxy) $ do
-      let allMemStates = concatMap (\((s, _), _, _, _, (s',_), _) -> [s,s']) (concat mems ++ concat (concat workerMems))
+      let allMemStates = concatMap (\((st, _), _, _, _, (st',_), _) -> [st,st']) (concat mems ++ concat (concat workerMems))
       mapM_ (loadValuesIntoCache allMemStates) [pRhoMin, pRho, proxy]
     let mkCalc (!sas, !idx, !rand, !sarew, !sas', !epiEnd) = getCalc sas idx rand sarew sas' epiEnd
-    !calcs <- parMap rdeepseq force <$> fmap concat (mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems))
-    let mInsertProxy !mVal !px = maybe (return px) (\val ->  insertProxy period stateFeat aNr val px) mVal
+    !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
+    let mInsertProxy !mVal !px = maybe (return px) (\val ->  insertProxy  (borl ^. settings) period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calculations !px =
-          maybe (return px) (\xs -> insertProxyMany period xs px) (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out)) calculations)
+          maybe (return px) (\xs -> insertProxyMany  (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calculations)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
         then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
@@ -205,7 +203,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
     !pPsiW' <-  mTrainBatch getPsiWValState' calcs (pxs ^. psiW) `using` rpar
     !pR0' <-    mTrainBatch getR0ValState' calcs (pxs ^. r0) `using` rpar
     !pR1' <-    mTrainBatch getR1ValState' calcs (pxs ^. r1) `using` rpar
-    !proxy' <- insertCombinedProxies period [pR0', pR1', pPsiV', pV', pPsiW', pW']
+    !proxy' <- insertCombinedProxies (borl ^. settings) period [pR0', pR1', pPsiV', pV', pPsiW', pW']
     return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' (Just replMems'), calc)
   where
     (!stateFeat, !stateActs, !stateNextActs) = mkStateActs borl state stateNext
@@ -214,9 +212,7 @@ insert !borl !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !
 -- | Takes a list of calculations of consecutive periods, where the latest period is at the end.
 executeAndCombineCalculations :: (MonadBorl' m) => (Experience -> ExpectedValuationNext -> m (Calculation, ExpectedValuationNext)) -> [Experience] -> m [((StateFeatures,ActionIndex), Calculation)]
 executeAndCombineCalculations _ [] = error "Empty experiences in executeAndCombineCalculations"
-executeAndCombineCalculations calcFun experiences =
-  -- trace ("len: " ++ show (length experiences) ++ ": " ++ show experiences) $
-  fst <$> foldM eval ([], emptyExpectedValuationNext) (reverse experiences)
+executeAndCombineCalculations calcFun experiences = fst <$> foldM eval ([], emptyExpectedValuationNext) (reverse experiences)
   where
     eval (res, lastExpVal) experience@((state, _), idx, _, _, _, _) = do
       (calc, newExpVal) <- calcFun experience lastExpVal
@@ -242,62 +238,63 @@ lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
-insertProxy :: (MonadBorl' m) => Period -> StateFeatures -> ActionIndex -> Float -> Proxy -> m Proxy
-insertProxy !p !st !aNr !val = insertProxyMany p [((st, aNr), val)]
+insertProxy :: (MonadBorl' m) => Settings -> Period -> StateFeatures -> ActionIndex -> Float -> Proxy -> m Proxy
+insertProxy !settings !p !st !aNr !val = insertProxyMany settings p [[((st, aNr), val)]]
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
-insertProxyMany :: (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
-insertProxyMany _ !xs (Scalar _) = return $ Scalar (snd $ last xs)
-insertProxyMany _ !xs (Table !m !def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (V.map trunc st, aNr) v' m') m xs) def
+insertProxyMany :: (MonadBorl' m) => Settings -> Period -> [[((StateFeatures, ActionIndex), Float)]] -> Proxy -> m Proxy
+insertProxyMany _ p [] _ = error $ "Empty input in insertProxyMany. Period: " ++ show p
+-- insertProxyMany _ p [] px = return px
+insertProxyMany _ _ !xs (Scalar _) = return $ Scalar (snd $ last $ concat xs)
+insertProxyMany _ _ !xs (Table !m !def) = return $ Table (foldl' (\m' ((st,aNr),v') -> M.insert (V.map trunc st, aNr) v' m') m (concat xs)) def
   where trunc x = fromInteger (round $ x * (10^n)) / (10.0^^n)
-        n = 3
-insertProxyMany !period _ !px | period < memSize - 1 = return px -- skip ANN learning if memory not filled yet (no need to replace networks)
+        n = 3 :: Int
+insertProxyMany _ !period _ !px | period < memSize - 1 = return px -- skip ANN learning if memory not filled yet (no need to replace networks)
   where
     memSize = fromIntegral (px ^?! proxyNNConfig . replayMemoryMaxSize)
-insertProxyMany !period !xs px@(CombinedProxy !subPx !col !vs)
-  | (1+period) `mod` nStepCfg == 0 = return $ CombinedProxy subPx col (vs <> xs) -- only accumulate data if an update will follow
+insertProxyMany settings !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
+  | (1 + period) `mod` (settings ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
   | otherwise = return px
-  where
-    nStepCfg = subPx ^?! proxyNNConfig . nStep
-insertProxyMany !period _ !px | (1+period) `mod` nStepCfg /= 0 = updateNNTargetNet False period px -- skip ANN learning if not nStep or terminal
-  where
-    nStepCfg = px ^?! proxyNNConfig . nStep
-insertProxyMany !period !xs !px = emptyCache >> trainBatch period xs px >>= updateNNTargetNet False period
+insertProxyMany settings !period _ !px | (1+period) `mod` (settings ^. nStep) /= 0 = updateNNTargetNet settings False period px -- skip ANN learning if not nStep or terminal
+insertProxyMany settings !period !xs !px = emptyCache >> trainBatch period xs px >>= updateNNTargetNet settings False period
 
 
-insertCombinedProxies :: (MonadBorl' m) => Period -> [Proxy] -> m Proxy
-insertCombinedProxies !period !pxs = set proxyType (head pxs ^?! proxyType) <$!> insertProxyMany period combineProxyExpectedOuts pxLearn
+insertCombinedProxies :: (MonadBorl' m) => Settings -> Period -> [Proxy] -> m Proxy
+insertCombinedProxies !settings !period !pxs
+  -- | (period + 1) `mod` (settings ^. nStep) /= 0 = return (head pxs)
+  | otherwise = set proxyType (head pxs ^?! proxyType) <$!> insertProxyMany settings period combineProxyExpectedOuts pxLearn
   where
-    scaleIndex f idx val = maybe (error $ "could not find proxy for idx: " ++ show idx) (\px -> f (getMinMaxVal px) val) (find ((== idx `div` len) . (^?! proxyOutCol)) pxs)
+    -- scaleIndex f idx val = maybe (error $ "could not find proxy for idx: " ++ show idx) (\px -> f (getMinMaxVal px) val) (find ((== idx `div` len) . (^?! proxyOutCol)) pxs)
     pxLearn = set proxyType (NoScaling $ head pxs ^?! proxyType) $ head pxs ^?! proxySub
-    combineProxyExpectedOuts =
-      concatMap
-        (\px@(CombinedProxy _ idx outs) -> map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue' (getMinMaxVal px) out)) outs)
-        (sortBy (compare `on` (^?! proxyOutCol)) pxs)
+    combineProxyExpectedOuts = concatMap getAndScaleExpectedOutput (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     len = head pxs ^?! proxyNrActions
     scaleValue' val
       | period < memSize - 1 = id
       | otherwise = scaleValue val
     memSize = fromIntegral (head pxs ^?! proxyNNConfig . replayMemoryMaxSize)
-
+    getAndScaleExpectedOutput px@(CombinedProxy _ idx outs) = map (map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue' (getMinMaxVal px) out))) outs
+    getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
 
 -- | Copy the worker net to the target.
-updateNNTargetNet :: (MonadBorl' m) => Bool -> Period -> Proxy -> m Proxy
-updateNNTargetNet _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
-updateNNTargetNet !forceReset !period !px
+updateNNTargetNet :: (MonadBorl' m) => Settings -> Bool -> Period -> Proxy -> m Proxy
+updateNNTargetNet _ _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
+updateNNTargetNet settings forceReset period px
   | config ^. updateTargetInterval <= 1 || currentUpdateInterval <= 1 = return px
   | forceReset = copyValues
   | period <= memSize = return px
-  | ((period - memSize - 1) `mod` currentUpdateInterval) == 0 = copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
+  | nStepUpdate = copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
   | otherwise = return px
   where
+    nStepUpdate
+      | settings ^. nStep == 1 = (period - memSize - 1) `mod` currentUpdateInterval == 0
+      | otherwise = any ((== 0) . (`mod` currentUpdateInterval)) [period - memSize - 1 - settings ^. nStep .. period - memSize - 1]
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     config = px ^?! proxyNNConfig
     currentUpdateInterval = max 1 $ round $ decaySetup (config ^. updateTargetIntervalDecay) period (fromIntegral $ config ^. updateTargetInterval)
     copyValues =
       case px of
-        (Grenade _ netW' tp' config' nrActs) -> return $! Grenade netW' netW' tp' config' nrActs
+        (Grenade netT' netW' tp' config' nrActs) -> return $! Grenade netW' netW' tp' config' nrActs
         (TensorflowProxy netT' netW' tp' config' nrActs) -> do
           liftTf $ TF.copyValuesFromTo netW' netT'
           return $! TensorflowProxy netT' netW' tp' config' nrActs
@@ -307,12 +304,12 @@ updateNNTargetNet !forceReset !period !px
 
 
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
-trainBatch :: forall m . (MonadBorl' m) => Period -> [((StateFeatures, ActionIndex), Float)] -> Proxy -> m Proxy
+trainBatch :: forall m . (MonadBorl' m) => Period -> [[((StateFeatures, ActionIndex), Float)]] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs) = do
   let netW' = trainGrenade opt netW trainingInstances'
   return $! Grenade netT netW' tp config nrActs
   where
-    trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+    trainingInstances' = map (map (second $ scaleValue (getMinMaxVal px))) trainingInstances
     lRate = getLearningRate (config ^. grenadeLearningParams)
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate)  (config ^. grenadeLearningParams)
@@ -331,7 +328,7 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
       --   getLearningRates netW >>= liftIO . print
       return $! TensorflowProxy netT netW tp config nrActs
   where
-    trainingInstances' = map (second $ scaleValue (getMinMaxVal px)) trainingInstances
+    trainingInstances' = map (map (second $ scaleValue (getMinMaxVal px))) trainingInstances
     dec = decaySetup (config ^. learningParamsDecay) period
     lRateDb = getLearningRate (config ^. grenadeLearningParams)
     lRate = realToFrac lRateDb

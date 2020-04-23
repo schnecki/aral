@@ -32,10 +32,12 @@ import           Control.Monad.IO.Class             (liftIO)
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Function                      (on)
-import           Data.List                          (find, groupBy, intercalate, partition,
-                                                     sortBy, transpose)
+import           Data.List                          (find, groupBy, intercalate, maximumBy,
+                                                     partition, sortBy, transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
+import           Data.Ord
+import           Data.Ord                           (comparing)
 import           Data.Serialize
 import qualified Data.Vector                        as VB
 import qualified Data.Vector.Storable               as V
@@ -138,48 +140,66 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
     liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
-  let doFork'
-        | borl ^. settings . useForking = doFork
-        | otherwise = doForkFake
-      callWorkers -- make 2 steps to ensure the replay memory will not be offset
-        | period == 0 = do
-          workers' <- runWorkerActions borl workerActions
-          let borl' = set workers workers' borl
-          acts' <- snd <$> nextAction borl'
-          doFork' $ runWorkerActions borl' acts'
-        | otherwise = liftIO $ doFork' $ runWorkerActions borl workerActions
-  workerReplMemFuture <- liftIO callWorkers
+  workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
-  let applyToReward (RewardFuture storage) = applyState storage state
-      applyToReward r                      = r
-      updateFutures = map (over futureReward applyToReward)
-  let borl' = over futureRewards (updateFutures . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
-  (dropLen, _, borlNew) <- foldM stepExecuteMaterialisedFutures (0, False, borl') (borl' ^. futureRewards)
-  workers' <- liftIO $ collectForkResult workerReplMemFuture -- Note that the replay memory of the workers are offset by 1 step
-  return $ set workers workers' $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+  let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
+  (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
+  newWorkerStates <- liftIO $ collectWorkers workerRefs
+  let updateFromWorkers = (borl ^. t) `mod` borl ^. settings . workersUpdatePeriods == 0
+  let allWorkerProxies = newWorkerStates ^.. traversed . workerProxies . _Right
+      allWorkerExpSmoothedReward = newWorkerStates ^.. traversed . workerExpSmthReward
+      maxExpSmthReward = maximum $ (borl ^. psis . _1) : allWorkerExpSmoothedReward
+      newProxies
+        | updateFromWorkers =
+          -- choose workers by exponentially smoothed average reward (only those within 10% of best, except if their minimum exploration rate is reached)
+          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take (ceiling $ fromIntegral (length allWorkerProxies) / 2) $ sortBy (comparing (Down . fst)) $ zip allWorkerExpSmoothedReward allWorkerProxies
+          -- mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) allWorkerProxies
+        | otherwise = borlNew ^. proxies
+      setNewWorkerProxies (Right oldProxies) = Right $ set replayMemory (oldProxies ^. replayMemory) newProxies
+      setNewWorkerProxies (Left experience) = Left experience
+      newWorkers
+        | updateFromWorkers = map (over workerProxies setNewWorkerProxies) newWorkerStates
+        | otherwise = newWorkerStates
+  return $ set workers newWorkers $ set proxies newProxies $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+  where
+    collectWorkers (Left xs)      = return xs
+    collectWorkers (Right ioRefs) = mapM collectForkResult ioRefs
 
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
-runWorkerActions :: BORL s -> [WorkerActionChoice s] -> IO (Maybe (Workers s))
-runWorkerActions borl [] = return (borl ^. workers)
-runWorkerActions borl _ | borl ^. settings . disableAllLearning = return (borl ^. workers)
-runWorkerActions borl acts = do
-  let states = borl ^. workers . traversed . workersS
-  stepRewards <- zipWithM runWorkerAction (zip [1 ..] states) acts
-  let statesNext = map (view futureStateNext) stepRewards
-  let futureRews = borl ^. workers . traversed . workersFutureRewards
-  let updateFuturesWith f = map (over futureReward f)
-  let futureRewsTmp = zipWith3 (\state fs r -> updateFuturesWith (applyToReward state) (fs ++ [r])) states futureRews stepRewards
-  let (rewards, futureRews') = unzip $ map splitMaterialisedFutures futureRewsTmp
-  Just . Workers statesNext futureRews' <$> zipWithM (foldM addExperience) (borl ^. workers . traversed . workersReplayMemories) rewards
+runWorkerActions :: (NFData s, Ord s, RewardFuture s) => BORL s -> [WorkerActionChoice s] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
+runWorkerActions _ [] = return (Left [])
+runWorkerActions borl _ | borl ^. settings . disableAllLearning = return (Left $ borl ^. workers)
+runWorkerActions borl acts = Right <$> zipWithM (\act worker -> doFork' $ runWorkerAction borl worker act) acts (borl ^. workers)
   where
-    runWorkerAction :: (MonadBorl' m) => (Int, State s) -> WorkerActionChoice s -> m (RewardFutureData s)
-    runWorkerAction (wNr, state) (randomAction, (aNr, Action action _)) = do
-      (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
-      return $ RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd
-    applyToReward state (RewardFuture storageWorkers) = applyState storageWorkers state
-    applyToReward _ r                                 = r
+    doFork'
+      | borl ^. settings . useForking = doFork
+      | otherwise = doForkFake
+
+-- | Apply the given state to a list of future reward data.
+applyStateToRewardFutureData :: State s -> [RewardFutureData s] -> [RewardFutureData s]
+applyStateToRewardFutureData state = map (over futureReward applyToReward)
+  where
+    applyToReward (RewardFuture storage) = applyState storage state
+    applyToReward r                      = r
+
+-- | Run one worker.
+runWorkerAction :: (NFData s, RewardFuture s, Ord s) => BORL s -> WorkerState s -> WorkerActionChoice s -> IO (WorkerState s)
+runWorkerAction borl (WorkerState wNr state (Right oldPx) oldFutureRewards rew) (randomAction, (aNr, Action action _)) = do
+  let workerType = WorkerAgent wNr
+  (reward, stateNext, episodeEnd) <- liftIO $ action workerType state
+  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
+  let borlAdapted = set proxies oldPx $ set workers [] $ set s state $ set futureRewards [] $ set (psis . _1) rew borl
+  (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures workerType) (0, False, borlAdapted) newFuturesUndropped
+  return $ WorkerState wNr stateNext (Right $ borlNew ^. proxies) (drop dropLen $ borlNew ^. futureRewards) (borlNew ^. psis . _1)
+runWorkerAction borl (WorkerState wNr state (Left replMem) oldFutureRewards rew) (randomAction, (aNr, Action action _)) = do
+  (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
+  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
+  let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
+  newReplMem <- foldM addExperience replMem materialisedFutures
+  return $ WorkerState wNr stateNext (Left newReplMem) newFutures rew
+  where
     splitMaterialisedFutures fs =
       let xs = takeWhile (not . isRewardFuture . view futureReward) fs
        in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
@@ -192,24 +212,28 @@ runWorkerActions borl acts = do
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
      forall m s. (MonadBorl' m, NFData s, Ord s, RewardFuture s)
-  => (Int, Bool, BORL s)
+  => AgentType
+  -> (Int, Bool, BORL s)
   -> RewardFutureData s
   -> m (Int, Bool, BORL s)
-stepExecuteMaterialisedFutures (nr, True, borl) _ = return (nr, True, borl)
-stepExecuteMaterialisedFutures (nr, _, borl) dt =
+stepExecuteMaterialisedFutures _ (nr, True, borl) _ = return (nr, True, borl)
+stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
   case view futureReward dt of
     RewardEmpty     -> return (nr, False, borl)
     RewardFuture {} -> return (nr, True, borl)
-    Reward {}       -> (nr+1, False, ) <$> execute borl dt
+    Reward {}       -> (nr+1, False, ) <$> execute agent borl dt
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> RewardFutureData s -> m (BORL s)
-execute borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => AgentType -> BORL s -> RewardFutureData s -> m (BORL s)
+execute agent borl (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
-  when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
-    liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
-  borl <- writeDebugFiles borl
+  borl <- if isMainAgent agent
+          then do
+            when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
+              liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
+            writeDebugFiles borl
+          else return borl
 #endif
   (proxies', calc) <- P.insert borl period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
@@ -219,19 +243,25 @@ execute borl (RewardFutureData period state aNr randomAction (Reward reward) sta
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
       strR1 = show $ fromMaybe 0 (getR1ValState' calc)
       avg xs = sum xs / fromIntegral (length xs)
-  liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
-  let (eNr, eStart) = borl ^. episodeNrStart
-      eLength = borl ^. t - eStart
-  when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
-  liftIO $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
-  -- update values
-  let setEpisode curEp
-        | getEpisodeEnd calc = (eNr + 1, borl ^. t)
-        | otherwise = curEp
-  return $
-    set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
-    set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
-execute _ _ = error "Exectue on invalid data structure. This is a bug!"
+  if isMainAgent agent
+  then do
+    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+    let (eNr, eStart) = borl ^. episodeNrStart
+        eLength = borl ^. t - eStart
+    when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
+    liftIO $ appendFile fileReward (show period ++ "\t" ++ show reward ++ "\n")
+    -- update values
+    let setEpisode curEp
+          | getEpisodeEnd calc = (eNr + 1, borl ^. t)
+          | otherwise = curEp
+    return $
+      set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
+      set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
+  else return $
+       set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
+       set proxies proxies' $ set t (period + 1) borl
+
+execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
 
 
 #ifdef DEBUG

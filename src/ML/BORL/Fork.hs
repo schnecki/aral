@@ -3,6 +3,8 @@ module ML.BORL.Fork
     ( doFork
     , doForkFake
     , collectForkResult
+    , IORef
+    , ThreadState (..)
     ) where
 
 import           Control.Concurrent          (forkIO, yield)

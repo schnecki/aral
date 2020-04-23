@@ -116,7 +116,7 @@ mkCalculation' ::
   -> Algorithm NetInputWoAction
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
-mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) (ExpectedValuationNext mExpValStateNextRho mExpValStateNextV mExpValStateWNext mExpValStateNextR0 mExpValStateNextR1) = do
+mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
   let params' = decayedParameters borl
   let isRefState = mRefState == Just (state, aNr)
   let alp = getExpSmthParam borl rho alpha
@@ -246,6 +246,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let alp = getExpSmthParam borl rho alpha
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       gam = getExpSmthParam borl r1 gamma
+      expSmthReward = borl ^. psis._1
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -274,6 +275,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             ByMovAvg _ -> rhoState
             Fixed x -> x
             _ -> (1 - alp) * rhoVal + alp * rhoState
+  let expSmthReward' = (1 - 0.01) * expSmthReward + 0.01 * reward
   -- RhoMin
   let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let expStateNextValR0 | randomAction = epsEnd * r0StateNext
@@ -284,7 +286,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       expStateValR1 = reward - rhoVal' + ga1 * expStateNextValR1
   let r0ValState' = (1 - gam) * r0ValState + gam * expStateValR0
   let r1ValState' = (1 - gam) * r1ValState + gam * expStateValR1 -- (reward + ga1 * expStateNextValR1 - rhoVal')
-  return $
+  return 
     ( Calculation
         { getRhoMinimumVal' = Just rhoMinimumVal'
         , getRhoVal' = Just rhoVal'
@@ -294,7 +296,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getWValState' = Nothing
         , getR0ValState' = Just r0ValState' -- gamma middle/low
         , getR1ValState' = Just r1ValState' -- gamma High
-        , getPsiValRho' = Nothing
+        , getPsiValRho' = Just expSmthReward'
         , getPsiValV' = Nothing
         , getPsiValW' = Nothing
         , getLastVs' = Nothing

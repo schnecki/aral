@@ -31,6 +31,7 @@ import           Control.Arrow        (first, second)
 import           Control.DeepSeq      (NFData)
 import           Control.Lens         (set, (^.))
 import           Control.Monad        (foldM, unless, when)
+import           Data.Default
 import           Data.List            (foldl')
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
@@ -46,12 +47,15 @@ alg = AlgBORL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
-  rl <- mkMultichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
-  rl <- mkUnichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay Nothing
+  rl <- mkMultichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []
+
+borlSettings :: Settings
+borlSettings = def
 
 initState :: St
 initState = St 5
