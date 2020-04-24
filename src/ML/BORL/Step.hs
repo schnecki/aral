@@ -33,6 +33,7 @@ import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
+import           Data.Function                      (on)
 import           Data.List                          (find, foldl', groupBy, intercalate,
                                                      maximumBy, partition, sortBy,
                                                      transpose)
@@ -151,12 +152,18 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
       allWorkerExpSmoothedReward = newWorkerStates ^.. traversed . workerExpSmthReward
       avgExpSmthReward = avg $ (borl ^. psis . _1) : allWorkerExpSmoothedReward
       avg xs = sum xs / fromIntegral (length xs)
+      comparingObjective =
+        case borl ^. objective of
+          Minimise -> compare `on` fst
+          Maximise -> flip compare `on` fst
       newProxies
         | updateFromWorkers && (null newWorkerStates || isLeft (head newWorkerStates ^. workerProxies)) = borlNew ^. proxies
-        | updateFromWorkers =
+        | updateFromWorkers
           -- choose workers by exponentially smoothed average reward (only those within 10% of best, except if their minimum exploration rate is reached)
-          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take
-          (max 1 $ round $ fromIntegral (length allWorkerProxies) / (4 :: Float)) $ sortBy (comparing (Down . fst)) $ zip allWorkerExpSmoothedReward allWorkerProxies
+         =
+          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take (max 1 $ round $ fromIntegral (length allWorkerProxies) / (4 :: Float)) $
+          sortBy comparingObjective $
+          zip allWorkerExpSmoothedReward allWorkerProxies
           -- mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) allWorkerProxies
         | otherwise = borlNew ^. proxies
       setNewWorkerProxies (Right oldProxies) = Right $ set replayMemory (oldProxies ^. replayMemory) newProxies
