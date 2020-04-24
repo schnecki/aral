@@ -14,6 +14,7 @@ module ML.BORL.Calculation.Ops
     , wValueFeat
     , rhoValue
     , RSize (..)
+    , expSmthPsi
     ) where
 
 import           Control.Lens
@@ -236,17 +237,17 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         , getExpectedValStateNextR1 = Nothing
         })
 mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) expValStateNext = do
-  rhoMinimumState <- rhoMinimumValueFeat borl state aNr                                `using` rpar
-  rhoVal <- rhoValueWith Worker borl state aNr                                         `using` rpar
+  rhoMinimumState <- rhoMinimumValueFeat borl state aNr                                
+  rhoVal <- rhoValueWith Worker borl state aNr                                         
   r0ValState <- rValueWith Worker borl RSmall state aNr                                `using` rpar
   r0StateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes)     `using` rpar
   r1ValState <- rValueWith Worker borl RBig state aNr                                  `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes)       `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
-  let alp = getExpSmthParam borl rho alpha                                             `using` rpar
-      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin 
-      gam = getExpSmthParam borl r1 gamma
-      expSmthReward = borl ^. psis._1
+  let alp = getExpSmthParam borl rho alpha                                             
+      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin                          
+      gam = getExpSmthParam borl r1 gamma                                              
+      expSmthReward = borl ^. psis._1 
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1

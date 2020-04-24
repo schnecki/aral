@@ -33,8 +33,9 @@ import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
-import           Data.List                          (find, groupBy, intercalate, maximumBy,
-                                                     partition, sortBy, transpose)
+import           Data.List                          (find, foldl', groupBy, intercalate,
+                                                     maximumBy, partition, sortBy,
+                                                     transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
@@ -200,8 +201,10 @@ runWorkerAction borl (WorkerState wNr state (Left replMem) oldFutureRewards rew)
   (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
+  let addNewRewardToExp currentExpSmthRew  (RewardFutureData _ _ _ _ (Reward reward) _ _) = ((1-expSmthPsi) * currentExpSmthRew + expSmthPsi * reward)
+      addNewRewardToExp _ _ = error "unexpected RewardFutureData in runWorkerAction"
   newReplMem <- foldM addExperience replMem materialisedFutures
-  return $ force $ WorkerState wNr stateNext (Left newReplMem) newFutures rew
+  return $ force $ WorkerState wNr stateNext (Left newReplMem) newFutures (foldl' addNewRewardToExp rew materialisedFutures)
   where
     splitMaterialisedFutures fs =
       let xs = takeWhile (not . isRewardFuture . view futureReward) fs
