@@ -12,13 +12,12 @@
 
 module ML.BORL.Serialisable where
 
-import           Control.Arrow                (first, (&&&))
+import           Control.Arrow                (first)
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (void, zipWithM, zipWithM_)
+import           Control.Monad                (zipWithM_)
 import           Data.Constraint              (Dict (..))
-import           Data.Int                     (Int64)
-import           Data.List                    (find, foldl')
+import           Data.List                    (foldl')
 import qualified Data.Map                     as M
 import           Data.Serialize
 import           Data.Singletons.Prelude.List
@@ -35,7 +34,6 @@ import           Unsafe.Coerce                (unsafeCoerce)
 
 import           ML.BORL.Action.Type
 import           ML.BORL.Algorithm
-import           ML.BORL.Decay
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Proxies
@@ -49,40 +47,41 @@ import           ML.BORL.Workers.Type
 
 
 data BORLSerialisable s = BORLSerialisable
-  { serS                :: !s                    -- ^ Current state.
-  , serWorkers          :: !(Workers s)          -- ^ Workers
-  , serT                :: !Int                  -- ^ Current time t.
-  , serEpisodeNrStart   :: !(Int, Int)           -- ^ Nr of Episode and start period.
-  , serParameters       :: !ParameterInitValues  -- ^ Parameter setup.
-  , serParameterSetting :: !ParameterDecaySetting
-  , serSettings         :: !Settings  -- ^ Parameter setup.
-  , serRewardFutures    :: [RewardFutureData s]
+  { serS                 :: !s                    -- ^ Current state.
+  , serWorkers           :: !(Workers s)          -- ^ Workers
+  , serT                 :: !Int                  -- ^ Current time t.
+  , serEpisodeNrStart    :: !(Int, Int)           -- ^ Nr of Episode and start period.
+  , serParameters        :: !ParameterInitValues  -- ^ Parameter setup.
+  , serParameterSetting  :: !ParameterDecaySetting
+  , serSettings          :: !Settings  -- ^ Parameter setup.
+  , serRewardFutures     :: [RewardFutureData s]
 
   -- define algorithm to use
-  , serAlgorithm        :: !(Algorithm [Float])
-  , serObjective        :: !Objective
+  , serAlgorithm         :: !(Algorithm [Float])
+  , serObjective         :: !Objective
 
   -- Values:
-  , serLastVValues      :: ![Float]                 -- ^ List of X last V values
-  , serLastRewards      :: ![Float]                 -- ^ List of X last rewards
-  , serPsis             :: !(Float, Float, Float)  -- ^ Exponentially smoothed psi values.
-  , serProxies          :: Proxies                    -- ^ Scalar, Tables and Neural Networks
+  , serExpSmoothedReward :: Float                  -- ^ Exponentially smoothed reward
+  , serLastVValues       :: ![Float]               -- ^ List of X last V values
+  , serLastRewards       :: ![Float]               -- ^ List of X last rewards
+  , serPsis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
+  , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadBorl' m, Ord s, RewardFuture s) => BORL s -> m (BORLSerialisable s)
+toSerialisable :: (MonadBorl' m, RewardFuture s) => BORL s -> m (BORLSerialisable s)
 toSerialisable = toSerialisableWith id id
 
 
-toSerialisableWith :: (MonadBorl' m, Ord s', RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
+toSerialisableWith :: (MonadBorl' m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
 toSerialisableWith f g borl = do
-  BORL _ _ state workers' _ time eNr par dec setts future alg obj v rew psis prS <- saveTensorflowModels borl
-  return $ BORLSerialisable (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj v rew psis prS
+  BORL _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS <- saveTensorflowModels borl
+  return $ BORLSerialisable (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj expSmthRew v rew psis prS
 
-fromSerialisable :: (MonadBorl' m, Ord s, NFData s, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadBorl' m, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
-     (MonadBorl' m, Ord s, NFData s, RewardFuture s)
+     (MonadBorl' m, RewardFuture s)
   => (s' -> s)
   -> (StoreType s' -> StoreType s)
   -> [Action s]
@@ -91,9 +90,9 @@ fromSerialisableWith ::
   -> TF.ModelBuilderFunction
   -> BORLSerialisable s'
   -> m (BORL s)
-fromSerialisableWith f g as aF ftExt builder (BORLSerialisable s workers' t e par dec setts future alg obj lastV rew psis prS) = do
+fromSerialisableWith f g as aF ftExt builder (BORLSerialisable st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL (VB.fromList aL) aF (f s) (mapWorkers f g workers') ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj lastV rew psis prS
+      borl = BORL (VB.fromList aL) aF (f st) (mapWorkers f g workers') ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj expSmthRew lastV rew psis prS
       pxs = borl ^. proxies
       nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
                 | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2

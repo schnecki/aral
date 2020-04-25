@@ -42,9 +42,10 @@ data Proxies =
   deriving (Generic, Show)
 
 -- | Merge the proxies of a list of proxies. The replay memory will not be merged, but the one of the first element is returned!
-mergeProxiesInto :: Algorithm s -> Proxies -> [Proxies] -> Proxies
-mergeProxiesInto _ px [] = px
-mergeProxiesInto alg px pxs = avgProxies $ foldl' addProxies px pxs
+mergeProxies :: Algorithm s -> [Proxies] -> Proxies
+mergeProxies _ [] = error "empty input in mergeProxies"
+mergeProxies _ [px] = px
+mergeProxies alg (px:pxs) = avgProxies $ foldl' addProxies px pxs
   where
     ifBorl2 f x1 x2
       | isAlgBorl alg = f x1 x2

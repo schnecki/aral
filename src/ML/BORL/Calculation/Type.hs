@@ -31,25 +31,26 @@ emptyExpectedValuationNext = ExpectedValuationNext Nothing Nothing Nothing Nothi
 
 
 data Calculation = Calculation
-  { getRhoMinimumVal' :: Maybe Float
-  , getRhoVal'        :: Maybe Float
-  , getPsiVValState'  :: Maybe Float -- ^ Deviation of this state
-  , getVValState'     :: Maybe Float
-  , getPsiWValState'  :: Maybe Float -- ^ Deviation of this state
-  , getWValState'     :: Maybe Float
-  , getR0ValState'    :: Maybe Float
-  , getR1ValState'    :: Maybe Float
-  , getPsiValRho'     :: Maybe Float -- ^ Scalar deviation over all states (for output only)
-  , getPsiValV'       :: Maybe Float -- ^ Scalar deviation over all states (for output only)
-  , getPsiValW'       :: Maybe Float -- ^ Scalar deviation over all states (for output only)
-  , getLastVs'        :: Maybe [Float]
-  , getLastRews'      :: [RewardValue]
-  , getEpisodeEnd     :: Bool
+  { getRhoMinimumVal'     :: Maybe Float
+  , getRhoVal'            :: Maybe Float
+  , getPsiVValState'      :: Maybe Float -- ^ Deviation of this state
+  , getVValState'         :: Maybe Float
+  , getPsiWValState'      :: Maybe Float -- ^ Deviation of this state
+  , getWValState'         :: Maybe Float
+  , getR0ValState'        :: Maybe Float
+  , getR1ValState'        :: Maybe Float
+  , getPsiValRho'         :: Maybe Float -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'           :: Maybe Float -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'           :: Maybe Float -- ^ Scalar deviation over all states (for output only)
+  , getLastVs'            :: Maybe [Float]
+  , getLastRews'          :: [RewardValue]
+  , getEpisodeEnd         :: Bool
+  , getExpSmoothedReward' :: Float
   } deriving (Show, Generic)
 
 
 emptyCalculation :: Calculation
-emptyCalculation = Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing [] True
+emptyCalculation = Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing [] True 0
 
 instance NFData Calculation where
   rnf calc =
@@ -75,6 +76,7 @@ fmapCalculation f calc =
     , getLastVs'        = getLastVs' calc
     , getLastRews'      = getLastRews' calc
     , getEpisodeEnd     = getEpisodeEnd calc
+    , getExpSmoothedReward' = getExpSmoothedReward' calc
     }
 
 avgCalculation :: [Calculation] -> Calculation
@@ -95,5 +97,6 @@ avgCalculation xs =
     (mapM (fmap avg . getLastVs') xs)
     (map (avg . getLastRews') xs)
     (all getEpisodeEnd xs)
+    (avg $ map getExpSmoothedReward' xs)
   where
     avg xs' = sum xs' / fromIntegral (length xs')

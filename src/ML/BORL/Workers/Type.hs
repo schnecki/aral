@@ -39,7 +39,6 @@ data WorkerState s =
     , _workerProxies       :: !(Either ReplayMemories Proxies)
     , _workerFutureRewards :: ![RewardFutureData s]
     , _workerExpSmthReward :: Float
-    -- , _workerGradients     :: forall layers . [Gradients layers]
     }
   deriving (Generic)
 makeLenses ''WorkerState
@@ -56,4 +55,5 @@ mapWorkerState :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s'
 mapWorkerState f g (WorkerState nr s px futs rew) = WorkerState nr (f s) px (map (mapRewardFutureData f g) futs) rew
 
 instance NFData s => NFData (WorkerState s) where
-  rnf (WorkerState nr state px fut rew) = rnf nr `seq` rnf state `seq` rnf px `seq` rnf1 fut `seq` rnf rew
+  rnf (WorkerState nr state (Left replMem) fut rew) = rnf nr `seq` rnf state `seq` rnf replMem `seq` rnf1 fut `seq` rnf rew
+  rnf (WorkerState nr state (Right px) fut rew) = rnf nr `seq` rnf state `seq` rnf px `seq` rnf1 fut `seq` rnf rew

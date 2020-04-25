@@ -47,6 +47,7 @@ module ML.BORL.Type
   , decayedParameters
   , futureRewards
   , algorithm
+  , expSmoothedReward
   , objective
   , lastVValues
   , lastRewards
@@ -131,36 +132,38 @@ data Objective
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s = BORL
-  { _actionList       :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s.
-  , _actionFilter     :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
-  , _s                :: !s                             -- ^ Current state.
-  , _workers          :: !(Workers s)                   -- ^ Additional workers. (Workers s = [WorkerState s])
+  { _actionList        :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s.
+  , _actionFilter      :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
+  , _s                 :: !s                             -- ^ Current state.
+  , _workers           :: !(Workers s)                   -- ^ Additional workers. (Workers s = [WorkerState s])
 
-  , _featureExtractor :: !(FeatureExtractor s)  -- ^ Function that extracts the features of a state.
-  , _t                :: !Int                   -- ^ Current time t.
-  , _episodeNrStart   :: !(Int, Int)            -- ^ Nr of Episode and start period.
-  , _parameters       :: !ParameterInitValues   -- ^ Parameter setup.
-  , _decaySetting     :: !ParameterDecaySetting -- ^ Decay Setup
-  , _settings         :: !Settings              -- ^ Parameter setup.
+  , _featureExtractor  :: !(FeatureExtractor s)  -- ^ Function that extracts the features of a state.
+  , _t                 :: !Int                   -- ^ Current time t.
+  , _episodeNrStart    :: !(Int, Int)            -- ^ Nr of Episode and start period.
+  , _parameters        :: !ParameterInitValues   -- ^ Parameter setup.
+  , _decaySetting      :: !ParameterDecaySetting -- ^ Decay Setup
+  , _settings          :: !Settings              -- ^ Parameter setup.
   -- , _decayFunction    :: !Decay              -- ^ Decay function at period t.
-  , _futureRewards    :: ![RewardFutureData s]  -- ^ List of future reward.
+  , _futureRewards     :: ![RewardFutureData s]  -- ^ List of future reward.
 
   -- define algorithm to use
-  , _algorithm        :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
-  , _objective        :: !Objective                 -- ^ Objective to minimise or maximise.
+  , _algorithm         :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
+  , _objective         :: !Objective                 -- ^ Objective to minimise or maximise.
 
   -- Values:
-  , _lastVValues      :: ![Float]                 -- ^ List of X last V values (head is last seen value)
-  , _lastRewards      :: ![Float]                 -- ^ List of X last rewards (head is last received reward)
-  , _psis             :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
-  , _proxies          :: !Proxies               -- ^ Scalar, Tables and Neural Networks
+  , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.001).
+  , _lastVValues       :: ![Float]               -- ^ List of X last V values (head is last seen value)
+  , _lastRewards       :: ![Float]               -- ^ List of X last rewards (head is last received reward)
+  , _psis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
+  , _proxies           :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
 
 instance (NFData s) => NFData (BORL s) where
-  rnf (BORL as af s ws ftExt t epNr par set dec fut alg ph lastVs lastRews psis proxies) =
-    rnf as `seq` rnf af `seq` rnf s `seq` rnf ws `seq` rnf ftExt `seq` rnf t `seq`
-    rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf set `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf1 lastVs `seq` rnf1 lastRews `seq` rnf proxies `seq` rnf psis `seq` rnf s
+  rnf (BORL as af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
+    rnf as `seq` rnf af `seq` rnf st `seq` rnf ws `seq` rnf ftExt `seq` rnf time `seq`
+    rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf setts `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf expSmth `seq`
+    rnf1 lastVs `seq` rnf1 lastRews  `seq` rnf psis' `seq` rnf proxies'
 
 
 decayedParameters :: BORL s -> ParameterDecayedValues
@@ -255,6 +258,7 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     mempty
     (convertAlgorithm ftExt alg)
     Maximise
+    0
     mempty
     mempty
     (0, 0, 0)
@@ -331,6 +335,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
+          0
           mempty
           mempty
           (0, 0, 0)
@@ -359,6 +364,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
+          0
           mempty
           mempty
           (0, 0, 0)
@@ -419,6 +425,7 @@ mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params de
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
+      0
       mempty
       mempty
       (0, 0, 0)
@@ -495,6 +502,7 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settin
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
+      0
       mempty
       mempty
       (0, 0, 0)
@@ -639,6 +647,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
       []
       (convertAlgorithm ftExt alg)
       Maximise
+      0
       mempty
       mempty
       (0, 0, 0)
@@ -706,6 +715,7 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
       []
       (convertAlgorithm ftExt alg)
       Maximise
+      0
       mempty
       mempty
       (0, 0, 0)

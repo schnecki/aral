@@ -252,7 +252,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           px = borl ^. proxies . p
   return $ text "\n" $+$
-    text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s)) $+$
+    text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s) <+> "Exp. Smth Reward: " <> printFloat (borl ^. expSmoothedReward)) $+$
     vcat (map (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printFloat rew) (borl ^. workers)) $+$
     text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
     text "Alpha/AlphaRhoMin" <> colon $$

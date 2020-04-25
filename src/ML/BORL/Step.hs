@@ -145,36 +145,36 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
   let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
-  (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
+  (dropLen, _, borlAfterStep) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
   newWorkerStates <- liftIO $ collectWorkers workerRefs
   let updateFromWorkers = (borl ^. t) `mod` borl ^. settings . workersUpdateInterval == 0
   let allWorkerProxies = newWorkerStates ^.. traversed . workerProxies . _Right
       allWorkerExpSmoothedReward = newWorkerStates ^.. traversed . workerExpSmthReward
       avgExpSmthReward = avg $ (borl ^. psis . _1) : allWorkerExpSmoothedReward
       avg xs = sum xs / fromIntegral (length xs)
-      comparingObjective =
-        case borl ^. objective of
-          Minimise -> compare `on` fst
-          Maximise -> flip compare `on` fst
       newProxies
-        | updateFromWorkers && (null newWorkerStates || isLeft (head newWorkerStates ^. workerProxies)) = borlNew ^. proxies
-        | updateFromWorkers
-          -- choose workers by exponentially smoothed average reward (only those within 10% of best, except if their minimum exploration rate is reached)
-         =
-          mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) $ map snd $ take (max 1 $ round $ fromIntegral (length allWorkerProxies) / (4 :: Float)) $
+        | updateFromWorkers && (null newWorkerStates || isLeft (head newWorkerStates ^. workerProxies)) = borlAfterStep ^. proxies
+        | updateFromWorkers =
+          mergeProxies (borlAfterStep ^. algorithm) $ map snd $ take (max 1 $ round $ fromIntegral (length allWorkerProxies) * (borl ^. settings . workersSelectionRate)) $
           sortBy comparingObjective $
-          zip allWorkerExpSmoothedReward allWorkerProxies
-          -- mergeProxiesInto (borlNew ^. algorithm) (borlNew ^. proxies) allWorkerProxies
-        | otherwise = borlNew ^. proxies
+          zip (borl ^. expSmoothedReward : allWorkerExpSmoothedReward) (borlAfterStep ^. proxies : allWorkerProxies)
+        | otherwise = borlAfterStep ^. proxies
       setNewWorkerProxies (Right oldProxies) = Right $ set replayMemory (oldProxies ^. replayMemory) newProxies
       setNewWorkerProxies (Left experience) = Left experience
       newWorkers
         | updateFromWorkers = map (set workerExpSmthReward avgExpSmthReward . over workerProxies setNewWorkerProxies) newWorkerStates
         | otherwise = newWorkerStates
-  return $ set workers newWorkers $ set proxies newProxies $ over futureRewards (drop dropLen) $ set s stateNext borlNew
+      newBorl
+        | updateFromWorkers = set expSmoothedReward avgExpSmthReward $ set (proxies . replayMemory) (borlAfterStep ^. proxies . replayMemory) $ set proxies newProxies borlAfterStep
+        | otherwise = borlAfterStep
+  return $ set workers newWorkers $ set proxies newProxies $ over futureRewards (drop dropLen) $ set s stateNext newBorl
   where
     collectWorkers (Left xs)      = return xs
     collectWorkers (Right ioRefs) = mapM collectForkResult ioRefs
+    comparingObjective =
+      case borl ^. objective of
+        Minimise -> compare `on` fst
+        Maximise -> flip compare `on` fst
 
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
@@ -201,14 +201,14 @@ runWorkerAction borl (WorkerState wNr state (Right oldPx) oldFutureRewards rew) 
   let workerType = WorkerAgent wNr
   (reward, stateNext, episodeEnd) <- liftIO $ action workerType state
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
-  let borlAdapted = set proxies oldPx $ set workers [] $ set s state $ set futureRewards [] $ set (psis . _1) rew borl
+  let borlAdapted = set proxies oldPx $ set workers [] $ set s state $ set futureRewards [] $ set expSmoothedReward rew borl
   (dropLen, _, borlNew) <- foldM (stepExecuteMaterialisedFutures workerType) (0, False, borlAdapted) newFuturesUndropped
-  return $ force $ WorkerState wNr stateNext (Right $ borlNew ^. proxies) (drop dropLen $ borlNew ^. futureRewards) (borlNew ^. psis . _1)
+  return $ force $ WorkerState wNr stateNext (Right $ borlNew ^. proxies) (drop dropLen $ borlNew ^. futureRewards) (borlNew ^. expSmoothedReward)
 runWorkerAction borl (WorkerState wNr state (Left replMem) oldFutureRewards rew) (randomAction, (aNr, Action action _)) = do
   (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
-  let addNewRewardToExp currentExpSmthRew  (RewardFutureData _ _ _ _ (Reward reward) _ _) = ((1-expSmthPsi) * currentExpSmthRew + expSmthPsi * reward)
+  let addNewRewardToExp currentExpSmthRew  (RewardFutureData _ _ _ _ (Reward rew') _ _) = ((1-expSmthPsi) * currentExpSmthRew + expSmthPsi * rew')
       addNewRewardToExp _ _ = error "unexpected RewardFutureData in runWorkerAction"
   newReplMem <- foldM addExperience replMem materialisedFutures
   return $ force $ WorkerState wNr stateNext (Left newReplMem) newFutures (foldl' addNewRewardToExp rew materialisedFutures)
@@ -216,9 +216,9 @@ runWorkerAction borl (WorkerState wNr state (Left replMem) oldFutureRewards rew)
     splitMaterialisedFutures fs =
       let xs = takeWhile (not . isRewardFuture . view futureReward) fs
        in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
-    addExperience replMem (RewardFutureData _ state aNr randomAction (Reward reward) stateNext episodeEnd) = do
-      let (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
-      liftIO $ addToReplayMemories (stateActs, aNr, randomAction, reward, stateNextActs, episodeEnd) replMem
+    addExperience replMem' (RewardFutureData _ state' aNr' randAct (Reward reward) stateNext episodeEnd) = do
+      let (_, stateActs, stateNextActs) = mkStateActs borl state' stateNext
+      liftIO $ addToReplayMemories (stateActs, aNr', randAct, reward, stateNextActs, episodeEnd) replMem'
     addExperience _ _ = error "Unexpected Reward in calcExperience of runWorkerActions!"
 
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
@@ -268,11 +268,11 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
           | getEpisodeEnd calc = (eNr + 1, borl ^. t)
           | otherwise = curEp
     return $
-      set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
+      set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $ set expSmoothedReward (getExpSmoothedReward' calc) $
       set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
   else return $
        set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
-       set proxies proxies' $ set t (period + 1) borl
+       set proxies proxies' $ set expSmoothedReward (getExpSmoothedReward' calc) $ set t (period + 1) borl
 
 execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
 
