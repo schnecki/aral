@@ -112,8 +112,7 @@ getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = d
       idxes = map (\r -> filter (>= 0) [r - nStep + 1 .. r]) rands
   concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
-    isTerminal (_, _, _, _, _, t) = t
-    splitTerminal xs = filter (not . null) [takeWhile (not . isTerminal) xs, dropWhile (not . isTerminal) xs]
+    splitTerminal xs = filter (not . null) $ splitList isTerminal xs
 getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
   | nStep > maxIdx + 1 = return []
   | otherwise = do
@@ -125,8 +124,19 @@ getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
         idxes = map (\r -> [r .. r + nStep - 1]) rands
     concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
-    isTerminal (_, _, _, _, _, t) = t
-    splitTerminal xs = filter (not . null) [takeWhile (not . isTerminal) xs, dropWhile (not . isTerminal) xs]
+    splitTerminal xs = filter (not . null) $ splitList isTerminal xs
+
+isTerminal :: Experience -> Bool
+isTerminal (_, _, _, _, _, t) = t
+
+
+splitList :: (a -> Bool) -> [a] -> [[a]]
+splitList _ []     = [[]]
+splitList f (x:xs) | f x = [x] : splitList f xs
+splitList f (x:xs) = (x : y) : ys
+  where
+    y:ys = splitList f xs
+
 
 -- | Get a list of random input-output tuples from the replay memory.
 getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
