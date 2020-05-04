@@ -151,7 +151,7 @@ data BORL s = BORL
   , _objective         :: !Objective                 -- ^ Objective to minimise or maximise.
 
   -- Values:
-  , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.001).
+  , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.0001).
   , _lastVValues       :: ![Float]               -- ^ List of X last V values (head is last seen value)
   , _lastRewards       :: ![Float]               -- ^ List of X last rewards (head is last received reward)
   , _psis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
@@ -243,7 +243,7 @@ mkUnichainTabular ::
 mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings initVals = do
   st <- initialStateFun MainAgent
   let proxies' = Proxies (Scalar defRhoMin) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing
-  workers' <- liftIO $ mkWorkers  (Just proxies') initialStateFun as Nothing settings
+  workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
   return $ BORL
     (VB.fromList $ zip [idxStart ..] as)
     asFilter
@@ -313,7 +313,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
-  workers <- liftIO $ mkWorkers Nothing initialStateFun as (Just nnConfig') settings
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
   if isAlgDqnAvgRewardAdjusted alg
     then do
       r0 <- liftIO $ nnSA R0Table 4
@@ -407,7 +407,7 @@ mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params de
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
   proxy <- liftIO $ nnSA nnType 0
-  workers <- liftIO $ mkWorkers Nothing initialStateFun as (Just nnConfig') settings
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
   liftTf $ TF.buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
@@ -580,6 +580,7 @@ mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayF
 mkUnichainGrenadeHelper ::
      forall s layers shapes nrH.
      ( GNum (Gradients layers)
+     , FoldableGradient (Gradients layers)
      , KnownNat nrH
      , Typeable layers
      , Typeable shapes
@@ -613,7 +614,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   print net
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade (0.05 |* net) (0.05 |* net) tp nnConfig' (length as)
+  let nnSA tp = Grenade (0.25 |* net) (0.25 |* net) tp nnConfig' (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -630,8 +631,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
           D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
-  workers' <- liftIO $ mkWorkers Nothing -- (Just proxies')
-    initialStateFun as (Just nnConfig') settings
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
   return $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
@@ -661,6 +661,7 @@ mkMultichainGrenade ::
      forall nrH nrL s layers shapes.
      ( GNum (Gradients layers)
      , GNum (Network layers shapes)
+     , FoldableGradient (Gradients layers)
      , Typeable layers
      , Typeable shapes
      , KnownNat nrH
@@ -673,6 +674,7 @@ mkMultichainGrenade ::
      , Serialize (Network layers shapes)
      , Serialize (Gradients layers)
      , FromDynamicLayer (Network layers shapes)
+     , NFData s
      )
   => Algorithm s
   -> InitialStateFun s
@@ -699,8 +701,8 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
   let nnPsiW = nnSA PsiWTable
   initialState <- initialStateFun MainAgent
   let proxies' = Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
-  workers <- liftIO $ mkWorkers (Just proxies') initialStateFun as (Just nnConfig') settings
-  return $
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+  return $! force $
     BORL
       (VB.fromList $ zip [0 ..] as)
       asFilter
@@ -724,16 +726,27 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
 ------------------------------ Replay Memory/Memories ------------------------------
 
 mkReplayMemories :: [Action s] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
-mkReplayMemories as settings nnConfig = case nnConfig ^. replayMemoryStrategy of
-  ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory (max (nnConfig ^. replayMemoryMaxSize) (settings ^. nStep))
-  ReplayMemoryPerAction | settings ^. nStep > 1 -> do
-                               putStrLn "Cannot use ReplayMemoriesPerActions and nStep > 1. Thus using ReplayMemoriesUnified!"
-                               fmap ReplayMemoriesUnified <$> mkReplayMemory (max (nnConfig ^. replayMemoryMaxSize) (settings ^. nStep))
-  ReplayMemoryPerAction -> fmap ReplayMemoriesPerActions . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)))
+mkReplayMemories = mkReplayMemories' False
 
-mkReplayMemory :: Int -> IO (Maybe ReplayMemory)
-mkReplayMemory sz | sz <= 1 = return Nothing
-mkReplayMemory sz = do
+mkReplayMemories' :: Bool -> [Action s] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
+mkReplayMemories' allowSz1 as setts nnConfig =
+  case nnConfig ^. replayMemoryStrategy of
+    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 repMemSizeSingle
+    ReplayMemoryPerAction -> do
+      tmpRepMem <- mkReplayMemory allowSz1 (setts ^. nStep)
+      fmap (ReplayMemoriesPerActions tmpRepMem) . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory allowSz1 repMemSizePerAction)
+  where
+    repMemSizeSingle = max (nnConfig ^. replayMemoryMaxSize) (setts ^. nStep * nnConfig ^. trainBatchSize)
+    repMemSizePerAction = (size `div` (setts ^. nStep)) * (setts ^. nStep)
+      where
+        size = repMemSizeSingle
+
+          -- max (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)) (setts ^. nStep)
+
+
+mkReplayMemory :: Bool -> Int -> IO (Maybe ReplayMemory)
+mkReplayMemory allowSz1 sz | sz <= 1 && not allowSz1 = return Nothing
+mkReplayMemory _ sz = do
   vec <- VM.new sz
   return $ Just $ ReplayMemory vec sz 0 (-1)
 
@@ -760,17 +773,17 @@ scalingByMaxAbsRewardAlg alg onlyPositive maxR =
 
 -- | Creates the workers data structure if applicable (i.e. there is a replay memory of size >1 AND the minimum
 -- expoloration rates are configured in NNConfig).
-mkWorkers :: Maybe Proxies -> InitialStateFun s -> [Action s] -> Maybe NNConfig -> Settings -> IO (Workers s)
-mkWorkers mProxies state as nnConfig setts = do
+mkWorkers :: InitialStateFun s -> [Action s] -> Maybe NNConfig -> Settings -> IO (Workers s)
+mkWorkers state as mNNConfig setts = do
   let nr = length $ setts ^. workersMinExploration
       workerTypes = map WorkerAgent [1 .. nr]
   if nr <= 0
     then return []
     else do
-      repMems <- replicateM nr (join <$> mapM (mkReplayMemories as setts) nnConfig)
+      repMems <- replicateM nr (maybe (fmap ReplayMemoriesUnified <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
       states <- mapM state workerTypes
-      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (maybe (maybe err Left rep) (Right . set replayMemory rep) mProxies) [] 0) [1..] states repMems
-        where err = error "Cannot use workers with this setup! Neither Proxies nor a replay memory is available in mkWorkers"
+      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) [] 0) [1..] states repMems
+        where err = error $ "Could not create replay memory for workers with nStep=" ++ show (setts ^. nStep) ++ " and memMaxSize=" ++ show (view replayMemoryMaxSize <$> mNNConfig)
 
 -------------------- Helpers --------------------
 

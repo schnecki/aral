@@ -37,18 +37,29 @@ import           ML.BORL.Workers.Type
 import           Debug.Trace
 
 type ActionChoice s = (IsRandomAction, ActionIndexed s)
-type WorkerActionChoice s = ActionChoice s
+type ActionSelection s = [[(Float, ActionIndexed s)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
 type NextActions s = (ActionChoice s, [WorkerActionChoice s])
+type RandomNormValue = Float
+type UseRand = Bool
+type WorkerActionChoice s = ActionChoice s
+
+data SelectedActions s = SelectedActions
+  { maximised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
+  , minimised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
+  }
+
 
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
 nextAction !borl = do
-  mainAgent <- nextActionFor borl (borl ^. settings . explorationStrategy) (borl ^. s) (params' ^. exploration)  `using` rparWith rpar
-  ws <- zipWithM (nextActionFor borl EpsilonGreedy) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
+  mainAgent <- nextActionFor borl mainAgentStrategy (borl ^. s) (params' ^. exploration)  `using` rparWith rpar
+  ws <- zipWithM (nextActionFor borl (borl ^. settings . explorationStrategy)) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
   return (mainAgent, ws)
   where
     params' = decayedParameters borl
     maxExpl = max (params' ^. exploration)
+    mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
+                      | otherwise = borl ^. settings . explorationStrategy
 
 nextActionFor :: (MonadBorl' m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
 nextActionFor borl strategy state explore
@@ -57,6 +68,7 @@ nextActionFor borl strategy state explore
   | otherwise =
     flip runReaderT cfg $
     case strategy of
+      Greedy -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs))
       EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
       SoftmaxBoltzmann t0
         | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
@@ -66,15 +78,6 @@ nextActionFor borl strategy state explore
     cfg = ActionPickingConfig state explore
     as = actionsIndexed borl state
 
-data SelectedActions s = SelectedActions
-  { maximised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
-  , minimised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
-  }
-
-
-type UseRand = Bool
-type ActionSelection s = [[(Float, ActionIndexed s)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
-type RandomNormValue = Float
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do

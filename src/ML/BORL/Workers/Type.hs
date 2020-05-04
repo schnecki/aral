@@ -34,19 +34,14 @@ type Workers s = [WorkerState s]
 
 data WorkerState s =
   WorkerState
-    { _workerNumber        :: Int
-    , _workerS             :: !s
-    , _workerProxies       :: !(Either ReplayMemories Proxies)
-    , _workerFutureRewards :: ![RewardFutureData s]
-    , _workerExpSmthReward :: Float
+    { _workerNumber        :: Int                   -- ^ Worker nr.
+    , _workerS             :: !s                    -- ^ Current state.
+    , _workerReplayMemory  :: !ReplayMemories       -- ^ Replay Memories of worker.
+    , _workerFutureRewards :: ![RewardFutureData s] -- ^ Future reward data.
+    , _workerExpSmthReward :: Float                 -- ^ Exponentially smoothed reward with rate 0.0001
     }
   deriving (Generic)
 makeLenses ''WorkerState
-
-independentWorkers :: Workers s -> Bool
-independentWorkers []    = True
-independentWorkers (x:_) = isRight (x ^. workerProxies)
-
 
 mapWorkers :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> Workers s -> Workers s'
 mapWorkers f g = map (mapWorkerState f g)
@@ -55,5 +50,4 @@ mapWorkerState :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s'
 mapWorkerState f g (WorkerState nr s px futs rew) = WorkerState nr (f s) px (map (mapRewardFutureData f g) futs) rew
 
 instance NFData s => NFData (WorkerState s) where
-  rnf (WorkerState nr state (Left replMem) fut rew) = rnf nr `seq` rnf state `seq` rnf replMem `seq` rnf1 fut `seq` rnf rew
-  rnf (WorkerState nr state (Right px) fut rew) = rnf nr `seq` rnf state `seq` rnf px `seq` rnf1 fut `seq` rnf rew
+  rnf (WorkerState nr state replMem fut rew) = rnf nr `seq` rnf state `seq` rnf replMem `seq` rnf1 fut `seq` rnf rew

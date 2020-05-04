@@ -107,7 +107,8 @@ nnConfig gym maxRew =
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemoryPerAction
     , _trainBatchSize = 8
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.9 0.0001
+    , _trainingIterations = 1
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
@@ -129,7 +130,7 @@ nnConfig gym maxRew =
     ppSts = takeMiddle 20 $ combinations vals
 
 borlSettings :: Settings
-borlSettings = def {_workersMinExploration = [0.4, 0.2, 0.1, 0.03], _useForking = False, _nStep = 1}
+borlSettings = def {_workersMinExploration = [0.4, 0.2, 0.1, 0.03], _useProcessForking = False, _nStep = 1, _mainAgentSelectsGreedyActions = True}
 
 
 takeMiddle :: Int -> [a] -> [a]

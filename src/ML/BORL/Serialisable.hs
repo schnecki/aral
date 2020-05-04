@@ -107,27 +107,28 @@ fromSerialisableWith f g as aF ftExt builder (BORLSerialisable st workers' t e p
 
 instance Serialize Proxies
 instance Serialize ReplayMemories where
-  put (ReplayMemoriesUnified r)     = put (0 :: Int) >> put r
-  put (ReplayMemoriesPerActions xs) = put (1 :: Int) >> put (VB.toList xs)
+  put (ReplayMemoriesUnified r)         = put (0 :: Int) >> put r
+  put (ReplayMemoriesPerActions tmp xs) = put (1 :: Int) >> put tmp >> put (VB.toList xs)
   get = do
     nr <- get
     case (nr :: Int) of
       0 -> ReplayMemoriesUnified <$> get
-      1 -> ReplayMemoriesPerActions . VB.fromList <$> get
+      1 -> ReplayMemoriesPerActions <$> get <*> fmap VB.fromList get
       _ -> error "index error"
 
 instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz opt smooth decaySetup prS scale stab stabDec upInt upIntDec) =
+  put (NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale stab stabDec upInt upIntDec) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
-      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
     -- put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
   get = do
     memSz <- get
     memStrat <- get
     batchSz <- get
+    trainIter <- get
     opt <- get
     smooth <- get
     decaySetup <- get
@@ -137,7 +138,7 @@ instance Serialize NNConfig where
     stabDec <- get
     upInt <- get
     upIntDec <- get
-    return $ NNConfig memSz memStrat batchSz opt smooth decaySetup prS scale stab stabDec upInt upIntDec
+    return $ NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale stab stabDec upInt upIntDec
 
 
 instance Serialize Proxy where

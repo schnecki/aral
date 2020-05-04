@@ -15,17 +15,17 @@ import           ML.BORL.Exploration
 
 -- Parameters
 data Settings = Settings
-  { _explorationStrategy   :: !ExplorationStrategy -- ^ Strategy for exploration.
-  , _workersMinExploration :: ![Float]             -- ^ Set worker minimum exploration values.
-  , _workersUpdateInterval :: !Int                 -- ^ Number of periods before workers report results and are updated with the latest.
-  , _workersSelectionRate  :: !Float               -- ^ Rate of best performing worker nets and main net to select the networks from (0, 1). [Default: 0.25]
-  , _nStep                 :: !Int                 -- ^ N-Step Q-Learning. 1 means no N-step Q-learning. Only works with @ReplayMemorySingle@!
-  , _disableAllLearning    :: !Bool                -- ^ Completely disable learning (e.g. for evaluation). Enabling increases performance.
-  , _useForking            :: !Bool                -- ^ Fork where possible.
+  { _explorationStrategy           :: !ExplorationStrategy -- ^ Strategy for exploration.
+  , _workersMinExploration         :: ![Float]             -- ^ Set worker minimum exploration values. [Default: No workers]
+  , _mainAgentSelectsGreedyActions :: !Bool                -- ^ Let the main agent always choose the greedy action. [Default: False]
+  , _nStep                         :: !Int                 -- ^ N-Step Q-Learning. 1 means no N-step Q-learning. Only works with @ReplayMemorySingle@! [Default: 1]
+  , _disableAllLearning            :: !Bool                -- ^ Completely disable learning (e.g. for evaluation). Enabling increases performance. [Default: False]
+  , _useProcessForking             :: !Bool                -- ^ Use actual process forking where possible. [Default: True]
   } deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 makeLenses ''Settings
 
 
 instance Default Settings where
-  def = Settings EpsilonGreedy [] 1000 0.25 1 False True
+  def = Settings EpsilonGreedy [] False 1 False True
+
 

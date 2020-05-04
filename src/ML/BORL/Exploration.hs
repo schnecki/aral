@@ -17,7 +17,8 @@ import           ML.BORL.NeuralNetwork.Scaling
 type TemperatureInitFactor = Float -- ^ Will be decayed by multiplying with the exploration value of the parameters.
 
 data ExplorationStrategy
-  = EpsilonGreedy                           -- ^ Use Epsilon greedy algorithm
+  = Greedy                                  -- ^ Use greedy action selection
+  | EpsilonGreedy                           -- ^ Use Epsilon greedy algorithm
   | SoftmaxBoltzmann !TemperatureInitFactor -- ^ Choose actions based on learned values. The initial temperature factor
                                             -- will be decayed by multiplying with the exploration value of the
                                             -- parameters.

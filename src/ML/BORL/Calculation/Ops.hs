@@ -33,6 +33,7 @@ import           ML.BORL.Properties
 import           ML.BORL.Proxy                  as P
 import           ML.BORL.Type
 import           ML.BORL.Types
+import ML.BORL.Decay.Ops  (exponentialDecayValue)
 
 import Debug.Trace
 
@@ -63,6 +64,10 @@ data RSize
 
 expSmthPsi :: Float
 expSmthPsi = 0.001
+
+expSmthReward :: Float
+expSmthReward = 0.0001
+
 
 keepXLastValues :: Int
 keepXLastValues = 100
@@ -228,7 +233,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         , getLastVs' = Just (force lastVs')
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = (1-expSmthPsi) * borl ^. expSmoothedReward + expSmthPsi * reward
+        , getExpSmoothedReward' = (1-expSmthReward) * borl ^. expSmoothedReward + expSmthReward * reward
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -248,6 +253,8 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
   let alp = getExpSmthParam borl rho alpha                                             
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin                          
       gam = getExpSmthParam borl r1 gamma                                              
+  let params' = decayedParameters borl
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -269,7 +276,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
           Maximise -> max
           Minimise -> min
   let rhoVal'
-        | randomAction = maxOrMin rhoMinimumState rhoVal
+        | randomAction && not learnFromRandom = maxOrMin rhoMinimumState rhoVal
         | otherwise =
           maxOrMin rhoMinimumState $
           case avgRewardType of
@@ -285,7 +292,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
       expStateValR0 = reward - rhoVal' + ga0 * expStateNextValR0
       expStateValR1 = reward - rhoVal' + ga1 * expStateNextValR1
   let r0ValState' = (1 - gam) * r0ValState + gam * expStateValR0
-  let r1ValState' = (1 - gam) * r1ValState + gam * expStateValR1 -- (reward + ga1 * expStateNextValR1 - rhoVal')
+  let r1ValState' = (1 - gam) * r1ValState + gam * expStateValR1
   return 
     ( Calculation
         { getRhoMinimumVal' = Just rhoMinimumVal'
@@ -302,7 +309,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getLastVs' = Nothing
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = (1-expSmthPsi) * borl ^. expSmoothedReward + expSmthPsi * reward
+        , getExpSmoothedReward' = (1-expSmthReward) * borl ^. expSmoothedReward + expSmthReward * reward
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -368,7 +375,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getLastVs' = Just $ force lastVs'
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = (1-expSmthPsi) * borl ^. expSmoothedReward + expSmthPsi * reward
+        , getExpSmoothedReward' = (1-expSmthReward) * borl ^. expSmoothedReward + expSmthReward * reward
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -396,7 +403,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         { getR1ValState' = Just r1ValState'
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = (1 - expSmthPsi) * borl ^. expSmoothedReward + expSmthPsi * reward
+        , getExpSmoothedReward' = (1 - expSmthReward) * borl ^. expSmoothedReward + expSmthReward * reward
         }
     , emptyExpectedValuationNext {getExpectedValStateNextR1 = Just expStateValR1})
 

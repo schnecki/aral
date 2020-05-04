@@ -10,13 +10,6 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL
-import           SolveLp
-
-import           Experimenter
-
-import           Helper
-
 import           Control.Arrow            (first, second, (***))
 import           Control.DeepSeq          (NFData)
 import           Control.DeepSeq
@@ -38,7 +31,14 @@ import           Grenade
 import           System.IO
 import           System.Random
 
+import           Experimenter
 import qualified HighLevelTensorflow      as TF
+import           ML.BORL
+import           SolveLp
+
+import           Helper
+
+import           Debug.Trace
 
 
 expSetup :: BORL St -> ExperimentSetting
@@ -84,12 +84,12 @@ instance BorlLp St where
 policy :: Policy St
 policy s a
   | s == fromIdx (0, 2) && a == actRand =
-    map ((, 1 / fromIntegral (length stateActions)) . first fromIdx) $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+    let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+        pol = map ((, 1 / fromIntegral (length distanceSA)) . first fromIdx) distanceSA
+     in pol
   | s == fromIdx (0, 2) = []
   | a == actRand = []
-  | otherwise =
-    mkProbability $
-    filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
+  | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
   where
     sa' = ((row, col), a)
     step ((row, col), a)
@@ -106,8 +106,7 @@ policy s a
     actLeft = actions !! 3
     actRight = actions !! 4
     states = [minBound .. maxBound] :: [St]
-    stateActions =
-      ((0, 2), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2) || (s == fromIdx (0, 2) && actionName a == actionName actRand)]
+    stateActions = ((0, 2), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (0, 2)]
     filterActRand ((r, c), a)
       | r == 0 && c == 2 = actionName a == actionName actRand
       | otherwise = actionName a /= actionName actRand
@@ -120,9 +119,10 @@ policy s a
       | otherwise = True
     filterChance [x] = [x]
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
-      where stepsToBorder :: [Int]
-            stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
-            mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
+      where
+        stepsToBorder :: [Int]
+        stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
+        mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
     filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
       where
         dist :: [Int]
@@ -175,11 +175,11 @@ instance ExperimentDef (BORL St) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1
-    , _replayMemoryStrategy = ReplayMemorySingle
-    , _trainBatchSize = 1
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8
-       -- OptSGD 0.01 0.0 0.0001
+    { _replayMemoryMaxSize = 1 -- 10000
+    , _replayMemoryStrategy = ReplayMemoryPerAction
+    , _trainBatchSize = 8
+    , _trainingIterations = 1
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
@@ -191,10 +191,12 @@ nnConfig =
     }
 
 borlSettings :: Settings
-borlSettings = def {_workersMinExploration = replicate 7 0.01 --  []} -- [0.4, 0.2, 0.1, 0.03]}
-                   , _nStep = 4
-                   , _workersUpdateInterval = 1000
-                   }
+borlSettings =
+  def
+    { _workersMinExploration = [] -- replicate 7 0.01
+    , _nStep = 2
+    , _mainAgentSelectsGreedyActions = False
+    }
 
 
 -- | BORL Parameters.
@@ -268,7 +270,10 @@ experimentMode = do
 lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  runBorlLpInferWithRewardRepet 100000 policy mRefState >>= print
+  lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
+  print lpRes
+  mkStateFile 0.65 False True lpRes
+  mkStateFile 0.65 False False lpRes
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 

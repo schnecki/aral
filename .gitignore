@@ -56,3 +56,9 @@ queueLength
 /lp_v_gamma
 /lp_v_gamma_delta
 /examples/reward
+/examples/lp_e
+/examples/*.sh
+/examples/lp_e_delta
+/examples/lp_state_nrs
+/examples/lp_v
+/examples/lp_v_delta

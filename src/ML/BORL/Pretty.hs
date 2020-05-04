@@ -243,7 +243,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
   let prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
           (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatWith 8 val <> text "/" <> printFloatWith 8 valRhoMin)
-          _          -> empty
+          _ -> empty
   let getExpSmthParam decayed p param
         | isANN = 1
         | decayed = params' ^. param
@@ -251,12 +251,17 @@ prettyBORLHead' printRho prettyStateFun borl = do
         where
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           px = borl ^. proxies . p
-  return $ text "\n" $+$
-    text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s) <+> "Exp. Smth Reward: " <> printFloat (borl ^. expSmoothedReward)) $+$
-    vcat (map (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printFloat rew) (borl ^. workers)) $+$
-    text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
-    text "Alpha/AlphaRhoMin" <> colon $$
-    nest nestCols (printFloatWith 8 ( getExpSmthParam True rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s) <+> "Exp. Smth Reward: " <> printFloat (borl ^. expSmoothedReward)) $+$
+    vcat
+      (map
+         (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printFloat rew)
+         (borl ^. workers)) $+$
+    text "Period" <>
+    colon $$
+    nest nestCols (int $ borl ^. t) $+$
+    text "Alpha/AlphaRhoMin" <>
+    colon $$
+    nest nestCols (printFloatWith 8 (getExpSmthParam True rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
     parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam False rhoMinimum alphaRhoMin)) $+$
     algDoc
       (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v beta) <+>
@@ -315,11 +320,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        px -> text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
-              maybe mempty (\(WorkerState _ _ px _ _) -> case px of
-                               Left ms -> text "Replay memories:" <+> textReplayMemoryType ms
-                               Right{} -> text "Using own ANNs/Proxies "
-                           ) (borl ^? workers._head)
+        px ->
+          text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
+          maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -381,9 +384,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
         P.Table {} -> empty
         px         -> textNNConf (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+> maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
+        textNNConf conf =
+          text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+>
+          maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
     textReplayMemoryType ReplayMemoriesUnified {} = text "unified replay memory"
-    textReplayMemoryType mem@ReplayMemoriesPerActions{} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
+    textReplayMemoryType mem@ReplayMemoriesPerActions {} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {} -> empty
@@ -397,18 +402,28 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac rate
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "SGD Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
-        textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon) =
+           in text "NN Learning Rate/Momentum/L2" <> colon $$
+              nest nestCols (text "SGD Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
+        textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon lambda) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac alpha
-           in text "NN Learning Rate/Momentum/L2" <> colon $$ nest nestCols (text "Adam Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac beta1)
-                                                                                        , printFloatWith 8 (realToFrac beta2), printFloatWith 8 (realToFrac epsilon))))
+           in text "NN Learning Rate/Momentum/L2" <> colon $$
+              nest
+                nestCols
+                (text "Adam Optimizer with" <+>
+                 text
+                   (show
+                      ( printFloatWith 8 (realToFrac l)
+                      , printFloatWith 8 (realToFrac beta1)
+                      , printFloatWith 8 (realToFrac beta2)
+                      , printFloatWith 8 (realToFrac epsilon)
+                      , printFloatWith 8 (realToFrac lambda))))
         textTensorflow :: NNConfig -> Optimizer opt -> Doc
         textTensorflow conf (OptSGD rate _ _) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = dec $ realToFrac rate
            in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
-        textTensorflow conf (OptAdam alpha _ _ _) =
+        textTensorflow conf (OptAdam alpha _ _ _ _) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac alpha
            in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))

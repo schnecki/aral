@@ -110,7 +110,10 @@ instance BorlLp St where
 
 policy :: Policy St
 policy s a
-  | s == fromIdx (goalX, goalY) && a == actRand = mkProbability $ concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+  | s == fromIdx (goalX, goalY) && a == actRand =
+    let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+        pol = map ((, 1 / fromIntegral (length distanceSA)) . first fromIdx) distanceSA
+     in pol
   | s == fromIdx (goalX, goalY) = []
   | a == actRand = []
   | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
@@ -130,9 +133,7 @@ policy s a
     actLeft = actions !! 3
     actRight = actions !! 4
     states = [minBound .. maxBound] :: [St]
-    stateActions =
-      ((goalX, goalY), actRand) :
-      map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY) || (s == fromIdx (goalX, goalY) && actionName a == actionName actRand)]
+    stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
     filterActRand ((r, c), a)
       | r == goalX && c == goalY = actionName a == actionName actRand
       | otherwise = actionName a /= actionName actRand
@@ -210,7 +211,8 @@ nnConfig =
     { _replayMemoryMaxSize = 10000
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 -- OptSGD 0.01 0.0 0.0001
+    , _trainingIterations = 1
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
@@ -298,7 +300,10 @@ experimentMode = do
 lpMode :: IO ()
 lpMode = do
   putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  runBorlLpInferWithRewardRepet 200000 policy mRefState >>= print
+  lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
+  print lpRes
+  mkStateFile 0.65 False True lpRes
+  mkStateFile 0.65 False False lpRes
   putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 

@@ -67,7 +67,7 @@ data ProxyType
   | PsiWTable
   | CombinedUnichain
 --  | CombinedUnichainScaleAs ProxyType
-  | NoScaling !ProxyType
+  | NoScaling !ProxyType (Maybe [(MinValue Float, MaxValue Float)] )
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 proxyTypeName :: ProxyType -> Text.Text
@@ -79,7 +79,7 @@ proxyTypeName PsiVTable        = "psiV"
 proxyTypeName PsiWTable        = "psiW"
 proxyTypeName CombinedUnichain = "combinedUnichain"
 -- proxyTypeName (CombinedUnichainScaleAs p) = "combinedUnichainScaleAs" <> proxyTypeName p
-proxyTypeName (NoScaling p)    = "noscaling-" <> proxyTypeName p
+proxyTypeName (NoScaling p _)  = "noscaling-" <> proxyTypeName p
 
 
 data Proxy
@@ -95,6 +95,7 @@ data Proxy
                               , Typeable layers
                               , Typeable shapes
                               , GNum (Gradients layers)
+                              , FoldableGradient (Gradients layers)
                               , GNum (Network layers shapes)
                               , SingI (Last shapes)
                               , FromDynamicLayer (Network layers shapes)
