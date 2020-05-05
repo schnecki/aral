@@ -614,7 +614,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   print net
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade (0.25 |* net) (0.25 |* net) tp nnConfig' (length as)
+  let nnSA tp = Grenade net net tp nnConfig' (length as)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
