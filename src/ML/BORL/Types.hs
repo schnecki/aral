@@ -13,6 +13,7 @@ import qualified HighLevelTensorflow     as TF
 type FilteredActionIndices = V.Vector ActionIndex
 type ActionIndex = Int
 type IsRandomAction = Bool
+type IsOptimalValue = Bool
 type ActionFilter s = s -> V.Vector Bool
 
 -- | Agent type. There is only one main agent, but there could be multiple workers (configured via NNConfig).
@@ -62,7 +63,7 @@ type NetInputWoAction = StateFeatures
 type NetInput = StateFeatures
 type NetInputWithAction = StateFeatures
 type NetOutput = V.Vector Float
-
+type StateActionValuesFiltered = V.Vector Float
 
 type MSE = Float               -- ^ Mean squared error
 type MaxValue n = n

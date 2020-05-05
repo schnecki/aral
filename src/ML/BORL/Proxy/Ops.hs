@@ -18,6 +18,7 @@
 module ML.BORL.Proxy.Ops
     ( insert
     , lookupProxy
+    , lookupState
     , lookupNeuralNetwork
     , lookupNeuralNetworkUnscaled
     , lookupActionsNeuralNetwork
@@ -357,6 +358,17 @@ lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionI
 lookupProxy _ _ _ (Scalar x)    = return x
 lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
 lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
+
+
+-- | Retrieves the filtered output actions.
+lookupState :: (MonadBorl' m) => LookupType -> (StateFeatures, V.Vector ActionIndex) -> Proxy -> m StateActionValuesFiltered
+lookupState _ (_, as) (Scalar x) = return $ V.fromList $ replicate (V.length as) x
+lookupState _ (k, as) (Table m def) = return $ V.map (\a -> M.findWithDefault def (k, a) m) as
+lookupState tp (k, as) px = do
+  unfiltered <- lookupActionsNeuralNetwork tp k px
+  if V.length unfiltered == V.length as
+    then return unfiltered
+    else return $ V.map (unfiltered V.!) as
 
 
 -- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an

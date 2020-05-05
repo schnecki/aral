@@ -149,12 +149,12 @@ chooseAction borl useRand selFromList = do
              AlgDQNAvgRewAdjusted {} -> do
                bestR1 <-
                  do r1Values <- mapM (rValue borl RBig state . fst) as -- 1. choose highest bias values
-                    map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
+                    map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
                if length bestR1 == 1
                  then return (False, head bestR1)
                  else do
                    r0Values <- mapM (rValue borl RSmall state . fst) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
-                   bestR0ValueActions <- liftIO $ fmap maxOrMin $ selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
+                   bestR0ValueActions <- liftIO $ fmap maxOrMin $ selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
                    let bestR0 = map snd bestR0ValueActions
                    if length bestR0 == 1
                      then return (False, head bestR0)
