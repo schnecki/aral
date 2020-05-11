@@ -44,6 +44,7 @@ import           Data.Serialize
 import qualified Data.Vector                        as VB
 import qualified Data.Vector.Storable               as V
 import           GHC.Generics
+import           Grenade
 import           System.Directory
 import           System.IO
 import           System.Random
@@ -139,7 +140,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
   when (period == 0) $ do
-    liftIO $ writeFile fileStateValues "Period\tRho\tMinRho\tVAvg\tR0\tR1\n"
+    liftIO $ writeFile fileStateValues "Period\tRho\tExpSmthRho\tRhoOverEstimated\tMinRho\tVAvg\tR0\tR1\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
@@ -219,15 +220,18 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
 #endif
   (proxies', calc) <- P.insert borl agent period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
   let lastVsLst = fromMaybe [0] (getLastVs' calc)
-  let strRho = show (fromMaybe 0 (getRhoVal' calc))
-      strMinV = show (fromMaybe 0 (getRhoMinimumVal' calc))
+  let rhoVal = fromMaybe 0 (getRhoVal' calc)
+      strRho = show rhoVal
+      strRhoSmth = show (borl ^. expSmoothedReward)
+      strRhoOver = show (overEstimateRho borl rhoVal)
+      strMinRho = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
       strR1 = show $ fromMaybe 0 (getR1ValState' calc)
       avg xs = sum xs / fromIntegral (length xs)
   if isMainAgent agent
   then do
-    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strMinV ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strRhoSmth ++ "\t" ++ strRhoOver ++ "\t" ++ strMinRho ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
     let (eNr, eStart) = borl ^. episodeNrStart
         eLength = borl ^. t - eStart
     when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
@@ -238,12 +242,34 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
           | otherwise = curEp
     return $
       set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $ set expSmoothedReward (getExpSmoothedReward' calc) $
-      set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode borl
+      set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode $ maybeFlipDropout borl
   else return $
        set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
-       set proxies proxies' $ set expSmoothedReward (getExpSmoothedReward' calc) $ set t (period + 1) borl
+       set proxies proxies' $ set expSmoothedReward (getExpSmoothedReward' calc) $ set t (period + 1) $ maybeFlipDropout borl
 
 execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
+
+-- | Flip the dropout active/inactive state.
+maybeFlipDropout :: BORL s -> BORL s
+maybeFlipDropout borl =
+  case borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig of
+    Just cfg@NNConfig {}
+      | borl ^. t == cfg ^. grenadeDropoutOnlyInactiveAfter -> setDropoutValue False borl
+      | borl ^. t > cfg ^. grenadeDropoutOnlyInactiveAfter -> borl
+      | borl ^. t `mod` cfg ^. grenadeDropoutFlipActivePeriod == 0 ->
+        let occurance = borl ^. t `div` cfg ^. grenadeDropoutFlipActivePeriod
+            isEven x = x `mod` 2 == 0
+            value
+              | isEven occurance = True
+              | otherwise = False
+         in setDropoutValue value borl
+    _ -> borl
+  where
+    setDropoutValue :: Bool -> BORL s -> BORL s
+    setDropoutValue val =
+      overAllProxies
+        (filtered isGrenade)
+        (\(Grenade tar wor tp cfg act) -> Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act)
 
 
 #ifdef DEBUG

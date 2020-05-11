@@ -62,8 +62,8 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 2
-    , _stabilizationAdditionalRho = 0.25
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _grenadeDropoutFlipActivePeriod = 0
+    , _grenadeDropoutOnlyInactiveAfter = 0
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
     }
@@ -120,8 +120,8 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-        AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
-        -- algDQNAvgRewardFree
+        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
+        algDQNAvgRewardFree
         -- AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
@@ -130,15 +130,15 @@ alg =
 main :: IO ()
 main = do
 
-
+  -- runBorlLpInferWithRewardRepetWMax 13 80000 policy mRefState >>= print
   runBorlLp policy mRefState >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay nn nnConfig borlSettings Nothing
-  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
-  -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay settings Nothing
+  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actions actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []

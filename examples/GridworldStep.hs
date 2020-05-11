@@ -57,23 +57,23 @@ instance RewardFuture St where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
+    { _replayMemoryMaxSize = 1
     , _replayMemoryStrategy = ReplayMemorySingle
-    , _trainBatchSize = 8
+    , _trainBatchSize = 1
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 6
-    , _stabilizationAdditionalRho = 0.5
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _grenadeDropoutFlipActivePeriod = 10000
+    , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = NoDecay
     }
 
 borlSettings :: Settings
-borlSettings = def {_workersMinExploration = [], _nStep = 1}
+borlSettings = def {_workersMinExploration = replicate 7 0.01, _nStep = 1}
 
 
 -- | BORL Parameters.
@@ -81,43 +81,80 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha               = 0.01
-    , _alphaRhoMin = 2e-5
+    , _alphaRhoMin         = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    -- Exploration
     , _epsilon             = 0.25
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 1.5
-    , _zeta                = 0.03
-    , _xi                  = 0.005
-
+    , _learnRandomAbove    = 0.99
 
     }
+
 
 -- | Decay function of parameters.
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 5e-5) 0.5 10000  -- 5e-4
       , _alphaRhoMin      = NoDecay
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
-      , _delta            = ExponentialDecay (Just 5e-4) 0.5 50000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 50000 -- 1e-3
-      , _zeta             = ExponentialDecay (Just 0) 0.5 50000
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = [NoDecay]
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 30000
+      , _epsilon          = [NoDecay] -- [ExponentialDecay (Just 0.050) 0.05 150000]
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
 
+-- -- | Decay function of parameters.
+-- decay :: ParameterDecaySetting
+-- decay =
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+--       , _alphaRhoMin      = NoDecay
+--       , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
+--       , _delta            = ExponentialDecay (Just 5e-4) 0.5 50000
+--       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 50000 -- 1e-3
+--       , _zeta             = ExponentialDecay (Just 0) 0.5 50000
+--       , _xi               = NoDecay
+--       -- Exploration
+--       , _epsilon          = [NoDecay]
+--       , _exploration      = ExponentialDecay (Just 0.01) 0.50 30000
+--       , _learnRandomAbove = NoDecay
+--       }
+
+
 initVals :: InitValues
-initVals = InitValues 1 10 0 0 0 0
+initVals = InitValues 0 10 0 0 0 0
 
 main :: IO ()
-main = usermode
+main = do
+  putStr "Experiment or user mode [User mode]? Enter l for lp mode, and u for user mode: " >> hFlush stdout
+  l <- getLine
+  case l of
+    "l" -> lpMode
+    _   -> usermode
+
+instance BorlLp St where
+  lpActions = actions
+  lpActionFilter = actFilter
+
+lpMode :: IO ()
+lpMode = do
+  putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
+  lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
+  print lpRes
+  mkStateFile 0.65 False True lpRes
+  mkStateFile 0.65 False False lpRes
+  putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
 mRefState :: Maybe (St, ActionIndex)
@@ -131,7 +168,7 @@ alg =
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -141,7 +178,6 @@ usermode = do
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use an own neural network for every function to approximate
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
 
@@ -159,10 +195,6 @@ usermode = do
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 
-type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
-type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
-type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 10, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 10]
-
 modelBuilder :: TF.ModelBuilderFunction
 modelBuilder colOut =
   TF.buildModel $
@@ -176,13 +208,14 @@ modelBuilder colOut =
   where inpLen = fromIntegral $ V.length $ netInp initState
 
 
+-- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
   buildModel $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
+  fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
+  fullyConnected 10 >> leakyRelu >>
+  fullyConnected 10 >> leakyRelu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
@@ -247,7 +280,7 @@ goalState f tp st = do
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
-      | x' == goalX && y' == goalY -> return (Reward 0, fromIdx (x, y), False)
+      | x' == goalX && y' == goalY -> return (Reward 0, fromIdx (x, y), True)
     _ -> stepRew <$> f tp st
 
 moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
@@ -295,3 +328,44 @@ getCurrentIdx (St st) =
   zip [0..] $ map (zip [0..]) st
 
 
+policy :: Policy St
+policy s a
+  | s == fromIdx (goalX, goalY) && a == actRand =
+    let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
+        pol = map ((, 1 / fromIntegral (length distanceSA)) . first fromIdx) distanceSA
+     in pol
+  | s == fromIdx (goalX, goalY) = []
+  | a == actRand = []
+  | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
+  where
+    sa' = ((row, col), a)
+    step ((row, col), a)
+      | a == actUp = (max 0 $ row - 1, col)
+      | a == actDown = (min maxX $ row + 1, col)
+      | a == actLeft = (row, max 0 $ col - 1)
+      | a == actRight = (row, min maxY $ col + 1)
+      | a == actRand = (row, col)
+    row = fst $ getCurrentIdx s
+    col = snd $ getCurrentIdx s
+    actRand = head actions
+    actUp = actions !! 1
+    actDown = actions !! 2
+    actLeft = actions !! 3
+    actRight = actions !! 4
+    states = [minBound .. maxBound] :: [St]
+    stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
+    filterActRand ((r, c), a)
+      | r == goalX && c == goalY = actionName a == actionName actRand
+      | otherwise = actionName a /= actionName actRand
+    filterChance [x] = [x]
+    filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
+      where
+        stepsToBorder :: [Int]
+        stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
+        mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
+    filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
+      where
+        dist :: [Int]
+        dist = map (mkDistance . step) xs
+    mkDistance (r, c) = r + abs (c - goalY)
+    mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs

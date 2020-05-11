@@ -62,21 +62,21 @@ instance NFData Calculation where
 fmapCalculation :: (Float -> Float) -> Calculation -> Calculation
 fmapCalculation f calc =
   Calculation
-    { getRhoMinimumVal' = f <$> getRhoMinimumVal' calc
-    , getRhoVal'        = f <$> getRhoVal' calc
-    , getPsiVValState'  = f <$> getPsiVValState' calc
-    , getVValState'     = f <$> getVValState' calc
-    , getPsiWValState'  = f <$> getPsiWValState' calc
-    , getWValState'     = f <$> getWValState' calc
-    , getR0ValState'    = f <$> getR0ValState' calc
-    , getR1ValState'    = f <$> getR1ValState' calc
-    , getPsiValRho'     = f <$> getPsiValRho' calc
-    , getPsiValV'       = f <$> getPsiValV' calc
-    , getPsiValW'       = f <$> getPsiValW' calc
-    , getLastVs'        = getLastVs' calc
-    , getLastRews'      = getLastRews' calc
-    , getEpisodeEnd     = getEpisodeEnd calc
-    , getExpSmoothedReward' = getExpSmoothedReward' calc
+    { getRhoMinimumVal'       = f <$> getRhoMinimumVal' calc
+    , getRhoVal'              = f <$> getRhoVal' calc
+    , getPsiVValState'        = f <$> getPsiVValState' calc
+    , getVValState'           = f <$> getVValState' calc
+    , getPsiWValState'        = f <$> getPsiWValState' calc
+    , getWValState'           = f <$> getWValState' calc
+    , getR0ValState'          = f <$> getR0ValState' calc
+    , getR1ValState'          = f <$> getR1ValState' calc
+    , getPsiValRho'           = f <$> getPsiValRho' calc
+    , getPsiValV'             = f <$> getPsiValV' calc
+    , getPsiValW'             = f <$> getPsiValW' calc
+    , getLastVs'              = getLastVs' calc
+    , getLastRews'            = getLastRews' calc
+    , getEpisodeEnd           = getEpisodeEnd calc
+    , getExpSmoothedReward'   = getExpSmoothedReward' calc
     }
 
 avgCalculation :: [Calculation] -> Calculation

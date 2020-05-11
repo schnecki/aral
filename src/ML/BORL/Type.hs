@@ -258,7 +258,7 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     mempty
     (convertAlgorithm ftExt alg)
     Maximise
-    0
+    defRhoMin
     mempty
     mempty
     (0, 0, 0)
@@ -335,7 +335,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
-          0
+          defRhoMin
           mempty
           mempty
           (0, 0, 0)
@@ -364,7 +364,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
           mempty
           (convertAlgorithm ftExt alg)
           Maximise
-          0
+          defRhoMin
           mempty
           mempty
           (0, 0, 0)
@@ -425,7 +425,7 @@ mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params de
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
-      0
+      defRhoMin
       mempty
       mempty
       (0, 0, 0)
@@ -502,7 +502,7 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settin
       mempty
       (convertAlgorithm ftExt alg)
       Maximise
-      0
+      defRhoMin
       mempty
       mempty
       (0, 0, 0)
@@ -647,7 +647,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
       []
       (convertAlgorithm ftExt alg)
       Maximise
-      0
+      defRhoMin
       mempty
       mempty
       (0, 0, 0)
@@ -686,8 +686,9 @@ mkMultichainGrenade ::
   -> Network layers shapes
   -> NNConfig
   -> Settings
+  -> Maybe InitValues
   -> IO (BORL s)
-mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig settings = do
+mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig settings initVals = do
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let nnSA tp = Grenade net net tp nnConfig' (length as)
@@ -717,11 +718,12 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
       []
       (convertAlgorithm ftExt alg)
       Maximise
-      0
+      defRhoMin
       mempty
       mempty
       (0, 0, 0)
       proxies'
+  where defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
 
 ------------------------------ Replay Memory/Memories ------------------------------
 

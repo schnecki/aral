@@ -232,8 +232,8 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay (Just 1e-4) 0.05 150000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-400) 400 (-5000) 5000 (-300) 300 (-300) 300
-    , _stabilizationAdditionalRho = 0
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _grenadeDropoutFlipActivePeriod = 0
+    , _grenadeDropoutOnlyInactiveAfter = 0
     , _updateTargetInterval = 1 -- 300
     , _updateTargetIntervalDecay = NoDecay
     }

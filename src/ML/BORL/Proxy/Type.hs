@@ -31,6 +31,7 @@ module ML.BORL.Proxy.Type
   , replaceTargetProxyFromTo
   , isNeuralNetwork
   , isTensorflow
+  , isGrenade
   , isCombinedProxy
   , isTable
   , proxyTypeName
@@ -259,6 +260,12 @@ isTensorflow :: Proxy -> Bool
 isTensorflow TensorflowProxy{}     = True
 isTensorflow (CombinedProxy p _ _) = isTensorflow p
 isTensorflow _                     = False
+
+isGrenade :: Proxy -> Bool
+isGrenade Grenade{}             = True
+isGrenade (CombinedProxy p _ _) = isTensorflow p
+isGrenade _                     = False
+
 
 isCombinedProxy :: Proxy -> Bool
 isCombinedProxy CombinedProxy{} = True

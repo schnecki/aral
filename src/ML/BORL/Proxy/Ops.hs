@@ -31,6 +31,7 @@ module ML.BORL.Proxy.Ops
     , LookupType (..)
     ) where
 
+import           Control.Applicative          ((<|>))
 import           Control.Arrow
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
@@ -41,7 +42,8 @@ import           Control.Parallel.Strategies  hiding (r0)
 import           Data.Function                (on)
 import           Data.List                    (find, foldl', sortBy, transpose)
 import qualified Data.Map.Strict              as M
-import           Data.Maybe                   (catMaybes, fromJust, isJust, isNothing)
+import           Data.Maybe                   (catMaybes, fromJust, fromMaybe, isJust,
+                                               isNothing)
 import qualified Data.Set                     as S
 import           Data.Singletons.Prelude.List
 import qualified Data.Vector                  as VB
@@ -127,7 +129,7 @@ insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !ge
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
     (~calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
-    let !config = pV ^?! proxyNNConfig --  ## TODO why not r1
+    let !config = fromMaybe (error "Neither v nor r1 holds a ANN proxy, but we got a replay memory...") $ pV ^? proxyNNConfig <|> borl ^? proxies.r1.proxyNNConfig  --  ## TODO why not r1
     let !workerReplMems = borl ^.. workers.traversed.workerReplayMemory
     !mems <- liftIO $ getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize) replMems'
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems

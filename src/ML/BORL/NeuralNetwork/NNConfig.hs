@@ -35,24 +35,23 @@ data NNConfig =
                                                                    -- memories are used!
     , _replayMemoryStrategy            :: !ReplayMemoryStrategy    -- ^ How to store experiences. @ReplayMemoryPerAction@ only works with n-step=1.
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
-    , _trainingIterations              :: Int                      -- ^ How often to repeat the training with the same gradients in each step.
+    , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
-    , _grenadeSmoothTargetUpdate       :: Rational                 -- ^ Rate of smooth updates of the target network.
+    , _grenadeSmoothTargetUpdate       :: !Rational                -- ^ Rate of smooth updates of the target network.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
     , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.
-    , _stabilizationAdditionalRho      :: Float                    -- ^ Additional rho as a percantage of [minV, maxV] which is
-                                                                   --   expected in the beginning.
-    , _stabilizationAdditionalRhoDecay :: !DecaySetup              -- ^ Decay for stabilization
+    , _grenadeDropoutFlipActivePeriod  :: !Int                     -- ^ Flip dropout active/inactive state every X periods.
+    , _grenadeDropoutOnlyInactiveAfter :: !Int                     -- ^ Keep dropout inactive when reaching the given number of periods. Set to 0 to inactive dropout active state flipping!
     , _updateTargetInterval            :: !Int                     -- ^ After how many steps should the target network be replaced by the worker?
-    , _updateTargetIntervalDecay       :: !DecaySetup              -- ^ After how many steps should the target network be replaced by the worker?
-    }
+    , _updateTargetIntervalDecay       :: !DecaySetup              -- ^ Decay for update target interval.
+    } deriving (Show)
 makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat batchsize tr !lp smooth dec pp sc stab stabDec up upDec) =
-    rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq` rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf stab `seq` rnf stabDec `seq` rnf up `seq` rnf upDec
+  rnf (NNConfig rep repStrat batchsize tr !lp smooth dec pp sc dropFlip dropInactive up upDec) =
+    rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq` rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf dropFlip `seq` rnf dropInactive `seq` rnf up `seq` rnf upDec
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

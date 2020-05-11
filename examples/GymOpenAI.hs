@@ -113,8 +113,8 @@ nnConfig gym maxRew =
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25 * maxRew)
-    , _stabilizationAdditionalRho = 0.0
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 50000
+    , _grenadeDropoutFlipActivePeriod = 0
+    , _grenadeDropoutOnlyInactiveAfter = 0
     , _updateTargetInterval = 10000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     }

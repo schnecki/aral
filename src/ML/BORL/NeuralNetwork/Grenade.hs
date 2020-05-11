@@ -58,10 +58,11 @@ trainGrenade opt trainIter mMinMaxVal net chs =
      -- trace ("applyUpdate: " ++ show (applyAndMkOut gradients == applyAndMkOut [foldl1 (|+) gradients]))
       -- trace ("same? " ++ show (applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) gradients)] == applyAndMkOut [(1/genericLength gradients |* foldl1 (|+) (take 2 gradients))]))
     -- foldl' (applyUpdate opt) net gradients   -- slow
-      res = force $ applyUpdate opt net $ clipByGlobalNorm clippingRatio $ foldl1 (|+) batchGradients
+      res = force $ applyUpdate opt net $ clipByGlobalNorm clippingRatio $
+        -- 1/sum (map genericLength chs) |* -- better to use avg: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
+        foldl1 (|+) batchGradients
    in if trainIter <= 1
         then res
-
         else trainGrenade opt (trainIter - 1) mMinMaxVal res chs
     -- force $ applyUpdate opt net $ 1/genericLength batchGradients |* foldl1 (|+) batchGradients
     -- foldl' (applyUpdate opt) net $ replicate 8 $ 1/genericLength gradients |* foldl1 (|+) gradients

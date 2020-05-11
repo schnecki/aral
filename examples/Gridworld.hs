@@ -184,8 +184,8 @@ nnConfig =
     , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
-    , _stabilizationAdditionalRho = 0.0
-    , _stabilizationAdditionalRhoDecay = ExponentialDecay Nothing 0.05 100000
+    , _grenadeDropoutFlipActivePeriod = 10000
+    , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _updateTargetInterval = 10000
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     }
@@ -204,7 +204,7 @@ params :: ParameterInitValues
 params =
   Parameters
     { _alpha               = 0.01
-    , _alphaRhoMin = 2e-5
+    , _alphaRhoMin         = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
@@ -222,7 +222,7 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 5e-5) 0.5 10000  -- 5e-4
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
@@ -339,9 +339,9 @@ modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
   buildModel $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
+  fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
+  fullyConnected 10 >> leakyRelu >>
+  fullyConnected 10 >> leakyRelu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols

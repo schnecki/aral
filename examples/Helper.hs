@@ -121,10 +121,29 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         liftIO $ do
           putStrLn "Which settings to change:"
           putStrLn $ unlines $ map (\(c, h) -> c ++ ": " ++ h) $
-            sortBy (compare `on` fst) [("alpha", "alpha"), ("exp", "exploration rate"), ("eps", "epsilon"), ("lr", "learning rate"), ("dislearn", "Disable/Enable all learning")]
+            sortBy
+              (compare `on` fst)
+              [ ("alpha", "alpha")
+              , ("exp", "exploration rate")
+              , ("eps", "epsilon")
+              , ("lr", "learning rate")
+              , ("dislearn", "Disable/Enable all learning")
+              , ("drop", "flip Grenade dropout layer active flag")
+              ]
           liftIO $ putStr "Enter value: " >> hFlush stdout >> getLine
       ql' <-
         case e of
+          "drop" -> do
+            liftIO $ putStr "New value (True or False): " >> hFlush stdout
+            liftIO $
+              maybe
+                ql
+                (\(v' :: Bool) ->
+                   overAllProxies
+                     (filtered isGrenade)
+                     (\(Grenade tar wor tp cfg act) -> Grenade (runSettingsUpdate (NetworkSettings v') tar) (runSettingsUpdate (NetworkSettings v') wor) tp cfg act)
+                     ql) <$>
+              getIOMWithDefault Nothing
           "alpha" -> do
             liftIO $ putStr "New value: " >> hFlush stdout
             liftIO $ maybe ql (\v' -> decaySetting . alpha .~ NoDecay $ parameters . alpha .~ v' $ ql) <$> getIOMWithDefault Nothing

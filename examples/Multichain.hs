@@ -43,7 +43,9 @@ import           ML.BORL
 import           Helper
 
 alg :: Algorithm St
-alg = AlgBORL 0.5 0.8 ByStateValues Nothing
+alg =
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  -- AlgBORL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
@@ -60,21 +62,57 @@ borlSettings = def
 initState :: St
 initState = St 5
 
+-- -- | BORL Parameters.
+-- params :: ParameterInitValues
+-- params =
+--   Parameters
+--     { _alpha              = 0.01
+--     , _alphaRhoMin = 2e-5
+--     , _beta               = 0.01
+--     , _delta              = 0.01
+--     , _gamma              = 0.01
+--     , _epsilon            = 0.1
+
+--     , _exploration        = 1.0
+--     , _learnRandomAbove   = 0.30
+--     , _zeta               = 0.03
+--     , _xi                 = 0.01
+
+--     }
+
+-- -- | Decay function of parameters.
+-- decay :: ParameterDecaySetting
+-- decay =
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 0) 0.75 50000
+--       , _alphaRhoMin      = NoDecay
+--       , _beta             = ExponentialDecay (Just 1e-3) 0.75 50000
+--       , _delta            = ExponentialDecay (Just 1e-3) 0.75 50000
+--       , _gamma            = ExponentialDecay (Just 1e-3) 0.75 50000
+--       , _zeta             = NoDecay
+--       , _xi               = NoDecay
+--         -- Exploration
+--       , _epsilon          = [NoDecay]
+--       , _exploration      = ExponentialDecay (Just 0.30) 0.75 150000
+--       , _learnRandomAbove = NoDecay
+--       }
+
 -- | BORL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha              = 0.01
+    { _alpha               = 0.01
     , _alphaRhoMin = 2e-5
-    , _beta               = 0.01
-    , _delta              = 0.01
-    , _gamma              = 0.01
-    , _epsilon            = 0.1
+    , _beta                = 0.01
+    , _delta               = 0.005
+    , _gamma               = 0.01
+    , _zeta                = 0.03
+    , _xi                  = 0.005
+    -- Exploration
+    , _epsilon             = 0.25
 
-    , _exploration        = 1.0
-    , _learnRandomAbove   = 0.30
-    , _zeta               = 0.03
-    , _xi                 = 0.01
+    , _exploration         = 1.0
+    , _learnRandomAbove    = 0.99
 
     }
 
@@ -82,16 +120,16 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 0) 0.75 50000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _alphaRhoMin      = NoDecay
-      , _beta             = ExponentialDecay (Just 1e-3) 0.75 50000
-      , _delta            = ExponentialDecay (Just 1e-3) 0.75 50000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.75 50000
-      , _zeta             = NoDecay
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
-        -- Exploration
-      , _epsilon          = [NoDecay]
-      , _exploration      = ExponentialDecay (Just 0.30) 0.75 150000
+      -- Exploration
+      , _epsilon          = [NoDecay] -- [ExponentialDecay (Just 0.050) 0.05 150000]
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
