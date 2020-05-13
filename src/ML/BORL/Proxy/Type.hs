@@ -263,7 +263,7 @@ isTensorflow _                     = False
 
 isGrenade :: Proxy -> Bool
 isGrenade Grenade{}             = True
-isGrenade (CombinedProxy p _ _) = isTensorflow p
+isGrenade (CombinedProxy p _ _) = isGrenade p
 isGrenade _                     = False
 
 

@@ -175,13 +175,13 @@ instance ExperimentDef (BORL St) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1 -- 10000
+    { _replayMemoryMaxSize = 1000
     , _replayMemoryStrategy = ReplayMemoryPerAction
-    , _trainBatchSize = 1
+    , _trainBatchSize = 2
     , _trainingIterations = 1
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
-    , _grenadeSmoothTargetUpdate = 0.01
-    , _learningParamsDecay = NoDecay -- ExponentialDecay Nothing 0.05 100000
+    , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
+    , _grenadeSmoothTargetUpdate = 0.0
+    , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
     , _grenadeDropoutFlipActivePeriod = 10000

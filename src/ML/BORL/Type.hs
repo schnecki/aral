@@ -167,7 +167,12 @@ instance (NFData s) => NFData (BORL s) where
 
 
 decayedParameters :: BORL s -> ParameterDecayedValues
-decayedParameters borl = decaySettingParameters (borl ^. decaySetting) (borl ^. t) (borl ^. parameters)
+decayedParameters borl
+  | borl ^. t < repMemSubSize = mkStaticDecayedParams decayedParams
+  | otherwise = decayedParams
+  where
+    decayedParams = decaySettingParameters (borl ^. decaySetting) (borl ^. t - repMemSubSize) (borl ^. parameters)
+    repMemSubSize = maybe 0 replayMemoriesSubSize (borl ^. proxies . replayMemory)
 
 ------------------------------ Indexed Action ------------------------------
 
@@ -313,7 +318,7 @@ mkUnichainTensorflowM alg initialStateFun ftExt as asFilter params decayFun mode
         nnT <- runMonadBorlTF $ mkTensorflowModel as tp "_target" netInpInitState ((!! idx) <$> fullModelInit)
         nnW <- runMonadBorlTF $ mkTensorflowModel as tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
-  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   if isAlgDqnAvgRewardAdjusted alg
     then do
       r0 <- liftIO $ nnSA R0Table 4
@@ -407,7 +412,7 @@ mkUnichainTensorflowCombinedNetM alg initialStateFun ftExt as asFilter params de
         nnW <- runMonadBorlTF $ mkTensorflowModel (concat $ replicate (fromIntegral nrNets) as) tp "_worker" netInpInitState ((!! (idx + 1)) <$> fullModelInit)
         return $ TensorflowProxy nnT nnW tp nnConfig' (length as)
   proxy <- liftIO $ nnSA nnType 0
-  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   liftTf $ TF.buildTensorflowModel (proxy ^?! proxyTFTarget)
   return $
     force $
@@ -631,7 +636,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
           D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
-  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $
     BORL
       (VB.fromList $ zip [idxStart ..] as)
@@ -702,7 +707,7 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
   let nnPsiW = nnSA PsiWTable
   initialState <- initialStateFun MainAgent
   let proxies' = Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
-  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+  workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $! force $
     BORL
       (VB.fromList $ zip [0 ..] as)

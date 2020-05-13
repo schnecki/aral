@@ -22,9 +22,9 @@ import           Control.Lens
 import qualified Data.Vector.Storable as V
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Maybe                     (fromMaybe)
-
-
 import           Control.DeepSeq
+import Control.Applicative ((<|>))
+
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
 import           ML.BORL.Decay                  (decaySetup)
@@ -124,7 +124,6 @@ overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff
         Maximise -> max
         Minimise -> min
 
-
 mkCalculation' ::
      (MonadBorl' m)
   => BORL s
@@ -149,6 +148,7 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
+
       (psiValRho, psiValV, psiValW) = borl ^. psis -- exponentially smoothed Psis
   let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
   let label = (state, aNr)
@@ -259,7 +259,7 @@ mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextA
   rhoVal <- rhoValueWith Worker borl state aNr
   r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
   r0StateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
-  r1ValState <- rValueWith Worker borl RBig state aNr                                  `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let alp = getExpSmthParam borl rho alpha
@@ -275,7 +275,7 @@ mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextA
           ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
           _ -> take keepXLastValues $ reward : borl ^. lastRewards
   -- Rho
-  rhoState <- 
+  rhoState <-
     case avgRewardType of
       Fixed x -> return x
       ByMovAvg l -> return $ sum lastRews' / fromIntegral l
@@ -325,7 +325,7 @@ mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextA
         , getLastVs' = Nothing
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1-expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward)
+        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward)
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing

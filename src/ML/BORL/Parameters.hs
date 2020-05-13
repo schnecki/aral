@@ -19,7 +19,6 @@ type ParameterInitValues = Parameters Float
 type ParameterDecayedValues = Parameters Float
 type ParameterDecaySetting = Parameters DecaySetup
 
-
 -- Parameters
 data Parameters a = Parameters
   { _alpha            :: a               -- ^ for rho value
@@ -35,6 +34,20 @@ data Parameters a = Parameters
   , _xi               :: a               -- ^ Ratio in the interval (0,1) on how much of the difference of W value to enforce on V values.
   } deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 makeLenses ''Parameters
+
+mkStaticDecayedParams :: ParameterDecayedValues -> ParameterDecayedValues
+mkStaticDecayedParams params = Parameters
+  { _alpha            = 0
+  , _alphaRhoMin      = 0
+  , _beta             = 0
+  , _delta            = 0
+  , _gamma            = 0
+  , _epsilon          = params ^. epsilon
+  , _exploration      = params ^. exploration
+  , _learnRandomAbove = params ^. learnRandomAbove
+  , _zeta             = 0
+  , _xi               = 0
+  }
 
 
 instance Default (Parameters Double) where

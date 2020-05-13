@@ -360,13 +360,15 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nnTargetUpdate =
       case borl ^. proxies . v of
         P.Table {} -> empty
-        P.Grenade _ _ _ cfg _
-          | cfg ^. grenadeSmoothTargetUpdate > 0 ->
-            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printFloatWith 8 $ fromRational $ cfg ^. grenadeSmoothTargetUpdate)
-        px -> textTargetUpdate (px ^?! proxyNNConfig)
+        px         -> textTargetUpdate (isGrenade px) (px ^?! proxyNNConfig)
       where
-        textTargetUpdate conf =
-          text "NN Target Replacment Interval" <> colon $$ nest nestCols (int upTargetInterval) <+> parens (text "Maximum" <> colon <+> int (conf ^. updateTargetInterval))
+        textTargetUpdate isG conf
+          | isG && conf ^. grenadeSmoothTargetUpdate > 0 =
+            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printFloatWith 8 $ fromRational $ conf ^. grenadeSmoothTargetUpdate)
+          | otherwise =
+            text "NN Target Replacment Interval" <> colon $$ nest nestCols (int upTargetInterval) <+> parens (text "Maximum" <> colon <+> int (conf ^. updateTargetInterval)) <+>
+            "; Smooth: " <>
+            printFloat (fromRational $ conf ^. grenadeSmoothTargetUpdate)
           where
             upTargetInterval =
               max 1 $ round $ decaySetup (conf ^. updateTargetIntervalDecay) (borl ^. t - conf ^. replayMemoryMaxSize - 1) (fromIntegral $ conf ^. updateTargetInterval)

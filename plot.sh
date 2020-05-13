@@ -21,7 +21,7 @@ gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'rew
 if [[ $(age "$file") < 300 ]];
 then
     NR="`head -n1 stateValuesAllStatesCount`"
-    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:4] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
+    gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateWAllStates' using 1:col with lines; set key title 'All W Values'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiVAllStates' using 1:col with lines; set key title 'All Psi V Values'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'statePsiWAllStates' using 1:col with lines; set key title 'All Psi W Values'; pause mouse close; " &

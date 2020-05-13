@@ -104,7 +104,7 @@ getRandomReplayMemoryElements _ 1 bs (ReplayMemory vec size _ maxIdx) = do
         | otherwise = take len $ randomRs (0, maxIdx) g
   map return <$> mapM (VM.read vec) rands
 getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consequitive experiences
-  let len = min bs (1 + maxIdx)
+  let len = min bs ((1 + maxIdx) `div` nStep)
   g <- newStdGen
   let rands
         | len * nStep == size = take len [nStep - 1,2 * nStep - 1 .. maxIdx]
@@ -116,7 +116,7 @@ getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = d
 getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
   | nStep > maxIdx + 1 = return []
   | otherwise = do
-    let len = min bs (maxIdx + 1)
+    let len = min bs ((maxIdx + 1) `div` nStep)
     g <- newStdGen
     let rands
           | len * nStep == size = take len [0,nStep .. maxIdx - nStep + 1]
