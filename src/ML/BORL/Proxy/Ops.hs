@@ -297,7 +297,7 @@ updateNNTargetNet agent setts forceReset period px
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadBorl' m) => Period -> [[((StateFeatures, ActionIndex), Float)]] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs) = do
-  let netW' = trainGrenade opt (config ^. trainingIterations) minMaxVal netW trainingInstances'
+  let netW' = trainGrenade opt config minMaxVal netW trainingInstances'
   return $! Grenade netT netW' tp config nrActs
   where
     minMaxVal =

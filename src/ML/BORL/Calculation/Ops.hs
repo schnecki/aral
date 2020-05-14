@@ -148,7 +148,6 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
       xiVal = params' ^. xi
       zetaVal = params' ^. zeta
       period = borl ^. t
-
       (psiValRho, psiValV, psiValW) = borl ^. psis -- exponentially smoothed Psis
   let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
   let label = (state, aNr)
@@ -168,20 +167,20 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         case avgRewardType of
           ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
           _ -> take keepXLastValues $ reward : borl ^. lastRewards
-  vValState <- vValueWith Worker borl state aNr                                       `using` rpar
-  rhoMinimumState <- rhoMinimumValueFeat borl state aNr                               `using` rpar
-  vValStateNext <- vStateValueWith Target borl (stateNext, stateNextActIdxes)         `using` rpar
-  rhoVal <- rhoValueWith Worker borl state aNr                                        `using` rpar
-  wValState <- wValueFeat borl state aNr                                              `using` rpar
-  wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes)                    `using` rpar
-  psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV)             `using` rpar
-  psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW)             `using` rpar
-  r0ValState <- rValueWith Worker borl RSmall state aNr                               `using` rpar
+  vValState <- vValueWith Worker borl state aNr `using` rpar
+  rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
+  vValStateNext <- vStateValueWith Target borl (stateNext, stateNextActIdxes) `using` rpar
+  rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
+  wValState <- wValueFeat borl state aNr `using` rpar
+  wValStateNext <- wStateValue borl (stateNext, stateNextActIdxes) `using` rpar
+  psiVState <- P.lookupProxy period Worker label (borl ^. proxies . psiV) `using` rpar
+  psiWState <- P.lookupProxy period Worker label (borl ^. proxies . psiW) `using` rpar
+  r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
   r0ValStateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
-  r1ValState <- rValueWith Worker borl RBig state aNr                                 `using` rpar
-  r1ValStateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes)   `using` rpar
+  r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
+  r1ValStateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   -- Rho
-  rhoState <- 
+  rhoState <-
     case avgRewardType of
       Fixed x -> return x
       ByMovAvg l
@@ -204,7 +203,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
             Fixed x -> x
             _ -> (1 - alp) * rhoVal + alp * rhoState
   -- RhoMin
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal'
+        | randomAction = rhoMinimumState
+        | otherwise = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
@@ -231,21 +232,21 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
   let psiValW' = (1 - expSmth) * psiValW + expSmth * abs psiWState'
   return $
     ( Calculation
-        { getRhoMinimumVal'       = Just rhoMinimumVal'
-        , getRhoVal'              = Just rhoVal'
-        , getPsiVValState'        = Just psiVState'
-        , getVValState'           = Just vValState'
-        , getPsiWValState'        = Just psiWState' -- $ ite isRefState 0 psiWState'
-        , getWValState'           = Just $ ite isRefState 0 wValState'
-        , getR0ValState'          = Just r0ValState'
-        , getR1ValState'          = Just r1ValState'
-        , getPsiValRho'           = Just psiValRho'
-        , getPsiValV'             = Just psiValV'
-        , getPsiValW'             = Just psiValW'
-        , getLastVs'              = Just (force lastVs')
-        , getLastRews'            = force lastRews'
-        , getEpisodeEnd           = episodeEnd
-        , getExpSmoothedReward'   = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1-alp) * borl ^. expSmoothedReward + alp * reward)
+        { getRhoMinimumVal' = Just rhoMinimumVal'
+        , getRhoVal' = Just rhoVal'
+        , getPsiVValState' = Just psiVState'
+        , getVValState' = Just vValState'
+        , getPsiWValState' = Just psiWState' -- $ ite isRefState 0 psiWState'
+        , getWValState' = Just $ ite isRefState 0 wValState'
+        , getR0ValState' = Just r0ValState'
+        , getR1ValState' = Just r1ValState'
+        , getPsiValRho' = Just psiValRho'
+        , getPsiValV' = Just psiValV'
+        , getPsiValW' = Just psiValW'
+        , getLastVs' = Just (force lastVs')
+        , getLastRews' = force lastRews'
+        , getEpisodeEnd = episodeEnd
+        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - alp) * borl ^. expSmoothedReward + alp * reward)
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -297,7 +298,9 @@ mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextA
             _ -> (1 - alp) * rhoVal + alp * rhoState
       rhoValOverEstimated = overEstimateRho borl rhoVal'
   -- RhoMin
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal'
+        | randomAction = rhoMinimumState
+        | otherwise = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let expStateNextValR0
         | randomAction = r0StateNext
         | otherwise = fromMaybe r0StateNext (getExpectedValStateNextR0 expValStateNext)
@@ -351,7 +354,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
           ByMovAvg movAvgLen -> take movAvgLen $ reward : borl ^. lastRewards
           _ -> take keepXLastValues $ reward : borl ^. lastRewards
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
-  rhoState <- 
+  rhoState <-
     case avgRewardType of
       Fixed x -> return x
       ByMovAvg _ -> return $ sum lastRews' / fromIntegral (length lastRews')
@@ -372,7 +375,9 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
             Fixed x -> x
             _ -> (1 - alp) * rhoVal + alp * rhoState
       rhoValOverEstimated = overEstimateRho borl rhoVal'
-  let rhoMinimumVal' = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
+  let rhoMinimumVal'
+        | randomAction = rhoMinimumState
+        | otherwise = maxOrMin rhoMinimumState $ (1 - alpRhoMin) * rhoMinimumState + alpRhoMin * rhoMinimumState' borl rhoVal'
   let expStateNextValV
         | randomAction = epsEnd * vValStateNext
         | otherwise = fromMaybe (epsEnd * vValStateNext) (getExpectedValStateNextV expValStateNext)
@@ -395,7 +400,7 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getLastVs' = Just $ force lastVs'
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1-alp) * borl ^. expSmoothedReward + alp * reward)
+        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - alp) * borl ^. expSmoothedReward + alp * reward)
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing

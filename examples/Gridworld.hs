@@ -184,6 +184,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
+    , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _updateTargetInterval = 10000
