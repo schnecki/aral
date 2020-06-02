@@ -19,27 +19,27 @@ import           ML.BORL.Types
 
 
 saveTensorflowModels :: (MonadBorl' m) => BORL s -> m (BORL s)
-saveTensorflowModels borl = liftTf $ do
+saveTensorflowModels borl = do
   mapM_ saveProxy (allProxies $ borl ^. proxies)
   return borl
   where
     saveProxy px =
       case px of
-        TensorflowProxy netT netW _ _ _ -> TF.saveModelWithLastIO netT >> TF.saveModelWithLastIO netW >> return ()
+        TensorflowProxy netT netW _ _ _ -> liftTf $ TF.saveModelWithLastIO netT >> TF.saveModelWithLastIO netW >> return ()
         _ -> return ()
 
 type BuildModels = Bool
 
 restoreTensorflowModels :: (MonadBorl' m) => BuildModels -> BORL s -> m ()
-restoreTensorflowModels build borl = liftTf $ do
+restoreTensorflowModels build borl = do
   when build buildModels
   mapM_ restoreProxy (allProxies $ borl ^. proxies)
   where
     restoreProxy px =
       case px of
-        TensorflowProxy netT netW _ _ _ -> TF.restoreModelWithLastIO netT >> TF.restoreModelWithLastIO netW >> return ()
+        TensorflowProxy netT netW _ _ _ -> liftTf $ TF.restoreModelWithLastIO netT >> TF.restoreModelWithLastIO netW >> return ()
         _ -> return ()
     buildModels =
       case find isTensorflow (allProxies $ borl ^. proxies) of
-        Just (TensorflowProxy netT _ _ _ _) -> TF.buildTensorflowModel netT
+        Just (TensorflowProxy netT _ _ _ _) -> liftTf $ TF.buildTensorflowModel netT
         _                                   -> return ()

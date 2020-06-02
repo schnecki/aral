@@ -101,7 +101,8 @@ fromSerialisableWith f g as aF ftExt builder (BORLSerialisable st workers' t e p
       borl' =
         flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) $
         flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) borl
-  liftTf $ restoreTensorflowModels False borl'
+  when ()
+  restoreTensorflowModels False borl'
   return borl'
 
 
