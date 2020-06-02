@@ -5,12 +5,14 @@ module ML.BORL.Calculation.Ops
     , rhoValueWith
     , rValue
     , rValueWith
+    , rValueNoUnscaleWith
     , eValue
     , eValueFeat
     , eValueAvgCleaned
     , eValueAvgCleanedFeat
     , vValue
     , vValueWith
+    , vValueNoUnscaleWith
     , wValueFeat
     , rhoValue
     , overEstimateRho
@@ -477,6 +479,11 @@ vValue borl s a = vValueWith Worker borl (ftExt s) a
 vValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 vValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
 
+-- | For DEBUGGING only! 
+vValueNoUnscaleWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+vValueNoUnscaleWith lkTp borl state a = P.lookupProxyNoUnscale (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
+
+
 -- | Get maximum bias value of state of specified net.
 vStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
 vStateValueWith lkTp borl (state, asIdxes) = maxOrMin <$> lookupState lkTp (state, asIdxes) (borl ^. proxies . v)
@@ -528,6 +535,16 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
       case size of
         RSmall -> borl ^. proxies.r0
         RBig   -> borl ^. proxies.r1
+
+-- | For DEBUGGING only! Same as rValueWith but without unscaling.
+rValueNoUnscaleWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Float
+rValueNoUnscaleWith lkTp borl size state a = P.lookupProxyNoUnscale (borl ^. t) lkTp (state, a) mr
+  where
+    mr =
+      case size of
+        RSmall -> borl ^. proxies.r0
+        RBig   -> borl ^. proxies.r1
+
 
 rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, FilteredActionIndices) -> m Float
 rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> lookupState lkTp (state, actIdxes) mr

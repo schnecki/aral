@@ -232,6 +232,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay (Just 1e-4) 0.05 150000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = ScalingNetOutParameters (-400) 400 (-5000) 5000 (-300) 300 (-300) 300
+    , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
@@ -394,7 +395,7 @@ modelBuilder colOut =
         nrActs = genericLength actions
 
 netInp :: St -> V.Vector Float
-netInp (St len arr) = V.fromList [scaleNegPosOne (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleNegPosOne (0, 1) $ fromIntegral $ fromEnum arr]
+netInp (St len arr) = V.fromList [scaleMinMax (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleMinMax (0, 1) $ fromIntegral $ fromEnum arr]
 
 tblInp :: St -> V.Vector Float
 tblInp (St len arr)        = V.fromList [fromIntegral len, fromIntegral $ fromEnum arr]

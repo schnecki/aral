@@ -18,6 +18,7 @@
 module ML.BORL.Proxy.Ops
     ( insert
     , lookupProxy
+    , lookupProxyNoUnscale
     , lookupState
     , lookupNeuralNetwork
     , lookupNeuralNetworkUnscaled
@@ -42,7 +43,7 @@ import           Control.Parallel.Strategies hiding (r0)
 import           Data.Function               (on)
 import           Data.List                   (foldl', sortBy)
 import qualified Data.Map.Strict             as M
-import           Data.Maybe                  (fromMaybe)
+import           Data.Maybe                  (fromMaybe, isNothing)
 import qualified Data.Vector                 as VB
 import qualified Data.Vector.Storable        as V
 import           Grenade
@@ -260,7 +261,8 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
     combineProxyExpectedOuts = concatMap getAndScaleExpectedOutput (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     len = head pxs ^?! proxyNrActions
     mMinMaxs = mapM getMinMaxVal pxs
-    getAndScaleExpectedOutput px@(CombinedProxy _ idx outs) = map (map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue (getMinMaxVal px) out))) outs
+    scaleAlg = pxLearn ^?! proxyNNConfig.scaleOutputAlgorithm
+    getAndScaleExpectedOutput px@(CombinedProxy _ idx outs) = map (map (\((ft, curIdx), out) -> ((ft, idx * len + curIdx), scaleValue scaleAlg (getMinMaxVal px) out))) outs
     getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
 
 -- | Copy the worker net to the target.
@@ -306,8 +308,12 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
           where minV = minimum $ map fst minMaxVals
                 maxV = maximum $ map snd minMaxVals
         _ -> getMinMaxVal px
-    trainingInstances' = map (map (second $ scaleValue (getMinMaxVal px))) trainingInstances
+    trainingInstances' =
+      case px ^?! proxyType of
+        NoScaling {} -> trainingInstances
+        _ -> map (map (second $ scaleValue scaleAlg minMaxVal)) trainingInstances
     lRate = getLearningRate (config ^. grenadeLearningParams)
+    scaleAlg = config ^. scaleOutputAlgorithm
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
 trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !config !nrActs) = do
@@ -325,7 +331,11 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
       --   getLearningRates netW >>= liftIO . print
       return $! TensorflowProxy netT netW tp config nrActs
   where
-    trainingInstances' = map (map (second $ scaleValue (getMinMaxVal px))) trainingInstances
+    scaleAlg = config ^. scaleOutputAlgorithm
+    minMaxVal = getMinMaxVal px
+    trainingInstances'
+      | isNothing minMaxVal && isScaleLog scaleAlg = trainingInstances
+      | otherwise = map (map (second $ scaleValue scaleAlg minMaxVal)) trainingInstances
     dec = decaySetup (config ^. learningParamsDecay) period
     lRateDb = getLearningRate (config ^. grenadeLearningParams)
     lRate = realToFrac lRateDb
@@ -334,11 +344,18 @@ trainBatch !period !trainingInstances !px@(TensorflowProxy !netT !netW !tp !conf
       | otherwise = return ()
 
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
+
 -- | Retrieve a value.
 lookupProxy :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupProxy _ _ _ (Scalar x)    = return x
 lookupProxy _ _ k (Table m def) = return $ M.findWithDefault def k m
 lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
+
+-- | Retrieve a value, but do not unscale! For DEBUGGING only!
+lookupProxyNoUnscale :: (MonadBorl' m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
+lookupProxyNoUnscale _ _ _ (Scalar x)    = return x
+lookupProxyNoUnscale _ _ k (Table m def) = return $ M.findWithDefault def k m
+lookupProxyNoUnscale _ lkType k px       = lookupNeuralNetworkUnscaled lkType k px
 
 
 -- | Retrieves the filtered output actions.
@@ -355,12 +372,14 @@ lookupState tp (k, as) px = do
 -- | Retrieve a value from a neural network proxy. The output is sclaed to the original range. For other proxies an
 -- error is thrown. The returned value is up-scaled to the original interval before returned.
 lookupNeuralNetwork :: (MonadBorl' m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
-lookupNeuralNetwork !tp !k !px = unscaleValue (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork !tp !k !px = unscaleValue scaleAlg (getMinMaxVal px) <$> lookupNeuralNetworkUnscaled tp k px
+  where scaleAlg = px ^?! proxyNNConfig . scaleOutputAlgorithm
 
 -- | Retrieve all values of one feature from a neural network proxy. The output is sclaed to the original range. For
 -- other proxies an error is thrown. The returned value is up-scaled to the original interval before returned.
 lookupActionsNeuralNetwork :: (MonadBorl' m) => LookupType -> StateFeatures -> Proxy -> m NetOutput
-lookupActionsNeuralNetwork !tp !k !px = V.map (unscaleValue (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
+lookupActionsNeuralNetwork !tp !k !px = V.map (unscaleValue scaleAlg (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
+  where scaleAlg = px ^?! proxyNNConfig . scaleOutputAlgorithm
 
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
 -- an error is thrown.

@@ -746,9 +746,9 @@ mkReplayMemories' allowSz1 as setts nnConfig =
     repMemSizeSingle = max (nnConfig ^. replayMemoryMaxSize) (setts ^. nStep * nnConfig ^. trainBatchSize)
     repMemSizePerAction = (size `div` (setts ^. nStep)) * (setts ^. nStep)
       where
-        size = repMemSizeSingle
+        size = -- repMemSizeSingle
 
-          -- max (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)) (setts ^. nStep)
+          max (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)) (setts ^. nStep)
 
 
 mkReplayMemory :: Bool -> Int -> IO (Maybe ReplayMemory)

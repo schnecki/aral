@@ -55,6 +55,9 @@ import           ML.BORL.Workers.Type
 
 import           Debug.Trace
 
+semicolon :: Doc
+semicolon = char ';'
+
 commas :: Int
 commas = 3
 
@@ -317,16 +320,19 @@ prettyBORLHead' printRho prettyStateFun borl = do
   where
     params = borl ^. parameters
     params' = decayedParameters borl
+    scalingAlg cfg = case cfg ^. scaleOutputAlgorithm of
+      ScaleMinMax    -> "Min-Max Normalisation"
+      ScaleLog shift -> "Logarithmic Scaling w/ shift: " <> text (showFloat shift)
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
         px ->
-          text "Workers Minimum Exploration (Epsilon-Greedy)" <> colon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
+          text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text
@@ -338,13 +344,13 @@ prettyBORLHead' printRho prettyStateFun borl = do
     scalingTextDqn =
       case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text
@@ -354,7 +360,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        px         -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =

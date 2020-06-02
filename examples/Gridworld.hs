@@ -180,10 +180,11 @@ nnConfig =
     , _trainBatchSize = 2
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
-    , _grenadeSmoothTargetUpdate = 0.0
+    , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 6
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
@@ -351,7 +352,7 @@ modelBuilderGrenade actions initState cols =
 
 
 netInp :: St -> V.Vector Float
-netInp st = V.fromList [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st = V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Float
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]

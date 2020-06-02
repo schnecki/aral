@@ -111,8 +111,9 @@ nnConfig gym maxRew =
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
-    , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleValue (Just (l, u))) lows highs) ppSts
+    , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleMinMax (l, u)) lows highs) ppSts
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25 * maxRew)
+    , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
@@ -224,7 +225,7 @@ maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for t
 -- | Scales values to (-1, 1).
 netInp :: Bool -> Gym -> St -> V.Vector Float
 netInp isTabular gym (St _ st)
-  | not isTabular = V.fromList $ zipWith3 (\l u -> scaleValue (Just (l, u))) lowerBounds upperBounds st
+  | not isTabular = V.fromList $ zipWith3 (\l u -> scaleMinMax (l, u)) lowerBounds upperBounds st
   | isTabular = V.fromList $ map (rnd . fst) $ filter snd (stSelector st)
   where
     rnd x = fromIntegral (round (x * 10)) / 10
@@ -241,7 +242,7 @@ observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRange
 
 
 mInverseSt :: Gym -> Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> unscaleValue (Just (l, u)) x) lowerBounds upperBounds (V.toList xs)
+mInverseSt gym = Just $ \xs -> Just $ Right $ St True $ zipWith3 (\l u x -> unscaleMinMax (l, u) x) lowerBounds upperBounds (V.toList xs)
   where
     (lowerBounds, upperBounds) = observationSpaceBounds gym
 

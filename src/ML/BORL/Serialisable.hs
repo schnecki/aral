@@ -119,10 +119,10 @@ instance Serialize ReplayMemories where
 instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale crop stab stabDec upInt upIntDec) =
+  put (NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale scaleOutAlg crop stab stabDec upInt upIntDec) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >>  put crop >> put stab >> put stabDec >> put upInt >> put upIntDec
-      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put crop >>  put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec >> put upInt >> put upIntDec
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec >> put upInt >> put upIntDec
     -- put memSz >> put memStrat >> put batchSz >> put opt >> put decaySetup >> put (map V.toList prS) >> put scale >> put stab >> put stabDec >> put upInt >> put upIntDec
   get = do
     memSz <- get
@@ -134,12 +134,13 @@ instance Serialize NNConfig where
     decaySetup <- get
     prS <- map V.fromList <$> get
     scale <- get
+    scaleOutAlg <- get
     crop <- get
     stab <- get
     stabDec <- get
     upInt <- get
     upIntDec <- get
-    return $ NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale crop stab stabDec upInt upIntDec
+    return $ NNConfig memSz memStrat batchSz trainIter opt smooth decaySetup prS scale scaleOutAlg crop stab stabDec upInt upIntDec
 
 
 instance Serialize Proxy where

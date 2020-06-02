@@ -57,6 +57,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 20
+    , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
@@ -69,7 +70,7 @@ borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
 netInp :: St -> V.Vector Float
-netInp st = V.singleton (scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st))
+netInp st = V.singleton (scaleMinMax (minVal,maxVal) (fromIntegral $ fromEnum st))
 
 tblInp :: St -> V.Vector Float
 tblInp st = V.singleton (fromIntegral $ fromEnum st)

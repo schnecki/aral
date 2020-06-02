@@ -141,16 +141,18 @@ splitList f (x:xs) = (x : y) : ys
 -- | Get a list of random input-output tuples from the replay memory.
 getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
 getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements True nStep bs rm
-getRandomReplayMemoriesElements 1 bs (ReplayMemoriesPerActions _ rs) = concat <$> mapM (getRandomReplayMemoryElements False 1 bs) (VI.toList rs)
-  -- where nr = ceiling (fromIntegral bs / fromIntegral (VI.length rs) :: Float)
-getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions tmpRepMem rs)
-  | nStep == 1 || isNothing tmpRepMem = concat <$> mapM (getRandomReplayMemoryElements False 1 bs) (VI.toList rs)
-  | otherwise = do
-     xs <- concat <$> mapM (getRandomReplayMemoryElements False nStep bs) (VI.toList rs)
-     if null xs
-       then getRandomReplayMemoryElements False 1 bs (fromJust tmpRepMem)
-       else return xs
-  -- where nr = ceiling (fromIntegral bs / fromIntegral (VI.length rs) :: Float)
+getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions tmpRepMem rs) = do
+  g <- newStdGen
+  let idxs = take bs $ randomRs (0, length rs - 1) g
+      rsSel = map (rs VI.!) idxs
+  concat <$> mapM getRandomReplayMemoriesElements' rsSel
+  where getRandomReplayMemoriesElements' replMem
+           | nStep == 1 || isNothing tmpRepMem = getRandomReplayMemoryElements False 1 1 replMem
+           | otherwise = do
+              xs <- getRandomReplayMemoryElements False nStep 1 replMem
+              if null xs
+                then getRandomReplayMemoryElements False 1 1 (fromJust tmpRepMem)
+                else return xs
 
 
 -- | Size of replay memory (combined if it is a per action replay memory).

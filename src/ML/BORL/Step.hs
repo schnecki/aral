@@ -75,6 +75,9 @@ import           Debug.Trace
 fileDebugStateV :: FilePath
 fileDebugStateV = "stateVAllStates"
 
+fileDebugStateVScaled :: FilePath
+fileDebugStateVScaled = "stateVAllStates_scaled"
+
 fileDebugStateW :: FilePath
 fileDebugStateW = "stateWAllStates"
 
@@ -140,7 +143,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
   when (period == 0) $ do
-    liftIO $ writeFile fileStateValues "Period\tRho\tExpSmthRho\tRhoOverEstimated\tMinRho\tVAvg\tR0\tR1\n"
+    liftIO $ writeFile fileStateValues "Period\tRho\tExpSmthRho\tRhoOverEstimated\tMinRho\tVAvg\tR0\tR1\tR0_scaled\tR1_scaled\n"
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
@@ -227,11 +230,22 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
       strMinRho = show (fromMaybe 0 (getRhoMinimumVal' calc))
       strVAvg = show (avg lastVsLst)
       strR0 = show $ fromMaybe 0 (getR0ValState' calc)
+      mCfg = borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig
+      strR0Scaled = show $ fromMaybe 0 $ do
+         scAlg <- view scaleOutputAlgorithm <$> mCfg
+         scParam <- view scaleParameters <$> mCfg
+         v <- getR0ValState' calc
+         return $ scaleValue scAlg (Just (scParam ^. scaleMinR0Value, scParam ^. scaleMaxR0Value)) v
       strR1 = show $ fromMaybe 0 (getR1ValState' calc)
+      strR1Scaled = show $ fromMaybe 0 $ do
+         scAlg <- view scaleOutputAlgorithm <$> mCfg
+         scParam <- view scaleParameters <$> mCfg
+         v <- getR1ValState' calc
+         return $ scaleValue scAlg (Just (scParam ^. scaleMinR1Value, scParam ^. scaleMaxR1Value)) v
       avg xs = sum xs / fromIntegral (length xs)
   if isMainAgent agent
   then do
-    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strRhoSmth ++ "\t" ++ strRhoOver ++ "\t" ++ strMinRho ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\n")
+    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strRhoSmth ++ "\t" ++ strRhoOver ++ "\t" ++ strMinRho ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\t" ++ strR0Scaled ++ "\t" ++ strR1Scaled ++ "\n")
     let (eNr, eStart) = borl ^. episodeNrStart
         eLength = borl ^. t - eStart
     when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
@@ -301,6 +315,7 @@ writeDebugFiles borl = do
       then return borl
       else do
         liftIO $ writeFile fileDebugStateV ""
+        liftIO $ writeFile fileDebugStateVScaled ""
         liftIO $ writeFile fileDebugStateW ""
         liftIO $ writeFile fileDebugPsiVValues ""
         liftIO $ writeFile fileDebugPsiWValues ""
@@ -313,7 +328,7 @@ writeDebugFiles borl = do
               | otherwise = getStateFeatList (borl' ^. proxies . v)
         setStateFeatures stateFeats
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printStateFeat) stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateVScaled, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printStateFeat) stateFeats <> "\n")
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
           else do
@@ -329,8 +344,10 @@ writeDebugFiles borl = do
   stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
     stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats
+    stateValuesVScaled <- mapM (\xs -> if isDqn then rValueNoUnscaleWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueNoUnscaleWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats
     stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
+    liftIO $ appendFile fileDebugStateVScaled (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesVScaled <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
       liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
       psiVValues <- mapM (\xs -> psiVFeat borl' (V.init xs) (round $ V.last xs)) stateFeats

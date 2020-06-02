@@ -57,15 +57,16 @@ instance RewardFuture St where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1
-    , _replayMemoryStrategy = ReplayMemorySingle
-    , _trainBatchSize = 1
+    { _replayMemoryMaxSize = 1000
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
+    , _trainBatchSize = 2
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
-    , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdate = 0.0
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleOutputAlgorithm = ScaleLog 1000 -- ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
@@ -89,7 +90,7 @@ params =
     , _zeta                = 0.03
     , _xi                  = 0.005
     -- Exploration
-    , _epsilon             = 0.25
+    , _epsilon             = 0.05
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.99
@@ -225,7 +226,7 @@ modelBuilderGrenade actions initState cols =
 
 
 netInp :: St -> V.Vector Float
-netInp st = V.fromList [scaleNegPosOne (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleNegPosOne (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st = V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Float
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]

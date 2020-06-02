@@ -53,7 +53,7 @@ instance Enum St where
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 netInp :: St -> V.Vector Float
-netInp st = V.singleton (scaleNegPosOne (minVal,maxVal) (fromIntegral $ fromEnum st))
+netInp st = V.singleton (scaleMinMax (minVal,maxVal) (fromIntegral $ fromEnum st))
 
 maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
@@ -153,6 +153,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
+    , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
