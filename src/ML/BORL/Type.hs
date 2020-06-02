@@ -543,6 +543,7 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun n
     SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     _ -> error "BORL currently requieres a 1D input and either 1D our 2D output"
+    -- also fix in Serialisable if enabled!!!
     -- SpecConcreteNetwork2D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)

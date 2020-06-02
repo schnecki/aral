@@ -20,6 +20,7 @@ import           Data.Constraint              (Dict (..))
 import           Data.List                    (foldl')
 import qualified Data.Map                     as M
 import           Data.Serialize
+import           Data.Singletons              (sing, withSingI)
 import           Data.Singletons.Prelude.List
 import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
@@ -44,6 +45,8 @@ import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
+
+import           Debug.Trace
 
 
 data BORLSerialisable s = BORLSerialisable
@@ -158,16 +161,27 @@ instance Serialize Proxy where
         return $ Table m d
       2 -> do
         (specT :: SpecNet) <- get
-        case unsafePerformIO (networkFromSpecificationGenericWith UniformInit specT) of
-          SpecNetwork (netT :: Network tLayers tShapes) -> do
-            case (unsafeCoerce (Dict :: Dict ()) :: Dict (Head tShapes ~ 'D1 th, KnownNat th, Typeable tLayers, Typeable tShapes)) of
-              Dict -> do
-                (t :: Network tLayers tShapes) <- get
-                (w :: Network tLayers tShapes) <- get
-                tp <- get
-                conf <- get
-                nr <- get
-                return $ Grenade t w tp conf nr
+        trace ("SPEC: " ++ show specT) $
+          case unsafePerformIO (networkFromSpecificationWith UniformInit specT) of
+            SpecConcreteNetwork1D1D (netT :: Network tLayers tShapesSpec) -> do
+              case (sing :: Sing tShapesSpec) of
+                (net :: Sing tShapes) -> do
+                  (t :: Network tLayers tShapes) <- get
+                  (w :: Network tLayers tShapes) <- get
+                  tp <- get
+                  conf <- get
+                  nr <- get
+                  return $ Grenade netT netT tp conf nr
+            SpecConcreteNetwork1D2D (netT :: Network tLayers tShapesSpec) -> do
+              case (sing :: Sing tShapesSpec) of
+                (net :: Sing tShapes) -> do
+                  (t :: Network tLayers tShapes) <- get
+                  (w :: Network tLayers tShapes) <- get
+                  tp <- get
+                  conf <- get
+                  nr <- get
+                  return $ Grenade netT netT tp conf nr
+            _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
       3 -> do
         t <- get
         w <- get
