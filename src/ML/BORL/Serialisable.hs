@@ -161,27 +161,16 @@ instance Serialize Proxy where
         return $ Table m d
       2 -> do
         (specT :: SpecNet) <- get
-        trace ("SPEC: " ++ show specT) $
-          case unsafePerformIO (networkFromSpecificationWith UniformInit specT) of
-            SpecConcreteNetwork1D1D (netT :: Network tLayers tShapesSpec) -> do
-              case (sing :: Sing tShapesSpec) of
-                (net :: Sing tShapes) -> do
-                  (t :: Network tLayers tShapes) <- get
-                  (w :: Network tLayers tShapes) <- get
-                  tp <- get
-                  conf <- get
-                  nr <- get
-                  return $ Grenade netT netT tp conf nr
-            SpecConcreteNetwork1D2D (netT :: Network tLayers tShapesSpec) -> do
-              case (sing :: Sing tShapesSpec) of
-                (net :: Sing tShapes) -> do
-                  (t :: Network tLayers tShapes) <- get
-                  (w :: Network tLayers tShapes) <- get
-                  tp <- get
-                  conf <- get
-                  nr <- get
-                  return $ Grenade netT netT tp conf nr
-            _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
+        case unsafePerformIO (networkFromSpecificationWith UniformInit specT) of
+          SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
+            (t :: Network tLayers tShapes) <- get
+            (w :: Network tLayers tShapes) <- get
+            Grenade t w <$> get <*> get <*> get
+          SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
+            (t :: Network tLayers tShapes) <- get
+            (w :: Network tLayers tShapes) <- get
+            Grenade t w <$> get <*> get <*> get
+          _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
       3 -> do
         t <- get
         w <- get
