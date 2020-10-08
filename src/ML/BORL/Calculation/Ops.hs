@@ -21,6 +21,7 @@ module ML.BORL.Calculation.Ops
     ) where
 
 import           Control.Lens
+import           Control.Monad.IO.Class
 import qualified Data.Vector.Storable as V
 import           Control.Parallel.Strategies    hiding (r0)
 import           Data.Maybe                     (fromMaybe)
@@ -42,7 +43,7 @@ import Debug.Trace
 #ifdef DEBUG
 import Prelude hiding (maximum, minimum)
 import qualified Prelude (maximum, minimum)
-import qualified Data.List 
+import qualified Data.List
 maximumBy, minimumBy :: (a -> a -> Ordering) -> [a] -> a
 maximumBy _ [] = error "empty input to maximumBy in ML.BORL.Calculation.Ops"
 maximumBy f xs = Data.List.maximumBy f xs
@@ -75,7 +76,7 @@ keepXLastValues :: Int
 keepXLastValues = 100
 
 mkCalculation ::
-     (MonadBorl' m)
+     (MonadIO m)
   => BORL s
   -> (StateFeatures, FilteredActionIndices)
   -> ActionIndex
@@ -114,7 +115,7 @@ getExpSmthParam borl p param
     px = borl ^. proxies . p
     params' = decayedParameters borl
 
--- | Overestimates the average reward. This ensures that we constantly aim for better policies. 
+-- | Overestimates the average reward. This ensures that we constantly aim for better policies.
 overEstimateRho :: BORL s -> Float -> Float
 overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff)
   where
@@ -127,7 +128,7 @@ overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff
         Minimise -> min
 
 mkCalculation' ::
-     (MonadBorl' m)
+     (MonadIO m)
   => BORL s
   -> (StateFeatures, FilteredActionIndices)
   -> ActionIndex
@@ -437,27 +438,27 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
     , emptyExpectedValuationNext {getExpectedValStateNextR1 = Just expStateValR1})
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoMinimumValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
+rhoMinimumValue :: (MonadIO m) => BORL s -> State s -> ActionIndex -> m Float
 rhoMinimumValue borl state = rhoMinimumValueWith Worker borl (ftExt state)
   where
     ftExt = borl ^. featureExtractor
 
-rhoMinimumValueFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Float
+rhoMinimumValueFeat :: (MonadIO m) => BORL s -> StateFeatures -> ActionIndex -> m Float
 rhoMinimumValueFeat = rhoMinimumValueWith Worker
 
-rhoMinimumValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+rhoMinimumValueWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 rhoMinimumValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rhoMinimum)
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
+rhoValue :: (MonadIO m) => BORL s -> State s -> ActionIndex -> m Float
 rhoValue borl s a = rhoValueWith Worker borl (ftExt s) a
   where
     ftExt = borl ^. featureExtractor
 
-rhoValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+rhoValueWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 rhoValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rho)
 
-rhoStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
+rhoStateValue :: (MonadIO m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
 rhoStateValue borl (state, actIdxes) =
   case borl ^. proxies . rho of
     Scalar r -> return r
@@ -470,22 +471,22 @@ rhoStateValue borl (state, actIdxes) =
         Minimise -> V.minimum
 
 -- | Bias value from Worker net.
-vValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
+vValue :: (MonadIO m) => BORL s -> State s -> ActionIndex -> m Float
 vValue borl s a = vValueWith Worker borl (ftExt s) a
   where
     ftExt = borl ^. featureExtractor
 
 -- | Get bias value from specified net and with features.
-vValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+vValueWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 vValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
 
--- | For DEBUGGING only! 
-vValueNoUnscaleWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+-- | For DEBUGGING only!
+vValueNoUnscaleWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 vValueNoUnscaleWith lkTp borl state a = P.lookupProxyNoUnscale (borl ^. t) lkTp (state, a) (borl ^. proxies . v)
 
 
 -- | Get maximum bias value of state of specified net.
-vStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
+vStateValueWith :: (MonadIO m) => LookupType -> BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
 vStateValueWith lkTp borl (state, asIdxes) = maxOrMin <$> lookupState lkTp (state, asIdxes) (borl ^. proxies . v)
   -- V.mapM (vValueWith lkTp borl state) asIdxes
   where
@@ -495,22 +496,22 @@ vStateValueWith lkTp borl (state, asIdxes) = maxOrMin <$> lookupState lkTp (stat
         Minimise -> V.minimum
 
 
--- psiVValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+-- psiVValueWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 -- psiVValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . psiV)
 
-wValue :: (MonadBorl' m) => BORL s -> State s -> ActionIndex -> m Float
+wValue :: (MonadIO m) => BORL s -> State s -> ActionIndex -> m Float
 wValue borl state a = wValueWith Worker borl (ftExt state) a
   where
     ftExt = borl ^. featureExtractor
 
 
-wValueFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Float
+wValueFeat :: (MonadIO m) => BORL s -> StateFeatures -> ActionIndex -> m Float
 wValueFeat = wValueWith Worker
 
-wValueWith :: (MonadBorl' m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
+wValueWith :: (MonadIO m) => LookupType -> BORL s -> StateFeatures -> ActionIndex -> m Float
 wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . w)
 
-wStateValue :: (MonadBorl' m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
+wStateValue :: (MonadIO m) => BORL s -> (StateFeatures, FilteredActionIndices) -> m Float
 wStateValue borl (state, asIdxes) = maxOrMin <$> lookupState Target (state, asIdxes) (borl ^. proxies . w)
   -- V.mapM (wValueWith Target borl state) asIdxes
   where
@@ -521,14 +522,14 @@ wStateValue borl (state, asIdxes) = maxOrMin <$> lookupState Target (state, asId
 
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValue :: (MonadBorl' m) => BORL s -> RSize -> State s -> ActionIndex -> m Float
+rValue :: (MonadIO m) => BORL s -> RSize -> State s -> ActionIndex -> m Float
 rValue borl size s aNr = rValueWith Worker borl size (ftExt s) aNr
   where ftExt = case size of
           RSmall -> borl ^. featureExtractor
           RBig   -> borl ^. featureExtractor
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Float
+rValueWith :: (MonadIO m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Float
 rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
   where
     mr =
@@ -537,7 +538,7 @@ rValueWith lkTp borl size state a = P.lookupProxy (borl ^. t) lkTp (state, a) mr
         RBig   -> borl ^. proxies.r1
 
 -- | For DEBUGGING only! Same as rValueWith but without unscaling.
-rValueNoUnscaleWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Float
+rValueNoUnscaleWith :: (MonadIO m) => LookupType -> BORL s -> RSize -> StateFeatures -> ActionIndex -> m Float
 rValueNoUnscaleWith lkTp borl size state a = P.lookupProxyNoUnscale (borl ^. t) lkTp (state, a) mr
   where
     mr =
@@ -546,7 +547,7 @@ rValueNoUnscaleWith lkTp borl size state a = P.lookupProxyNoUnscale (borl ^. t) 
         RBig   -> borl ^. proxies.r1
 
 
-rStateValueWith :: (MonadBorl' m) => LookupType -> BORL s -> RSize -> (StateFeatures, FilteredActionIndices) -> m Float
+rStateValueWith :: (MonadIO m) => LookupType -> BORL s -> RSize -> (StateFeatures, FilteredActionIndices) -> m Float
 rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> lookupState lkTp (state, actIdxes) mr
   -- V.mapM (rValueWith lkTp borl size state) actIdxes
   where
@@ -560,18 +561,18 @@ rStateValueWith lkTp borl size (state, actIdxes) = maxOrMin <$> lookupState lkTp
         RBig -> borl ^. proxies . r1
 
 -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
-eValue :: (MonadBorl' m) => BORL s -> s -> ActionIndex -> m Float
+eValue :: (MonadIO m) => BORL s -> s -> ActionIndex -> m Float
 eValue borl state act = eValueFeat borl (borl ^. featureExtractor $ state, act)
 
 -- | Calculates the difference between the expected discounted values: e_gamma0 - e_gamma1 (Small-Big).
-eValueFeat :: (MonadBorl' m) => BORL s -> (StateFeatures, ActionIndex) -> m Float
+eValueFeat :: (MonadIO m) => BORL s -> (StateFeatures, ActionIndex) -> m Float
 eValueFeat borl (stateFeat, act) = do
   big <- rValueWith Target borl RBig stateFeat act
   small <- rValueWith Target borl RSmall stateFeat act
   return $ small - big
 
 -- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
-eValueAvgCleanedFeat :: (MonadBorl' m) => BORL s -> StateFeatures -> ActionIndex -> m Float
+eValueAvgCleanedFeat :: (MonadIO m) => BORL s -> StateFeatures -> ActionIndex -> m Float
 eValueAvgCleanedFeat borl state act =
   case borl ^. algorithm of
     AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
@@ -586,9 +587,7 @@ eValueAvgCleanedFeat borl state act =
 
 
 -- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
-eValueAvgCleaned :: (MonadBorl' m) => BORL s -> s -> ActionIndex -> m Float
+eValueAvgCleaned :: (MonadIO m) => BORL s -> s -> ActionIndex -> m Float
 eValueAvgCleaned borl state = eValueAvgCleanedFeat borl sFeat
   where
     sFeat = (borl ^. featureExtractor) state
-
-

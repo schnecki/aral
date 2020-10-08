@@ -16,6 +16,7 @@ import           Control.Arrow                (first)
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (zipWithM_)
+import           Control.Monad.IO.Class
 import           Data.Constraint              (Dict (..))
 import           Data.List                    (foldl')
 import qualified Data.Map                     as M
@@ -29,7 +30,6 @@ import qualified Data.Vector.Storable         as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
-import qualified HighLevelTensorflow          as TF
 import           System.IO.Unsafe
 import           Unsafe.Coerce                (unsafeCoerce)
 
@@ -40,7 +40,6 @@ import           ML.BORL.Parameters
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Reward.Type
-import           ML.BORL.SaveRestore
 import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -71,41 +70,48 @@ data BORLSerialisable s = BORLSerialisable
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadBorl' m, RewardFuture s) => BORL s -> m (BORLSerialisable s)
+toSerialisable :: (MonadIO m, RewardFuture s) => BORL s -> m (BORLSerialisable s)
 toSerialisable = toSerialisableWith id id
 
 
-toSerialisableWith :: (MonadBorl' m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl = do
-  BORL _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS <- saveTensorflowModels borl
+toSerialisableWith :: (MonadIO m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
+toSerialisableWith f g borl@(BORL _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) = do
   return $ BORLSerialisable (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj expSmthRew v rew psis prS
 
-fromSerialisable :: (MonadBorl' m, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> TF.ModelBuilderFunction -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadIO m, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s -> m (BORL s)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
-     (MonadBorl' m, RewardFuture s)
-  => (s' -> s)
-  -> (StoreType s' -> StoreType s)
-  -> [Action s]
-  -> ActionFilter s
-  -> FeatureExtractor s
-  -> TF.ModelBuilderFunction
-  -> BORLSerialisable s'
-  -> m (BORL s)
-fromSerialisableWith f g as aF ftExt builder (BORLSerialisable st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
+     (MonadIO m, RewardFuture s) => (s' -> s) -> (StoreType s' -> StoreType s) -> [Action s] -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s' -> m (BORL s)
+fromSerialisableWith f g as aF ftExt (BORLSerialisable st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
   let aL = zip [idxStart ..] as
-      borl = BORL (VB.fromList aL) aF (f st) (mapWorkers f g workers') ftExt t e par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.fromList alg) obj expSmthRew lastV rew psis prS
+      borl =
+        BORL
+          (VB.fromList aL)
+          aF
+          (f st)
+          (mapWorkers f g workers')
+          ftExt
+          t
+          e
+          par
+          dec
+          setts
+          (map (mapRewardFutureData f g) future)
+          (mapAlgorithmState V.fromList alg)
+          obj
+          expSmthRew
+          lastV
+          rew
+          psis
+          prS
       pxs = borl ^. proxies
-      nrOutCols | isCombinedProxies pxs && isAlgDqn alg = 1
-                | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2
-                | isCombinedProxies pxs = 6
-                | otherwise = 1
-      borl' =
-        flip (foldl' (\b p -> over (proxies . p . proxyTFWorker) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) $
-        flip (foldl' (\b p -> over (proxies . p . proxyTFTarget) (\x -> x {tensorflowModelBuilder = builder nrOutCols}) b)) (allProxiesLenses pxs) borl
-  restoreTensorflowModels False borl'
-  return borl'
+      nrOutCols
+        | isCombinedProxies pxs && isAlgDqn alg = 1
+        | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2
+        | isCombinedProxies pxs = 6
+        | otherwise = 1
+  return borl
 
 
 instance Serialize Proxies
@@ -150,7 +156,6 @@ instance Serialize Proxy where
   put (Scalar x) = put (0 :: Int) >> put x
   put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) m) >> put d
   put (Grenade t w tp conf nr) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr
-  put (TensorflowProxy t w tp conf nr) = put (3 :: Int) >> put t >> put w >> put tp >> put conf >> put nr
   get = do
     (c :: Int) <- get
     case c of
@@ -171,13 +176,6 @@ instance Serialize Proxy where
             (w :: Network tLayers tShapes) <- get
             Grenade t w <$> get <*> get <*> get
           _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
-      3 -> do
-        t <- get
-        w <- get
-        tp <- get
-        conf <- get
-        nr <- get
-        return $ TensorflowProxy t w tp conf nr
       _ -> error "Unknown constructor for proxy"
 
 -- ^ Replay Memory

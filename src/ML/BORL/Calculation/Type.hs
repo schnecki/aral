@@ -6,6 +6,7 @@ module ML.BORL.Calculation.Type where
 
 
 import           Control.DeepSeq
+import           Control.Monad.IO.Class
 import           GHC.Generics
 
 import           ML.BORL.Reward
@@ -13,7 +14,7 @@ import           ML.BORL.Types
 
 
 type ReplMemFun s
-   = forall m. (MonadBorl' m) =>
+   = forall m. (MonadIO m) =>
                  (StateFeatures, FilteredActionIndices) -> ActionIndex -> Bool -> RewardValue -> (StateNextFeatures, FilteredActionIndices) -> EpisodeEnd -> ExpectedValuationNext -> m (Calculation, ExpectedValuationNext)
 
 data ExpectedValuationNext =

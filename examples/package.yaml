@@ -47,7 +47,6 @@ dependencies:
   - temporary
   - mtl
   - unix
-  - high-level-tensorflow
   - HUnit
   - cereal
   - cereal-text
@@ -196,5 +195,3 @@ executables:
     - borl
     - experimenter
     - hmatrix-glpk
-
-

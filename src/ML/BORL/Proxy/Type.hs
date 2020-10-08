@@ -11,13 +11,11 @@
 
 module ML.BORL.Proxy.Type
   ( ProxyType (..)
-  , Proxy (Scalar, Table, Grenade, TensorflowProxy, CombinedProxy)
+  , Proxy (Scalar, Table, Grenade, CombinedProxy)
   , prettyProxyType
   , proxyScalar
   , proxyTable
   , proxyDefault
-  , proxyTFTarget
-  , proxyTFWorker
   , proxyType
   , proxyNNConfig
   , proxyNrActions
@@ -30,7 +28,6 @@ module ML.BORL.Proxy.Type
   , multiplyWorkerProxy
   , replaceTargetProxyFromTo
   , isNeuralNetwork
-  , isTensorflow
   , isGrenade
   , isCombinedProxy
   , isTable
@@ -112,13 +109,6 @@ data Proxy
                                 , _proxyNNConfig  :: !NNConfig
                                 , _proxyNrActions :: !Int
                                 }
-  | TensorflowProxy -- ^ Use Tensorflow neural networks.
-      { _proxyTFTarget  :: !TensorflowModel'
-      , _proxyTFWorker  :: !TensorflowModel'
-      , _proxyType      :: !ProxyType
-      , _proxyNNConfig  :: !NNConfig
-      , _proxyNrActions :: !Int
-      }
   | CombinedProxy
       { _proxySub            :: Proxy -- ^ The actual proxy holding all combined values.
       , _proxyOutCol         :: Int -- ^ Output column/row of the data.
@@ -139,7 +129,6 @@ addWorkerProxy (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 
         nnCfg1
         nrActs1
     _ -> error "cannot replace worker1 of different type"
-addWorkerProxy TensorflowProxy{} _ = error "addWorkerProxy does not work on Tensorflow Proxies"
 addWorkerProxy (CombinedProxy px1 outCol1 expOut1) (CombinedProxy px2 _ _) = CombinedProxy (addWorkerProxy px1 px2) outCol1 expOut1
 addWorkerProxy x1 x2 = error $ "Cannot add proxies of differnt types: " ++ show (x1, x2)
 
@@ -151,7 +140,6 @@ multiplyWorkerProxy n (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 
     (toRational n |* target1) -- (disabled in addWorkerProxy)
     (toRational n |* worker1)
     tp1 nnCfg1 nrActs1
-multiplyWorkerProxy n TensorflowProxy{} = error "multiplyWorkerProxy does not work on Tensorflow Proxies"
 multiplyWorkerProxy n (CombinedProxy px1 outCol1 expOut1) = CombinedProxy (multiplyWorkerProxy n px1) outCol1 expOut1
 
 
@@ -168,7 +156,6 @@ replaceTargetProxyFromTo (Grenade (target1 :: Network layers1 shapes1) worker1 _
         tp2
         nnCfg2
         nrActs2
-replaceTargetProxyFromTo TensorflowProxy{} _ = error "replaceTargetProxy does not work on Tensorflow Proxies"
 replaceTargetProxyFromTo (CombinedProxy px1 _ _) (CombinedProxy px2 outCol2 expOut2) = CombinedProxy (replaceTargetProxyFromTo px1 px2) outCol2 expOut2
 replaceTargetProxyFromTo x1 x2 = error $ "Cannot replace proxies of differnt types: " ++ show (x1, x2)
 
@@ -188,29 +175,18 @@ proxyDefault :: Traversal' Proxy Float
 proxyDefault f (Table m d) = Table m <$> f d
 proxyDefault _ p           = pure p
 
-proxyTFTarget :: Traversal' Proxy TensorflowModel'
-proxyTFTarget f (TensorflowProxy t w tp conf acts) = (\t' -> TensorflowProxy t' w tp conf acts) <$> f t
-proxyTFTarget _ p = pure p
-
-proxyTFWorker :: Traversal' Proxy TensorflowModel'
-proxyTFWorker f (TensorflowProxy t w tp conf acts) = (\t' -> TensorflowProxy t' w tp conf acts) <$> f t
-proxyTFWorker _ p = pure p
-
 proxyType :: Traversal' Proxy ProxyType
 proxyType f (Grenade t w tp conf acts) = (\tp' -> Grenade t w tp' conf acts) <$> f tp
-proxyType f (TensorflowProxy t w tp conf acts) = (\tp' -> TensorflowProxy t w tp' conf acts) <$> f tp
 proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy (p { _proxyType = tp'}) c out) <$> f (_proxyType p)
 proxyType  _ p = pure p
 
 proxyNNConfig :: Traversal' Proxy NNConfig
 proxyNNConfig f (Grenade t w tp conf acts) = (\conf' -> Grenade t w tp conf' acts) <$> f conf
-proxyNNConfig f (TensorflowProxy t w tp conf acts) = (\conf' -> TensorflowProxy t w tp conf' acts) <$> f conf
 proxyNNConfig f (CombinedProxy p c out) = (\conf' -> CombinedProxy (p { _proxyNNConfig = conf'}) c out) <$> f (_proxyNNConfig p)
 proxyNNConfig  _ p = pure p
 
 proxyNrActions :: Traversal' Proxy Int
 proxyNrActions f (Grenade t w tp conf acts) = (\acts' -> Grenade t w tp conf acts') <$> f acts
-proxyNrActions f (TensorflowProxy t w tp conf acts) = (\acts' -> TensorflowProxy t w tp conf acts') <$> f acts
 proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
 proxyNrActions  _ p = pure p
 
@@ -231,35 +207,26 @@ instance Show Proxy where
   show (Scalar x)                  = "Scalar: " ++ show x
   show Table{}                     = "Table"
   show (Grenade _ _ t _ _)         = "Grenade " ++ show t
-  show (TensorflowProxy _ _ t _ _) = "TensorflowProxy " ++ show t
   show (CombinedProxy p col _)     = "CombinedProxy of " ++ show p ++ " at column " ++ show col
 
 prettyProxyType :: Proxy -> String
-prettyProxyType Scalar{} = "Scalar"
-prettyProxyType Table{} = "Tabular"
-prettyProxyType Grenade{} = "Grenade"
-prettyProxyType (TensorflowProxy _ w _ _ _) = "Tensorflow with " ++ show (map prettyOptimizerNames (optimizerVariables $ tensorflowModel w)) ++ " optimizer"
+prettyProxyType Scalar{}              = "Scalar"
+prettyProxyType Table{}               = "Tabular"
+prettyProxyType Grenade{}             = "Grenade"
 prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
 
 
 instance NFData Proxy where
   rnf (Table x def) = rnf x `seq` rnf def
   rnf (Grenade t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
-  rnf (TensorflowProxy t w tp cfg nrActs) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs
   rnf (Scalar x) = rnf x
   rnf (CombinedProxy p nr xs) = rnf p `seq` rnf nr `seq` rnf xs
 
 
 isNeuralNetwork :: Proxy -> Bool
 isNeuralNetwork Grenade{}             = True
-isNeuralNetwork TensorflowProxy{}     = True
 isNeuralNetwork (CombinedProxy p _ _) = isNeuralNetwork p
 isNeuralNetwork _                     = False
-
-isTensorflow :: Proxy -> Bool
-isTensorflow TensorflowProxy{}     = True
-isTensorflow (CombinedProxy p _ _) = isTensorflow p
-isTensorflow _                     = False
 
 isGrenade :: Proxy -> Bool
 isGrenade Grenade{}             = True
@@ -275,5 +242,3 @@ isTable :: Proxy -> Bool
 isTable Table{}               = True
 isTable (CombinedProxy p _ _) = isTable p
 isTable _                     = False
-
-

@@ -40,8 +40,6 @@ import           Grenade
 import           System.IO
 import           System.Random
 
-import qualified HighLevelTensorflow      as TF
-
 import           Debug.Trace
 
 maxX, maxY, goalX, goalY :: Int
@@ -55,7 +53,7 @@ expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld-mini 28.1."
-    , _experimentInfoParameters   = [isNN, isTf]
+    , _experimentInfoParameters   = [isNN]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
@@ -65,7 +63,6 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
-    isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 evals :: [StatsDef s]
 evals =
@@ -165,7 +162,7 @@ instance ExperimentDef (BORL St)
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter tblInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
@@ -285,12 +282,8 @@ experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
-  (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  let runner = runMonadBorlIO
-  ---
-  -- let mkInitSt = mkUnichainTensorflowM algBORL (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-  -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  -- let runner = runMonadBorlTF
+  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
+  let runner = liftIO
   ---
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
@@ -329,10 +322,6 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
-  -- Use an own neural network for every function to approximate
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig  borlSettings (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-
   -- Use a table to approximate the function (tabular version)
   -- let rl = mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
 
@@ -346,18 +335,6 @@ usermode = do
         (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
-
-modelBuilder :: (TF.MonadBuild m) => Int64 -> m TF.TensorflowModel
-modelBuilder colOut =
-  TF.buildModel $
-  TF.inputLayer1D inpLen >>
-  TF.fullyConnected [20] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- trainingByGradientDescent 0.01
-  where inpLen = fromIntegral $ V.length $ netInp initState
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
@@ -481,5 +458,3 @@ getCurrentIdx (St st) =
   second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
   zip [0..] $ map (zip [0..]) st
-
-

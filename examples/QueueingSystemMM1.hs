@@ -36,7 +36,6 @@ import           System.IO
 import           System.Random
 
 import           Experimenter
-import qualified HighLevelTensorflow    as TF
 import           ML.BORL                as B
 
 import           Helper
@@ -92,7 +91,7 @@ expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
-    , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN, isTf]
+    , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 1000000
     , _evaluationWarmUpSteps      = 0
@@ -108,7 +107,6 @@ expSetup borl =
     iFixedPayoffR = ExperimentInfoParameter "FixedPayoffR" fixedPayoffR
     iC = ExperimentInfoParameter "Holding Cost c" c
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
-    isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 evals :: [StatsDef s]
 evals =
@@ -167,13 +165,12 @@ policy maxAdmit (St s incoming) act
 
 instance ExperimentDef (BORL St) where
   type ExpM (BORL St) = IO
-  -- type ExpM (BORL St) = TF.SessionT IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter tblInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
@@ -299,12 +296,9 @@ experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay borlSettings  (Just initVals)
-  (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  let runner = runMonadBorlIO
+  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
+  let runner = liftIO
   ---
-  -- let mkInitSt = mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings  (Just initVals)
-  -- (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  -- let runner = runMonadBorlTF
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvals runner databaseSetup res evals
      -- print (view evalsResults evalRes)
@@ -356,11 +350,9 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade ) nnConfig borlSettings  (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
 
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings  (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
   askUser (Just mInverseSt) True usage cmds [] rl
   where cmds = []
@@ -380,19 +372,6 @@ modelBuilderGrenade cols =
     lenIn = fromIntegral $ V.length (netInp initState)
     lenActs = genericLength actions
 
-
-modelBuilder :: TF.ModelBuilderFunction
-modelBuilder colOut =
-  TF.buildModel $
-  TF.inputLayer1D inpLen >>
-  TF.fullyConnected [3*(inpLen + nrActs)] TF.relu' >>
-  TF.fullyConnected [2*nrActs] TF.relu' >>
-  TF.fullyConnected [2*nrActs] TF.relu' >>
-  TF.fullyConnected [nrActs, colOut] TF.tanh' >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.01, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- trainingByGradientDescent 0.01
-  where inpLen = fromIntegral $ V.length (netInp initState)
-        nrActs = genericLength actions
 
 netInp :: St -> V.Vector Float
 netInp (St len arr) = V.fromList [scaleMinMax (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleMinMax (0, 1) $ fromIntegral $ fromEnum arr]

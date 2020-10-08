@@ -32,7 +32,6 @@ import           System.IO
 import           System.Random
 
 import           Experimenter
-import qualified HighLevelTensorflow      as TF
 import           ML.BORL
 import           SolveLp
 
@@ -45,7 +44,7 @@ expSetup :: BORL St -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld"
-    , _experimentInfoParameters   = [isNN, isTf]
+    , _experimentInfoParameters   = [isNN]
     , _experimentRepetitions      = 3
     , _preparationSteps           = 300000
     , _evaluationWarmUpSteps      = 0
@@ -55,7 +54,6 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
-    isTf = ExperimentInfoParameter "Is tensorflow network" (isTensorflow (borl ^. proxies . v))
 
 evals :: [StatsDef s]
 evals =
@@ -131,14 +129,14 @@ policy s a
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
 instance ExperimentDef (BORL St) where
-  type ExpM (BORL St) = TF.SessionT IO
+  type ExpM (BORL St) = IO
   -- type ExpM (BORL St) = IO
   type InputValue (BORL St) = ()
   type InputState (BORL St) = ()
   type Serializable (BORL St) = BORLSerialisable St
   serialisable = toSerialisable
   deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter netInp modelBuilder
+  deserialisable = fromSerialisable actions actFilter netInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
@@ -255,13 +253,9 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
   ---
-  -- let rl = mkUnichainTabular algBORL (liftInitSt initState) netInp actions actFilter params decay Nothing
-  -- (changed, res) <- runExperiments runMonadBorlIO databaseSetup expSetup () rl
-  -- let runner = runMonadBorlIO
-  ---
-  let mkInitSt = mkUnichainTensorflowM algBORL (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-  (changed, res) <- runExperimentsM runMonadBorlTF databaseSetup expSetup () mkInitSt
-  let runner = runMonadBorlTF
+  rl <- mkUnichainTabular algBORL (liftInitSt initState) netInp actions actFilter params decay borlSettings (Just initVals)
+  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
+  let runner = liftIO
   ---
   putStrLn $ "Any change: " ++ show changed
   evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
@@ -302,8 +296,6 @@ usermode = do
 
   -- Use an own neural network for every function to approximate
   -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
@@ -322,19 +314,6 @@ maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 
-
-modelBuilder :: (TF.MonadBuild m) => Int64 -> m TF.TensorflowModel
-modelBuilder colOut =
-  TF.buildModel $
-  TF.inputLayer1D inpLen >>
-  TF.fullyConnected [20] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  -- TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- TF.trainingByGradientDescent 0.01
-  TF.trainingByRmsProp
-  where inpLen = fromIntegral $ V.length (netInp initState)
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
@@ -452,5 +431,3 @@ getCurrentIdx (St st) =
   second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
   zip [0..] $ map (zip [0..]) st
-
-

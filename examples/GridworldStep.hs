@@ -42,9 +42,6 @@ import           Grenade
 import           System.IO
 import           System.Random
 
-import qualified HighLevelTensorflow      as TF
-
-
 maxX, maxY, goalX, goalY :: Int
 maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
@@ -179,10 +176,6 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
-  -- Use an own neural network for every function to approximate
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilder nnConfig borlSettings (Just initVals)
-
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
 
@@ -195,19 +188,6 @@ usermode = do
         [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
         (tail names)
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
-
-
-modelBuilder :: TF.ModelBuilderFunction
-modelBuilder colOut =
-  TF.buildModel $
-  TF.inputLayer1D inpLen >>
-  TF.fullyConnected [20] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [genericLength actions, colOut] TF.tanh' >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- trainingByGradientDescent 0.01
-  where inpLen = fromIntegral $ V.length $ netInp initState
 
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!

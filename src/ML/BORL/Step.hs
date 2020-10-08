@@ -11,8 +11,6 @@ module ML.BORL.Step
     , steps
     , stepM
     , stepsM
-    , restoreTensorflowModels
-    , saveTensorflowModels
     , stepExecute
     , nextAction
     , epsCompareWith
@@ -61,7 +59,6 @@ import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Proxy                      as P
 import           ML.BORL.Reward
-import           ML.BORL.SaveRestore
 import           ML.BORL.Serialisable
 import           ML.BORL.Settings
 import           ML.BORL.Type
@@ -103,41 +100,28 @@ fileEpisodeLength = "episodeLength"
 steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
 steps !borl nr =
   fmap force $!
-  case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> runMonadBorlIO $ foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
-    Just _ ->
-      runMonadBorlTF $ do
-        void $ restoreTensorflowModels True borl
-        borl' <- foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
-        saveTensorflowModels borl'
+  liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
 
 
 step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
 step !borl =
   fmap force $!
-  case find isTensorflow (allProxies $ borl ^. proxies) of
-    Nothing -> nextAction borl >>= stepExecute borl
-    Just _ ->
-      runMonadBorlTF $ do
-        void $ restoreTensorflowModels True borl
-        borl' <- nextAction borl >>= stepExecute borl
-        saveTensorflowModels borl'
+  nextAction borl >>= stepExecute borl
 
--- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to step.
-stepM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
+-- | This keeps the MonadIO alive.
+stepM :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 stepM !borl = nextAction borl >>= stepExecute borl >>= \(b@BORL{}) -> return (force b)
 
--- | This keeps the Tensorflow session alive. For non-Tensorflow BORL data structures this is equal to steps, but forces
--- evaluation of the data structure every 1000 periods.
-stepsM :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
+-- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 100 periods.
+stepsM :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
 stepsM borl nr = do
   borl' <- foldM (\b _ -> stepM b) borl [1 .. min maxNr nr]
   if nr > maxNr
     then stepsM borl' (nr - maxNr)
     else return borl'
-  where maxNr = 1000
+  where maxNr = 100
 
-stepExecute :: forall m s . (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
+stepExecute :: forall m s . (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
 stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
@@ -197,7 +181,7 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (rando
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
-     forall m s. (MonadBorl' m, NFData s, Ord s, RewardFuture s)
+     forall m s. (MonadIO m, NFData s, Ord s, RewardFuture s)
   => AgentType
   -> (Int, Bool, BORL s)
   -> RewardFutureData s
@@ -211,7 +195,7 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> AgentType -> RewardFutureData s -> m (BORL s)
+execute :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> AgentType -> RewardFutureData s -> m (BORL s)
 execute borl agent (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
@@ -299,7 +283,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadBorl' m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
+writeDebugFiles :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
 writeDebugFiles borl = do
   let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardAdjusted (borl ^. algorithm)
   let isAnn
@@ -337,10 +321,6 @@ writeDebugFiles borl = do
   let stateFeats
         | isDqn = getStateFeatList (borl' ^. proxies . r1)
         | otherwise = getStateFeatList (borl' ^. proxies . v)
-      isTf
-        | isDqn && isTensorflow (borl' ^. proxies . r1) = True
-        | isTensorflow (borl' ^. proxies . v) = True
-        | otherwise = False
   stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
     stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats

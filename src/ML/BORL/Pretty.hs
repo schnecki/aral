@@ -16,22 +16,23 @@ module ML.BORL.Pretty
     ) where
 
 
-import           Control.Arrow         (first, second, (&&&), (***))
+import           Control.Arrow          (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad         (join, when)
-import           Data.Function         (on)
-import           Data.List             (find, foldl', intercalate, intersperse, sort,
-                                        sortBy)
-import qualified Data.Map.Strict       as M
-import           Data.Maybe            (fromMaybe, isJust)
-import qualified Data.Set              as S
-import qualified Data.Text             as T
-import qualified Data.Vector           as VB
-import qualified Data.Vector.Storable  as V
+import           Control.Monad          (join, when)
+import           Control.Monad.IO.Class
+import           Data.Function          (on)
+import           Data.List              (find, foldl', intercalate, intersperse, sort,
+                                         sortBy)
+import qualified Data.Map.Strict        as M
+import           Data.Maybe             (fromMaybe, isJust)
+import qualified Data.Set               as S
+import qualified Data.Text              as T
+import qualified Data.Vector            as VB
+import qualified Data.Vector.Storable   as V
 import           Grenade
-import           Prelude               hiding ((<>))
-import           System.IO.Unsafe      (unsafePerformIO)
-import           Text.PrettyPrint      as P
+import           Prelude                hiding ((<>))
+import           System.IO.Unsafe       (unsafePerformIO)
+import           Text.PrettyPrint       as P
 import           Text.Printf
 
 
@@ -41,12 +42,11 @@ import           ML.BORL.Decay
 import           ML.BORL.InftyVector
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
-import qualified ML.BORL.Proxy         as P
-import           ML.BORL.Proxy.Ops     (LookupType (..), getMinMaxVal, lookupNeuralNetwork,
-                                        mkNNList)
+import qualified ML.BORL.Proxy          as P
+import           ML.BORL.Proxy.Ops      (LookupType (..), getMinMaxVal,
+                                         lookupNeuralNetwork, mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
-import           ML.BORL.SaveRestore
 import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
@@ -84,15 +84,15 @@ type Modifier m = LookupType -> (NetInputWoAction, ActionIndex) -> Float -> m Fl
 noMod :: (Monad m) => Modifier m
 noMod _ _ = return
 
-modifierSubtract :: (MonadBorl' m) => BORL k -> P.Proxy -> Modifier m
+modifierSubtract :: (MonadIO m) => BORL k -> P.Proxy -> Modifier m
 modifierSubtract borl px lk k v0 = do
   vS <- P.lookupProxy (borl ^. t) lk k px
   return (v0 - vS)
 
-prettyTable :: (MonadBorl' m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadIO m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
-prettyTableRows :: (MonadBorl' m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
+prettyTableRows :: (MonadIO m, Show k, Ord k) => BORL k -> (NetInputWoAction -> Maybe (Maybe k, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ ->
@@ -109,7 +109,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
 
 
 mkListFromNeuralNetwork ::
-     (MonadBorl' m, Show k, Ord k, Eq k)
+     (MonadIO m, Show k, Ord k, Eq k)
   => BORL k
   -> (NetInputWoAction -> Maybe (Maybe k, String))
   -> (ActionIndex -> Doc)
@@ -139,7 +139,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
 
 
 prettyTablesState ::
-     (MonadBorl' m, Show s, Ord s)
+     (MonadIO m, Show s, Ord s)
   => BORL s
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
@@ -187,7 +187,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> float x
 
 
-prettyBORLTables :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
 prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -232,11 +232,11 @@ mkPrettyState mStInverse netinp =
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
 
-prettyBORLHead ::  (MonadBorl' m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLHead ::  (MonadIO m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
-prettyBORLHead' :: (MonadBorl' m, Show s) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s -> m Doc
+prettyBORLHead' :: (MonadIO m, Show s) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s -> m Doc
 prettyBORLHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
@@ -404,8 +404,6 @@ prettyBORLHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {} -> empty
         P.Grenade _ _ _ conf _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        P.TensorflowProxy _ _ _ conf _ -> textTensorflow conf (conf ^. grenadeLearningParams)
-        P.CombinedProxy (P.TensorflowProxy _ _ _ conf _) _ _ -> textTensorflow conf (conf ^. grenadeLearningParams)
         P.CombinedProxy (P.Grenade _ _ _ conf _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _ -> error "nnLearningParams in Pretty.hs"
       where
@@ -429,15 +427,6 @@ prettyBORLHead' printRho prettyStateFun borl = do
                       , printFloatWith 8 (realToFrac beta2)
                       , printFloatWith 8 (realToFrac epsilon)
                       , printFloatWith 8 (realToFrac lambda))))
-        textTensorflow :: NNConfig -> Optimizer opt -> Doc
-        textTensorflow conf (OptSGD rate _ _) =
-          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              l = dec $ realToFrac rate
-           in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
-        textTensorflow conf (OptAdam alpha _ _ _ _) =
-          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              l = realToFrac $ dec $ realToFrac alpha
-           in text "NN Learning Rate" <> colon $$ nest nestCols (text (show (printFloatWith 8 l)))
 
 -- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
 -- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
@@ -446,24 +435,16 @@ prettyBORLHead' printRho prettyStateFun borl = do
 prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
 prettyBORL = prettyBORLWithStInverse Nothing
 
-prettyBORLM :: (MonadBorl' m, Ord s, Show s) => BORL s -> m Doc
+prettyBORLM :: (MonadIO m, Ord s, Show s) => BORL s -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStInverse :: (MonadBorl' m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLMWithStInverse :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
 prettyBORLMWithStInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
 prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> IO Doc
 prettyBORLWithStInverse mStInverse borl =
-  case find isTensorflowProxy (allProxies $ borl ^. proxies) of
-    Nothing -> prettyBORLTables mStInverse True True True borl
-    Just _ ->
-      runMonadBorlTF $ do
-        restoreTensorflowModels True borl
-        prettyBORLTables mStInverse True True True borl
-  where
-    isTensorflowProxy P.TensorflowProxy {} = True
-    isTensorflowProxy _                    = False
+  prettyBORLTables mStInverse True True True borl
 
 instance (Ord s, Show s) => Show (BORL s) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyBORL borl

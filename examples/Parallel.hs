@@ -25,9 +25,6 @@ import           GHC.Exts             (fromList)
 import           GHC.Generics
 import           Grenade              hiding (train)
 
-import qualified HighLevelTensorflow  as TF
-
-
 -- State
 data St = Start | Top Int | Bottom Int | End
   deriving (Ord, Eq, Show,NFData,Generic)
@@ -63,18 +60,6 @@ minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64
 numActions = genericLength actions
-
-
-modelBuilder :: (TF.MonadBuild m) => Int64 -> m TF.TensorflowModel
-modelBuilder cols =
-  TF.buildModel $
-  TF.inputLayer1D numInputs >>
-  TF.fullyConnected [20] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [numActions, cols] TF.tanh' >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  where
-    numInputs = fromIntegral $ V.length (netInp initState)
 
 
 instance RewardFuture St where
@@ -128,8 +113,7 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
-  rl <- mkUnichainTensorflowCombinedNet alg (liftInitSt initState) netInp actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
   -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
@@ -237,5 +221,3 @@ moveDown _ s =
     Bottom nr | nr < maxSt -> (Reward 0, Bottom (nr+1), False)
     Bottom{}               ->  (Reward 0, End, False)
     End                    -> (Reward 0, Start, False)
-
-

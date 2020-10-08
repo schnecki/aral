@@ -39,8 +39,6 @@ import           Grenade
 import           System.Environment      (getArgs)
 import           System.IO.Unsafe        (unsafePerformIO)
 
-import qualified HighLevelTensorflow     as TF
-
 import           Helper
 import           ML.BORL
 import           ML.Gym
@@ -84,21 +82,6 @@ modelBuilderGrenade gym initState lenActs cols =
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length $ netInp False gym initState
-
-
-modelBuilder :: (TF.MonadBuild m) => Gym -> St -> Integer -> Int64 -> m TF.TensorflowModel
-modelBuilder gym initSt nrActions outCols =
-  TF.buildModel $
-  TF.inputLayer1D inpLen >>
-  TF.fullyConnected [10 * inpLen] TF.relu' >>
-  TF.fullyConnected [5 * inpLen] TF.relu' >>
-  TF.fullyConnected [5 * inpLen] TF.relu' >>
-  TF.fullyConnected [fromIntegral nrActions, outCols] TF.tanh' >>
-  -- TF.fullyConnectedLinear [fromIntegral nrActions, outCols] >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-  -- TF.trainingByGradientDescent 0.01
-  where
-    inpLen = fromIntegral $ V.length $ netInp False gym initSt
 
 
 nnConfig :: Gym -> Float -> NNConfig
@@ -314,8 +297,6 @@ main = do
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
-  -- rl <- mkUnichainTensorflowCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
-  -- rl <- mkUnichainTensorflow alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilder gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
   rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho

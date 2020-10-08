@@ -40,9 +40,6 @@ import           GHC.Generics
 import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
-import qualified HighLevelTensorflow  as TF
-
-
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig
@@ -88,15 +85,6 @@ numActions = fromIntegral $ length actions
 numInputs :: Int64
 numInputs = fromIntegral $ V.length (netInp initState)
 
-modelBuilder :: (TF.MonadBuild m) => m TF.TensorflowModel
-modelBuilder =
-  TF.buildModel $
-  TF.inputLayer1D numInputs >>
-  TF.fullyConnected [20] TF.relu' >>
-  TF.fullyConnected [10] TF.relu' >>
-  TF.fullyConnected [numActions] TF.tanh' >>
-  TF.trainingByAdamWith TF.AdamConfig {TF.adamLearningRate = 0.001, TF.adamBeta1 = 0.9, TF.adamBeta2 = 0.999, TF.adamEpsilon = 1e-8}
-
 
 modelBuilderGrenade :: Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade  cols =
@@ -135,7 +123,6 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
-  -- rl <- mkUnichainTensorflow alg (liftInitSt initState) actions actionFilter params decay modelBuilder nnConfig borlSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
@@ -238,5 +225,3 @@ moveRight tp s =
     Right 10 -> return (20, One, False)
     Right x  -> return (0, Right (x + 1), False)
     _        -> moveLeft tp s
-
-

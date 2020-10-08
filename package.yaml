@@ -51,7 +51,6 @@ dependencies:
   - temporary
   - mtl
   - unix
-  - high-level-tensorflow
   - HUnit
   - cereal
   - cereal-text
@@ -96,4 +95,3 @@ tests:
       - borl
       - QuickCheck
       - hspec
-

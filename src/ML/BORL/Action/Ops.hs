@@ -9,7 +9,7 @@ module ML.BORL.Action.Ops
 
 import           Control.Lens
 import           Control.Monad                  (zipWithM)
-import           Control.Monad.IO.Class         (liftIO)
+import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class      (lift)
 import           Control.Monad.Trans.Reader
 import           Control.Parallel.Strategies
@@ -44,13 +44,13 @@ type UseRand = Bool
 type WorkerActionChoice s = ActionChoice s
 
 data SelectedActions s = SelectedActions
-  { maximised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
-  , minimised :: ![(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
+  { maximised :: [(Float, ActionIndexed s)] -- ^ Choose actions by maximising objective
+  , minimised :: [(Float, ActionIndexed s)] -- ^ Choose actions by minimising objective
   }
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (MonadBorl' m) => BORL s -> m (NextActions s)
+nextAction :: (MonadIO m) => BORL s -> m (NextActions s)
 nextAction !borl = do
   mainAgent <- nextActionFor borl mainAgentStrategy (borl ^. s) (params' ^. exploration)  `using` rparWith rpar
   ws <- zipWithM (nextActionFor borl (borl ^. settings . explorationStrategy)) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
@@ -61,7 +61,7 @@ nextAction !borl = do
     mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
                       | otherwise = borl ^. settings . explorationStrategy
 
-nextActionFor :: (MonadBorl' m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
+nextActionFor :: (MonadIO m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
 nextActionFor borl strategy state explore
   | VB.null as = error "Empty action list"
   | VB.length as == 1 = return (False, VB.head as)
@@ -99,7 +99,7 @@ data ActionPickingConfig s =
     , actPickExpl  :: !Float
     }
 
-chooseAction :: (MonadBorl' m) => BORL s -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndexed s)
+chooseAction :: (MonadIO m) => BORL s -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndexed s)
 chooseAction borl useRand selFromList = do
   rand <- liftIO $ randomRIO (0, 1)
   state <- asks actPickState
@@ -201,4 +201,3 @@ epsCompareWith :: (Ord t, Num t) => t -> (t -> t -> p) -> t -> t -> p
 epsCompareWith eps f x y
   | abs (x - y) <= eps = f 0 0
   | otherwise = y `f` x
-
