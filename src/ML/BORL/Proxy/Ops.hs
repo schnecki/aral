@@ -347,8 +347,7 @@ lookupActionsNeuralNetwork :: (MonadIO m) => LookupType -> StateFeatures -> Prox
 lookupActionsNeuralNetwork !tp !k !px = V.map (unscaleValue scaleAlg (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
   where scaleAlg = px ^?! proxyNNConfig . scaleOutputAlgorithm
 
--- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies
--- an error is thrown.
+-- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Float
 lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px

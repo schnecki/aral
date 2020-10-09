@@ -71,30 +71,3 @@ type MinValue n = n
 
 replace :: Int -> a -> [a] -> [a]
 replace idx val ls = take idx ls ++ val : drop (idx+1) ls
-
--- | This is to ensure that Tensorflow code stays seperated from non TF Code w/o rquiering huge type inference runs.
---
--- This is BAD and not a Monad anymore!
--- Better refactor!
---
-
--- class (MonadIO m) => MonadBorl' m where
---   liftTf :: TF.SessionT IO a -> m a
-
--- instance (MonadBorl' (TF.SessionT IO)) where
---   liftTf = id
-
--- instance MonadUnliftIO (TF.SessionT IO) where
---   askUnliftIO = return $ UnliftIO runMonadBorlTF
-
--- instance (MonadBorl' IO) where
---   liftTf = error "You are using the wrong type: IO instead of Tensorflow's SessionT! See runMonadBorlTF and runMonadBorlIO"
-
--- liftTensorflow :: (MonadBorl' m) => TF.SessionT IO a -> m a
--- liftTensorflow = liftTf
-
--- runMonadBorlIO :: IO a -> IO a
--- runMonadBorlIO = id
-
--- runMonadBorlTF :: (MonadIO m, MonadMask m) => TF.SessionT m a -> m a
--- runMonadBorlTF = TF.runSession

@@ -186,7 +186,7 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _updateTargetInterval = 10000
+    , _updateTargetInterval = 1
     , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     }
 

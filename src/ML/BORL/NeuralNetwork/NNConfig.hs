@@ -37,7 +37,7 @@ data NNConfig =
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
     , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
-    , _grenadeSmoothTargetUpdate       :: !Rational                -- ^ Rate of smooth updates of the target network.
+    , _grenadeSmoothTargetUpdate       :: !Rational                -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
     , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.

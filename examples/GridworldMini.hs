@@ -209,11 +209,11 @@ nnConfig =
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _trainingIterations = 1
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
+    , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsReward False 6
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
@@ -224,7 +224,7 @@ nnConfig =
 
 borlSettings :: Settings
 borlSettings = def {_workersMinExploration = [0.3, 0.2, 0.1]
-                   , _nStep = 1
+                   , _nStep = 2
                    }
 
 
