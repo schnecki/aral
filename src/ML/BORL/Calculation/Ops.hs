@@ -78,11 +78,11 @@ keepXLastValues = 100
 mkCalculation ::
      (MonadIO m)
   => BORL s
-  -> (StateFeatures, FilteredActionIndices)
-  -> ActionIndex
+  -> (StateFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
+  -> [ActionIndex] -- ^ ActionIndex for each agent
   -> Bool
   -> RewardValue
-  -> (StateNextFeatures, FilteredActionIndices)
+  -> (StateNextFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
   -> EpisodeEnd
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
@@ -130,14 +130,15 @@ overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff
 mkCalculation' ::
      (MonadIO m)
   => BORL s
-  -> (StateFeatures, FilteredActionIndices)
-  -> ActionIndex
-  -> Bool
-  -> RewardValue
-  -> (StateNextFeatures, FilteredActionIndices)
-  -> EpisodeEnd
-  -> Algorithm NetInputWoAction
-  -> ExpectedValuationNext
+  -> ReplMemFun s
+  -- -> (StateFeatures, FilteredActionIndices)
+  -- -> [ActionIndex]
+  -- -> Bool
+  -- -> RewardValue
+  -- -> (StateNextFeatures, FilteredActionIndices)
+  -- -> EpisodeEnd
+  -- -> Algorithm NetInputWoAction
+  -- -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
 mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
   let params' = decayedParameters borl

@@ -7,6 +7,8 @@ module ML.BORL.NeuralNetwork.Conversion
     ( toHeadShapes
     , toLastShapes
     , fromLastShapes
+    , fromLastShapesVector
+    , NrAgents
     ) where
 
 import           Data.Singletons
@@ -32,11 +34,31 @@ toLastShapes _ inp =
     D2Sing SNat SNat      -> S2D $ tr $ matrix $ map realToFrac $ V.toList inp -- transpose as it is read in row major, but we got column major
     D3Sing SNat SNat SNat -> S3D $ tr $ matrix $ map realToFrac $ V.toList inp -- transpose as it is read in row major, but we got column major
 
+type NrAgents = Int
 
-fromLastShapes :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, V.Vector Float)
-fromLastShapes _ (tapes, S1D out)    = (tapes, V.map realToFrac $ extract out)
-fromLastShapes _ (tapes, S2D mat) = (tapes, V.concat $ map (V.map realToFrac . extract) $ toColumns mat)
-fromLastShapes _ _ = error "3D output not supported"
+-- | Get the ANN output as a vector.
+fromLastShapesVector :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, V.Vector Float)
+fromLastShapesVector _ (tapes, S1D out)    = (tapes, V.map realToFrac $ extract out)
+fromLastShapesVector _ (tapes, S2D mat) = (tapes, V.concat $ map (V.map realToFrac . extract) (toColumns mat))
+fromLastShapesVector _ _ = error "3D output not supported"
+
+
+fromLastShapes :: Network layers shapes -> NrAgents -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Values])
+fromLastShapes _ nrAgents (tapes, S1D out)    = (tapes, [toAgents nrAgents . V.map realToFrac $ extract out])
+fromLastShapes _ nrAgents (tapes, S2D mat) = (tapes, map (toAgents nrAgents . V.map realToFrac . extract) (toColumns mat))
+fromLastShapes _ _ _ = error "3D output not supported"
+
+-- | Split the data into the agent vectors
+toAgents :: Int -> V.Vector Float -> Values
+toAgents nr vec
+  | V.length vec `mod` nr /= 0 = error "undivisable length in toAgents in Conversion.hs"
+  | otherwise = AgentValues $ toAgents' 0
+  where
+    len = V.length vec `div` nr
+    toAgents' idx
+      | idx == len = []
+      | otherwise = V.slice (idx * len) len vec : toAgents' (idx + 1)
+
 
 -- -- | Create Vec from a list.
 -- reifySVec :: (KnownNat nr) => [a] -> SV.Vec nr a

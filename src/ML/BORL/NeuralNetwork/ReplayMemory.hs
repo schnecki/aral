@@ -47,7 +47,7 @@ instance NFData ReplayMemories where
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, V.Vector ActionIndex), ActionIndex, IsRandomAction, RewardValue, (StateNextFeatures, V.Vector ActionIndex), EpisodeEnd)
+type Experience = ((StateFeatures, [V.Vector ActionIndex]), [ActionIndex], IsRandomAction, RewardValue, (StateNextFeatures, [V.Vector ActionIndex]), EpisodeEnd)
 
 data ReplayMemory = ReplayMemory
   { _replayMemoryVector :: !(VM.IOVector Experience)
@@ -65,10 +65,11 @@ instance NFData ReplayMemory where
 
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
 addToReplayMemories _ e (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> addToReplayMemory e rm
-addToReplayMemories 1 e@(_, idx, _, _, _, _) (ReplayMemoriesPerActions tmp rs) = do
+addToReplayMemories 1 e@(_, [idx], _, _, _, _) (ReplayMemoriesPerActions tmp rs) = do
   let r = rs VI.! idx
   r' <- addToReplayMemory e r
   return $!! ReplayMemoriesPerActions tmp (rs VI.// [(idx, r')])
+addToReplayMemories 1 (_, _, _, _, _, _) ReplayMemoriesPerActions{} = error "ReplayMemoriesPerActions and multiple agents are incompatible!"
 addToReplayMemories _ e (ReplayMemoriesPerActions Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
   tmpRepMem' <- addToReplayMemory e tmpRepMem
@@ -76,7 +77,9 @@ addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
     then do -- temporary replay memory full, add experience to corresponding action memory
     let vec = tmpRepMem' ^. replayMemoryVector
     mems <- mapM (VM.read vec) [0.. tmpRepMem' ^. replayMemorySize-1]
-    let startIdx = head mems ^. _2
+    let startIdx = case head mems ^. _2 of
+          [idx] -> idx
+          _ -> error "ReplayMemoriesPerActions and multiple agents are incompatible!"
     let r = rs VI.! startIdx
     r' <- foldM (flip addToReplayMemory) r mems
     return $!! ReplayMemoriesPerActions (Just tmpRepMem') (rs VI.// [(startIdx, r')])
@@ -165,5 +168,3 @@ replayMemoriesSubSize (ReplayMemoriesUnified m) = m ^. replayMemorySize
 replayMemoriesSubSize (ReplayMemoriesPerActions _ xs)
   | VI.null xs = 0
   | otherwise = VI.head xs ^. replayMemorySize
-
-

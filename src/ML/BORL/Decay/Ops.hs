@@ -13,7 +13,7 @@ import           ML.BORL.Types
 type Decay = Period -> Parameters Float -> Parameters Float -- ^ Function specifying the decay of the parameters at time t.
 
 
-decaySetup :: DecaySetup -> Period -> Value -> DecayedValue
+decaySetup :: DecaySetup -> Period -> InitialValue -> DecayedValue
 decaySetup NoDecay                               = const id
 decaySetup (ExponentialDecay mMin rate steps)    = exponentialDecayValue mMin rate steps
 decaySetup (ExponentialIncrease mMin rate steps) = exponentialIncreaseValue mMin rate steps

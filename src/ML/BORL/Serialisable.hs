@@ -153,15 +153,15 @@ instance Serialize NNConfig where
 
 
 instance Serialize Proxy where
-  put (Scalar x) = put (0 :: Int) >> put x
-  put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) m) >> put d
-  put (Grenade t w tp conf nr) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr
+  put (Scalar x) = put (0 :: Int) >> put (V.toList x)
+  put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put d
+  put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
   get = do
     (c :: Int) <- get
     case c of
-      0 -> get >>= return . Scalar
+      0 -> get >>= return . Scalar . V.fromList
       1 -> do
-        m <- M.mapKeys (first V.fromList) <$> get
+        m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
         d <- get
         return $ Table m d
       2 -> do
@@ -170,11 +170,11 @@ instance Serialize Proxy where
           SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
             (t :: Network tLayers tShapes) <- get
             (w :: Network tLayers tShapes) <- get
-            Grenade t w <$> get <*> get <*> get
+            Grenade t w <$> get <*> get <*> get <*> get
           SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
             (t :: Network tLayers tShapes) <- get
             (w :: Network tLayers tShapes) <- get
-            Grenade t w <$> get <*> get <*> get
+            Grenade t w <$> get <*> get <*> get <*> get
           _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
       _ -> error "Unknown constructor for proxy"
 
@@ -184,12 +184,12 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    put $ map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.toList st, V.toList as), a, rand, rew, (V.toList st', V.toList as'), epsEnd)) xs
+    put $ map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.toList st, map V.toList as), a, rand, rew, (V.toList st', map V.toList as'), epsEnd)) xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    (xs :: [Experience]) <- map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.fromList st, V.fromList as), a, rand, rew, (V.fromList st', V.fromList as'), epsEnd)) <$> get
+    (xs :: [Experience]) <- map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.fromList st, map V.fromList as), a, rand, rew, (V.fromList st', map V.fromList as'), epsEnd)) <$> get
     maxIdx <- get
     return $
       unsafePerformIO $ do

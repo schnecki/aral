@@ -7,6 +7,7 @@
 
 module ML.BORL.NeuralNetwork.Grenade
     ( trainGrenade
+    , runGrenade
     ) where
 
 
@@ -79,12 +80,15 @@ makeGradients cropFun net chs
   | otherwise =
     foldl1 (|+) $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
-    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
+    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(xxx * act, cropFun out)] m) mempty chs
+    xxx = error "Grenade.hs"
     inputs = M.keys valueMap
-    (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapes net . runNetwork net . toHeadShapes net) inputs
+    (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
     labels = zipWith (V.//) outputs (M.elems valueMap)
+
+runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrAgents -> StateFeatures -> [Values]
+runGrenade net nrAgents st = snd $ fromLastShapes net nrAgents $ runNetwork net (toHeadShapes net st)
 
 
 mkLoss :: (Fractional a) => a -> a -> a
 mkLoss o t = let l = o-t in 0.5 * signum l * l^(2::Int)
-

@@ -117,7 +117,7 @@ import           Debug.Trace
 -------------------- Main RL Datatype --------------------
 
 type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
-type FilteredActions s = VB.Vector (ActionIndexed s)
+type FilteredActions s = [VB.Vector (ActionIndexed s)]
 
 data Objective
   = Minimise
@@ -125,7 +125,7 @@ data Objective
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s = BORL
-  { _actionList        :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s.
+  { _actionList        :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s each agent can do. All agents operate with the same possible actions!
   , _actionFilter      :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
   , _s                 :: !s                             -- ^ Current state.
   , _workers           :: !(Workers s)                   -- ^ Additional workers. (Workers s = [WorkerState s])
@@ -171,7 +171,7 @@ decayedParameters borl
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
 actionsIndexed :: BORL s -> s -> FilteredActions s
-actionsIndexed borl state = VB.ifilter (\idx _ -> filterVals V.! idx) (borl ^. actionList)
+actionsIndexed borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (borl ^. actionList)) filterVals
   where
     filterVals = (borl ^. actionFilter) state
 
@@ -240,7 +240,7 @@ mkUnichainTabular ::
   -> IO (BORL s)
 mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings initVals = do
   st <- initialStateFun MainAgent
-  let proxies' = Proxies (Scalar defRhoMin) (Scalar defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing
+  let proxies' = Proxies (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing
   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
   return $ BORL
     (VB.fromList $ zip [idxStart ..] as)
@@ -269,6 +269,7 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     defW = defaultW (fromMaybe defInitValues initVals)
     defR0 = defaultR0 (fromMaybe defInitValues initVals)
     defR1 = defaultR1 (fromMaybe defInitValues initVals)
+    agents = settings ^. independentAgents
 
 mkMultichainTabular ::
      Algorithm s
@@ -342,6 +343,8 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun n
     -- SpecConcreteNetwork3D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork3D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
 
+
+-- | Modelbuilder takes the number of output columns, which determins if the ANN is 1D or 2D! (#actions, #columns, 1)
 mkUnichainGrenadeCombinedNet ::
      forall s .
      Algorithm s
@@ -411,7 +414,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   print net
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as)
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents)
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -425,8 +428,8 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   initialState <- initialStateFun MainAgent
   let proxies' =
         case (sing :: Sing (Last shapes)) of
-          D1Sing SNat -> Proxies (Scalar defRhoMin) (Scalar defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
-          D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar defRhoMin) (Scalar defRho) nnComb repMem
+          D1Sing SNat -> Proxies (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
+          D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $
@@ -452,6 +455,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   where
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
+    agents = settings ^. independentAgents
 
 
 mkMultichainGrenade ::
@@ -488,7 +492,7 @@ mkMultichainGrenade ::
 mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig settings initVals = do
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as)
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents)
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable

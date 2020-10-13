@@ -15,7 +15,7 @@ import           ML.BORL.Types
 
 type DecayRate = Float
 type DecaySteps = Integer
-type Value = Float
+type InitialValue = Float
 type MinimumValue = Float
 type DecayedValue = Float
 
@@ -43,4 +43,3 @@ data DecaySetup
     }
   deriving (Generic, Show, Eq, Ord, NFData, Serialize)
 makeLenses ''DecaySetup
-
