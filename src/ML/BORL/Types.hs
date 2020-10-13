@@ -11,6 +11,7 @@ module ML.BORL.Types where
 import qualified Data.Vector.Storable as V
 
 type FilteredActionIndices = [V.Vector ActionIndex] -- ^ List of filtered action indices for each agent.
+type AgentsAction = [ActionIndex]                   -- ^ One action index per agent.
 type ActionIndex = Int
 type IsRandomAction = Bool
 type IsOptimalValue = Bool
@@ -65,17 +66,22 @@ type Gamma = Float
 newtype Value = AgentValue [Float]
 newtype Values = AgentValues [V.Vector Float]
 
+
+mapValue :: (Float -> Float) -> Value -> Value
+mapValue f (AgentValue vals) = AgentValue (fmap f vals)
+
 mapValues :: (V.Vector Float -> V.Vector Float) -> Values -> Values
 mapValues f (AgentValues vals) = AgentValues (fmap f vals)
 
+selectIndex :: Int -> Values -> Value
+selectIndex idx (AgentValues vals) = AgentValue (fmap (V.! idx) vals)
+
+
+zipWithValues :: (a -> V.Vector Float -> b) -> [a] -> Values -> [b]
+zipWithValues f as (AgentValues vals) = zipWith f as vals
+
 fromValues :: Values -> [V.Vector Float]
 fromValues (AgentValues xs) = xs
-
-singleAgentValue :: Float -> Value
-singleAgentValue = AgentValue . return
-
-singleAgentValues :: V.Vector Float -> Values
-singleAgentValues = AgentValues . return
 
 multiAgentValue :: V.Vector Float -> Value
 #ifdef DEBUG

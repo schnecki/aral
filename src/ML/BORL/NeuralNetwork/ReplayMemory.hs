@@ -47,7 +47,12 @@ instance NFData ReplayMemories where
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, [V.Vector ActionIndex]), [ActionIndex], IsRandomAction, RewardValue, (StateNextFeatures, [V.Vector ActionIndex]), EpisodeEnd)
+type Experience = ((StateFeatures, [V.Vector ActionIndex]),     -- State Features s & allowed actions per agent
+                   [ActionIndex],                               -- action a
+                   IsRandomAction,                              -- true, iff the action was randomly chosen
+                   RewardValue,                                 -- reward r
+                   (StateNextFeatures, [V.Vector ActionIndex]), -- state features s' & allowed actions per agent
+                   EpisodeEnd)                                  -- true, iff it is the end of the episode
 
 data ReplayMemory = ReplayMemory
   { _replayMemoryVector :: !(VM.IOVector Experience)

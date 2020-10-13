@@ -80,8 +80,7 @@ makeGradients cropFun net chs
   | otherwise =
     foldl1 (|+) $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
-    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(xxx * act, cropFun out)] m) mempty chs
-    xxx = error "Grenade.hs"
+    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
     inputs = M.keys valueMap
     (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
     labels = zipWith (V.//) outputs (M.elems valueMap)

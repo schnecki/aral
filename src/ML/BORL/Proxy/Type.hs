@@ -84,9 +84,9 @@ data Proxy
   = Scalar -- ^ Combines multiple proxies in one for performance benefits.
       { _proxyScalar :: !(V.Vector Float) -- ^ One value for each agent
       }
-  | Table -- ^ Representation using a table.
-      { _proxyTable   :: !(M.Map (V.Vector Float, [ActionIndex]) (V.Vector Float))
-      , _proxyDefault :: !Float
+  | Table  -- ^ Representation using a table.
+      { _proxyTable   :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Float))
+      , _proxyDefault :: !(V.Vector Float)
       }
   | forall nrH shapes layers. ( KnownNat nrH
                               , Head shapes ~ 'D1 nrH
@@ -111,8 +111,8 @@ data Proxy
                                 , _proxyNrAgents  :: !Int
                                 }
   | CombinedProxy
-      { _proxySub            :: Proxy -- ^ The actual proxy holding all combined values.
-      , _proxyOutCol         :: Int -- ^ Output column/row of the data.
+      { _proxySub            :: Proxy                                                -- ^ The actual proxy holding all combined values.
+      , _proxyOutCol         :: Int                                                  -- ^ Output column/row of the data.
       , _proxyExpectedOutput :: [[((StateFeatures, [ActionIndex]), V.Vector Float)]] -- ^ List of batches of list of n-step results. Used to save the data for learning.
       }
 
@@ -173,17 +173,17 @@ proxyScalar :: Traversal' Proxy (V.Vector Float)
 proxyScalar f (Scalar x) = Scalar <$> f x
 proxyScalar _ p          = pure p
 
-proxyTable :: Traversal' Proxy (M.Map (StateFeatures, [ActionIndex]) (V.Vector Float))
+proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Float))
 proxyTable f (Table m d) = flip Table d <$> f m
 proxyTable  _ p          = pure p
 
-proxyDefault :: Traversal' Proxy Float
+proxyDefault :: Traversal' Proxy (V.Vector Float)
 proxyDefault f (Table m d) = Table m <$> f d
 proxyDefault _ p           = pure p
 
 proxyType :: Traversal' Proxy ProxyType
 proxyType f (Grenade t w tp conf acts agents) = (\tp' -> Grenade t w tp' conf acts agents) <$> f tp
-proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy (p { _proxyType = tp'}) c out) <$> f (_proxyType p)
+proxyType f (CombinedProxy p c out) = (\tp' -> CombinedProxy ( p { _proxyType = tp'}) c out) <$> f (_proxyType p)
 proxyType  _ p = pure p
 
 proxyNNConfig :: Traversal' Proxy NNConfig

@@ -41,7 +41,7 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Parallel.Strategies hiding (r0)
 import           Data.Function               (on)
-import           Data.List                   (foldl', sortBy)
+import           Data.List                   (foldl', sortBy, transpose)
 import qualified Data.Map.Strict             as M
 import           Data.Maybe                  (fromMaybe, isNothing)
 import qualified Data.Vector                 as VB
@@ -304,23 +304,23 @@ trainBatch _ _ _ _ = error "called trainBatch on non-neural network proxy (progr
 
 
 -- | Retrieve a value.
-lookupProxy :: (MonadIO m) => Period -> LookupType -> (StateFeatures, [ActionIndex]) -> Proxy -> m Value
-lookupProxy _ _ _ (Scalar x)    = return $ singleAgentValue x
-lookupProxy _ _ k (Table m def) = return $ multiAgentValue $ V.fromList $ M.findWithDefault def k m
+lookupProxy :: (MonadIO m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Value
+lookupProxy _ _ _ (Scalar x)    = return $ AgentValue $ V.toList x
+lookupProxy _ _ k (Table m def) = return $ AgentValue $ V.toList $ M.findWithDefault def k m
 lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
 
 
 -- | Retrieve a value, but do not unscale! For DEBUGGING only!
-lookupProxyNoUnscale :: (MonadIO m) => Period -> LookupType -> (StateFeatures, [ActionIndex]) -> Proxy -> m Value
-lookupProxyNoUnscale _ _ _ (Scalar x)    = return $ singleAgentValue x
-lookupProxyNoUnscale _ _ k (Table m def) = return $ singleAgentValue $ M.findWithDefault def k m
+lookupProxyNoUnscale :: (MonadIO m) => Period -> LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Value
+lookupProxyNoUnscale _ _ _ (Scalar x)    = return $ AgentValue $ V.toList x
+lookupProxyNoUnscale _ _ k (Table m def) = return $ AgentValue $ V.toList $ M.findWithDefault def k m
 lookupProxyNoUnscale _ lkType k px       = lookupNeuralNetworkUnscaled lkType k px
 
 
--- | Retrieves the filtered output actions.
-lookupState :: (MonadIO m) => LookupType -> (StateFeatures, [V.Vector ActionIndex]) -> Proxy -> m Values
-lookupState _ (_, as) (Scalar x) = return $ singleAgentValues $ V.replicate (V.length as) x
-lookupState _ (k, as) (Table m def) = return $ singleAgentValues $ V.map (\a -> M.findWithDefault def (k, a) m) as
+-- | Retrieves all action values for the state but filters to the provided actions.
+lookupState :: (MonadIO m) => LookupType -> (StateFeatures, V.Vector ActionIndex) -> Proxy -> m Values
+lookupState _ (_, as) (Scalar x) = return $ AgentValues $ replicate (V.length as) x
+lookupState _ (k, as) (Table m def) = return $ AgentValues $ map V.fromList $ transpose $ map (\a -> V.toList $ M.findWithDefault def (k, a) m) (V.toList as)
 lookupState tp (k, as) px = do
   unfiltered@(AgentValues vals) <- lookupActionsNeuralNetwork tp k px
   if V.length (head vals) == V.length as
@@ -330,34 +330,41 @@ lookupState tp (k, as) px = do
 
 -- | Retrieve a value from a neural network proxy. The output is scaled to the original range. For other proxies an
 -- error is thrown. The returned value is up-scaled to the original interval before returned.
-lookupNeuralNetwork :: (MonadIO m) => LookupType -> (StateFeatures, [ActionIndex]) -> Proxy -> m Value
-lookupNeuralNetwork !tp !k !px = fmap (unscaleValue scaleAlg (getMinMaxVal px)) <$> lookupNeuralNetworkUnscaled tp k px
+lookupNeuralNetwork :: (MonadIO m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Value
+lookupNeuralNetwork !tp !k !px = mapValue unscaleVal <$> lookupNeuralNetworkUnscaled tp k px
   where scaleAlg = px ^?! proxyNNConfig . scaleOutputAlgorithm
+        unscaleVal = unscaleValue scaleAlg (getMinMaxVal px)
 
 -- | Retrieve all values of one feature from a neural network proxy. The output is scaled to the original range. For
 -- other proxies an error is thrown. The returned value is up-scaled to the original interval before returned.
 lookupActionsNeuralNetwork :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m Values
-lookupActionsNeuralNetwork !tp !k !px = V.map (unscaleValue scaleAlg (getMinMaxVal px)) <$> lookupActionsNeuralNetworkUnscaled tp k px
+lookupActionsNeuralNetwork !tp !k !px = mapValues (V.map unscaleVal) <$> lookupActionsNeuralNetworkUnscaled tp k px
   where scaleAlg = px ^?! proxyNNConfig . scaleOutputAlgorithm
+        unscaleVal = unscaleValue scaleAlg (getMinMaxVal px)
 
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies an error is thrown.
-lookupNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> (StateFeatures, [ActionIndex]) -> Proxy -> m Value
-lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{} = (V.! actIdx) <$> lookupActionsNeuralNetworkUnscaled tp st px
-lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, nr * px ^?! proxyNrActions + actIdx) px
+lookupNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> (StateFeatures, ActionIndex) -> Proxy -> m Value
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{} = selectIndex actIdx <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px nr _) = lookupNeuralNetworkUnscaled tp (st, actIdx) px
 lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m Values
-lookupActionsNeuralNetworkUnscaled Worker st (Grenade _ netW tp _ _ agents) = cached (Worker, tp, st) (return $ runGrenade netW st)
-lookupActionsNeuralNetworkUnscaled Target st px@(Grenade netT _ tp config _ agents)
-  | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaled Worker st px
-  | otherwise = cached (Target, tp, st) (return $ runGrenade netT st)
-lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) =
-  mapValues (V.slice (nr * nrActs) nrActs) <$> cached (tp, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaled tp st px)
-  where
-    nrActs = px ^?! proxyNrActions
+lookupActionsNeuralNetworkUnscaled tp st px@Grenade{} = head <$> lookupActionsNeuralNetworkUnscaledFull tp st px
+lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> lookupActionsNeuralNetworkUnscaledFull tp st px
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+
+
+-- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
+lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
+lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW tp _ _ agents) =
+  cached (Worker, tp, st) (return $ runGrenade netW agents st)
+lookupActionsNeuralNetworkUnscaledFull Target st px@(Grenade netT _ tp config _ agents)
+  | config ^. updateTargetInterval <= 1 = lookupActionsNeuralNetworkUnscaledFull Worker st px
+  | otherwise = cached (Target, tp, st) (return $ runGrenade netT agents st)
+lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{} = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
+lookupActionsNeuralNetworkUnscaledFull _ _ _ = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 
 -- headLookupActions :: [p] -> p
@@ -370,22 +377,22 @@ lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled ca
 -- | Caching of results
 type CacheKey = (LookupType, ProxyType, StateFeatures)
 
-cacheMVar :: MVar (M.Map CacheKey Values)
+cacheMVar :: MVar (M.Map CacheKey [Values])
 cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}
 
 emptyCache :: MonadIO m => m ()
 emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
 
-addCache :: (MonadIO m) => CacheKey -> Values -> m ()
+addCache :: (MonadIO m) => CacheKey -> [Values] -> m ()
 addCache k val = liftIO $ modifyMVar_ cacheMVar (return . M.insert k val)
 
-lookupCache :: (MonadIO m) => CacheKey -> m (Maybe Values)
+lookupCache :: (MonadIO m) => CacheKey -> m (Maybe [Values])
 lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 
 -- | Get output of function f, if possible from cache according to key (st).
-cached :: (MonadIO m) => (LookupType, ProxyType, StateFeatures) -> m Values -> m Values
+cached :: (MonadIO m) => (LookupType, ProxyType, StateFeatures) -> m [Values] -> m [Values]
 cached st ~f = do
   c <- lookupCache st
   case c of
