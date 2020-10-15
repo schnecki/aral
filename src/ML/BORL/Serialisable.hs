@@ -154,7 +154,7 @@ instance Serialize NNConfig where
 
 instance Serialize Proxy where
   put (Scalar x) = put (0 :: Int) >> put (V.toList x)
-  put (Table m d) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d)
+  put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
   get = do
     (c :: Int) <- get
@@ -163,7 +163,7 @@ instance Serialize Proxy where
       1 -> do
         m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
         d <- V.fromList <$> get
-        return $ Table m d
+        Table m d <$> get
       2 -> do
         (specT :: SpecNet) <- get
         case unsafePerformIO (networkFromSpecificationWith UniformInit specT) of

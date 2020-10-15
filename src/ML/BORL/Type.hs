@@ -262,7 +262,7 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     (0, 0, 0)
     proxies'
   where
-    tabSA def = Table mempty def
+    tabSA def = Table mempty def (length as)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
     defRho = defaultRho (fromMaybe defInitValues initVals)
     defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)
@@ -305,7 +305,7 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settin
       (0, 0, 0)
       (Proxies (tabSA defRhoMin) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
-    tabSA def = Table mempty def
+    tabSA def = Table mempty def (length as)
     defRhoMin = V.replicate agents $ defaultRhoMinimum (fromMaybe defInitValues initValues)
     defRho = V.replicate agents $ defaultRho (fromMaybe defInitValues initValues)
     defV = V.replicate agents $ defaultV (fromMaybe defInitValues initValues)

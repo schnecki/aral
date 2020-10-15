@@ -45,7 +45,7 @@ trainGrenade ::
   -> NNConfig
   -> Maybe (MinValue Float, MaxValue Float)
   -> Network layers shapes
-  -> [[((StateFeatures, ActionIndex), Float)]]
+  -> [[((StateFeatures, [ActionIndex]), V.Vector Float)]]
   -> Network layers shapes
 trainGrenade opt nnConfig mMinMaxVal net chs =
   let trainIter = nnConfig ^. trainingIterations
@@ -71,7 +71,7 @@ makeGradients ::
      forall layers shapes nrH. (GNum (Gradients layers), NFData (Tapes layers shapes), NFData (Gradients layers), KnownNat nrH, 'D1 nrH ~ Head shapes, SingI (Last shapes))
   => (Float -> Float)
   -> Network layers shapes
-  -> [((StateFeatures, ActionIndex), Float)]
+  -> [((StateFeatures, [ActionIndex]), V.Vector Float)]
   -> Gradients layers
 makeGradients _ _ [] = error "Empty list of n-step updates in NeuralNetwork.Grenade"
 makeGradients cropFun net chs
@@ -80,7 +80,7 @@ makeGradients cropFun net chs
   | otherwise =
     foldl1 (|+) $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
-    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
+    valueMap = foldl' (\m ((inp, acts), outs) -> M.insertWith (++) inp (zipWith (\act out -> (act, cropFun out)) acts (V.toList outs)) m) mempty chs
     inputs = M.keys valueMap
     (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
     labels = zipWith (V.//) outputs (M.elems valueMap)

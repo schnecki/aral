@@ -10,7 +10,7 @@ module ML.BORL.Types where
 
 import qualified Data.Vector.Storable as V
 
-type FilteredActionIndices = [V.Vector ActionIndex] -- ^ List of filtered action indices for each agent.
+type FilteredActionIndices = [V.Vector ActionIndex] -- ^ Allowed actions for each agent.
 type AgentsAction = [ActionIndex]                   -- ^ One action index per agent.
 type ActionIndex = Int
 type IsRandomAction = Bool
@@ -66,6 +66,28 @@ type Gamma = Float
 newtype Value = AgentValue [Float]
 newtype Values = AgentValues [V.Vector Float]
 
+instance Num Value where
+  (AgentValue xs) + (AgentValue ys) = AgentValue (zipWith (+) xs ys)
+  (AgentValue xs) - (AgentValue ys) = AgentValue (zipWith (-) xs ys)
+  (AgentValue xs) * (AgentValue ys) = AgentValue (zipWith (*) xs ys)
+  abs (AgentValue xs) = AgentValue (map abs xs)
+  signum (AgentValue xs) = AgentValue (map signum xs)
+  fromInteger nr = AgentValue (repeat $ fromIntegral nr)
+
+toValue :: Int -> Float -> Value
+toValue nr v = AgentValue $ replicate nr v
+
+(.*) :: Float -> Value -> Value
+x .* (AgentValue xs) = AgentValue (map (x*) xs)
+infixl 7 .*
+
+(*.) :: Value -> Float -> Value
+(AgentValue xs) *. x = AgentValue (map (*x) xs)
+infixl 7 *.
+
+fromValue :: Value -> [Float]
+fromValue (AgentValue xs) = xs
+
 
 mapValue :: (Float -> Float) -> Value -> Value
 mapValue f (AgentValue vals) = AgentValue (fmap f vals)
@@ -73,9 +95,11 @@ mapValue f (AgentValue vals) = AgentValue (fmap f vals)
 mapValues :: (V.Vector Float -> V.Vector Float) -> Values -> Values
 mapValues f (AgentValues vals) = AgentValues (fmap f vals)
 
-selectIndex :: Int -> Values -> Value
-selectIndex idx (AgentValues vals) = AgentValue (fmap (V.! idx) vals)
+selectIndices :: [ActionIndex] -> Values -> Value
+selectIndices idxs (AgentValues vals) = AgentValue (zipWith (V.!) vals idxs)
 
+reduceValues :: (V.Vector Float -> Float) -> Values -> Value
+reduceValues f (AgentValues vals) = AgentValue (map f vals)
 
 zipWithValues :: (a -> V.Vector Float -> b) -> [a] -> Values -> [b]
 zipWithValues f as (AgentValues vals) = zipWith f as vals

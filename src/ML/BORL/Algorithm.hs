@@ -42,8 +42,8 @@ data Algorithm s
   = AlgBORL !GammaLow
             !GammaHigh
             !AvgReward
-            !(Maybe (s, ActionIndex))
-  | AlgBORLVOnly !AvgReward !(Maybe (s, ActionIndex)) -- ^ DQN algorithm but subtracts average reward in every state
+            !(Maybe (s, [ActionIndex]))
+  | AlgBORLVOnly !AvgReward !(Maybe (s, [ActionIndex])) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN !Gamma !Comparison
   | AlgDQNAvgRewAdjusted !GammaMiddle !GammaHigh !AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)

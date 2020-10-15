@@ -85,8 +85,9 @@ data Proxy
       { _proxyScalar :: !(V.Vector Float) -- ^ One value for each agent
       }
   | Table  -- ^ Representation using a table.
-      { _proxyTable   :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Float))
-      , _proxyDefault :: !(V.Vector Float)
+      { _proxyTable     :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Float)) -- ^ Shared state and one action for each agent, returns one value for each agent.
+      , _proxyDefault   :: !(V.Vector Float)
+      , _proxyNrActions :: !Int
       }
   | forall nrH shapes layers. ( KnownNat nrH
                               , Head shapes ~ 'D1 nrH
@@ -119,7 +120,7 @@ data Proxy
 -- | This function adds two proxies. The proxies must be of the same type and for Grenade of the same shape. It does not work with Tenforflow proxies!
 addWorkerProxy :: Proxy -> Proxy -> Proxy
 addWorkerProxy (Scalar x) (Scalar y)   = Scalar (x+y)
-addWorkerProxy (Table x d) (Table y _) = Table (mergeTables x y) d
+addWorkerProxy (Table x d acts) (Table y _ _) = Table (mergeTables x y) d acts
 addWorkerProxy (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1 nrAgents1) (Grenade (target2 :: Network layers2 shapes2) worker2 _ _ _ _) =
   case (cast worker2, cast target2) of
     (Just worker2', Just target2') ->
@@ -136,7 +137,7 @@ addWorkerProxy x1 x2 = error $ "Cannot add proxies of differnt types: " ++ show 
 
 multiplyWorkerProxy :: Float -> Proxy -> Proxy
 multiplyWorkerProxy n (Scalar x) = Scalar (V.map (n *) x)
-multiplyWorkerProxy n (Table x d) = Table (M.map (V.map (* n)) x) d
+multiplyWorkerProxy n (Table x d acts) = Table (M.map (V.map (* n)) x) d acts
 multiplyWorkerProxy n (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1 nrAgents1) =
   Grenade
     (toRational n |* target1) -- (disabled in addWorkerProxy)
@@ -150,7 +151,7 @@ multiplyWorkerProxy n (CombinedProxy px1 outCol1 expOut1) = CombinedProxy (multi
 
 replaceTargetProxyFromTo :: Proxy -> Proxy -> Proxy
 replaceTargetProxyFromTo (Scalar x) (Scalar _)   = Scalar x
-replaceTargetProxyFromTo (Table x d) (Table _ _) = Table x d
+replaceTargetProxyFromTo (Table x d acts) (Table _ _ _) = Table x d acts
 replaceTargetProxyFromTo (Grenade (target1 :: Network layers1 shapes1) worker1 _ _ _ _) (Grenade (target2 :: Network layers2 shapes2) worker2 tp2 nnCfg2 nrActs2 nrAgents2) =
   case cast worker1 of
     Nothing -> error "cannot replace target1 of different type"
@@ -174,12 +175,12 @@ proxyScalar f (Scalar x) = Scalar <$> f x
 proxyScalar _ p          = pure p
 
 proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Float))
-proxyTable f (Table m d) = flip Table d <$> f m
-proxyTable  _ p          = pure p
+proxyTable f (Table m d acts) = (\m' -> Table m' d acts) <$> f m
+proxyTable  _ p               = pure p
 
 proxyDefault :: Traversal' Proxy (V.Vector Float)
-proxyDefault f (Table m d) = Table m <$> f d
-proxyDefault _ p           = pure p
+proxyDefault f (Table m d acts) = (\d' -> Table m d' acts) <$> f d
+proxyDefault _ p                = pure p
 
 proxyType :: Traversal' Proxy ProxyType
 proxyType f (Grenade t w tp conf acts agents) = (\tp' -> Grenade t w tp' conf acts agents) <$> f tp
@@ -192,6 +193,7 @@ proxyNNConfig f (CombinedProxy p c out) = (\conf' -> CombinedProxy (p { _proxyNN
 proxyNNConfig  _ p = pure p
 
 proxyNrActions :: Traversal' Proxy Int
+proxyNrActions f (Table m d acts) = (\acts' -> Table m d acts') <$> f acts
 proxyNrActions f (Grenade t w tp conf acts agents) = (\acts' -> Grenade t w tp conf acts' agents) <$> f acts
 proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
 proxyNrActions  _ p = pure p
@@ -212,7 +214,7 @@ proxyExpectedOutput _ p = pure p
 instance Show Proxy where
   show (Scalar x)                  = "Scalar: " ++ show x
   show Table{}                     = "Table"
-  show (Grenade _ _ t _ _ agents)         = "Grenade " ++ show t
+  show (Grenade _ _ t _ _ agents)  = "Grenade " ++ show t
   show (CombinedProxy p col _)     = "CombinedProxy of " ++ show p ++ " at column " ++ show col
 
 prettyProxyType :: Proxy -> String
@@ -223,7 +225,7 @@ prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProx
 
 
 instance NFData Proxy where
-  rnf (Table x def) = rnf x `seq` rnf def
+  rnf (Table x def acts) = rnf x `seq` rnf def `seq` rnf acts
   rnf (Grenade t w tp cfg nrActs agents) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents
   rnf (Scalar x) = rnf x
   rnf (CombinedProxy p nr xs) = rnf p `seq` rnf nr `seq` rnf xs

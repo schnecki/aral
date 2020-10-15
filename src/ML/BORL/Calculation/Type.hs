@@ -14,9 +14,15 @@ import           ML.BORL.Reward
 import           ML.BORL.Types
 
 
-type ReplMemFun s
-   = forall m. (MonadIO m) =>
-                 (StateFeatures, FilteredActionIndices) -> [ActionIndex] -> Bool -> RewardValue -> (StateNextFeatures, FilteredActionIndices) -> EpisodeEnd -> ExpectedValuationNext -> m (Calculation, ExpectedValuationNext)
+type ReplMemFun m s
+   = (StateFeatures, FilteredActionIndices)
+   -> [ActionIndex]
+   -> Bool
+   -> RewardValue
+   -> (StateNextFeatures, FilteredActionIndices)
+   -> EpisodeEnd
+   -> ExpectedValuationNext
+   -> m ( Calculation, ExpectedValuationNext)
 
 data ExpectedValuationNext =
   ExpectedValuationNext
