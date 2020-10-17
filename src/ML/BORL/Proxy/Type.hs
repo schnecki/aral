@@ -19,6 +19,7 @@ module ML.BORL.Proxy.Type
   , proxyType
   , proxyNNConfig
   , proxyNrActions
+  , proxyNrAgents
   , proxySub
   , proxyOutCol
   , proxyExpectedOutput
@@ -114,7 +115,7 @@ data Proxy
   | CombinedProxy
       { _proxySub            :: Proxy                                                -- ^ The actual proxy holding all combined values.
       , _proxyOutCol         :: Int                                                  -- ^ Output column/row of the data.
-      , _proxyExpectedOutput :: [[((StateFeatures, [ActionIndex]), V.Vector Float)]] -- ^ List of batches of list of n-step results. Used to save the data for learning.
+      , _proxyExpectedOutput :: [[((StateFeatures, [ActionIndex]), Value)]]          -- ^ List of batches of list of n-step results. Used to save the data for learning.
       }
 
 -- | This function adds two proxies. The proxies must be of the same type and for Grenade of the same shape. It does not work with Tenforflow proxies!
@@ -198,6 +199,11 @@ proxyNrActions f (Grenade t w tp conf acts agents) = (\acts' -> Grenade t w tp c
 proxyNrActions f (CombinedProxy p c out) = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
 proxyNrActions  _ p = pure p
 
+proxyNrAgents :: Traversal' Proxy Int
+proxyNrAgents f (Grenade t w tp conf acts agents) = (\agents' -> Grenade t w tp conf acts agents') <$> f agents
+proxyNrAgents f (CombinedProxy p c out) = (\agents' -> CombinedProxy (p {_proxyNrAgents = agents'}) c out) <$> f (_proxyNrAgents p)
+proxyNrAgents _ p = pure p
+
 proxySub :: Traversal' Proxy Proxy
 proxySub f (CombinedProxy p c out) = (\p' -> CombinedProxy p' c out) <$> f p
 proxySub _ p                       = pure p
@@ -206,9 +212,9 @@ proxyOutCol :: Traversal' Proxy Int
 proxyOutCol f (CombinedProxy p c out) = (\c' -> CombinedProxy p c' out) <$> f c
 proxyOutCol _ p                       = pure p
 
-proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, [ActionIndex]), V.Vector Float)]]
-proxyExpectedOutput f (CombinedProxy p c out) = (\out' -> CombinedProxy p c out') <$> f out
-proxyExpectedOutput _ p = pure p
+proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, [ActionIndex]), Value)]]
+proxyExpectedOutput f (CombinedProxy p c out) = (CombinedProxy p c) <$> f out
+proxyExpectedOutput _ p                       = pure p
 
 
 instance Show Proxy where

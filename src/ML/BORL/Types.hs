@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InstanceSigs        #-}
@@ -8,11 +10,21 @@
 {-# OPTIONS_GHC -fno-cse #-}
 module ML.BORL.Types where
 
+import           Control.DeepSeq
+import           Data.Serialize
+import qualified Data.Vector          as VB
 import qualified Data.Vector.Storable as V
+import           GHC.Generics
 
-type FilteredActionIndices = [V.Vector ActionIndex] -- ^ Allowed actions for each agent.
-type AgentsAction = [ActionIndex]                   -- ^ One action index per agent.
+-- Action
+type Action as = as
+type FilteredActions as = [VB.Vector (Action as)] -- ^ List of agents with possible actions for each agent.
+
+-- ActionIndex
 type ActionIndex = Int
+type FilteredActionIndices = [V.Vector ActionIndex] -- ^ Allowed actions for each agent.
+
+
 type IsRandomAction = Bool
 type IsOptimalValue = Bool
 type ActionFilter s = s -> [V.Vector Bool] -- ^ List of action flags for each agent. Each Vector must be of the length
@@ -64,7 +76,10 @@ type Gamma = Float
 --   | ValuesUnfiltered
 
 newtype Value = AgentValue [Float]
+  deriving (Show, Generic, NFData, Serialize)
+
 newtype Values = AgentValues [V.Vector Float]
+
 
 instance Num Value where
   (AgentValue xs) + (AgentValue ys) = AgentValue (zipWith (+) xs ys)
@@ -85,12 +100,39 @@ infixl 7 .*
 (AgentValue xs) *. x = AgentValue (map (*x) xs)
 infixl 7 *.
 
+(.+) :: Float -> Value -> Value
+x .+ (AgentValue xs) = AgentValue (map (x+) xs)
+infixl 6 .+
+
+(+.) :: Value -> Float -> Value
+(AgentValue xs) +. x = AgentValue (map (+x) xs)
+infixl 6 +.
+
+(.-) :: Float -> Value -> Value
+x .- (AgentValue xs) = AgentValue (map (x-) xs)
+infixl 6 .-
+
+(-.) :: Value -> Float -> Value
+(AgentValue xs) -. x = AgentValue (map (subtract x) xs)
+infixl 6 -.
+
+
 fromValue :: Value -> [Float]
 fromValue (AgentValue xs) = xs
 
 
 mapValue :: (Float -> Float) -> Value -> Value
 mapValue f (AgentValue vals) = AgentValue (fmap f vals)
+
+reduceValue :: ([Float] -> Float) -> Value -> Float
+reduceValue f (AgentValue vals) = f vals
+
+selectIndex :: Int -> Value -> Float
+selectIndex idx (AgentValue vals) = vals !! idx
+
+
+zipWithValue :: (Float -> Float -> Float) -> Value -> Value -> Value
+zipWithValue f (AgentValue xs) (AgentValue ys) = AgentValue $ zipWith f xs ys
 
 mapValues :: (V.Vector Float -> V.Vector Float) -> Values -> Values
 mapValues f (AgentValues vals) = AgentValues (fmap f vals)

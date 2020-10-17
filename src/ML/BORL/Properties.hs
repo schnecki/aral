@@ -13,16 +13,16 @@ import           Control.Lens          ((^.))
 -------------------- Properties --------------------
 
 
-isMultichain :: BORL s -> Bool
+isMultichain :: BORL s as -> Bool
 isMultichain borl =
   case borl ^. proxies.rho of
     Scalar {} -> False
     _         -> True
 
 
-isUnichain :: BORL s -> Bool
+isUnichain :: BORL s as -> Bool
 isUnichain = not . isMultichain
 
 
-isAnn :: BORL s -> Bool
+isAnn :: BORL s as -> Bool
 isAnn borl = any isNeuralNetwork (allProxies $ borl ^. proxies)

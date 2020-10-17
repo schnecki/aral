@@ -1,4 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module ML.BORL.Action.Ops
   ( NextActions
   , ActionChoice
@@ -36,7 +37,7 @@ import           ML.BORL.Workers.Type
 
 import           Debug.Trace
 
-type ActionChoice s = (IsRandomAction, ActionIndexed s)
+type ActionChoice s = [(IsRandomAction, ActionIndexed s)]                       -- ^ One action per agent
 type ActionSelection s = [[(Float, ActionIndexed s)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
 type NextActions s = (ActionChoice s, [WorkerActionChoice s])
 type RandomNormValue = Float
@@ -62,21 +63,39 @@ nextAction !borl = do
                       | otherwise = borl ^. settings . explorationStrategy
 
 nextActionFor :: (MonadIO m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
-nextActionFor borl strategy state explore
-  | VB.null as = error "Empty action list"
-  | VB.length as == 1 = return (False, VB.head as)
-  | otherwise =
-    flip runReaderT cfg $
-    case strategy of
-      Greedy -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs))
-      EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
-      SoftmaxBoltzmann t0
-        | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
-        | otherwise -> chooseAction borl False (chooseBySoftmax temp)
-        where temp = t0 * explore
+nextActionFor borl strategy state explore = zipWithM chooseAgentAction acts [0 ..]
   where
-    cfg = ActionPickingConfig state explore
-    as = actionsIndexed borl state
+    acts = actionsIndexed borl state
+    chooseAgentAction as agentIndex
+      | VB.null as = error $ "Empty action list for at least one agent: " ++ show acts
+      | VB.length as == 1 = return (False, VB.head as)
+      | otherwise =
+        flip runReaderT cfg $
+        case strategy of
+          Greedy -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs))
+          EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
+          SoftmaxBoltzmann t0
+            | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
+            | otherwise -> chooseAction borl False (chooseBySoftmax temp)
+            where temp = t0 * explore
+      where
+        cfg = ActionPickingConfig state explore agentIndex (VB.toList as)
+
+-- nextActionFor :: (MonadIO m) => BORL s -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
+-- nextActionFor borl strategy state explore
+--   | any VB.null as = error $ "Empty action list for at least one agent: " ++ show as
+--   | otherwise =
+--     flip runReaderT cfg $
+--     case strategy of
+--       Greedy -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs))
+--       EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
+--       SoftmaxBoltzmann t0
+--         | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
+--         | otherwise -> chooseAction borl False (chooseBySoftmax temp)
+--         where temp = t0 * explore
+--   where
+--     cfg = ActionPickingConfig state explore (map VB.toList as)
+--     as = actionsIndexed borl state
 
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
@@ -95,8 +114,10 @@ chooseByProbability r idx acc (v:vs)
 
 data ActionPickingConfig s =
   ActionPickingConfig
-    { actPickState :: !s
-    , actPickExpl  :: !Float
+    { actPickState      :: !s
+    , actPickExpl       :: !Float
+    , actPickAgentIndex :: !Int
+    , actPickActions    :: [ActionIndexed s]
     }
 
 chooseAction :: (MonadIO m) => BORL s -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndexed s)
@@ -104,7 +125,7 @@ chooseAction borl useRand selFromList = do
   rand <- liftIO $ randomRIO (0, 1)
   state <- asks actPickState
   explore <- asks actPickExpl
-  let as = VB.toList $ actionsIndexed borl state
+  as <- asks actPickActions
   lift $
     if useRand && rand < explore
       then do
@@ -116,10 +137,11 @@ chooseAction borl useRand selFromList = do
                  if isUnichain borl
                    then return as
                    else do
-                     rhoVals <- mapM (rhoValue borl state . fst) as
-                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
+                     (agentsRhoVals :: [Value]) <- mapM (rhoValue borl state . map fst) as -- every agent has a list of possible actions
+
+                     map (map snd . maxOrMin) <$> liftIO $ mapM (\rhoVals -> selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip (fromValue rhoVals) as)) agentsRhoVals
                bestV <-
-                 do vVals <- mapM (vValue borl state . fst) bestRho
+                 do (vVals :: [Value]) <- mapM (vValue borl state . map fst) bestRho
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
                if length bestV == 1
                  then return (False, head bestV)

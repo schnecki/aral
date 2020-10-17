@@ -48,8 +48,9 @@ import           ML.BORL.Workers.Type
 import           Debug.Trace
 
 
-data BORLSerialisable s = BORLSerialisable
-  { serS                 :: !s                    -- ^ Current state.
+data BORLSerialisable s as = BORLSerialisable
+  { serActionList        :: ![as]
+  , serS                 :: !s                    -- ^ Current state.
   , serWorkers           :: !(Workers s)          -- ^ Workers
   , serT                 :: !Int                  -- ^ Current time t.
   , serEpisodeNrStart    :: !(Int, Int)           -- ^ Nr of Episode and start period.
@@ -64,30 +65,37 @@ data BORLSerialisable s = BORLSerialisable
 
   -- Values:
   , serExpSmoothedReward :: Float                  -- ^ Exponentially smoothed reward
-  , serLastVValues       :: ![Float]               -- ^ List of X last V values
+  , serLastVValues       :: ![Value]               -- ^ List of X last V values
   , serLastRewards       :: ![Float]               -- ^ List of X last rewards
   , serPsis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadIO m, RewardFuture s) => BORL s -> m (BORLSerialisable s)
+toSerialisable :: (MonadIO m, RewardFuture s, Enum as, Bounded as) => BORL s as -> m (BORLSerialisable s as)
 toSerialisable = toSerialisableWith id id
 
 
-toSerialisableWith :: (MonadIO m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s -> m (BORLSerialisable s')
-toSerialisableWith f g borl@(BORL _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) = do
-  return $ BORLSerialisable (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj expSmthRew v rew psis prS
+toSerialisableWith :: (MonadIO m, RewardFuture s', Enum as, Bounded as) => (s -> s') -> (StoreType s -> StoreType s') -> BORL s as -> m (BORLSerialisable s' as)
+toSerialisableWith f g borl@(BORL as _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) = do
+  return $ BORLSerialisable (VB.toList as) (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj expSmthRew v rew psis prS
 
-fromSerialisable :: (MonadIO m, RewardFuture s) => [Action s] -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s -> m (BORL s)
+fromSerialisable :: (MonadIO m, RewardFuture s, Enum as, Bounded as) => ActionFunction s as -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s as -> m (BORL s as)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
-     (MonadIO m, RewardFuture s) => (s' -> s) -> (StoreType s' -> StoreType s) -> [Action s] -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s' -> m (BORL s)
-fromSerialisableWith f g as aF ftExt (BORLSerialisable st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
-  let aL = zip [idxStart ..] as
-      borl =
+     (MonadIO m, RewardFuture s, Enum as, Bounded as)
+  => (s' -> s)
+  -> (StoreType s' -> StoreType s)
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> FeatureExtractor s
+  -> BORLSerialisable s' as
+  -> m (BORL s as)
+fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
+  let borl =
         BORL
-          (VB.fromList aL)
+          (VB.fromList as)
+          asFun
           aF
           (f st)
           (mapWorkers f g workers')

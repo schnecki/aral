@@ -21,7 +21,6 @@ module ML.BORL.Type
   , setObjective
   , flipObjective
     -- common
-  , ActionIndexed
   , RewardFutureData (..)
   , futurePeriod
   , futureState
@@ -54,9 +53,8 @@ module ML.BORL.Type
   , psis
   , proxies
     -- actions
-  , actionsIndexed
-  , filteredActions
-  , filteredActionIndexes
+  , actionIndicesFiltered
+  , actionsFiltered
     -- initial values
   , InitValues (..)
   , defInitValues
@@ -116,28 +114,33 @@ import           Debug.Trace
 
 -------------------- Main RL Datatype --------------------
 
-type ActionIndexed s = (ActionIndex, Action s) -- ^ An action with index.
-type FilteredActions s = [VB.Vector (ActionIndexed s)]
+-- type ActionIndexed s = ([ActionIndex], Action s)     -- ^ One action index for each agent is associated to one action transition.
+-- -- type FilteredActions s = VB.Vector (ActionIndexed s) -- ^ A list of actions
+
+
+-- [ActionIndex] -> Action s
+-- [[ActionIndex]]
+
 
 data Objective
   = Minimise
   | Maximise
   deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
-data BORL s = BORL
-  { _actionList        :: !(VB.Vector (ActionIndexed s)) -- ^ List of possible actions in state s each agent can do. All agents operate with the same possible actions!
-  , _actionFilter      :: !(ActionFilter s)              -- ^ Function to filter actions in state s.
-  , _s                 :: !s                             -- ^ Current state.
-  , _workers           :: !(Workers s)                   -- ^ Additional workers. (Workers s = [WorkerState s])
+data BORL s as = BORL
+  { _actionList        :: !(VB.Vector (Action as)) -- ^ List of possible actions each agent. All agents can do the same actions!
+  , _actionFunction    :: !(ActionFunction s as)   -- ^ Action function that traverses the system from s to s' using a list of actions, one for each agent.
+  , _actionFilter      :: !(ActionFilter s)        -- ^ Function to filter actions in state s.
+  , _s                 :: !s                       -- ^ Current state.
+  , _workers           :: !(Workers s)             -- ^ Additional workers. (Workers s = [WorkerState s])
 
-  , _featureExtractor  :: !(FeatureExtractor s)  -- ^ Function that extracts the features of a state.
-  , _t                 :: !Int                   -- ^ Current time t.
-  , _episodeNrStart    :: !(Int, Int)            -- ^ Nr of Episode and start period.
-  , _parameters        :: !ParameterInitValues   -- ^ Parameter setup.
-  , _decaySetting      :: !ParameterDecaySetting -- ^ Decay Setup
-  , _settings          :: !Settings              -- ^ Parameter setup.
-  -- , _decayFunction    :: !Decay              -- ^ Decay function at period t.
-  , _futureRewards     :: ![RewardFutureData s]  -- ^ List of future reward.
+  , _featureExtractor  :: !(FeatureExtractor s)    -- ^ Function that extracts the features of a state.
+  , _t                 :: !Int                     -- ^ Current time t.
+  , _episodeNrStart    :: !(Int, Int)              -- ^ Nr of Episode and start period.
+  , _parameters        :: !ParameterInitValues     -- ^ Parameter setup.
+  , _decaySetting      :: !ParameterDecaySetting   -- ^ Decay Setup
+  , _settings          :: !Settings                -- ^ Parameter setup.
+  , _futureRewards     :: ![RewardFutureData s]    -- ^ List of future reward.
 
   -- define algorithm to use
   , _algorithm         :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
@@ -145,21 +148,21 @@ data BORL s = BORL
 
   -- Values:
   , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.0001).
-  , _lastVValues       :: ![Float]               -- ^ List of X last V values (head is last seen value)
+  , _lastVValues       :: ![Value]               -- ^ List of X last V values (head is last seen value)
   , _lastRewards       :: ![Float]               -- ^ List of X last rewards (head is last received reward)
   , _psis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
   , _proxies           :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
 makeLenses ''BORL
 
-instance (NFData s) => NFData (BORL s) where
-  rnf (BORL as af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
+instance (NFData as, NFData s) => NFData (BORL s as) where
+  rnf (BORL as _ af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
     rnf as `seq` rnf af `seq` rnf st `seq` rnf ws `seq` rnf ftExt `seq` rnf time `seq`
     rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf setts `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf expSmth `seq`
     rnf1 lastVs `seq` rnf1 lastRews  `seq` rnf psis' `seq` rnf proxies'
 
 
-decayedParameters :: BORL s -> ParameterDecayedValues
+decayedParameters :: BORL s as -> ParameterDecayedValues
 decayedParameters borl
   | borl ^. t < repMemSubSize = mkStaticDecayedParams decayedParams
   | otherwise = decayedParams
@@ -170,18 +173,29 @@ decayedParameters borl
 ------------------------------ Indexed Action ------------------------------
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
-actionsIndexed :: BORL s -> s -> FilteredActions s
-actionsIndexed borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (borl ^. actionList)) filterVals
+actionIndicesFiltered :: BORL s as -> s -> FilteredActionIndices
+actionIndicesFiltered borl state = map (\fil -> V.ifilter (\idx _ -> fil V.! idx) actionIndices) filterVals
   where
+    filterVals :: [V.Vector Bool]
+    filterVals = (borl ^. actionFilter) state
+    actionIndices = V.fromList [0 .. length (borl ^. actionList) - 1]
+
+
+-- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
+actionsFiltered :: BORL s as -> s -> FilteredActions as
+actionsFiltered borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (borl ^. actionList)) filterVals
+  where
+    filterVals :: [V.Vector Bool]
     filterVals = (borl ^. actionFilter) state
 
--- | Get a list of filtered actions with the actions list and the filter function for the current given state.
-filteredActions :: [Action a] -> (s -> V.Vector Bool) -> s -> [Action a]
-filteredActions actions actFilter state = map snd $ filter (\(idx, _) -> actFilter state V.! idx) $ zip [(0 :: Int) ..] actions
 
--- | Get a list of filtered action indices with the actions list and the filter function for the current given state.
-filteredActionIndexes :: [Action a] -> (s -> V.Vector Bool) -> s -> [ActionIndex]
-filteredActionIndexes actions actFilter state = map fst $ filter (\(idx,_) -> actFilter state V.! idx) $ zip [(0::Int)..] actions
+-- -- | Get a list of filtered actions with the actions list and the filter function for the current given state.
+-- filteredActions :: [Action a] -> (s -> V.Vector Bool) -> s -> [Action a]
+-- filteredActions actions actFilter state = map snd $ filter (\(idx, _) -> actFilter state V.! idx) $ zip [(0 :: Int) ..] actions
+
+-- -- | Get a list of filtered action indices with the actions list and the filter function for the current given state.
+-- filteredActionIndexes :: [Action a] -> (s -> V.Vector Bool) -> s -> [ActionIndex]
+-- filteredActionIndexes actions actFilter state = map fst $ filter (\(idx,_) -> actFilter state V.! idx) $ zip [(0::Int)..] actions
 
 
 ------------------------------ Initial Values ------------------------------
@@ -205,11 +219,11 @@ defInitValues = InitValues 0 0 0 0 0 0
 
 -------------------- Objective --------------------
 
-setObjective :: Objective -> BORL s -> BORL s
+setObjective :: Objective -> BORL s as -> BORL s as
 setObjective obj = objective .~ obj
 
 -- | Default objective is Maximise.
-flipObjective :: BORL s -> BORL s
+flipObjective :: BORL s as -> BORL s as
 flipObjective borl = case borl ^. objective of
   Minimise -> objective .~ Maximise $ borl
   Maximise -> objective .~ Minimise $ borl
@@ -228,22 +242,24 @@ convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 mkUnichainTabular ::
-     Algorithm s
+     forall s as. (Enum as, Bounded as, Eq as, Ord as, NFData as)
+  => Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s)
-mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings initVals = do
+  -> IO (BORL s as)
+mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   st <- initialStateFun MainAgent
   let proxies' = Proxies (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing
   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
   return $ BORL
-    (VB.fromList $ zip [idxStart ..] as)
+    (VB.fromList as)
+    asFun
     asFilter
     st
     workers'
@@ -262,6 +278,7 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     (0, 0, 0)
     proxies'
   where
+    as = [minBound .. maxBound] :: [Action as]
     tabSA def = Table mempty def (length as)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -272,21 +289,23 @@ mkUnichainTabular alg initialStateFun ftExt as asFilter params decayFun settings
     agents = settings ^. independentAgents
 
 mkMultichainTabular ::
+     forall s as. (Bounded as, Enum as, Eq as, Ord as, NFData as) =>
      Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s)
-mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settings initValues = do
+  -> IO (BORL s as)
+mkMultichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initValues = do
   initialState <- initialStateFun MainAgent
   return $
     BORL
-      (VB.fromList $ zip [0 ..] as)
+      (VB.fromList as)
+      asFun
       asFilter
       initialState
       []
@@ -305,6 +324,7 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settin
       (0, 0, 0)
       (Proxies (tabSA defRhoMin) (tabSA defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing)
   where
+    as = [minBound .. maxBound] :: [Action as]
     tabSA def = Table mempty def (length as)
     defRhoMin = V.replicate agents $ defaultRhoMinimum (fromMaybe defInitValues initValues)
     defRho = V.replicate agents $ defaultRho (fromMaybe defInitValues initValues)
@@ -317,10 +337,11 @@ mkMultichainTabular alg initialStateFun ftExt as asFilter params decayFun settin
 -- Neural network approximations
 
 mkUnichainGrenade ::
+  forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as) =>
      Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
@@ -328,7 +349,7 @@ mkUnichainGrenade ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s)
+  -> IO (BORL s as)
 mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig settings initValues = do
   specNet <- netFun 1
   case specNet of
@@ -347,11 +368,11 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun n
 
 -- | Modelbuilder takes the number of output columns, which determins if the ANN is 1D or 2D! (#actions, #columns, 1)
 mkUnichainGrenadeCombinedNet ::
-     forall s .
+     forall as s . (Eq as, Ord as, NFData as, Enum as, Bounded as) =>
      Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
@@ -359,7 +380,7 @@ mkUnichainGrenadeCombinedNet ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s)
+  -> IO (BORL s as)
 mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig settings initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardAdjusted alg = 2
@@ -379,8 +400,9 @@ mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayF
 
 
 mkUnichainGrenadeHelper ::
-     forall s layers shapes nrH.
-     ( GNum (Gradients layers)
+     forall as s layers shapes nrH.
+     ( Enum as, Bounded as, Eq as, Ord as, NFData as
+     , GNum (Gradients layers)
      , FoldableGradient (Gradients layers)
      , KnownNat nrH
      , Typeable layers
@@ -399,7 +421,7 @@ mkUnichainGrenadeHelper ::
   => Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
@@ -407,8 +429,8 @@ mkUnichainGrenadeHelper ::
   -> Settings
   -> Maybe InitValues
   -> Network layers shapes
-  -> IO (BORL s)
-mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net = do
+  -> IO (BORL s as)
+mkUnichainGrenadeHelper alg initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net = do
   putStrLn "Using following Greande Specification: "
   print $ networkToSpecification net
   putStrLn "Net: "
@@ -435,7 +457,8 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $
     BORL
-      (VB.fromList $ zip [idxStart ..] as)
+      (VB.fromList as)
+      asFun
       asFilter
       initialState
       workers'
@@ -454,14 +477,15 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nn
       (0, 0, 0)
       proxies'
   where
+    as = [minBound..maxBound] :: [Action as]
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
 
-
 mkMultichainGrenade ::
-     forall nrH nrL s layers shapes.
-     ( GNum (Gradients layers)
+     forall as nrH nrL s layers shapes.
+     ( Enum as, Bounded as, Eq as, Ord as, NFData as
+     , GNum (Gradients layers)
      , GNum (Network layers shapes)
      , FoldableGradient (Gradients layers)
      , Typeable layers
@@ -481,7 +505,7 @@ mkMultichainGrenade ::
   => Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
-  -> [Action s]
+  -> ActionFunction s as
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
@@ -489,8 +513,8 @@ mkMultichainGrenade ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s)
-mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nnConfig settings initVals = do
+  -> IO (BORL s as)
+mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net nnConfig settings initVals = do
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents)
@@ -507,7 +531,8 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
   workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $! force $
     BORL
-      (VB.fromList $ zip [0 ..] as)
+      (VB.fromList as)
+      asFun
       asFilter
       initialState
       workers
@@ -525,14 +550,16 @@ mkMultichainGrenade alg initialStateFun ftExt as asFilter params decayFun net nn
       mempty
       (0, 0, 0)
       proxies'
-  where defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
+  where
+    as = [minBound..maxBound] :: [Action as]
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
 
 ------------------------------ Replay Memory/Memories ------------------------------
 
-mkReplayMemories :: [Action s] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
+mkReplayMemories :: [Action as] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories = mkReplayMemories' False
 
-mkReplayMemories' :: Bool -> [Action s] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
+mkReplayMemories' :: Bool -> [Action as] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories' allowSz1 as setts nnConfig =
   case nnConfig ^. replayMemoryStrategy of
     ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 repMemSizeSingle
@@ -577,7 +604,7 @@ scalingByMaxAbsRewardAlg alg onlyPositive maxR =
 
 -- | Creates the workers data structure if applicable (i.e. there is a replay memory of size >1 AND the minimum
 -- expoloration rates are configured in NNConfig).
-mkWorkers :: InitialStateFun s -> [Action s] -> Maybe NNConfig -> Settings -> IO (Workers s)
+mkWorkers :: InitialStateFun s -> [Action as] -> Maybe NNConfig -> Settings -> IO (Workers s)
 mkWorkers state as mNNConfig setts = do
   let nr = length $ setts ^. workersMinExploration
       workerTypes = map WorkerAgent [1 .. nr]
@@ -593,10 +620,10 @@ mkWorkers state as mNNConfig setts = do
 
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
-overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s -> BORL s
+overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s as -> BORL s as
 overAllProxies l f borl = foldl' (\b p -> over (proxies . p . l) f b) borl (allProxiesLenses (borl ^. proxies))
 
-setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s -> BORL s
+setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s as -> BORL s as
 setAllProxies l = overAllProxies l . const
 
 allProxies :: Proxies -> [Proxy]

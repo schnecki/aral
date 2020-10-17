@@ -26,11 +26,11 @@ type ReplMemFun m s
 
 data ExpectedValuationNext =
   ExpectedValuationNext
-    { getExpectedValStateNextRho :: Maybe Float
-    , getExpectedValStateNextV   :: Maybe Float
-    , getExpectedValStateNextW   :: Maybe Float
-    , getExpectedValStateNextR0  :: Maybe Float
-    , getExpectedValStateNextR1  :: Maybe Float
+    { getExpectedValStateNextRho :: Maybe Value -- Float
+    , getExpectedValStateNextV   :: Maybe Value -- Float
+    , getExpectedValStateNextW   :: Maybe Value -- Float
+    , getExpectedValStateNextR0  :: Maybe Value -- Float
+    , getExpectedValStateNextR1  :: Maybe Value -- Float
     }
   deriving (Show, Generic, NFData)
 
@@ -39,18 +39,18 @@ emptyExpectedValuationNext = ExpectedValuationNext Nothing Nothing Nothing Nothi
 
 
 data Calculation = Calculation
-  { getRhoMinimumVal'     :: Maybe Float
-  , getRhoVal'            :: Maybe Float
-  , getPsiVValState'      :: Maybe [Float] -- ^ Deviation of this state
-  , getVValState'         :: Maybe [Float]
-  , getPsiWValState'      :: Maybe [Float] -- ^ Deviation of this state
-  , getWValState'         :: Maybe [Float]
-  , getR0ValState'        :: Maybe [Float]
-  , getR1ValState'        :: Maybe [Float]
-  , getPsiValRho'         :: Maybe Float -- ^ Scalar deviation over all states (for output only)
-  , getPsiValV'           :: Maybe [Float] -- ^ Scalar deviation over all states (for output only)
-  , getPsiValW'           :: Maybe [Float] -- ^ Scalar deviation over all states (for output only)
-  , getLastVs'            :: Maybe [[Float]]
+  { getRhoMinimumVal'     :: Maybe Value
+  , getRhoVal'            :: Maybe Value
+  , getPsiVValState'      :: Maybe Value -- [Float] -- ^ Deviation of this state
+  , getVValState'         :: Maybe Value -- [Float]
+  , getPsiWValState'      :: Maybe Value -- [Float] -- ^ Deviation of this state
+  , getWValState'         :: Maybe Value -- [Float]
+  , getR0ValState'        :: Maybe Value -- [Float]
+  , getR1ValState'        :: Maybe Value -- [Float]
+  , getPsiValRho'         :: Maybe Value -- Float -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'           :: Maybe Value -- [Float] -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'           :: Maybe Value -- [Float] -- ^ Scalar deviation over all states (for output only)
+  , getLastVs'            :: Maybe [Value]
   , getLastRews'          :: [RewardValue]
   , getEpisodeEnd         :: Bool
   , getExpSmoothedReward' :: Float
@@ -70,42 +70,42 @@ instance NFData Calculation where
 fmapCalculation :: (Float -> Float) -> Calculation -> Calculation
 fmapCalculation f calc =
   Calculation
-    { getRhoMinimumVal'       = f <$> getRhoMinimumVal' calc
-    , getRhoVal'              = f <$> getRhoVal' calc
-    , getPsiVValState'        = map f <$> getPsiVValState' calc
-    , getVValState'           = map f <$> getVValState' calc
-    , getPsiWValState'        = map f <$> getPsiWValState' calc
-    , getWValState'           = map f <$> getWValState' calc
-    , getR0ValState'          = map f <$> getR0ValState' calc
-    , getR1ValState'          = map f <$> getR1ValState' calc
-    , getPsiValRho'           = f <$> getPsiValRho' calc
-    , getPsiValV'             = map f <$> getPsiValV' calc
-    , getPsiValW'             = map f <$> getPsiValW' calc
+    { getRhoMinimumVal'       = mapValue f <$> getRhoMinimumVal' calc
+    , getRhoVal'              = mapValue f <$> getRhoVal' calc
+    , getPsiVValState'        = mapValue f <$> getPsiVValState' calc
+    , getVValState'           = mapValue f <$> getVValState' calc
+    , getPsiWValState'        = mapValue f <$> getPsiWValState' calc
+    , getWValState'           = mapValue f <$> getWValState' calc
+    , getR0ValState'          = mapValue f <$> getR0ValState' calc
+    , getR1ValState'          = mapValue f <$> getR1ValState' calc
+    , getPsiValRho'           = mapValue f <$> getPsiValRho' calc
+    , getPsiValV'             = mapValue f <$> getPsiValV' calc
+    , getPsiValW'             = mapValue f <$> getPsiValW' calc
     , getLastVs'              = getLastVs' calc
     , getLastRews'            = getLastRews' calc
     , getEpisodeEnd           = getEpisodeEnd calc
     , getExpSmoothedReward'   = getExpSmoothedReward' calc
     }
 
-avgCalculation :: [Calculation] -> Calculation
-avgCalculation [] = error "empty calculations. Is the batchsize>0 and replayMemoryMaxSize>0?"
-avgCalculation xs =
-  Calculation
-    (avg <$> mapM getRhoMinimumVal' xs)
-    (avg <$> mapM getRhoVal' xs)
-    (map avg <$> mapM getPsiVValState' xs)
-    (map avg <$> mapM getVValState' xs)
-    (map avg <$> mapM getPsiWValState' xs)
-    (map avg <$> mapM getWValState' xs)
-    (map avg <$> mapM getR0ValState' xs)
-    (map avg <$> mapM getR1ValState' xs)
-    (avg <$> mapM getPsiValRho' xs)
-    (map avg <$> mapM getPsiValV' xs)
-    (map avg <$> mapM getPsiValW' xs)
-    (map (fmap avg . transpose) <$> mapM getLastVs' xs)
-    (map (avg . getLastRews') xs)
-    (all getEpisodeEnd xs)
-    (avg $ map getExpSmoothedReward' xs)
-  where
-    avg :: [Float] -> Float
-    avg xs' = sum xs' / fromIntegral (length xs')
+-- avgCalculation :: [Calculation] -> Calculation
+-- avgCalculation [] = error "empty calculations. Is the batchsize>0 and replayMemoryMaxSize>0?"
+-- avgCalculation xs =
+--   Calculation
+--     (avg <$> mapM getRhoMinimumVal' xs)
+--     (avg <$> mapM getRhoVal' xs)
+--     (map avg <$> mapM getPsiVValState' xs)
+--     (map avg <$> mapM getVValState' xs)
+--     (map avg <$> mapM getPsiWValState' xs)
+--     (map avg <$> mapM getWValState' xs)
+--     (map avg <$> mapM getR0ValState' xs)
+--     (map avg <$> mapM getR1ValState' xs)
+--     (avg <$> mapM getPsiValRho' xs)
+--     (map avg <$> mapM getPsiValV' xs)
+--     (map avg <$> mapM getPsiValW' xs)
+--     (map (fmap avg . transpose) <$> mapM getLastVs' xs)
+--     (map (avg . getLastRews') xs)
+--     (all getEpisodeEnd xs)
+--     (avg $ map getExpSmoothedReward' xs)
+--   where
+--     avg :: [Float] -> Float
+--     avg xs' = sum xs' / fromIntegral (length xs')
