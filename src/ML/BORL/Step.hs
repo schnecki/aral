@@ -97,23 +97,23 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> IO (BORL s)
+steps :: (NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> Integer -> IO (BORL s as)
 steps !borl nr =
   fmap force $!
   liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
 
 
-step :: (NFData s, Ord s, RewardFuture s) => BORL s -> IO (BORL s)
+step :: (NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> IO (BORL s as)
 step !borl =
   fmap force $!
   nextAction borl >>= stepExecute borl
 
 -- | This keeps the MonadIO alive.
-stepM :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
+stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> m (BORL s as)
 stepM !borl = nextAction borl >>= stepExecute borl >>= \(b@BORL{}) -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 100 periods.
-stepsM :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> Integer -> m (BORL s)
+stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> Integer -> m (BORL s as)
 stepsM borl nr = do
   borl' <- foldM (\b _ -> stepM b) borl [1 .. min maxNr nr]
   if nr > maxNr
@@ -121,8 +121,8 @@ stepsM borl nr = do
     else return borl'
   where maxNr = 100
 
-stepExecute :: forall m s . (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> NextActions s -> m (BORL s)
-stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> NextActions s -> m (BORL s as)
+stepExecute borl ((randomAction, aNr), workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
@@ -131,6 +131,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
     liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     liftIO $ writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
+  let action agTp s as = (borl ^. actionFunction) agTp s as
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
   let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
   (dropLen, _, newBorl) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
@@ -143,7 +144,7 @@ stepExecute borl ((randomAction, (aNr, Action action _)), workerActions) = do
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
-runWorkerActions :: (NFData s) => BORL s -> [WorkerActionChoice s] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
+runWorkerActions :: (NFData s, NFData as) => BORL s as -> [WorkerActionChoice s] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
 runWorkerActions _ [] = return (Left [])
 runWorkerActions borl _ | borl ^. settings . disableAllLearning = return (Left $ borl ^. workers)
 runWorkerActions borl acts = Right <$> zipWithM (\act worker -> doFork' $ runWorkerAction borl worker act) acts (borl ^. workers)
@@ -160,8 +161,8 @@ applyStateToRewardFutureData state = map (over futureReward applyToReward)
     applyToReward r                      = r
 
 -- | Run one worker.
-runWorkerAction :: (NFData s) => BORL s -> WorkerState s -> WorkerActionChoice s -> IO (WorkerState s)
-runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (randomAction, (aNr, Action action _)) = do
+runWorkerAction :: (NFData s, NFData as) => BORL s as -> WorkerState s -> WorkerActionChoice s -> IO (WorkerState s)
+runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (randomAction, aNr) = do
   (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
@@ -181,11 +182,11 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (rando
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
-     forall m s. (MonadIO m, NFData s, Ord s, RewardFuture s)
+     forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s)
   => AgentType
-  -> (Int, Bool, BORL s)
+  -> (Int, Bool, BORL s as)
   -> RewardFutureData s
-  -> m (Int, Bool, BORL s)
+  -> m (Int, Bool, BORL s as)
 stepExecuteMaterialisedFutures _ (nr, True, borl) _ = return (nr, True, borl)
 stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
   case view futureReward dt of
@@ -195,7 +196,7 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> AgentType -> RewardFutureData s -> m (BORL s)
+execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
 execute borl agent (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
@@ -219,14 +220,15 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
          scAlg <- view scaleOutputAlgorithm <$> mCfg
          scParam <- view scaleParameters <$> mCfg
          v <- getR0ValState' calc
-         return $ scaleValue scAlg (Just (scParam ^. scaleMinR0Value, scParam ^. scaleMaxR0Value)) v
+         return $ scaleValues scAlg (Just (scParam ^. scaleMinR0Value, scParam ^. scaleMaxR0Value)) v
       strR1 = show $ fromMaybe 0 (getR1ValState' calc)
       strR1Scaled = show $ fromMaybe 0 $ do
          scAlg <- view scaleOutputAlgorithm <$> mCfg
          scParam <- view scaleParameters <$> mCfg
          v <- getR1ValState' calc
-         return $ scaleValue scAlg (Just (scParam ^. scaleMinR1Value, scParam ^. scaleMaxR1Value)) v
+         return $ scaleValues scAlg (Just (scParam ^. scaleMinR1Value, scParam ^. scaleMaxR1Value)) v
       avg xs = sum xs / fromIntegral (length xs)
+      agents = borl ^. settings . independentAgents
   if isMainAgent agent
   then do
     liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strRhoSmth ++ "\t" ++ strRhoOver ++ "\t" ++ strMinRho ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\t" ++ strR0Scaled ++ "\t" ++ strR1Scaled ++ "\n")
@@ -248,7 +250,7 @@ execute borl agent (RewardFutureData period state aNr randomAction (Reward rewar
 execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
 
 -- | Flip the dropout active/inactive state.
-maybeFlipDropout :: BORL s -> BORL s
+maybeFlipDropout :: BORL s as -> BORL s as
 maybeFlipDropout borl =
   case borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig of
     Just cfg@NNConfig {}
@@ -263,11 +265,11 @@ maybeFlipDropout borl =
          in setDropoutValue value borl
     _ -> borl
   where
-    setDropoutValue :: Bool -> BORL s -> BORL s
+    setDropoutValue :: Bool -> BORL s as -> BORL s as
     setDropoutValue val =
       overAllProxies
         (filtered isGrenade)
-        (\(Grenade tar wor tp cfg act) -> Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act)
+        (\(Grenade tar wor tp cfg act agents) -> Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents)
 
 
 #ifdef DEBUG
@@ -283,7 +285,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadIO m, NFData s, Ord s, RewardFuture s) => BORL s -> m (BORL s)
+writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> m (BORL s as)
 writeDebugFiles borl = do
   let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardAdjusted (borl ^. algorithm)
   let isAnn

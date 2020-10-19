@@ -67,7 +67,7 @@ data BORLSerialisable s as = BORLSerialisable
   , serExpSmoothedReward :: Float                  -- ^ Exponentially smoothed reward
   , serLastVValues       :: ![Value]               -- ^ List of X last V values
   , serLastRewards       :: ![Float]               -- ^ List of X last rewards
-  , serPsis              :: !(Float, Float, Float) -- ^ Exponentially smoothed psi values.
+  , serPsis              :: !(Value, Value, Value) -- ^ Exponentially smoothed psi values.
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 

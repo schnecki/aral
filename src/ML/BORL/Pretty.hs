@@ -140,7 +140,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx = case pState stInp of
 
 prettyTablesState ::
      (MonadIO m, Show s, Ord s)
-  => BORL s
+  => BORL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
   -> P.Proxy
@@ -153,7 +153,7 @@ prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
   rows2 <- prettyTableRows borl p2 pIdx modifier2 m2
   return $ vcat $ zipWith (\x y -> x $$ nest nestCols y) rows1 rows2
 
-prettyAlgorithm ::  BORL s -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
+prettyAlgorithm ::  BORL s as -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
 prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRefState) =
   text "BORL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
@@ -187,7 +187,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> float x
 
 
-prettyBORLTables :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s -> m Doc
+prettyBORLTables :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s as -> m Doc
 prettyBORLTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -232,11 +232,11 @@ mkPrettyState mStInverse netinp =
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
 
-prettyBORLHead ::  (MonadIO m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLHead ::  (MonadIO m, Show s) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> m Doc
 prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
 
 
-prettyBORLHead' :: (MonadIO m, Show s) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s -> m Doc
+prettyBORLHead' :: (MonadIO m, Show s) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s as -> m Doc
 prettyBORLHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (T.unpack $ maybe "unkown" (actionName . snd) (find ((== aIdx `mod` length (borl ^. actionList)) . fst) (borl ^. actionList)))
@@ -428,23 +428,23 @@ prettyBORLHead' printRho prettyStateFun borl = do
                       , printFloatWith 8 (realToFrac epsilon)
                       , printFloatWith 8 (realToFrac lambda))))
 
--- setPrettyPrintElems :: [NetInput] -> BORL s -> BORL s
+-- setPrettyPrintElems :: [NetInput] -> BORL s as -> BORL s as
 -- setPrettyPrintElems xs borl = foldl' (\b p -> set (proxies . p . proxyNNConfig . prettyPrintElems) xs b) borl [rhoMinimum, rho, psiV, v, psiW, w, r0, r1]
 
 
-prettyBORL :: (Ord s, Show s) => BORL s -> IO Doc
+prettyBORL :: (Ord s, Show s) => BORL s as -> IO Doc
 prettyBORL = prettyBORLWithStInverse Nothing
 
-prettyBORLM :: (MonadIO m, Ord s, Show s) => BORL s -> m Doc
+prettyBORLM :: (MonadIO m, Ord s, Show s) => BORL s as -> m Doc
 prettyBORLM = prettyBORLTables Nothing True True True
 
-prettyBORLMWithStInverse :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> m Doc
+prettyBORLMWithStInverse :: (MonadIO m, Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> m Doc
 prettyBORLMWithStInverse mStInverse = prettyBORLTables mStInverse True True True
 
 
-prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s -> IO Doc
+prettyBORLWithStInverse :: (Ord s, Show s) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> IO Doc
 prettyBORLWithStInverse mStInverse borl =
   prettyBORLTables mStInverse True True True borl
 
-instance (Ord s, Show s) => Show (BORL s) where
+instance (Ord s, Show s) => Show (BORL s as) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyBORL borl

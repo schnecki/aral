@@ -4,12 +4,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 module ML.BORL.NeuralNetwork.Scaling where
 
-import           ML.BORL.Types
 
 import           Control.DeepSeq
 import           Control.Lens
 import           Data.Serialize
+import qualified Data.Vector.Storable as V
 import           GHC.Generics
+import           Prelude              hiding (scaleFloat)
+
+import           ML.BORL.Types
+
 
 data ScalingAlgorithm
   = ScaleMinMax    -- ^ Scale using min-max normalisation.
@@ -39,21 +43,34 @@ multiplyScale :: Float -> ScalingNetOutParameters -> ScalingNetOutParameters
 multiplyScale v (ScalingNetOutParameters minV maxV minW maxW minR0 maxR0 minR1 maxR1) =
   ScalingNetOutParameters (v * minV) (v * maxV) (v * minW) (v * maxW) (v * minR0) (v * maxR0) (v * minR1) (v * maxR1)
 
+scaleValue :: ScalingAlgorithm -> Maybe (MinValue Float, MaxValue Float) -> Value -> Value
+scaleValue alg minMax = mapValue (scaleFloat alg minMax)
+
+scaleValues :: ScalingAlgorithm -> Maybe (MinValue Float, MaxValue Float) -> Values -> Values
+scaleValues alg minMax = mapValues (V.map $ scaleFloat alg minMax)
+
+unscaleValue :: ScalingAlgorithm -> Maybe (MinValue Float, MaxValue Float) -> Value -> Value
+unscaleValue alg minMax = mapValue (unscaleFloat alg minMax)
+
+unscaleValues :: ScalingAlgorithm -> Maybe (MinValue Float, MaxValue Float) -> Values -> Values
+unscaleValues alg minMax = mapValues (V.map $ unscaleFloat alg minMax)
+
+
 -- | Scale a value using the given algorithm.
-scaleValue :: (Floating n, Ord n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
-scaleValue ScaleMinMax    = maybe id scaleMinMax
-scaleValue (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (scaleLog shift)
+scaleFloat :: (Floating n, Ord n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
+scaleFloat ScaleMinMax    = maybe id scaleMinMax
+scaleFloat (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (scaleLog shift)
 
 -- | Unscale a value using the given algorithm.
-unscaleValue :: (Floating n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
-unscaleValue ScaleMinMax = maybe id unscaleMinMax
-unscaleValue (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (unscaleLog shift)
+unscaleFloat :: (Floating n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
+unscaleFloat ScaleMinMax = maybe id unscaleMinMax
+unscaleFloat (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (unscaleLog shift)
 
-scaleZeroOneValue :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
-scaleZeroOneValue (mn,mx) val = (val - mn) / (mx-mn)
+scaleZeroOneFloat :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
+scaleZeroOneFloat (mn,mx) val = (val - mn) / (mx-mn)
 
-unscaleZeroOneValue :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
-unscaleZeroOneValue (mn,mx) val = val * (mx-mn) + mn
+unscaleZeroOneFloat :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
+unscaleZeroOneFloat (mn,mx) val = val * (mx-mn) + mn
 
 -- | Scale using min-max normalization.
 scaleMinMax :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n

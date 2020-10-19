@@ -29,7 +29,7 @@ import           ML.BORL.Types
 data RewardFutureData s = RewardFutureData
                 { _futurePeriod       :: !Period
                 , _futureState        :: !(State s)
-                , _futureActionNr     :: !ActionIndex
+                , _futureActionNr     :: ![ActionIndex]
                 , _futureRandomAction :: !IsRandomAction
                 , _futureReward       :: !(Reward s)
                 , _futureStateNext    :: !(StateNext s)
@@ -40,5 +40,3 @@ makeLenses ''RewardFutureData
 
 mapRewardFutureData :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> RewardFutureData s -> RewardFutureData s'
 mapRewardFutureData f g (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward g rew) (f stateNext) epEnd
-
-
