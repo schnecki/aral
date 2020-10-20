@@ -135,19 +135,27 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
         | otherwise = pr
   finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
   where
-    finalize = zipWith (\aNr tpl -> first (prettyStateActionEntry borl prettyState prettyActionIdx aNr) tpl) [0..]
+    agents = borl ^. settings . independentAgents
+    finalize = map (first (prettyStateActionEntry borl prettyState prettyActionIdx agents))
     mkModification (inp, (xsT, xsW)) = do
       xsT' <- mapM (\(idx, val) -> (idx,) <$> modifier Target (inp, idx) val) xsT
       xsW' <- mapM (\(idx, val) -> (idx,) <$> modifier Worker (inp, idx) val) xsW
       return (inp, (xsT', xsW'))
 
-prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> AgentNumber -> NetInputWoAction -> ActionIndex -> Doc
-prettyStateActionEntry borl pState pActIdx agentNr stInp actIdx = case pState stInp of
-  Nothing               -> mempty
-  Just (Just st, stRep) | actIdx < length bools && bools !! actIdx -> text stRep <> colon <+> pActIdx actIdx
-                        | otherwise -> text "-"
-    where bools = take (length $ borl ^. actionList) $ V.toList $ ((borl ^. actionFilter) st) !! agentNr
-  Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
+prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Int -> NetInputWoAction -> ActionIndex -> Doc
+prettyStateActionEntry borl pState pActIdx agents stInp actIdx =
+  case pState stInp of
+    Nothing -> mempty
+    Just (Just st, stRep) ->
+      if all (== text "-") txts
+        then mempty
+        else text stRep <> colon <+> hcat (punctuate ", " txts)
+      where txts = map agentText (borl ^. actionFilter $ st)
+            agentText boolVec
+              | actIdx >= V.length boolVec = error $ "filter function output length length does not match action Index: " ++ show (V.toList boolVec)
+              | actIdx < V.length boolVec && boolVec V.! actIdx = pActIdx actIdx
+              | otherwise = text "-"
+    Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
 
 
 -- prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> AgentNumber -> NetInputWoAction -> ActionIndex -> Doc

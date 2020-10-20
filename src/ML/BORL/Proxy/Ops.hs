@@ -230,7 +230,7 @@ insertProxy !agent !setts !p !st !aNr !val = insertProxyMany agent setts p [[((s
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadIO m) => AgentType -> Settings -> Period -> [[((StateFeatures, [ActionIndex]), Value)]] -> Proxy -> m Proxy
-insertProxyMany _ _ p [] _ = error $ "Empty input in insertProxyMany. Period: " ++ show p
+insertProxyMany _ _ p [] px = trace ("\n\nEmpty input in insertProxyMany. Period: " ++ show p ++ "\n\n") return px
 insertProxyMany _ _ _ !xs (Scalar _) = return $ Scalar (V.fromList $ fromValue $ snd $ last $ last xs)
 insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
   where
