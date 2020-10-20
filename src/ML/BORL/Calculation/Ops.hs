@@ -296,7 +296,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
     case avgRewardType of
       Fixed x -> return $ toValue agents x
       ByMovAvg l -> return $ toValue agents $ sum lastRews' / fromIntegral l
-      ByReward -> return $ toValue agents $ reward
+      ByReward -> return $ toValue agents reward
       ByStateValues -> return $ reward .+ r1StateNextWorker - r1ValState
       ByStateValuesAndReward ratio decay -> return $ ratio' .* (reward .+ r1StateNextWorker - r1ValState) +. (1 - ratio') * reward
         where ratio' = decaySetup decay (borl ^. t) ratio

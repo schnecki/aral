@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
@@ -14,11 +15,11 @@
 module Main where
 
 import           ML.BORL                  as B
-import           SolveLp
 
 import           Experimenter
 
 import           Helper
+import           SolveLp
 
 import           Control.Arrow            (first, second, (***))
 import           Control.DeepSeq          (NFData)
@@ -28,8 +29,9 @@ import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Default
 import           Data.Function            (on)
-import           Data.List                (genericLength, groupBy, sort, sortBy)
+import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
+import           Data.Maybe               (fromMaybe)
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import qualified Data.Text                as T
@@ -39,8 +41,11 @@ import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
 import           GHC.TypeLits
 import           Grenade
+import           Prelude                  hiding (Left, Right)
 import           System.IO
 import           System.Random
+
+import           Debug.Trace
 
 maxX, maxY, goalX, goalY :: Int
 maxX = 4                        -- [0..maxX]
@@ -63,7 +68,7 @@ nnConfig =
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
-    , _scaleOutputAlgorithm = ScaleLog 1000 -- ScaleMinMax
+    , _scaleOutputAlgorithm = ScaleMinMax -- ScaleLog 1000 -- ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
@@ -72,7 +77,8 @@ nnConfig =
     }
 
 borlSettings :: Settings
-borlSettings = def {_workersMinExploration = replicate 7 0.01, _nStep = 1}
+borlSettings = def {_workersMinExploration = [] -- replicate 7 0.01
+                   , _nStep = 1}
 
 
 -- | BORL Parameters.
@@ -142,9 +148,10 @@ main = do
     "l" -> lpMode
     _   -> usermode
 
-instance BorlLp St where
-  lpActions = actions
-  lpActionFilter = actFilter
+instance BorlLp St Act where
+  lpActions _ = actions
+  lpActionFilter _ = head . actFilter
+  lpActionFunction = actionFun
 
 lpMode :: IO ()
 lpMode = do
@@ -174,19 +181,16 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   askUser mInverseSt True usage cmds [] (flipObjective rl)
   where
-    cmds =
-      zipWith3
-        (\n (s, a) na -> (s, (n, Action a na)))
-        [0 ..]
-        [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
-        (tail names)
+    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Down, Left, Right])
+
+    -- [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 
@@ -211,7 +215,18 @@ netInp st = V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst 
 tblInp :: St -> V.Vector Float
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
-names = ["random", "up   ", "down ", "left ", "right"]
+data Act = Random | Up | Down | Left | Right
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
+
+instance Show Act where
+  show Random = "random"
+  show Up     = "up    "
+  show Down   = "down  "
+  show Left   = "left  "
+  show Right  = "right "
+
+actions :: [Act]
+actions = [Random, Up, Down, Left, Right]
 
 initState :: St
 initState = fromIdx (maxX,maxY)
@@ -239,15 +254,18 @@ instance Bounded St where
 
 
 -- Actions
-actions :: [Action St]
-actions = zipWith Action
-  (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
-  names
+actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun tp s [Random] = goalState moveRand tp s
+actionFun tp s [Up]     = goalState moveUp tp s
+actionFun tp s [Down]   = goalState moveDown tp s
+actionFun tp s [Left]   = goalState moveLeft tp s
+actionFun tp s [Right]  = goalState moveRight tp s
+actionFun _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
 
-actFilter :: St -> V.Vector Bool
+actFilter :: St -> [V.Vector Bool]
 actFilter st
-  | st == fromIdx (goalX, goalY) = True `V.cons` V.replicate (length actions - 1) False
-actFilter _  = False `V.cons` V.replicate (length actions - 1) True
+  | st == fromIdx (goalX, goalY) = [True `V.cons` V.replicate (length actions - 1) False]
+actFilter _  = [False `V.cons` V.replicate (length actions - 1) True]
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
@@ -310,7 +328,7 @@ getCurrentIdx (St st) =
   zip [0..] $ map (zip [0..]) st
 
 
-policy :: Policy St
+policy :: Policy St Act
 policy s a
   | s == fromIdx (goalX, goalY) && a == actRand =
     let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
@@ -337,8 +355,8 @@ policy s a
     states = [minBound .. maxBound] :: [St]
     stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
     filterActRand ((r, c), a)
-      | r == goalX && c == goalY = actionName a == actionName actRand
-      | otherwise = actionName a /= actionName actRand
+      | r == goalX && c == goalY = a == actRand
+      | otherwise = a /= actRand
     filterChance [x] = [x]
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
       where

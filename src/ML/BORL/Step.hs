@@ -102,23 +102,23 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> Integer -> IO (BORL s as)
+steps :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> Integer -> IO (BORL s as)
 steps !borl nr =
   fmap force $!
   liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
 
 
-step :: (NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> IO (BORL s as)
+step :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> IO (BORL s as)
 step !borl =
   fmap force $!
   nextAction borl >>= stepExecute borl
 
 -- | This keeps the MonadIO alive.
-stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> m (BORL s as)
+stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> m (BORL s as)
 stepM !borl = nextAction borl >>= stepExecute borl >>= \(b@BORL{}) -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 100 periods.
-stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> Integer -> m (BORL s as)
+stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> Integer -> m (BORL s as)
 stepsM borl nr = do
   borl' <- foldM (\b _ -> stepM b) borl [1 .. min maxNr nr]
   if nr > maxNr
@@ -126,8 +126,8 @@ stepsM borl nr = do
     else return borl'
   where maxNr = 100
 
-stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> NextActions -> m (BORL s as)
-stepExecute borl (as, workerActions) = do -- ((randomAction, aNr), workerActions) = do
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> NextActions -> m (BORL s as)
+stepExecute borl (as, workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
@@ -198,7 +198,7 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = d
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
-     forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s)
+     forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as)
   => AgentType
   -> (Int, Bool, BORL s as)
   -> RewardFutureData s
@@ -212,7 +212,7 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
+execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
 execute borl agent (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
@@ -247,6 +247,7 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
       avg xs = sum xs / fromIntegral (length xs)
       agents = borl ^. settings . independentAgents
       list = concatMap ("\t" <>)
+      zero = toValue agents 0
   if isMainAgent agent
   then do
     liftIO $ appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ "\n")
@@ -259,10 +260,10 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
           | getEpisodeEnd calc = (eNr + 1, borl ^. t)
           | otherwise = curEp
     return $
-      set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $ set expSmoothedReward (getExpSmoothedReward' calc) $
+      set psis (fromMaybe zero (getPsiValRho' calc), fromMaybe zero (getPsiValV' calc), fromMaybe zero (getPsiValW' calc)) $ set expSmoothedReward (getExpSmoothedReward' calc) $
       set lastVValues (fromMaybe [] (getLastVs' calc)) $ set lastRewards (getLastRews' calc) $ set proxies proxies' $ set t (period + 1) $ over episodeNrStart setEpisode $ maybeFlipDropout borl
   else return $
-       set psis (fromMaybe 0 (getPsiValRho' calc), fromMaybe 0 (getPsiValV' calc), fromMaybe 0 (getPsiValW' calc)) $
+       set psis (fromMaybe zero (getPsiValRho' calc), fromMaybe zero (getPsiValV' calc), fromMaybe zero (getPsiValW' calc)) $
        set proxies proxies' $ set expSmoothedReward (getExpSmoothedReward' calc) $ set t (period + 1) $ maybeFlipDropout borl
 
 execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
@@ -338,12 +339,14 @@ writeDebugFiles borl = do
           else do
             liftIO $ putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
             return $ putStateFeatList borl stateFeats
+  stateFeatsLoaded <- getStateFeatures
   let stateFeats
+        | not (null stateFeatsLoaded) = stateFeatsLoaded
         | isDqn = getStateFeatList (borl' ^. proxies . r1)
         | otherwise = getStateFeatList (borl' ^. proxies . v)
-  stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    let splitIdx = length stateFeats - agents
+    let splitIdx =
+          V.length (head stateFeats) - agents
     stateValuesV <- mapM (\xs ->
                             let (st,as) = V.splitAt splitIdx xs in
                             if isDqn then rValueWith Worker borl' RBig st (map round $ V.toList as) else vValueWith Worker borl' st (map round $ V.toList as)) stateFeats

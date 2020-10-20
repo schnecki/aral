@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 module Helper
     ( askUser
 
@@ -27,13 +28,13 @@ import           Text.Printf
 import           Debug.Trace
 
 askUser ::
-     (NFData s, Ord s, Show s, RewardFuture s)
+     (NFData s, Ord s, Show s, NFData as, Show as, RewardFuture s, Eq as)
   => Maybe (NetInputWoAction -> Maybe (Either String s))
   -> Bool
   -> [(String, String)]
-  -> [(String, ActionIndexed s)]
-  -> [(String, String, BORL s -> BORL s)]
-  -> BORL s
+  -> [(String, [ActionIndex])]
+  -> [(String, String, BORL s as -> BORL s as)]
+  -> BORL s as
   -> IO ()
 askUser mInverse showHelp addUsage cmds qlCmds ql = do
   let usage =
@@ -130,7 +131,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                 (\(v' :: Bool) ->
                    overAllProxies
                      (filtered isGrenade)
-                     (\(Grenade tar wor tp cfg act) -> Grenade (runSettingsUpdate (NetworkSettings v') tar) (runSettingsUpdate (NetworkSettings v') wor) tp cfg act)
+                     (\(Grenade tar wor tp cfg act agents) -> Grenade (runSettingsUpdate (NetworkSettings v') tar) (runSettingsUpdate (NetworkSettings v') wor) tp cfg act agents)
                      ql) <$>
               getIOMWithDefault Nothing
           "alpha" -> do
@@ -166,7 +167,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                    liftIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x)
             Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
-          liftIO $ stepExecute ql ((False, cmd), []) >>= askUser mInverse False addUsage cmds qlCmds
+          liftIO $ stepExecute ql (map (False,) cmd, []) >>= askUser mInverse False addUsage cmds qlCmds
 
 
 time :: NFData t => IO t -> IO t

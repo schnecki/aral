@@ -99,7 +99,9 @@ instance Num Value where
   (AgentValue xs) * (AgentValue ys) = AgentValue (zipWith (*) xs ys)
   abs (AgentValue xs) = AgentValue (map abs xs)
   signum (AgentValue xs) = AgentValue (map signum xs)
-  fromInteger nr = AgentValue (repeat $ fromIntegral nr)
+  -- fromInteger nr = AgentValue (repeat $ fromIntegral nr)
+  fromInteger nr = error "fromInteger is not implemented"
+    -- AgentValue (replicate 1 $ fromIntegral nr)
 
 toValue :: Int -> Float -> Value
 toValue nr v = AgentValue $ replicate nr v

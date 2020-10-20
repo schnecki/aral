@@ -56,8 +56,11 @@ toAgents nr vec
   where
     len = V.length vec `div` nr
     toAgents' idx
-      | idx == len = []
-      | otherwise = V.slice (idx * len) len vec : toAgents' (idx + 1)
+      | start == len = []
+      | otherwise =
+        -- trace ("slice: " ++ show (idx*len, nr, idx, len, vec))
+        V.slice start len vec : toAgents' (idx + 1)
+      where start = idx * len
 
 
 -- -- | Create Vec from a list.

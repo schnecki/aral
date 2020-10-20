@@ -1,7 +1,8 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 module SolveLp
     ( runBorlLp
     , runBorlLpInferWithRewardRepet
@@ -35,12 +36,13 @@ import           Debug.Trace
 type Probability = Double
 type NextState st = st
 
+-- | BorlLp is designed for a single agent only!
+class (Ord st, Enum st, Bounded st, Show st) => BorlLp st as where
+  lpActions        :: st -> [Action as] -- ^ Only one agent is allowed! First parameter is a dummy parameter.
+  lpActionFunction :: ActionFunction st as
+  lpActionFilter   :: as -> st -> V.Vector Bool
 
-class (Ord st, Enum st, Bounded st, Show st) => BorlLp st where
-  lpActions :: [Action st]
-  lpActionFilter :: st -> V.Vector Bool
-
-data LpResult st = LpResult
+data LpResult st as = LpResult
   { givenPolicy     :: [((st, T.Text), [((st, T.Text), Probability)])]
   , inferredRewards :: [((st, T.Text), Double)]
   , gain            :: Double
@@ -48,7 +50,7 @@ data LpResult st = LpResult
   , wValues         :: [[((st, T.Text), Double)]]
   }
 
-instance (Eq st, Show st) => Show (LpResult st) where
+instance (Eq st, Show st) => Show (LpResult st as) where
   show (LpResult pol rew g b w) =
     "Provided Policy:\n--------------------\n" <> unlines (map showPol pol) <>
     "\nInferred Rewards:\n--------------------\n" <> unlines (map show rew) <>
@@ -63,24 +65,24 @@ instance (Eq st, Show st) => Show (LpResult st) where
 showPol :: (Show a, Show a1) => (a, a1) -> String
 showPol (sa, sa') = show sa <> ": " <> show sa'
 
-type Policy st = State st -> Action st -> [((NextState st, Action st), Probability)]
+type Policy st as = State st -> Action as -> [((NextState st, Action as), Probability)]
 
-runBorlLp :: forall st . (BorlLp st) => Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
+runBorlLp :: forall st as . (BorlLp st as, Show as, Eq as) => Policy st as -> Maybe (st, ActionIndex) -> IO (LpResult st as)
 runBorlLp = runBorlLpInferWithRewardRepet 80000
 
 tshow :: (Show a) => a -> T.Text
 tshow = T.pack . show
 
-mkEstimatedVFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedVFile :: (BorlLp st as) => LpResult st as -> IO ()
 mkEstimatedVFile = mkStateFile 0.5 False True
 
-mkEstimatedVGammaFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedVGammaFile :: (BorlLp st as) => LpResult st as -> IO ()
 mkEstimatedVGammaFile = mkStateFile 0.5 True True
 
-mkEstimatedEFile :: (BorlLp st) => LpResult st -> IO ()
+mkEstimatedEFile :: (BorlLp st as) => LpResult st as -> IO ()
 mkEstimatedEFile = mkStateFile 0.5 False False
 
-mkStateFile :: (BorlLp st) => Double -> Bool -> Bool -> LpResult st -> IO ()
+mkStateFile :: (BorlLp st as) => Double -> Bool -> Bool -> LpResult st as -> IO ()
 mkStateFile minGamma withGain withBias (LpResult _ _ gain bias ws) = do
   let file
         | withGain && withBias = "lp_v_gamma"
@@ -120,35 +122,37 @@ mkStateFile minGamma withGain withBias (LpResult _ _ gain bias ws) = do
     mkListStr f = intercalate "\t" . map f
 
 
-runBorlLpInferWithRewardRepet :: forall st . (BorlLp st) => Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
+runBorlLpInferWithRewardRepet :: forall st as . (BorlLp st as, Show as, Eq as) => Int -> Policy st as -> Maybe (st, ActionIndex) -> IO (LpResult st as)
 runBorlLpInferWithRewardRepet = runBorlLpInferWithRewardRepetWMax 3
 
-runBorlLpInferWithRewardRepetWMax :: forall st . (BorlLp st) => Int -> Int -> Policy st -> Maybe (st, ActionIndex) -> IO (LpResult st)
+runBorlLpInferWithRewardRepetWMax :: forall st as . (BorlLp st as, Show as, Eq as) => Int -> Int -> Policy st as -> Maybe (st, ActionIndex) -> IO (LpResult st as)
 runBorlLpInferWithRewardRepetWMax wMax repetitionsReward policy mRefStAct = do
-  let mkPol s a =
+  let allActions = lpActions (head states) :: [Action as]
+  let mkPol :: st -> as -> [((NextState st, Action as), Probability)]
+      mkPol s a =
         case policy s a of
           [] -> [((s, a), 0)]
           xs -> filter ((>= 0.001) . snd) xs
   let transitionProbs =
         map (\xs@(x:_) -> (fst x, map snd xs)) $
-        groupBy ((==) `on` second actionName . fst) $
-        sortBy (compare `on` second actionName . fst) $
-        concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (V.toList $ lpActionFilter s) lpActions]
+        groupBy ((==) `on` second tshow . fst) $
+        sortBy (compare `on` second show . fst) $
+        concat [map ((s, a), ) (mkPol s a) | s <- states, a <- map snd $ filter fst $ zip (V.toList $ lpActionFilter (head allActions) s) allActions]
       transProbSums = map (\(x, ps) -> (x, sum $ map snd ps)) transitionProbs
   mapM_ (\(a, p) -> when (abs (1 - p) > 0.001) $ error $ "transition probabilities do not sum up to 1 for state-action: " ++ show a) transProbSums
   let stateActions = map fst transitionProbs
-  let stateActionIndices = M.fromList $ zip (map (second actionName . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
+  let stateActionIndices = M.fromList $ zip (map (second tshow . fst) transitionProbs) [2 ..] -- start with nr 2, as 1 is g
   let obj = Maximize (1 : replicate ((wMax + 1) * length transitionProbs) 0)
   putStr ("Inferring rewards using " <> show repetitionsReward <> " replications ...") >> hFlush stdout
   rewards <- concat <$> mapM (makeReward repetitionsReward) states
   putStrLn "\t[Done]"
-  let rewards' = map (\(x, y, _) -> (second actionName x, y)) rewards
-  let mRefStAct' = second (lpActions !!) <$> mRefStAct :: Maybe (st, Action st)
+  let rewards' = map (\(x, y, _) -> (second tshow x, y)) rewards
+  let mRefStAct' = second (allActions !!) <$> mRefStAct :: Maybe (st, Action as)
   let constr = map (makeConstraints wMax mRefStAct' stateActionIndices rewards) transitionProbs
   let constraints = Sparse (concat constr)
   let bounds = map Free [1 .. ((wMax + 1) * length transitionProbs + 1)]
   let sol = simplex obj constraints bounds
-  let transProbs = map (second (map (first (second actionName))) . first (second actionName)) transitionProbs
+  let transProbs = map (second (map (first (second tshow))) . first (second tshow)) transitionProbs
   let mkSol (g, vals) =
         LpResult
           transProbs
@@ -189,19 +193,19 @@ runBorlLpInferWithRewardRepetWMax wMax repetitionsReward policy mRefStAct = do
   parseSol Nothing sol
   where
     states = [minBound .. maxBound] :: [st]
-    mkResult (s, a) v = ((s, actionName a), v)
+    mkResult (s, a) v = ((s, tshow a), v)
     isOptimal r =
       case r of
         Optimal {} -> True
         _          -> False
 
 makeConstraints ::
-     (BorlLp s)
+     (BorlLp s as, Show as, Eq as)
   => Int
-  -> Maybe (State s, Action s)
+  -> Maybe (State s, Action as)
   -> M.Map (s, T.Text) Int
-  -> [((State s, Action s), Probability, EpisodeEnd)]
-  -> ((State s, Action s), [((State s, Action s), Probability)])
+  -> [((State s, Action as), Probability, EpisodeEnd)]
+  -> ((State s, Action as), [((State s, Action as), Probability)])
   -> [Bound [(Double, Int)]]
 makeConstraints wMax mRefStAct stateActionIndices rewards (stAct, xs)
   | stAct `elem` map fst xs -- double occurance of variable is not allowed!
@@ -227,7 +231,7 @@ makeConstraints wMax mRefStAct stateActionIndices rewards (stAct, xs)
     stateIndex state =
       M.findWithDefault
         (error $ "state " ++ show state ++ " not found in stateIndices. Check your policy for unreachable state-action pairs!")
-        (second actionName state)
+        (second tshow state)
         stateActionIndices
     stateCount = M.size stateActionIndices
     wNrIndex nr state = nr * stateCount + stateIndex state
@@ -236,21 +240,23 @@ makeConstraints wMax mRefStAct stateActionIndices rewards (stAct, xs)
     w3Index state = 3 * stateCount + stateIndex state
     episodeEnds = map (fst3 &&& thd3) rewards
     rewardValue k =
-      case find ((== second actionName k) . second actionName . fst3) rewards of
-        Nothing -> error $ "Could not find reward for: " <> show (second actionName k)
+      case find ((== second tshow k) . second tshow . fst3) rewards of
+        Nothing        -> error $ "Could not find reward for: " <> show (second tshow k)
         Just (_, r, _) -> r
 
 fst3 (x,_,_) = x
 thd3 (_,_,x) = x
 
 
-makeReward :: (BorlLp s) => Int -> s -> IO [((State s, Action s), Double, EpisodeEnd)]
+makeReward :: (BorlLp s as) => Int -> s -> IO [((State s, Action as), Double, EpisodeEnd)]
 makeReward repetitionsReward s = do
-  xss <- mapM ((\a -> replicateM repetitionsReward (a MainAgent s)) . actionFunction) acts
+  let actionFun tp s act = lpActionFunction tp s [act]
+  xss <- mapM ((\a -> replicateM repetitionsReward (actionFun MainAgent s a))) acts
   return $ zipWith (\a xs -> ((s, a), round' $ sum (map (fromReward . fst3) xs) / fromIntegral (length xs), getEpsEnd (map thd3 xs))) acts xss
   where
     round' x = (/100) . fromIntegral $ round (x * 100)
-    acts = map snd $ filter fst $ zip (V.toList $ lpActionFilter s) lpActions
+    allActs = lpActions s
+    acts = map snd $ filter fst $ zip (V.toList $ lpActionFilter (head allActs) s) allActs
     getEpsEnd xs
       | length trues >= length false = True
       | otherwise = False

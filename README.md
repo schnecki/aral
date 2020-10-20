@@ -40,3 +40,6 @@ To build in debug mode use (this writes several files, thus use with care):
     stack build --ghc-options "-DDEBUG"
 
 
+## Debug in GHCI
+
+    stack ghci --flag borl:debug borl borl-examples:exe:gridworld-step

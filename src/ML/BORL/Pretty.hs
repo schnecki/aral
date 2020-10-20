@@ -301,13 +301,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
     colon $$
     nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
     parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) <+>
-    text "Strategy" <>
-    colon <+>
-    text (show $ borl ^. settings . explorationStrategy) $+$
-    text "Exploration" <>
-    colon $$
-    nest nestCols (printFloatWith 8 $ params' ^. exploration) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
+    text "Strategy" <> colon <+> text (show $ borl ^. settings . explorationStrategy) $+$
+    text "Exploration" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. exploration) <+> parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
     nnWorkers $+$
     algDoc
       (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
@@ -323,6 +318,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
+    text "Number of Agents" <> colon <+> text (show $ borl ^. settings . independentAgents) $+$
     algDoc
       (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
        parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
