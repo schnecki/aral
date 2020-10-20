@@ -1,11 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedLists     #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists       #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Main where
 
@@ -24,6 +25,7 @@ import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
 import           Grenade              hiding (train)
+import           Prelude              hiding (Left, Right)
 
 -- State
 data St = Start | Top Int | Bottom Int | End
@@ -66,25 +68,26 @@ instance RewardFuture St where
   type StoreType St = ()
 
 
-instance BorlLp St where
-  lpActions = actions
-  lpActionFilter = actionFilter
+instance BorlLp St Act where
+  lpActions _ = actions
+  lpActionFilter _ = head . actionFilter
+  lpActionFunction = actionFun
 
 
-policy :: Policy St
+policy :: Policy St Act
 policy s a
-  | s == End = [((Start, up), 1.0)]
+  | s == End = [((Start, Up), 1.0)]
   -- | s == End = [((Start, down), 1.0)]
-  | (s, a) == (Start, up) = [((Top 1, up), 1.0)]
-  | (s, a) == (Start, down) = [((Bottom 1, down), 1.0)]
+  | (s, a) == (Start, Up) = [((Top 1, Up), 1.0)]
+  | (s, a) == (Start, Down) = [((Bottom 1, Down), 1.0)]
   | otherwise =
     case s of
       Top nr
-        | nr < maxSt -> [((Top (nr + 1), up), 1.0)]
-      Top {} -> [((End, up), 1.0)]
+        | nr < maxSt -> [((Top (nr + 1), Up), 1.0)]
+      Top {} -> [((End, Up), 1.0)]
       Bottom nr
-        | nr < maxSt -> [((Bottom (nr + 1), down), 1.0)]
-      Bottom {} -> [((End, up), 1.0)]
+        | nr < maxSt -> [((Bottom (nr + 1), Down), 1.0)]
+      Bottom {} -> [((End, Up), 1.0)]
       x -> error (show s)
 
 mRefState :: Maybe (St, ActionIndex)
@@ -96,7 +99,7 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.84837 1 ByStateValues
+        AlgDQNAvgRewAdjusted 0.84837 0.99 ByStateValues
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -113,8 +116,8 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
 
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
-  -- let rl = mkUnichainTabular alg (liftInitSt initState) (return . fromIntegral . fromEnum) actions actionFilter params decay borlSettings Nothing
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -186,18 +189,27 @@ decay =
 
 
 -- Actions
-actions :: [Action St]
-actions = [up, down]
+data Act = Up | Down
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
 
-down,up :: Action St
-up = Action moveUp "up  "
-down = Action moveDown "down"
+instance Show Act where
+  show Up   = "up  "
+  show Down = "down"
 
-actionFilter :: St -> V.Vector Bool
-actionFilter Start    = V.fromList [True, True]
-actionFilter Top{}    = V.fromList [True, False]
-actionFilter Bottom{} = V.fromList [False, True]
-actionFilter End      = V.fromList [True, False]
+actions :: [Act]
+actions = [Up, Down]
+
+
+actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun tp s [Up]   = moveUp tp s
+actionFun tp s [Down] = moveDown tp s
+actionFun _ _ xs      = error $ "Multiple actions received in actionFun: " ++ show xs
+
+actionFilter :: St -> [V.Vector Bool]
+actionFilter Start    = [V.fromList [True, True]]
+actionFilter Top{}    = [V.fromList [True, False]]
+actionFilter Bottom{} = [V.fromList [False, True]]
+actionFilter End      = [V.fromList [True, False]]
 
 
 moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
@@ -205,8 +217,9 @@ moveUp _ s =
   return $
   case s of
     Start               -> (Reward 0, Top 1, False)
-    Top nr | nr == 1    -> (Reward 0, Top (nr+1), False)
+    Top nr | nr == 1    -> (Reward 1, Top (nr+1), False)
     Top nr | nr == 3    -> (Reward 4, Top (nr+1), False)
+    Top nr | nr == 6    -> (Reward 1, if maxSt == nr then End else Top (nr+1), False)
     Top nr | nr < maxSt -> (Reward 0, Top (nr+1), False)
     Top{}               -> (Reward 0, End, False)
     End                 -> (Reward 0, Start, False)
@@ -215,9 +228,8 @@ moveDown :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
 moveDown _ s =
   return $
   case s of
-    Start                  -> (Reward (-2), Bottom 1, False)
-    -- Bottom nr | nr == 1    -> (Reward 0.02, Bottom (nr+1), False)
+    Start                  -> (Reward 0, Bottom 1, False)
     Bottom nr | nr == 3    -> (Reward 6, Bottom (nr+1), False)
     Bottom nr | nr < maxSt -> (Reward 0, Bottom (nr+1), False)
-    Bottom{}               ->  (Reward 0, End, False)
+    Bottom{}               -> (Reward 0, End, False)
     End                    -> (Reward 0, Start, False)
