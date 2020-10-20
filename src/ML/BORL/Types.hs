@@ -11,10 +11,15 @@
 module ML.BORL.Types where
 
 import           Control.DeepSeq
+import           Data.List            (transpose)
 import           Data.Serialize
 import qualified Data.Vector          as VB
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
+
+-- Agent
+type AgentNumber = Int
+
 
 -- Action
 type Action as = as
@@ -23,6 +28,13 @@ type FilteredActions as = [VB.Vector (Action as)] -- ^ List of agents with possi
 -- ActionIndex
 type ActionIndex = Int
 type FilteredActionIndices = [V.Vector ActionIndex] -- ^ Allowed actions for each agent.
+
+
+type ActionChoice = [(IsRandomAction, ActionIndex)]                       -- ^ One action per agent
+type NextActions = (ActionChoice, [WorkerActionChoice])
+type RandomNormValue = Float
+type UseRand = Bool
+type WorkerActionChoice = ActionChoice
 
 
 type IsRandomAction = Bool
@@ -75,10 +87,10 @@ type Gamma = Float
 --   | ValuesFiltered
 --   | ValuesUnfiltered
 
-newtype Value = AgentValue [Float]
+newtype Value = AgentValue [Float] -- ^ One value for every agent
   deriving (Show, Generic, NFData, Serialize)
 
-newtype Values = AgentValues [V.Vector Float]
+newtype Values = AgentValues [V.Vector Float] -- ^ A vector of values for every agent
 
 
 instance Num Value where
@@ -148,6 +160,10 @@ zipWithValues f as (AgentValues vals) = zipWith f as vals
 
 fromValues :: Values -> [V.Vector Float]
 fromValues (AgentValues xs) = xs
+
+-- | Use with care! This function does not work properly on filtered Values.
+toActionValue :: Values -> [Value]
+toActionValue (AgentValues xs) = map AgentValue (transpose $ map V.toList xs)
 
 multiAgentValue :: V.Vector Float -> Value
 #ifdef DEBUG

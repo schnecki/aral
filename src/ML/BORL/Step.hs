@@ -19,6 +19,7 @@ module ML.BORL.Step
 
 #ifdef DEBUG
 import           Control.Concurrent.MVar
+import           Data.List                          (elemIndex)
 import           System.IO.Unsafe                   (unsafePerformIO)
 #endif
 import           Control.Applicative                ((<|>))
@@ -90,6 +91,10 @@ fileStateValues = "stateValues"
 fileDebugStateValuesNrStates :: FilePath
 fileDebugStateValuesNrStates = "stateValuesAllStatesCount"
 
+fileDebugStateValuesAgents :: FilePath
+fileDebugStateValuesAgents = "stateValuesAgents"
+
+
 fileReward :: FilePath
 fileReward = "reward"
 
@@ -121,19 +126,26 @@ stepsM borl nr = do
     else return borl'
   where maxNr = 100
 
-stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> NextActions s -> m (BORL s as)
-stepExecute borl ((randomAction, aNr), workerActions) = do
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> NextActions -> m (BORL s as)
+stepExecute borl (as, workerActions) = do -- ((randomAction, aNr), workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
   -- File IO Operations
-  when (period == 0) $ do
-    liftIO $ writeFile fileStateValues "Period\tRho\tExpSmthRho\tRhoOverEstimated\tMinRho\tVAvg\tR0\tR1\tR0_scaled\tR1_scaled\n"
-    liftIO $ writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
-    liftIO $ writeFile fileReward "Period\tReward\n"
+  when (period == 0) $ liftIO $ do
+    let agents = borl ^. settings . independentAgents
+        times txt = concat $ map (\nr -> "\t" <> txt <> show nr) [1..agents]
+    writeFile fileDebugStateValuesAgents (show agents)
+    writeFile fileStateValues $ "Period" ++ times "Rho" ++ times "ExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg " ++
+      times "R0" ++ times "R1" ++ times "R0_scaled" ++ times "R1_scaled" ++ "\n"
+    writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
+    writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
   let action agTp s as = (borl ^. actionFunction) agTp s as
-  (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state
-  let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state aNr randomAction reward stateNext episodeEnd])) borl
+      actList = borl ^. actionList
+      actNrs = map snd as
+      acts = map (actList VB.!) actNrs
+  (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state acts
+  let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state as reward stateNext episodeEnd])) borl
   (dropLen, _, newBorl) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
   newWorkers <- liftIO $ collectWorkers workerRefs
   return $ set workers newWorkers $ over futureRewards (drop dropLen) $ set s stateNext newBorl
@@ -144,7 +156,7 @@ stepExecute borl ((randomAction, aNr), workerActions) = do
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
-runWorkerActions :: (NFData s, NFData as) => BORL s as -> [WorkerActionChoice s] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
+runWorkerActions :: (NFData s, NFData as) => BORL s as -> [WorkerActionChoice] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
 runWorkerActions _ [] = return (Left [])
 runWorkerActions borl _ | borl ^. settings . disableAllLearning = return (Left $ borl ^. workers)
 runWorkerActions borl acts = Right <$> zipWithM (\act worker -> doFork' $ runWorkerAction borl worker act) acts (borl ^. workers)
@@ -161,12 +173,16 @@ applyStateToRewardFutureData state = map (over futureReward applyToReward)
     applyToReward r                      = r
 
 -- | Run one worker.
-runWorkerAction :: (NFData s, NFData as) => BORL s as -> WorkerState s -> WorkerActionChoice s -> IO (WorkerState s)
-runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (randomAction, aNr) = do
-  (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state
-  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state aNr randomAction reward stateNext episodeEnd])
+runWorkerAction :: (NFData s, NFData as) => BORL s as -> WorkerState s -> WorkerActionChoice -> IO (WorkerState s)
+runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = do
+  let action agTp s as = (borl ^. actionFunction) agTp s as
+      actList = borl ^. actionList
+      actNrs = map snd as
+      acts = map (actList VB.!) actNrs
+  (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state acts
+  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state as reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
-  let addNewRewardToExp currentExpSmthRew (RewardFutureData _ _ _ _ (Reward rew') _ _) = (1 - expSmthPsi) * currentExpSmthRew + expSmthPsi * rew'
+  let addNewRewardToExp currentExpSmthRew (RewardFutureData _ _ _ (Reward rew') _ _) = (1 - expSmthPsi) * currentExpSmthRew + expSmthPsi * rew'
       addNewRewardToExp _ _ = error "unexpected RewardFutureData in runWorkerAction"
   newReplMem <- foldM addExperience replMem materialisedFutures
   return $! force $ WorkerState wNr stateNext newReplMem newFutures (foldl' addNewRewardToExp rew materialisedFutures)
@@ -174,9 +190,9 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) (rando
     splitMaterialisedFutures fs =
       let xs = takeWhile (not . isRewardFuture . view futureReward) fs
        in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
-    addExperience replMem' (RewardFutureData _ state' aNr' randAct (Reward reward) stateNext episodeEnd) = do
+    addExperience replMem' (RewardFutureData _ state' as' (Reward reward) stateNext episodeEnd) = do
       let (_, stateActs, stateNextActs) = mkStateActs borl state' stateNext
-      liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr', randAct, reward, stateNextActs, episodeEnd) replMem'
+      liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as', reward, stateNextActs, episodeEnd) replMem'
     addExperience _ _ = error "Unexpected Reward in calcExperience of runWorkerActions!"
 
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
@@ -197,41 +213,43 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
 execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
-execute borl agent (RewardFutureData period state aNr randomAction (Reward reward) stateNext episodeEnd) = do
+execute borl agent (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
           then do
-            when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
+            when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates, fileDebugStateValuesAgents] $ \f ->
               liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
             writeDebugFiles borl
           else return borl
 #endif
-  (proxies', calc) <- P.insert borl agent period state aNr randomAction reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
-  let lastVsLst = fromMaybe [0] (getLastVs' calc)
-  let rhoVal = fromMaybe 0 (getRhoVal' calc)
-      strRho = show rhoVal
+  (proxies', calc) <- P.insert borl agent period state as reward stateNext episodeEnd (mkCalculation borl) (borl ^. proxies)
+  let lastVsLst = fromMaybe ([toValue agents 0]) (getLastVs' calc)
+      strVAvg = map (show . avg) $ transpose $ map fromValue lastVsLst
+      rhoVal = fromMaybe (toValue agents 0) (getRhoVal' calc)
+      strRho = map show (fromValue rhoVal)
       strRhoSmth = show (borl ^. expSmoothedReward)
-      strRhoOver = show (overEstimateRho borl rhoVal)
-      strMinRho = show (fromMaybe 0 (getRhoMinimumVal' calc))
-      strVAvg = show (avg lastVsLst)
-      strR0 = show $ fromMaybe 0 (getR0ValState' calc)
+      strRhoOver = map (show . overEstimateRho borl) (fromValue rhoVal)
+      strMinRho = map show $ fromValue $ fromMaybe (toValue agents 0) (getRhoMinimumVal' calc)
+
+      strR0 = map show $ fromValue $ fromMaybe (toValue agents 0) (getR0ValState' calc)
       mCfg = borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig
-      strR0Scaled = show $ fromMaybe 0 $ do
+      strR0Scaled = map show $ fromValue $ fromMaybe (toValue agents 0) $ do
          scAlg <- view scaleOutputAlgorithm <$> mCfg
          scParam <- view scaleParameters <$> mCfg
          v <- getR0ValState' calc
-         return $ scaleValues scAlg (Just (scParam ^. scaleMinR0Value, scParam ^. scaleMaxR0Value)) v
-      strR1 = show $ fromMaybe 0 (getR1ValState' calc)
-      strR1Scaled = show $ fromMaybe 0 $ do
+         return $ scaleValue scAlg (Just (scParam ^. scaleMinR0Value, scParam ^. scaleMaxR0Value)) v
+      strR1 = map show $ fromValue $ fromMaybe (toValue agents 0) (getR1ValState' calc)
+      strR1Scaled = map show $ fromValue $ fromMaybe (toValue agents 0) $ do
          scAlg <- view scaleOutputAlgorithm <$> mCfg
          scParam <- view scaleParameters <$> mCfg
          v <- getR1ValState' calc
-         return $ scaleValues scAlg (Just (scParam ^. scaleMinR1Value, scParam ^. scaleMaxR1Value)) v
+         return $ scaleValue scAlg (Just (scParam ^. scaleMinR1Value, scParam ^. scaleMaxR1Value)) v
       avg xs = sum xs / fromIntegral (length xs)
       agents = borl ^. settings . independentAgents
+      list = concatMap ("\t" <>)
   if isMainAgent agent
   then do
-    liftIO $ appendFile fileStateValues (show period ++ "\t" ++ strRho ++ "\t" ++ strRhoSmth ++ "\t" ++ strRhoOver ++ "\t" ++ strMinRho ++ "\t" ++ strVAvg ++ "\t" ++ strR0 ++ "\t" ++ strR1 ++ "\t" ++ strR0Scaled ++ "\t" ++ strR1Scaled ++ "\n")
+    liftIO $ appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ "\n")
     let (eNr, eStart) = borl ^. episodeNrStart
         eLength = borl ^. t - eStart
     when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
@@ -285,7 +303,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s) => BORL s as -> m (BORL s as)
+writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => BORL s as -> m (BORL s as)
 writeDebugFiles borl = do
   let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardAdjusted (borl ^. algorithm)
   let isAnn
@@ -325,23 +343,31 @@ writeDebugFiles borl = do
         | otherwise = getStateFeatList (borl' ^. proxies . v)
   stateFeats <- getStateFeatures
   when ((borl' ^. t `mod` debugPrintCount) == 0) $ do
-    stateValuesV <- mapM (\xs -> if isDqn then rValueWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats
-    stateValuesVScaled <- mapM (\xs -> if isDqn then rValueNoUnscaleWith Worker borl' RBig (V.init xs) (round $ V.last xs) else vValueNoUnscaleWith Worker borl' (V.init xs) (round $ V.last xs)) stateFeats
-    stateValuesW <- mapM (\xs -> if isDqn then return 0 else wValueFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
+    let splitIdx = length stateFeats - agents
+    stateValuesV <- mapM (\xs ->
+                            let (st,as) = V.splitAt splitIdx xs in
+                            if isDqn then rValueWith Worker borl' RBig st (map round $ V.toList as) else vValueWith Worker borl' st (map round $ V.toList as)) stateFeats
+    stateValuesVScaled <- mapM (\xs ->
+                                  let (st,as) = V.splitAt splitIdx xs in
+                                  if isDqn then rValueNoUnscaleWith Worker borl' RBig st (map round $ V.toList as) else vValueNoUnscaleWith Worker borl' st (map round $ V.toList as)) stateFeats
+    stateValuesW <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in if isDqn then return 0 else wValueFeat borl' st (map round $ V.toList as)) stateFeats
     liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
     liftIO $ appendFile fileDebugStateVScaled (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesVScaled <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
       liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
-      psiVValues <- mapM (\xs -> psiVFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
+      psiVValues <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in psiVFeat borl' st (map round $ V.toList as)) stateFeats
       liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
-      psiWValues <- mapM (\xs -> psiWFeat borl' (V.init xs) (round $ V.last xs)) stateFeats
+      psiWValues <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in psiWFeat borl' st (map round $ V.toList xs)) stateFeats
       liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
   return borl'
   where
+    getStateFeatList :: Proxy -> [V.Vector Float]
     getStateFeatList Scalar {} = []
-    getStateFeatList (Table t _) = map (\(xs, y) -> V.snoc xs (fromIntegral y)) (M.keys t)
-    getStateFeatList nn = concatMap (\xs -> map (\(idx, _) -> V.snoc xs (fromIntegral idx)) acts) (nn ^. proxyNNConfig . prettyPrintElems)
+    getStateFeatList (Table t _ _) = map (\(xs, y) -> xs V.++ V.replicate agents (fromIntegral y)) (M.keys t)
+    getStateFeatList nn = concatMap (\xs -> map (\a -> xs V.++ V.replicate agents (fromIntegral $ actIdx a)) acts) (nn ^. proxyNNConfig . prettyPrintElems)
+    actIdx a = fromMaybe (-1) (elemIndex a acts)
     acts = VB.toList $ borl ^. actionList
+    agents = borl ^. settings . independentAgents
     mkListStr :: (a -> String) -> [a] -> String
     mkListStr f = intercalate "\t" . map f
     shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs

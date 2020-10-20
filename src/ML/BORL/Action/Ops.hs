@@ -39,12 +39,8 @@ import           ML.BORL.Workers.Type
 
 import           Debug.Trace
 
-type ActionChoice s = [(IsRandomAction, ActionIndex)]                       -- ^ One action per agent
+
 type ActionSelection s = [[(Float, ActionIndex)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
-type NextActions s = (ActionChoice s, [WorkerActionChoice s])
-type RandomNormValue = Float
-type UseRand = Bool
-type WorkerActionChoice s = ActionChoice s
 
 data SelectedActions s = SelectedActions
   { maximised :: [(Float, ActionIndex)] -- ^ Choose actions by maximising objective
@@ -53,7 +49,7 @@ data SelectedActions s = SelectedActions
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (MonadIO m) => BORL s as -> m (NextActions s)
+nextAction :: (MonadIO m) => BORL s as -> m NextActions
 nextAction !borl = do
   mainAgent <- nextActionFor borl mainAgentStrategy (borl ^. s) (params' ^. exploration) `using` rparWith rpar
   ws <- zipWithM (nextActionFor borl (borl ^. settings . explorationStrategy)) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
@@ -64,7 +60,7 @@ nextAction !borl = do
     mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
                       | otherwise = borl ^. settings . explorationStrategy
 
-nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Float -> m (ActionChoice s)
+nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Float -> m ActionChoice
 nextActionFor borl strategy state explore = zipWithM chooseAgentAction acts [0 ..]
   where
     acts = actionIndicesFiltered borl state

@@ -192,12 +192,12 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    put $ map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.toList st, map V.toList as), a, rand, rew, (V.toList st', map V.toList as'), epsEnd)) xs
+    put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, map V.toList as), assel, rew, (V.toList st', map V.toList as'), epsEnd)) xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    (xs :: [Experience]) <- map (\((st,as), a, rand, rew, (st',as'), epsEnd) -> ((V.fromList st, map V.fromList as), a, rand, rew, (V.fromList st', map V.fromList as'), epsEnd)) <$> get
+    (xs :: [Experience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, map V.fromList as), assel, rew, (V.fromList st', map V.fromList as'), epsEnd)) <$> get
     maxIdx <- get
     return $
       unsafePerformIO $ do

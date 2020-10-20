@@ -16,8 +16,7 @@ import           ML.BORL.Types
 
 type ReplMemFun m s
    = (StateFeatures, FilteredActionIndices)
-   -> [ActionIndex]
-   -> Bool
+   -> ActionChoice
    -> RewardValue
    -> (StateNextFeatures, FilteredActionIndices)
    -> EpisodeEnd

@@ -85,15 +85,14 @@ mkCalculation ::
      (MonadIO m)
   => BORL s as
   -> (StateFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
-  -> [ActionIndex] -- ^ ActionIndex for each agent
-  -> Bool
+  -> ActionChoice -- ^ ActionIndex for each agent
   -> RewardValue
   -> (StateNextFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
   -> EpisodeEnd
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
-mkCalculation borl state aNr randomAction reward stateNext episodeEnd =
-  mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
+mkCalculation borl state as reward stateNext episodeEnd =
+  mkCalculation' borl state as reward stateNext episodeEnd (borl ^. algorithm)
 
 ite :: Bool -> p -> p -> p
 ite True thenPart _  = thenPart
@@ -135,34 +134,21 @@ overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff
         Maximise -> max
         Minimise -> min
 
--- mkCalculationAgents ::
---      (MonadIO m)
---   => BORL s as
---   -> (StateFeatures, [FilteredActionIndices])
---   -> [ActionIndex]
---   -> Bool
---   -> RewardValue
---   -> (StateNextFeatures, [FilteredActionIndices])
---   -> EpisodeEnd
---   -> ExpectedValuationNext
---   -> m (Calculation, ExpectedValuationNext)
--- mkCalculationAgents borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd = do
---   mkCalculation' borl state aNr randomAction reward stateNext episodeEnd (borl ^. algorithm)
-
 mkCalculation' ::
      (MonadIO m)
   => BORL s as
   -> (StateFeatures, FilteredActionIndices)
-  -> [ActionIndex]
-  -> Bool
+  -> ActionChoice
   -> RewardValue
   -> (StateNextFeatures, FilteredActionIndices)
   -> EpisodeEnd
   -> Algorithm NetInputWoAction
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
-mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
+mkCalculation' borl (state, stateActIdxes) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
   let params' = decayedParameters borl
+  let aNr = map snd as
+      randomAction = any fst as
   let isRefState = mRefState == Just (state, aNr)
   let alp = getExpSmthParam borl rho alpha
       bta = getExpSmthParam borl v beta
@@ -282,7 +268,9 @@ mkCalculation' borl (state, stateActIdxes) aNr randomAction reward (stateNext, s
         , getExpectedValStateNextR1 = Nothing
         })
 
-mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) expValStateNext = do
+mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) expValStateNext = do
+  let aNr = map snd as
+      randomAction = any fst as
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr
   rhoVal <- rhoValueWith Worker borl state aNr
   r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
@@ -365,7 +353,9 @@ mkCalculation' borl sa@(state, _) aNr randomAction reward (stateNext, stateNextA
         , getExpectedValStateNextR0 = Just expStateValR0
         , getExpectedValStateNextR1 = Just expStateValR1
         })
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) expValStateNext = do
+mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORLVOnly avgRewardType mRefState) expValStateNext = do
+  let aNr = map snd as
+      randomAction = any fst as
   let alp = getExpSmthParam borl rho alpha
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
       bta = getExpSmthParam borl v beta
@@ -439,7 +429,9 @@ mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActI
         , getExpectedValStateNextR1 = Nothing
         })
 
-mkCalculation' borl (state, _) aNr randomAction reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) expValStateNext = do
+mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQN ga _) expValStateNext = do
+  let aNr = map snd as
+      randomAction = any fst as
   let gam = getExpSmthParam borl r1 gamma
   let epsEnd
         | episodeEnd = 0

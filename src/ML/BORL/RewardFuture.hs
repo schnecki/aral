@@ -8,7 +8,6 @@ module ML.BORL.RewardFuture
   , futurePeriod
   , futureState
   , futureActionNr
-  , futureRandomAction
   , futureReward
   , futureStateNext
   , futureEpisodeEnd
@@ -27,16 +26,15 @@ import           ML.BORL.Types
 -------------------- Main RL Datatype --------------------
 
 data RewardFutureData s = RewardFutureData
-                { _futurePeriod       :: !Period
-                , _futureState        :: !(State s)
-                , _futureActionNr     :: ![ActionIndex]
-                , _futureRandomAction :: !IsRandomAction
-                , _futureReward       :: !(Reward s)
-                , _futureStateNext    :: !(StateNext s)
-                , _futureEpisodeEnd   :: !Bool
+                { _futurePeriod     :: !Period
+                , _futureState      :: !(State s)
+                , _futureActionNr   :: !ActionChoice
+                , _futureReward     :: !(Reward s)
+                , _futureStateNext  :: !(StateNext s)
+                , _futureEpisodeEnd :: !Bool
                 } deriving (Generic, NFData, Serialize)
 makeLenses ''RewardFutureData
 
 
 mapRewardFutureData :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> RewardFutureData s -> RewardFutureData s'
-mapRewardFutureData f g (RewardFutureData p s aNr rand rew stateNext epEnd) = RewardFutureData p (f s) aNr rand (mapReward g rew) (f stateNext) epEnd
+mapRewardFutureData f g (RewardFutureData p s as rew stateNext epEnd) = RewardFutureData p (f s) as (mapReward g rew) (f stateNext) epEnd

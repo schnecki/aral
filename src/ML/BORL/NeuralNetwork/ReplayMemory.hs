@@ -48,8 +48,7 @@ instance NFData ReplayMemories where
 ------------------------------ Replay Memory ------------------------------
 
 type Experience = ((StateFeatures, [V.Vector ActionIndex]),     -- State Features s & allowed actions per agent
-                   [ActionIndex],                               -- action a
-                   IsRandomAction,                              -- true, iff the action was randomly chosen
+                   ActionChoice,                                -- true, iff the action was randomly chosen, actionIndex a
                    RewardValue,                                 -- reward r
                    (StateNextFeatures, [V.Vector ActionIndex]), -- state features s' & allowed actions per agent
                    EpisodeEnd)                                  -- true, iff it is the end of the episode
@@ -70,11 +69,11 @@ instance NFData ReplayMemory where
 
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
 addToReplayMemories _ e (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> addToReplayMemory e rm
-addToReplayMemories 1 e@(_, [idx], _, _, _, _) (ReplayMemoriesPerActions tmp rs) = do
+addToReplayMemories 1 e@(_, [(_,idx)], _, _, _) (ReplayMemoriesPerActions tmp rs) = do
   let r = rs VI.! idx
   r' <- addToReplayMemory e r
   return $!! ReplayMemoriesPerActions tmp (rs VI.// [(idx, r')])
-addToReplayMemories 1 (_, _, _, _, _, _) ReplayMemoriesPerActions{} = error "ReplayMemoriesPerActions and multiple agents are incompatible!"
+addToReplayMemories 1 (_, _, _, _, _) ReplayMemoriesPerActions{} = error "ReplayMemoriesPerActions and multiple agents are incompatible!"
 addToReplayMemories _ e (ReplayMemoriesPerActions Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
   tmpRepMem' <- addToReplayMemory e tmpRepMem
@@ -83,7 +82,7 @@ addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
     let vec = tmpRepMem' ^. replayMemoryVector
     mems <- mapM (VM.read vec) [0.. tmpRepMem' ^. replayMemorySize-1]
     let startIdx = case head mems ^. _2 of
-          [idx] -> idx
+          [(_,idx)] -> idx
           _ -> error "ReplayMemoriesPerActions and multiple agents are incompatible!"
     let r = rs VI.! startIdx
     r' <- foldM (flip addToReplayMemory) r mems
@@ -135,7 +134,7 @@ getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
     splitTerminal xs = filter (not . null) $ splitList isTerminal xs
 
 isTerminal :: Experience -> Bool
-isTerminal (_, _, _, _, _, t) = t
+isTerminal (_, _, _, _, t) = t
 
 
 splitList :: (a -> Bool) -> [a] -> [[a]]

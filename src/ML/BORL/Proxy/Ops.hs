@@ -63,8 +63,6 @@ import           ML.BORL.Workers.Type
 
 import           Debug.Trace
 
-type AgentNumber = Int
-
 -- ^ Lookup Type for neural networks.
 data LookupType = Target | Worker
   deriving (Eq, Ord, Show, Read)
@@ -95,22 +93,22 @@ insert ::
   -> AgentType
   -> Period                     -- ^ Period when action was taken
   -> State s                    -- ^ State when action was taken
-  -> [ActionIndex]              -- ^ ActionIndex for each agent
-  -> IsRandomAction
+  -> ActionChoice               -- ^ RandomAction & ActionIndex for each agent
   -> RewardValue
   -> StateNext s
   -> EpisodeEnd
   -> ReplMemFun m s
   -> Proxies
   -> m (Proxies, Calculation)
-insert borl agent _ state aNrs randAct rew stateNext episodeEnd getCalc pxs
-  | borl ^. settings . disableAllLearning = (pxs, ) . fst <$> getCalc stateActs aNrs randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+insert borl agent _ state aNrs rew stateNext episodeEnd getCalc pxs
+  | borl ^. settings . disableAllLearning = (pxs, ) . fst <$> getCalc stateActs aNrs rew stateNextActs episodeEnd emptyExpectedValuationNext
   where
     (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 !Nothing) = do
-  (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 !Nothing) = do
+  (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
   -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftIO $ collectForkResult forkMv'
+  let aNr = map snd as
   let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
   pRho' <-  mInsertProxy   (getRhoVal' calc) pRho             `using` rpar
@@ -123,20 +121,21 @@ insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !ge
   return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
+insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
   | (1 + period) `mod` (borl ^. settings . nStep) /= 0 || period <= fromIntegral (replayMemoriesSubSize replMems) - 1 = do
-    replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
+    (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     return (replayMemory ?~ replMem' $ pxs, calc)
   | otherwise = do
-    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (~calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
+    (~calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let !config = fromMaybe (error "Neither v nor r1 holds a ANN proxy, but we got a replay memory...") $ pV ^? proxyNNConfig <|> borl ^? proxies.r1.proxyNNConfig  --  ## TODO why not r1
     let !workerReplMems = borl ^.. workers.traversed.workerReplayMemory
     !mems <- liftIO $ getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize) replMems'
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
-    let mkCalc (s, idx, rand, rew, s', epiEnd) = getCalc s idx rand rew s' epiEnd
+    let mkCalc (s, idx, rew, s', epiEnd) = getCalc s idx rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
+    let aNr = map snd as
     let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calcs !px =
           maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
@@ -157,8 +156,9 @@ insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !ge
     return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMems'), calc)
   where
     (!stateFeat, !stateActs, !stateNextActs) = mkStateActs borl state stateNext
-insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy Nothing) = do
-  (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy Nothing) = do
+  (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
+  let aNr = map snd as
   let mInsertProxy !mVal !px = maybe (return (px, False)) (\val -> (, True) <$> insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
   (!pRhoMin', _) <-        mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
   (!pRho', _) <-           mInsertProxy (getRhoVal' calc) pRho `using` rpar
@@ -173,20 +173,21 @@ insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !ge
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert !borl !agent !period !state !aNr !randAct !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy (Just !replMems))
+insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy (Just !replMems))
   | (1 + period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replayMemoriesSubSize replMems) - 1 = do
-    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
+    (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     return (replayMemory ?~ replMems' $ pxs, calc)
   | otherwise = do
-    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, aNr, randAct, rew, stateNextActs, episodeEnd) replMems
-    (~calc, _) <- getCalc stateActs aNr randAct rew stateNextActs episodeEnd emptyExpectedValuationNext
+    !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
+    (~calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let !config = proxy ^?! proxyNNConfig
     let !workerReplMems = borl ^.. workers.traversed.workerReplayMemory
     !mems <- liftIO $ getRandomReplayMemoriesElements (borl ^. settings . nStep) (config ^. trainBatchSize) replMems'
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
-    let mkCalc (!sas, !idx, !rand, !sarew, !sas', !epiEnd) = getCalc sas idx rand sarew sas' epiEnd
+    let mkCalc (!sas, !idx, !sarew, !sas', !epiEnd) = getCalc sas idx sarew sas' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
+    let aNr = map snd as
     let mInsertProxy !mVal !px = maybe (return (px, False)) (\val -> (,True) <$> insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     let mTrainBatch !accessor !calculations !px =
           maybe (return (px, False)) (\xs -> (,True) <$> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calculations)
@@ -216,9 +217,9 @@ executeAndCombineCalculations :: (MonadIO m) => (Experience -> ExpectedValuation
 executeAndCombineCalculations _ [] = error "Empty experiences in executeAndCombineCalculations"
 executeAndCombineCalculations calcFun experiences = fst <$> foldM eval ([], emptyExpectedValuationNext) (reverse experiences)
   where
-    eval (res, lastExpVal) experience@((state, _), idx, _, _, _, _) = do
+    eval (res, lastExpVal) experience@((state, _), idx, _, _, _) = do
       (calc, newExpVal) <- calcFun experience lastExpVal
-      return (((state, idx), calc) : res, newExpVal)
+      return (((state, map snd idx), calc) : res, newExpVal)
 
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
@@ -463,20 +464,23 @@ getMinMaxVal !p =
 
 
 -- | This function retrieves the data and builds a table like return value.
-mkNNList :: (MonadIO m) => BORL s as -> Bool -> Proxy -> m [(NetInputWoAction, ([[(ActionIndex, Float)]], [[(ActionIndex, Float)]]))]
+mkNNList :: (MonadIO m) => BORL s as -> Bool -> Proxy -> m [(NetInputWoAction, ([(ActionIndex, Value)], [(ActionIndex, Value)]))]
 mkNNList !borl !scaled !pr =
   mapM
     (\st -> do
        target <-
          if scaled
-           then fmap V.toList . fromValues <$> lookupActionsNeuralNetwork Target st pr
-           else fmap V.toList . fromValues <$> lookupActionsNeuralNetworkUnscaled Target st pr
+           then lookupActionsNeuralNetwork Target st pr
+           else lookupActionsNeuralNetworkUnscaled Target st pr
        worker <-
          if scaled
-           then fmap V.toList . fromValues <$> lookupActionsNeuralNetwork Worker st pr
-           else fmap V.toList . fromValues <$> lookupActionsNeuralNetworkUnscaled Worker st pr
-       return (st, (map (zip actIdxs) target, map (zip actIdxs) worker)))
+           then lookupActionsNeuralNetwork Worker st pr
+           else lookupActionsNeuralNetworkUnscaled Worker st pr
+       return (st, (zip actIdxs (toActionValue target), zip actIdxs (toActionValue worker))))
+       -- return (st, (replicate agents actIdxs))
     (conf ^. prettyPrintElems)
   where
     conf = pr ^?! proxyNNConfig
-    actIdxs = [0 .. (pr ^?! proxyNrActions - 1)]
+    agents = pr ^?! proxyNrAgents
+    actIdxs = [0 .. (nrActs - 1)]
+    nrActs = pr ^?! proxyNrActions

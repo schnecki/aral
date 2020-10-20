@@ -25,7 +25,6 @@ module ML.BORL.Type
   , futurePeriod
   , futureState
   , futureActionNr
-  , futureRandomAction
   , futureReward
   , futureStateNext
   , futureEpisodeEnd
