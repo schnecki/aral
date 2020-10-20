@@ -326,7 +326,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Algorithm" <>
     colon $$
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
-    text "Number of Agents" <> colon <+> text (show $ borl ^. settings . independentAgents) $+$
+    text "Number of Agents" <> colon $$ nest nestCols (text (show $ borl ^. settings . independentAgents)) $+$
     algDoc
       (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
        parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$

@@ -1,9 +1,16 @@
+-- With the goal state being (0,0) an agent following the optimal policy needs on average 4 steps to the goal state.
+-- Thus, it accumulates a reward of 4.0*4 + 10 = 26.0 every 5 steps. That is 5.2 as average reward in the optimal case.
+--
+-- rho^\pi^* = 5.20
+--
+
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
@@ -26,7 +33,7 @@ import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Default
 import           Data.Function            (on)
-import           Data.List                (genericLength, groupBy, sort, sortBy)
+import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
@@ -37,6 +44,7 @@ import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
 import           GHC.TypeLits
 import           Grenade
+import           Prelude                  hiding (Left, Right)
 import           System.IO
 import           System.Random
 
@@ -49,7 +57,7 @@ goalX = 0
 goalY = 0
 
 
-expSetup :: BORL St -> ExperimentSetting
+expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld-mini 28.1."
@@ -101,11 +109,12 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
-instance BorlLp St where
-  lpActions = actions
-  lpActionFilter = actFilter
+instance BorlLp St Act where
+  lpActions _ = actions
+  lpActionFunction = actionFun
+  lpActionFilter _ = head . actFilter
 
-policy :: Policy St
+policy :: Policy St Act
 policy s a
   | s == fromIdx (goalX, goalY) && a == actRand =
     let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
@@ -132,8 +141,8 @@ policy s a
     states = [minBound .. maxBound] :: [St]
     stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
     filterActRand ((r, c), a)
-      | r == goalX && c == goalY = actionName a == actionName actRand
-      | otherwise = actionName a /= actionName actRand
+      | r == goalX && c == goalY = a == actRand
+      | otherwise = a /= actRand
     filterChance [x] = [x]
     filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
       where
@@ -147,22 +156,22 @@ policy s a
     mkDistance (r, c) = r + abs (c - goalY)
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
-fakeEpisodes :: BORL St -> BORL St -> BORL St
+fakeEpisodes :: BORL St Act -> BORL St Act -> BORL St Act
 fakeEpisodes rl rl'
   | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
   | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
 
 
-instance ExperimentDef (BORL St)
-  -- type ExpM (BORL St) = TF.SessionT IO
+instance ExperimentDef (BORL St Act)
+  -- type ExpM (BORL St Act) = TF.SessionT IO
                                           where
-  type ExpM (BORL St) = IO
-  type InputValue (BORL St) = ()
-  type InputState (BORL St) = ()
-  type Serializable (BORL St) = BORLSerialisable St
+  type ExpM (BORL St Act) = IO
+  type InputValue (BORL St Act) = ()
+  type InputState (BORL St Act) = ()
+  type Serializable (BORL St Act) = BORLSerialisable St Act
   serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter tblInp
+  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
+  deserialisable = fromSerialisable actionFun actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
@@ -170,14 +179,14 @@ instance ExperimentDef (BORL St)
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
-        val l = realToFrac (rl' ^?! l)
+        val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (val $ lastRewards._head)
+                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
                   , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
-                  [ StepResult "reward" p (val $ lastRewards._head)
-                  , StepResult "avgRew" p (val $ proxies . rho . proxyScalar)
+                  [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
+                  , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
                   , StepResult "psiRho" p (val $ psis . _1)
                   , StepResult "psiV" p (val $ psis . _2)
                   , StepResult "psiW" p (val $ psis . _3)
@@ -281,7 +290,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -320,19 +329,14 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- let rl = mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay borlSettings (Just initVals)
+  -- let rl = mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
-    cmds =
-      zipWith3
-        (\n (s, a) na -> (s, (n, Action a na)))
-        [0 ..]
-        [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
-        (tail names)
+    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 
@@ -357,8 +361,6 @@ netInp st =
 
 tblInp :: St -> V.Vector Float
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
-
-names = ["random", "up   ", "down ", "left ", "right"]
 
 initState :: St
 initState = fromIdx (maxX,maxY)
@@ -386,15 +388,32 @@ instance Bounded St where
 
 
 -- Actions
-actions :: [Action St]
-actions = zipWith Action
-  (map goalState [moveRand, moveUp, moveDown, moveLeft, moveRight])
-  names
+data Act = Random | Up | Down | Left | Right
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
-actFilter :: St -> V.Vector Bool
+instance Show Act where
+  show Random = "random"
+  show Up     = "up    "
+  show Down   = "down  "
+  show Left   = "left  "
+  show Right  = "right "
+
+actions :: [Act]
+actions = [Random, Up, Down, Left, Right]
+
+
+actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun tp s [Random] = goalState moveRand tp s
+actionFun tp s [Up]     = goalState moveUp tp s
+actionFun tp s [Down]   = goalState moveDown tp s
+actionFun tp s [Left]   = goalState moveLeft tp s
+actionFun tp s [Right]  = goalState moveRight tp s
+actionFun _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
+
+actFilter :: St -> [V.Vector Bool]
 actFilter st
-  | st == fromIdx (goalX, goalY) = True `V.cons` V.replicate (length actions - 1) False
-actFilter _ = False `V.cons` V.replicate (length actions - 1) True
+  | st == fromIdx (goalX, goalY) = [True `V.cons` V.replicate (length actions - 1) False]
+actFilter _  = [False `V.cons` V.replicate (length actions - 1) True]
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)

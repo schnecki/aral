@@ -189,9 +189,7 @@ usermode = do
 
   askUser mInverseSt True usage cmds [] (flipObjective rl)
   where
-    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Down, Left, Right])
-
-    -- [("i", goalState moveUp), ("j", goalState moveDown), ("k", goalState moveLeft), ("l", goalState moveRight)]
+    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 
@@ -215,19 +213,6 @@ netInp st = V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst 
 
 tblInp :: St -> V.Vector Float
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
-
-data Act = Random | Up | Down | Left | Right
-  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
-
-instance Show Act where
-  show Random = "random"
-  show Up     = "up    "
-  show Down   = "down  "
-  show Left   = "left  "
-  show Right  = "right "
-
-actions :: [Act]
-actions = [Random, Up, Down, Left, Right]
 
 initState :: St
 initState = fromIdx (maxX,maxY)
@@ -255,6 +240,20 @@ instance Bounded St where
 
 
 -- Actions
+data Act = Random | Up | Down | Left | Right
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
+
+instance Show Act where
+  show Random = "random"
+  show Up     = "up    "
+  show Down   = "down  "
+  show Left   = "left  "
+  show Right  = "right "
+
+actions :: [Act]
+actions = [Random, Up, Down, Left, Right]
+
+
 actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
 actionFun tp s [Random] = goalState moveRand tp s
 actionFun tp s [Up]     = goalState moveUp tp s
