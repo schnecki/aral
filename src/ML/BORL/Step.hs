@@ -133,9 +133,9 @@ stepExecute borl (as, workerActions) = do
   -- File IO Operations
   when (period == 0) $ liftIO $ do
     let agents = borl ^. settings . independentAgents
-        times txt = concat $ map (\nr -> "\t" <> txt <> show nr) [1..agents]
+        times txt = concatMap (\nr -> "\t" <> txt <> "-Ag" <> show nr) [1..agents]
     writeFile fileDebugStateValuesAgents (show agents)
-    writeFile fileStateValues $ "Period" ++ times "Rho" ++ times "ExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg " ++
+    writeFile fileStateValues $ "Period" ++ times "Rho" ++ times "ExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg" ++
       times "R0" ++ times "R1" ++ times "R0_scaled" ++ times "R1_scaled" ++ "\n"
     writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     writeFile fileReward "Period\tReward\n"
@@ -217,7 +217,7 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
 #ifdef DEBUG
   borl <- if isMainAgent agent
           then do
-            when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates, fileDebugStateValuesAgents] $ \f ->
+            when (borl ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
               liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
             writeDebugFiles borl
           else return borl
@@ -228,7 +228,7 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
       rhoVal = fromMaybe (toValue agents 0) (getRhoVal' calc)
       strRho = map show (fromValue rhoVal)
       strRhoSmth = show (borl ^. expSmoothedReward)
-      strRhoOver = map (show . overEstimateRho borl) (fromValue rhoVal)
+      strRhoOver = map (show . overEstimateRhoCalc borl) (fromValue rhoVal)
       strMinRho = map show $ fromValue $ fromMaybe (toValue agents 0) (getRhoMinimumVal' calc)
 
       strR0 = map show $ fromValue $ fromMaybe (toValue agents 0) (getR0ValState' calc)

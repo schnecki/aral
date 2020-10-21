@@ -19,7 +19,7 @@ module ML.BORL.Calculation.Ops
     , wValueFeat
     , rhoValue
     , rhoValueAgentWith
-    , overEstimateRho
+    , overEstimateRhoCalc
     , RSize (..)
     , expSmthPsi
     ) where
@@ -123,8 +123,8 @@ getExpSmthParam borl p param
     params' = decayedParameters borl
 
 -- | Overestimates the average reward. This ensures that we constantly aim for better policies.
-overEstimateRho :: BORL s as -> Float -> Float
-overEstimateRho borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff)
+overEstimateRhoCalc :: BORL s as -> Float -> Float
+overEstimateRhoCalc borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff)
   where
     expSmthRho = borl ^. expSmoothedReward
     diff = rhoVal - expSmthRho
@@ -221,7 +221,9 @@ mkCalculation' borl (state, stateActIdxes) as reward (stateNext, stateNextActIdx
   -- PsiRho (should converge to 0)
   psiRho <- ite (isUnichain borl) (return $ rhoVal' - rhoVal) (subtract rhoVal' <$> rhoStateValue borl (stateNext, stateNextActIdxes))
   -- V
-  let rhoValOverEstimated = mapValue (overEstimateRho borl) rhoVal'
+  let rhoValOverEstimated
+        | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
+        | otherwise = rhoVal'
   let vValState' = (1 - bta) .* vValState + bta .* (reward .- rhoValOverEstimated + epsEnd .* vValStateNext + nonRandAct .* (psiVState + zetaVal .* psiWState))
       psiV = reward .+ vValStateNext - rhoValOverEstimated - vValState' -- should converge to 0
       psiVState' = (1 - xiVal * bta) .* psiVState + bta * xiVal .* psiV
@@ -312,7 +314,8 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
             ByMovAvg _ -> rhoState
             Fixed x -> toValue agents x
             _ -> (1 - alp) .* rhoVal + alp .* rhoState
-      rhoValOverEstimated = mapValue (overEstimateRho borl) rhoVal'
+      rhoValOverEstimated | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
+                          | otherwise = rhoVal'
   -- RhoMin
   let rhoMinimumVal'
         | randomAction = rhoMinimumState
@@ -327,7 +330,11 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       expStateValR1 = reward .- rhoValOverEstimated + ga1 * epsEnd .* expStateNextValR1
   let r0ValState' = (1 - gam) .* r0ValState + gam .* expStateValR0
   let r1ValState' = (1 - gam) .* r1ValState + gam .* expStateValR1
-  let expSmthRewRate = min alp 0.001
+  let expSmthRewRate | borl ^. t < 100 = 0.5
+                     | otherwise = min alp 0.001
+      expSmthRew' | randomAction && not learnFromRandom = borl ^. expSmoothedReward
+                  | borl ^. t < 100 = sum (fromValue rhoVal') / fromIntegral agents
+                  | otherwise = (1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward
   return
     ( Calculation
         { getRhoMinimumVal' = Just rhoMinimumVal'
@@ -344,7 +351,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
         , getLastVs' = Nothing
         , getLastRews' = force lastRews'
         , getEpisodeEnd = episodeEnd
-        , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward)
+        , getExpSmoothedReward' = expSmthRew'
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -393,7 +400,9 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
             ByMovAvg _ -> rhoState
             Fixed x -> toValue agents x
             _ -> (1 - alp) .* rhoVal + alp .* rhoState
-      rhoValOverEstimated = mapValue (overEstimateRho borl) rhoVal'
+      rhoValOverEstimated
+        | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
+        | otherwise = rhoVal'
   let rhoMinimumVal'
         | randomAction = rhoMinimumState
         | otherwise = zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'

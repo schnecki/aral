@@ -164,21 +164,21 @@ executables:
   #   - borl
   #   - hmatrix-glpk
 
-  # three-states:
-  #   main:                ThreeStates.hs
-  #   other-modules:
-  #   - Helper
-  #   - SolveLp
-  #   source-dirs:         .
-  #   default-extensions: CPP
-  #   ghc-options:
-  #   - -threaded
-  #   - -rtsopts
-  #   - -with-rtsopts=-N
-  #   dependencies:
-  #   - borl
-  #   - experimenter
-  #   - hmatrix-glpk
+  three-states:
+    main:                ThreeStates.hs
+    other-modules:
+    - Helper
+    - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
 
   parallel:
     main:                Parallel.hs

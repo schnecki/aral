@@ -12,16 +12,35 @@ function age() {
    echo $elapsed
 }
 
-gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
-gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:6] 'stateValues' using 0:col with lines; pause mouse close; " &
-gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=7:8] 'stateValues' using 0:col with points; pause mouse close; " &
-gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=9:10] 'stateValues' using 0:col with points; pause mouse close; " &
+agents="`head -n1 stateValuesAgents`"
+
+echo "AGENTS: $agents"
+
+# gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
+
+START=2
+END=$((START+agents*5-1))
+echo "col=$START:$END"
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with lines; pause mouse close; " &
+
+START=$((END+1))
+END=$((START+agents*2-1))
+echo "col=$START:$END"
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with points; pause mouse close; " &
+
+START=$((END+1))
+END=$((START+agents*2-1))
+echo "col=$START:$END"
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with points; pause mouse close; " &
+
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:3] 'costs' using 0:col with points; pause mouse close; " &
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'reward' using 0:col with points; pause mouse close; " &
 
-if [[ $(age "$file") < 300 ]];
-then
-    NR="`head -n1 stateValuesAllStatesCount`"
+# if [[ $(age "$file") < 300 ]];
+# then
+NR="`head -n1 stateValuesAllStatesCount`"
+if [ $? -eq 0 ]; then
+    # NR="`head -n1 stateValuesAllStatesCount`"
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates_scaled' using 1:col with lines; set key title 'All V Values (Scaled)'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateWAllStates' using 1:col with lines; set key title 'All W Values'; pause mouse close; " &

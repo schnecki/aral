@@ -107,10 +107,10 @@ prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey
 prettyTableRows :: (MonadIO m, Show s, Show as, Ord s) => BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
-    P.Table m _ agents ->
+    P.Table m _ _ ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
-          mkInput k = text (filter (/= '"') $ show $ map printFloat (V.toList k))
-      in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> text (mkAct idx) <> colon <+> printValue v)) $
+          mkInput k = maybe (text (filter (/= '"') $ show $ map printFloat (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+      in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
       sortBy (compare `on`  fst.fst) $ map ((\((st,a), v) -> ((st,a), AgentValue (V.toList v)))) (M.toList m)
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
@@ -121,7 +121,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
 
 
 mkListFromNeuralNetwork ::
-     (MonadIO m, Show s, Ord s, Eq s)
+     (MonadIO m)
   => BORL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
@@ -129,21 +129,16 @@ mkListFromNeuralNetwork ::
   -> Modifier m
   -> P.Proxy
   -> m [(ActionIndex -> Doc, ([(ActionIndex, Value)], [(ActionIndex, Value)]))]
-mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = do
-  let subPr
-        | isCombinedProxy pr = pr ^?! proxySub
-        | otherwise = pr
-  finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
+mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = finalize <$> (mkNNList borl scaled pr >>= mapM mkModification)
   where
-    agents = borl ^. settings . independentAgents
-    finalize = map (first (prettyStateActionEntry borl prettyState prettyActionIdx agents))
+    finalize = map (first (prettyStateActionEntry borl prettyState prettyActionIdx))
     mkModification (inp, (xsT, xsW)) = do
-      xsT' <- mapM (\(idx, val) -> (idx,) <$> modifier Target (inp, idx) val) xsT
-      xsW' <- mapM (\(idx, val) -> (idx,) <$> modifier Worker (inp, idx) val) xsW
+      xsT' <- mapM (\(idx, val) -> (idx, ) <$> modifier Target (inp, idx) val) xsT
+      xsW' <- mapM (\(idx, val) -> (idx, ) <$> modifier Worker (inp, idx) val) xsW
       return (inp, (xsT', xsW'))
 
-prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Int -> NetInputWoAction -> ActionIndex -> Doc
-prettyStateActionEntry borl pState pActIdx agents stInp actIdx =
+prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
+prettyStateActionEntry borl pState pActIdx stInp actIdx =
   case pState stInp of
     Nothing -> mempty
     Just (Just st, stRep) ->

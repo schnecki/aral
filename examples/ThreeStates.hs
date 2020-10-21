@@ -1,11 +1,12 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedLists     #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedLists       #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
 -- This is example is a three-state MDP from Mahedevan 1996, Average Reward Reinforcement Learning - Foundations...
 -- (Figure 2, p.166).
 
@@ -26,16 +27,18 @@
 module Main where
 
 
-import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq
 import           Control.Lens
 import           Data.Default
 import           Data.Int             (Int64)
 import           Data.List            (genericLength)
+import qualified Data.Map.Strict      as M
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
 import           Grenade              hiding (train)
+import           Prelude              hiding (Left, Right)
 
 import           ML.BORL              hiding (actionFilter)
 import           SolveLp
@@ -92,17 +95,18 @@ instance RewardFuture St where
   type StoreType St = ()
 
 
-instance BorlLp St where
-  lpActions = actions
-  lpActionFilter = actionFilter
+instance BorlLp St Act where
+  lpActions _ = actions
+  lpActionFilter _ = head . actionFilter
+  lpActionFunction = actionFun
 
 
-policy :: Policy St
+policy :: Policy St Act
 policy s a
-  | (s, a) == (A, left)  = [((B, right), 1.0)]
-  | (s, a) == (B, right) = [((A, left), 1.0)]
-  | (s, a) == (A, right) = [((C, left), 1.0)]
-  | (s, a) == (C, left)  = [((A, left), 1.0)]
+  | (s, a) == (A, Left)  = [((B, Right), 1.0)]
+  | (s, a) == (B, Right) = [((A, Left), 1.0)]
+  | (s, a) == (A, Right) = [((C, Left), 1.0)]
+  | (s, a) == (C, Left)  = [((A, Left), 1.0)]
   | otherwise = []
 
 mRefState :: Maybe (St, ActionIndex)
@@ -112,11 +116,13 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
-        algDQNAvgRewardFree
-        -- AlgDQNAvgRewAdjusted Nothing 0.8 0.999 ByStateValues
+        -- algDQNAvgRewardFree
+        AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.999 (Fixed 1)
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
+
 
 main :: IO ()
 main = do
@@ -125,34 +131,50 @@ main = do
   runBorlLp policy mRefState >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
-  nn <- randomNetworkInitWith HeEtAl :: IO NN
-
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actions actionFilter params decay nn nnConfig borlSettings Nothing
-  rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actions actionFilter params decay borlSettings Nothing
-  askUser Nothing True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) netInp actionFun actionFilter params decay borlSettings Nothing
+  askUser mInverseSt True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []
         qlCmds = []
 
 
+mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))
+mInverseSt = Just $ \xs -> return <$> M.lookup xs allStateInputs
+
+allStateInputs :: M.Map NetInputWoAction St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+-- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
+modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
+modelBuilderGrenade acts initSt cols =
+  buildModel $
+  inputLayer1D lenIn >>
+  fullyConnected 6 >> relu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  where
+    lenOut = lenActs * cols
+    lenIn = fromIntegral $ V.length (netInp initSt)
+    lenActs = genericLength acts
+
+
 initState :: St
 initState = A
-
 
 -- | BORL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha = 0.005
+    { _alpha = 0.07
     , _alphaRhoMin = 2e-5
-    , _beta = 0.01
-    , _delta = 0.01
-    , _gamma = 0.01
-    , _epsilon = 0.1
+    , _beta = 0.07
+    , _delta = 0.07
+    , _gamma = 0.07
+    , _epsilon = 1.5
 
     , _exploration = 1.0
-    , _learnRandomAbove = 0.5
+    , _learnRandomAbove = 0.1
     , _zeta = 0.15
     , _xi = 0.001
 
@@ -162,16 +184,16 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-3) 0.05 100000
-      , _alphaRhoMin         = NoDecay
-      , _beta             = ExponentialDecay (Just 1e-3) 0.05 100000
-      , _delta            = ExponentialDecay (Just 1e-3) 0.05 100000
-      , _gamma            = ExponentialDecay (Just 1e-2) 0.05 100000
+      { _alpha            = ExponentialDecay (Just 1e-1) 0.05 10000
+      , _alphaRhoMin      = NoDecay
+      , _beta             = ExponentialDecay (Just 0.07) 0.05 100000
+      , _delta            = ExponentialDecay (Just 0.07) 0.05 100000
+      , _gamma            = ExponentialDecay (Just 0.01) 0.05 10000
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration
-      , _epsilon          = [NoDecay]
-      , _exploration      = ExponentialDecay (Just 10e-2) 0.01 10000
+      , _epsilon          = [ExponentialDecay (Just 0.2) 0.05 10000]
+      , _exploration      = ExponentialDecay (Just 1e-2) 0.05 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -181,17 +203,25 @@ data St = B | A | C
   deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
 
 -- Actions
-actions :: [Action St]
-actions = [left, right]
+data Act = Left | Right
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
 
-left,right :: Action St
-left = Action moveLeft "left "
-right = Action moveRight "right"
+instance Show Act where
+  show Left  = "left  "
+  show Right = "right "
 
-actionFilter :: St -> V.Vector Bool
-actionFilter A = V.fromList [True, True]
-actionFilter B = V.fromList [False, True]
-actionFilter C = V.fromList [True, False]
+actions :: [Act]
+actions = [Left, Right]
+
+actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun tp s [Left]  = moveLeft tp s
+actionFun tp s [Right] = moveRight tp s
+actionFun _ _ xs       = error $ "Multiple actions received in actionFun: " ++ show xs
+
+actionFilter :: St -> [V.Vector Bool]
+actionFilter A = [V.fromList [True, True]]
+actionFilter B = [V.fromList [False, True]]
+actionFilter C = [V.fromList [True, False]]
 
 
 moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
