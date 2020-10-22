@@ -175,7 +175,9 @@ instance ExperimentDef (BORL St Act)
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
-    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
+    let inverseSt | isAnn rl = Just mInverseSt
+                  | otherwise = Nothing
+    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
@@ -232,9 +234,11 @@ nnConfig =
     }
 
 borlSettings :: Settings
-borlSettings = def {_workersMinExploration = [0.3, 0.2, 0.1]
-                   , _nStep = 2
-                   }
+borlSettings = def
+  { _workersMinExploration = [0.3, 0.2, 0.1]
+  , _nStep = 2
+  , _independentAgents = 2
+  }
 
 
 -- | BORL Parameters.
@@ -332,9 +336,11 @@ usermode = do
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- let rl = mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  let inverseSt | isAnn rl = Just mInverseSt
+                | otherwise = Nothing
 
-  askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
+  askUser inverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
@@ -352,7 +358,7 @@ modelBuilderGrenade actions initState cols =
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length (netInp initState)
-    lenActs = genericLength actions
+    lenActs = genericLength actions * fromIntegral (borlSettings ^. independentAgents)
 
 
 netInp :: St -> V.Vector Float
@@ -408,12 +414,21 @@ actionFun tp s [Up]     = goalState moveUp tp s
 actionFun tp s [Down]   = goalState moveDown tp s
 actionFun tp s [Left]   = goalState moveLeft tp s
 actionFun tp s [Right]  = goalState moveRight tp s
-actionFun _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
+-- actionFun tp s [Random, Random] = goalState moveRand tp s
+actionFun tp s [x, y] = do
+  (r1, s1, e1) <- actionFun tp s [x]
+  (r2, s2, e2) <- actionFun tp s1 [y]
+  return (r1 + r2, s2, e1 || e2)
+actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st
-  | st == fromIdx (goalX, goalY) = [True `V.cons` V.replicate (length actions - 1) False]
-actFilter _  = [False `V.cons` V.replicate (length actions - 1) True]
+  | st == fromIdx (goalX, goalY) = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
+actFilter _
+  | borlSettings ^. independentAgents == 1 = [False `V.cons` V.replicate (length actions - 1) True]
+actFilter _
+  | borlSettings ^. independentAgents == 2 = [V.fromList [False, True, True, False, False], V.fromList [False, False, False, True, True]]
+actFilter _ = error "Unexpected setup in actFilter in GridworldMini.hs"
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
@@ -429,8 +444,8 @@ goalState f tp st = do
   case getCurrentIdx st of
     (x', y')
       | x' == goalX && y' == goalY ->
-                                   -- return (Reward 10, fromIdx (x, y), True)
-                                   return (Reward 10, fromIdx (x, y), False)
+                                   return (Reward 10, fromIdx (x, y), True)
+                                   -- return (Reward 10, fromIdx (x, y), False)
     _ -> stepRew <$> f tp st
 
 
@@ -469,8 +484,8 @@ fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == n
 allStateInputs :: M.Map NetInputWoAction St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt = Just $ \xs -> return <$> M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St st) =

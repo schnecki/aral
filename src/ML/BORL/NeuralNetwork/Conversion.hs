@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -51,17 +52,23 @@ fromLastShapes _ _ _ = error "3D output not supported"
 -- | Split the data into the agent vectors
 toAgents :: Int -> V.Vector Float -> Values
 toAgents nr vec
-  | V.length vec `mod` nr /= 0 = error "undivisable length in toAgents in Conversion.hs"
-  | otherwise = AgentValues $ toAgents' 0
+  | V.length vec `mod` nr /= 0 = error $ "undivisable length in toAgents in Conversion.hs: " ++ show (V.length vec, nr)
+  | otherwise =
+#ifdef DEBUG
+    checkAgents $
+#endif
+    AgentValues $ toAgents' vec
   where
     len = V.length vec `div` nr
-    toAgents' idx
-      | start == len = []
+    toAgents' v
+      | V.null v = []
       | otherwise =
-        -- trace ("slice: " ++ show (idx*len, nr, idx, len, vec))
-        V.slice start len vec : toAgents' (idx + 1)
-      where start = idx * len
-
+        let (this, that) = V.splitAt len v
+        in this : toAgents' that
+    checkAgents :: Values -> Values
+    checkAgents vs@(AgentValues xs)
+      | length xs == nr = vs
+      | otherwise = error $ "Number of agents does not fit number length of data in toAgents: " ++ show (nr, length xs, xs, vec)
 
 -- -- | Create Vec from a list.
 -- reifySVec :: (KnownNat nr) => [a] -> SV.Vec nr a

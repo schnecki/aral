@@ -91,6 +91,7 @@ newtype Value = AgentValue [Float] -- ^ One value for every agent
   deriving (Show, Generic, NFData, Serialize)
 
 newtype Values = AgentValues [V.Vector Float] -- ^ A vector of values for every agent
+  deriving (Show)
 
 
 instance Num Value where
@@ -100,7 +101,7 @@ instance Num Value where
   abs (AgentValue xs) = AgentValue (map abs xs)
   signum (AgentValue xs) = AgentValue (map signum xs)
   -- fromInteger nr = AgentValue (repeat $ fromIntegral nr)
-  fromInteger nr = error "fromInteger is not implemented"
+  fromInteger _ = error "fromInteger is not implemented for Value!"
     -- AgentValue (replicate 1 $ fromIntegral nr)
 
 toValue :: Int -> Float -> Value
@@ -142,7 +143,11 @@ reduceValue :: ([Float] -> Float) -> Value -> Float
 reduceValue f (AgentValue vals) = f vals
 
 selectIndex :: Int -> Value -> Float
-selectIndex idx (AgentValue vals) = vals !! idx
+selectIndex idx (AgentValue vals) =
+#ifdef DEBUG
+  (if length vals <= idx then error ("selectIndex out of Bounds " ++ show (idx, vals)) else id)
+#endif
+  vals !! idx
 
 
 zipWithValue :: (Float -> Float -> Float) -> Value -> Value -> Value

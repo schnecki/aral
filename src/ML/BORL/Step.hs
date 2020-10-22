@@ -135,7 +135,7 @@ stepExecute borl (as, workerActions) = do
     let agents = borl ^. settings . independentAgents
         times txt = concatMap (\nr -> "\t" <> txt <> "-Ag" <> show nr) [1..agents]
     writeFile fileDebugStateValuesAgents (show agents)
-    writeFile fileStateValues $ "Period" ++ times "Rho" ++ times "ExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg" ++
+    writeFile fileStateValues $ "Period" ++ times "Rho" ++ "\tExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg" ++
       times "R0" ++ times "R1" ++ times "R0_scaled" ++ times "R1_scaled" ++ "\n"
     writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     writeFile fileReward "Period\tReward\n"
@@ -339,7 +339,7 @@ writeDebugFiles borl = do
           then return borl
           else do
             liftIO $ putStrLn $ "[DEBUG INFERRED NUMBER OF STATES]: " <> show (length stateFeats)
-            return $ putStateFeatList borl stateFeats
+            return $ borl -- putStateFeatList borl stateFeats
   stateFeatsLoaded <- getStateFeatures
   let stateFeats
         | not (null stateFeatsLoaded) = stateFeatsLoaded
@@ -367,7 +367,8 @@ writeDebugFiles borl = do
   where
     getStateFeatList :: Proxy -> [V.Vector Float]
     getStateFeatList Scalar {} = []
-    getStateFeatList (Table t _ _) = map (\(xs, y) -> xs V.++ V.replicate agents (fromIntegral y)) (M.keys t)
+    getStateFeatList (Table t _ _) = -- map fst (M.keys t)
+      map (\(xs, y) -> xs V.++ V.replicate agents (fromIntegral y)) (M.keys t)
     getStateFeatList nn = concatMap (\xs -> map (\a -> xs V.++ V.replicate agents (fromIntegral $ actIdx a)) acts) (nn ^. proxyNNConfig . prettyPrintElems)
     actIdx a = fromMaybe (-1) (elemIndex a acts)
     acts = VB.toList $ borl ^. actionList

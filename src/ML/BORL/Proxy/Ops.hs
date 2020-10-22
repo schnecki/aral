@@ -324,7 +324,8 @@ lookupProxyAgent :: (MonadIO m) => Period -> LookupType -> AgentNumber -> (State
 lookupProxyAgent _ _ agNr _ (Scalar x)    = return $ x V.! agNr
 lookupProxyAgent _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
 lookupProxyAgent _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, replicate agents a) px
-  where agents = px ^?! proxyNrAgents
+  where
+    agents = px ^?! proxyNrAgents
 
 
 -- | Retrieve a value.

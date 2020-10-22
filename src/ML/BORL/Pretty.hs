@@ -223,9 +223,10 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState noMod m2
       prBoolTblsStateAction False _ _ _ = return empty
   prettyRhoVal <-
-    case borl ^. proxies . rho of
-      Scalar val -> return $ text "Rho" <> colon $$ nest nestCols (printFloatListWith 8 $ V.toList val)
-      m -> do
+    case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
+      (Scalar val, Scalar valRhoMin) ->
+        return $ text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatListWith 8 (V.toList val) <> text "/" <> printFloatListWith 8 (V.toList valRhoMin))
+      (m,_) -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
   docHead <- prettyBORLHead' False prettyState borl
@@ -266,13 +267,13 @@ prettyBORLHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (show ((borl ^. actionList) VB.! (aIdx `mod` actionNrs)))
       actionNrs = length (borl ^. actionList)
-  let algDoc doc
-        | isAlgBorl (borl ^. algorithm) = doc
-        | otherwise = empty
-  let prettyRhoVal =
+      prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
           (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatListWith 8 (V.toList val) <> text "/" <> printFloatListWith 8 (V.toList valRhoMin))
           _ -> empty
+  let algDoc doc
+        | isAlgBorl (borl ^. algorithm) = doc
+        | otherwise = empty
   let getExpSmthParam decayed p param
         | isANN = 1
         | decayed = params' ^. param

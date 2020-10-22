@@ -218,10 +218,11 @@ proxyExpectedOutput _ p                       = pure p
 
 
 instance Show Proxy where
-  show (Scalar x)                  = "Scalar: " ++ show x
-  show Table{}                     = "Table"
-  show (Grenade _ _ t _ _ agents)  = "Grenade " ++ show t
-  show (CombinedProxy p col _)     = "CombinedProxy of " ++ show p ++ " at column " ++ show col
+  show (Scalar x)              = "Scalar: " ++ show x
+  show (Table t _ _)           = "Table: " ++ take 300 txt ++ (if length txt > 300 then "..." else "")
+    where txt = show t
+  show (Grenade _ _ t _ _ _)   = "Grenade " ++ show t
+  show (CombinedProxy p col _) = "CombinedProxy of " ++ show p ++ " at column " ++ show col
 
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{}              = "Scalar"

@@ -16,10 +16,10 @@ agents="`head -n1 stateValuesAgents`"
 
 echo "AGENTS: $agents"
 
-# gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
 
 START=2
-END=$((START+agents*5-1))
+END=$((START+agents*4q))
 echo "col=$START:$END"
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with lines; pause mouse close; " &
 
