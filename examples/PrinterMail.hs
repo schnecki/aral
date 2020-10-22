@@ -33,6 +33,7 @@ import           Control.DeepSeq      (NFData)
 import           Control.Lens
 import           Data.Default
 import           Data.Int             (Int64)
+import           Data.List            (elemIndex)
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
@@ -105,7 +106,8 @@ alg =
         -- AlgDQN 0.5  Exact
         -- AlgDQN 0.8027  Exact
         -- AlgDQN 0.50  EpsilonSensitive
-        AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
+        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.8 ByStateValues mRefStateAct
@@ -123,12 +125,12 @@ main = do
 
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actionFilter params decay borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
-  where cmds = zipWith3 (\n (s,a) na -> (s, (n, Action a na))) [0..]
-          [("s", moveLeft), ("f", moveRight)] ["moveLeft", "moveRight"]
-        usage = [("s", "moveLeft"), ("f", "moveRight")]
+  where
+    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [GoLeft, GoRight])
+    usage = [("j", "Move left"), ("l", "Move right")]
 
 -- policy :: Policy St
 -- policy s a
@@ -199,15 +201,22 @@ instance Bounded St where
 
 
 -- Actions
-actions :: [Action St]
-actions =
-  [ Action moveLeft "left "
-  , Action moveRight "right"]
 
-actionFilter :: St -> V.Vector Bool
-actionFilter One     = V.fromList [True, True]
-actionFilter Left{}  = V.fromList [True, False]
-actionFilter Right{} = V.fromList [False, True]
+data Act = GoLeft | GoRight
+  deriving (Eq, Ord, Show, NFData, Enum, Bounded, Generic)
+
+actions :: [Action Act]
+actions = [GoLeft, GoRight]
+
+actionFun :: ActionFunction St Act
+actionFun tp st [GoLeft]  = moveLeft tp st
+actionFun tp st [GoRight] = moveRight tp st
+actionFun _ _ acts        = error $ "unexpected list of actions: " ++ show acts
+
+actionFilter :: St -> [V.Vector Bool]
+actionFilter One      = [V.fromList [True, True]]
+actionFilter Left {}  = [V.fromList [True, False]]
+actionFilter Right {} = [V.fromList [False, True]]
 
 
 moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
