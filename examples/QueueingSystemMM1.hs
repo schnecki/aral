@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TupleSections              #-}
@@ -87,7 +88,7 @@ instance Bounded St where
 
 -- Experiment Setup
 
-expSetup :: BORL St -> ExperimentSetting
+expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
@@ -135,11 +136,12 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
-instance BorlLp St where
-  lpActions = actions
-  lpActionFilter = actFilter
+instance BorlLp St Act where
+  lpActions _ = actions
+  lpActionFilter _ = head . actFilter
+  lpActionFunction = actionFun
 
-policy :: Int -> Policy St
+policy :: Int -> Policy St Act
 policy maxAdmit (St s incoming) act
   | not incoming && act == rejectAct =
     [((St (max 0 (s - 1)) False, rejectAct), pMu), ((St s True, condAdmit s), pAdmit s * pLambda), ((St s True, condAdmit s), pReject s * pLambda)]
@@ -163,27 +165,28 @@ policy maxAdmit (St s incoming) act
     admitAct = actions !! 1
     rejectAct = head actions
 
-instance ExperimentDef (BORL St) where
-  type ExpM (BORL St) = IO
-  type InputValue (BORL St) = ()
-  type InputState (BORL St) = ()
-  type Serializable (BORL St) = BORLSerialisable St
+instance ExperimentDef (BORL St Act) where
+  type ExpM (BORL St Act) = IO
+  type InputValue (BORL St Act) = ()
+  type InputState (BORL St Act) = ()
+  type Serializable (BORL St Act) = BORLSerialisable St Act
   serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St) -> ExpM (BORL St) (BORL St)
-  deserialisable = fromSerialisable actions actFilter tblInp
+  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
+  deserialisable = fromSerialisable actionFun actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
       when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
       let p = Just $ fromIntegral $ rl' ^. t
-          val l = realToFrac (rl' ^?! l)
+          -- val l = realToFrac $ head $ fromValue (rl' ^?! l)
+          val' l = realToFrac (rl' ^?! l)
           results =
             [
               StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            , StepResult "reward" p (val $ lastRewards._head)
+            , StepResult "reward" p (val' $ lastRewards._head)
             ]
             ++
-            [ StepResult "avgRew" p (val $ proxies . rho . proxyScalar)
+            [ StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
             -- , StepResult "psiRho" p (val $ psis . _1)
             -- , StepResult "psiV" p   (val $ psis . _2)
             -- , StepResult "psiW" p   (val $ psis . _3)
@@ -192,7 +195,7 @@ instance ExperimentDef (BORL St) where
             ++
             concatMap
               (\s ->
-                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ head $ actionIndicesFiltered rl' s))
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
@@ -265,7 +268,7 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 10000  -- 5e-4
       , _alphaRhoMin = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
@@ -295,7 +298,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actions actFilter params decay borlSettings  (Just initVals)
+  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -339,22 +342,17 @@ alg =
         -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
 
-allStateInputs :: M.Map NetInputWoAction St
-allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
-
-mInverseSt :: NetInputWoAction -> Maybe (Either String St)
-mInverseSt xs = return <$> M.lookup xs allStateInputs
-
 usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actions actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
 
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actions actFilter params decay nn nnConfig borlSettings  (Just initVals)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actions actFilter params decay (Just initVals)
-  askUser (Just mInverseSt) True usage cmds [] rl
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  let inverseSt | isAnn rl = mInverseSt
+                | otherwise = mInverseStTbl
+  askUser (Just inverseSt) True usage cmds [] rl
   where cmds = []
         usage = []
 
@@ -379,9 +377,18 @@ netInp (St len arr) = V.fromList [scaleMinMax (0, fromIntegral maxQueueSize) $ f
 tblInp :: St -> V.Vector Float
 tblInp (St len arr)        = V.fromList [fromIntegral len, fromIntegral $ fromEnum arr]
 
+allStateInputs :: M.Map NetInputWoAction St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
-names :: [Text]
-names = ["reject", "admit "]
+allStateInputsTbl :: M.Map NetInputWoAction St
+allStateInputsTbl = M.fromList $ zip (map tblInp [minBound..maxBound]) [minBound..maxBound]
+
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
+
+mInverseStTbl :: NetInputWoAction -> Maybe (Either String St)
+mInverseStTbl xs = return <$> M.lookup xs allStateInputsTbl
+
 
 initState :: St
 initState = St 0 False
@@ -390,20 +397,32 @@ queueLenFilePath :: FilePath
 queueLenFilePath = "queueLength"
 
 -- Actions
-actions :: [Action St]
-actions = zipWith Action (map appendQueueLenFile [reject, admit]) names
-  where
-    appendQueueLenFile f tp st@(St len _) = do
-      when (tp == MainAgent) $ appendFile queueLenFilePath (show len ++ "\n")
-      f tp st
+data Act = Reject | Admit
+  deriving (Show, Eq, Ord, Enum, Bounded, NFData, Generic, Serialize)
 
 
-actFilter :: St -> V.Vector Bool
-actFilter (St _ False)  = V.fromList [True, False]
-actFilter (St len True) | len >= maxQueueSize  = V.fromList [True, False]
-actFilter _             = V.fromList [True, True]
+actions :: [Action Act]
+actions = [Reject, Admit]
 
-rewardFunction :: St -> ChosenAction -> IO (Reward  St)
+
+actionFun :: ActionFunction St Act
+actionFun tp st [Reject]            = appendQueueLenFile reject tp st
+actionFun tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
+actionFun _ st act = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
+
+
+appendQueueLenFile :: (AgentType -> St -> IO b) -> AgentType -> St -> IO b
+appendQueueLenFile f tp st@(St len _) = do
+  when (tp == MainAgent) $ appendFile queueLenFilePath (show len ++ "\n")
+  f tp st
+
+
+actFilter :: St -> [V.Vector Bool]
+actFilter (St _ False)  = [V.fromList [True, False]]
+actFilter (St len True) | len >= maxQueueSize  = [V.fromList [True, False]]
+actFilter _             = [V.fromList [True, True]]
+
+rewardFunction :: St -> Act -> IO (Reward  St)
 rewardFunction (St 0 _) Reject = return $ Reward 0
 rewardFunction (St s True) Admit = do
   costFunRes <- costFunctionF (s + 1)
@@ -412,9 +431,6 @@ rewardFunction (St s _) Reject = do
   costFunRes <- costFunctionF s
   return $ Reward ((0 - costFunRes) * (lambda + mu))
 
-
-data ChosenAction = Reject | Admit
-  deriving (Eq)
 
 reject :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 reject _ st@(St len True) = do

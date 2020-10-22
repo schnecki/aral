@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLists            #-}
@@ -29,6 +30,7 @@ module Main where
 
 import           Control.Arrow        (first, second)
 import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq      (NFData)
 import           Control.Lens         (set, (^.))
 import           Control.Monad        (foldM, unless, when)
 import           Data.Default
@@ -49,12 +51,17 @@ alg =
 
 main :: IO ()
 main = do
-  rl <- mkMultichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay borlSettings Nothing
-  rl <- mkUnichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actions (const $ V.replicate (length actions) True) params decay borlSettings Nothing
+  rl <- mkMultichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actionFun actionFil params decay borlSettings Nothing
+
+  -- one can still treat it as unichain
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) (\(St x) -> V.singleton (fromIntegral x)) actionFun actionFil params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
     usage = []
+
+actionFil :: ActionFilter St
+actionFil _ = [V.replicate (length actions) True]
 
 borlSettings :: Settings
 borlSettings = def
@@ -142,8 +149,14 @@ instance RewardFuture St where
 
 
 -- Actions
-actions :: [Action St]
-actions =  [Action (addReset move) "move"]
+data Act = Move
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData)
+
+actions :: [Action Act]
+actions = [Move]
+
+actionFun :: ActionFunction St Act
+actionFun tp st [Move] = addReset move tp st
 
 addReset :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 addReset f tp st = do
@@ -164,4 +177,3 @@ move _ s = do
          St 4 -> [(0.5, (Reward 1, St 1,False)), (0.2, (Reward 1, St 2,False)), (0.3, (Reward 1, St 5,False))]
          St 5 -> [(0.2, (Reward 3, St 1,False)), (0.3, (Reward 3, St 2,False)), (0.3, (Reward 3, St 3,False)), (0.2, (Reward 3, St 4,False))]
   return $ snd $ snd $ foldl' (\(ps, c) c'@(p,_) -> if ps <= rand && ps + p > rand then (ps + p, c') else (ps + p, c)) (0, head possMove) possMove
-

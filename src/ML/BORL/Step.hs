@@ -333,7 +333,8 @@ writeDebugFiles borl = do
               | otherwise = getStateFeatList (borl' ^. proxies . v)
         setStateFeatures stateFeats
         liftIO $ writeFile fileDebugStateValuesNrStates (show $ length stateFeats)
-        liftIO $ forM_ [fileDebugStateV, fileDebugStateVScaled, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $ flip writeFile ("Period\t" <> mkListStr (shorten . printStateFeat) stateFeats <> "\n")
+        liftIO $ forM_ [fileDebugStateV, fileDebugStateVScaled, fileDebugStateW, fileDebugPsiVValues, fileDebugPsiWValues] $
+          flip writeFile ("Period\t" <> mkListStrAg (shorten . printStateFeat) stateFeats <> "\n")
         if isNeuralNetwork (borl ^. proxies . v)
           then return borl
           else do
@@ -354,14 +355,14 @@ writeDebugFiles borl = do
                                   let (st,as) = V.splitAt splitIdx xs in
                                   if isDqn then rValueNoUnscaleWith Worker borl' RBig st (map round $ V.toList as) else vValueNoUnscaleWith Worker borl' st (map round $ V.toList as)) stateFeats
     stateValuesW <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in if isDqn then return 0 else wValueFeat borl' st (map round $ V.toList as)) stateFeats
-    liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesV <> "\n")
-    liftIO $ appendFile fileDebugStateVScaled (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesVScaled <> "\n")
+    liftIO $ appendFile fileDebugStateV (show (borl' ^. t) <> "\t" <> mkListStrV show stateValuesV <> "\n")
+    liftIO $ appendFile fileDebugStateVScaled (show (borl' ^. t) <> "\t" <> mkListStrV show stateValuesVScaled <> "\n")
     when (isAlgBorl (borl ^. algorithm)) $ do
-      liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStr show stateValuesW <> "\n")
+      liftIO $ appendFile fileDebugStateW (show (borl' ^. t) <> "\t" <> mkListStrV show stateValuesW <> "\n")
       psiVValues <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in psiVFeat borl' st (map round $ V.toList as)) stateFeats
-      liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStr show psiVValues <> "\n")
+      liftIO $ appendFile fileDebugPsiVValues (show (borl' ^. t) <> "\t" <> mkListStrV show psiVValues <> "\n")
       psiWValues <- mapM (\xs -> let (st,as) = V.splitAt splitIdx xs in psiWFeat borl' st (map round $ V.toList xs)) stateFeats
-      liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStr show psiWValues <> "\n")
+      liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStrV show psiWValues <> "\n")
   return borl'
   where
     getStateFeatList :: Proxy -> [V.Vector Float]
@@ -371,8 +372,10 @@ writeDebugFiles borl = do
     actIdx a = fromMaybe (-1) (elemIndex a acts)
     acts = VB.toList $ borl ^. actionList
     agents = borl ^. settings . independentAgents
-    mkListStr :: (a -> String) -> [a] -> String
-    mkListStr f = intercalate "\t" . map f
+    mkListStrAg :: (a -> String) -> [a] -> String
+    mkListStrAg f = intercalate "\t" . concatMap (\x -> map (\nr -> f x <> "-Ag" <> show nr) [1..agents])
+    mkListStrV :: (Float -> String) -> [Value] -> String
+    mkListStrV f = intercalate "\t" . concatMap (map f . fromValue)
     shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs
                | otherwise = xs
     printStateFeat :: StateFeatures -> String

@@ -78,6 +78,10 @@ borlSettings = def {_workersMinExploration = [], _nStep = 1}
 netInp :: St -> V.Vector Float
 netInp st = V.singleton (scaleMinMax (minVal, maxVal) (fromIntegral $ fromEnum st))
 
+tblInp :: St -> V.Vector Float
+tblInp st = V.singleton (fromIntegral $ fromEnum st)
+
+
 maxVal :: Float
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
@@ -133,18 +137,27 @@ main = do
 
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) netInp actionFun actionFilter params decay borlSettings Nothing
-  askUser mInverseSt True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
+  let inverseSt | isAnn rl = mInverseSt
+                | otherwise = mInverseStTbl
+
+  askUser (Just inverseSt) True usage cmds qlCmds rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
         usage = []
         qlCmds = []
 
 
-mInverseSt :: Maybe (NetInputWoAction -> Maybe (Either String St))
-mInverseSt = Just $ \xs -> return <$> M.lookup xs allStateInputs
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
+
+mInverseStTbl :: NetInputWoAction -> Maybe (Either String St)
+mInverseStTbl xs = return <$> M.lookup xs allStateInputsTbl
 
 allStateInputs :: M.Map NetInputWoAction St
 allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+allStateInputsTbl :: M.Map NetInputWoAction St
+allStateInputsTbl = M.fromList $ zip (map tblInp [minBound..maxBound]) [minBound..maxBound]
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork

@@ -105,49 +105,49 @@ executables:
     - experimenter
     - hmatrix-glpk
 
-  # queuing-system:
-  #   main:                QueueingSystemMM1.hs
-  #   other-modules:
-  #     - Helper
-  #     - SolveLp
-  #   source-dirs:         .
-  #   default-extensions: CPP
-  #   ghc-options:
-  #   - -threaded
-  #   - -rtsopts
-  #   - -with-rtsopts=-N
-  #   dependencies:
-  #   - borl
-  #   - experimenter
-  #   - hmatrix-glpk
+  queuing-system:
+    main:                QueueingSystemMM1.hs
+    other-modules:
+      - Helper
+      - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - experimenter
+    - hmatrix-glpk
 
-  # gym:
-  #   main:                GymOpenAI.hs
-  #   other-modules:       Helper
-  #   source-dirs:         .
-  #   default-extensions: CPP
-  #   ghc-options:
-  #   - -threaded
-  #   - -rtsopts
-  #   - -with-rtsopts=-N
-  #   dependencies:
-  #   - borl
-  #   - gym-haskell
-  #   - experimenter
-  #   extra-libraries: python3.8
+  gym:
+    main:                GymOpenAI.hs
+    other-modules:       Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
+    - gym-haskell
+    - experimenter
+    extra-libraries: python3.8
 
 
-  # multichain:
-  #   main:                Multichain.hs
-  #   other-modules:       Helper
-  #   source-dirs:         .
-  #   default-extensions: CPP
-  #   ghc-options:
-  #   - -threaded
-  #   - -rtsopts
-  #   - -with-rtsopts=-N
-  #   dependencies:
-  #   - borl
+  multichain:
+    main:                Multichain.hs
+    other-modules:       Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - borl
 
   printer-mail:
     main:                PrinterMail.hs

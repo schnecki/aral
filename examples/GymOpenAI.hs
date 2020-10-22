@@ -143,17 +143,39 @@ getGlobalVar :: IO (Maybe Float)
 getGlobalVar = join <$> tryReadMVar globalVar
 {-# NOINLINE getGlobalVar #-}
 
-action :: Maybe T.Text -> Integer -> Action St
-action mName idx =
-  flip Action (fromMaybe (T.pack $ show idx) mName) $ \agentType oldSt@(St render _) -> do
-    gym <- getGym (fromEnum agentType)
-    res <- stepGymRender render gym idx
-    rew <- rewardFunction gym oldSt (fromIntegral idx) res
-    obs <-
-      if episodeDone res
-        then resetGym gym
-        else return (observation res)
-    return (rew, St render (gymObservationToFloatList obs), episodeDone res)
+actionNrVar :: MVar Int
+actionNrVar = unsafePerformIO $ newMVar (-1)
+{-# NOINLINE actionNrVar #-}
+setActionNrVar :: Int -> IO ()
+setActionNrVar x = modifyMVar_ actionNrVar (return . const x)
+{-# NOINLINE setActionNrVar #-}
+getActionNrVar :: IO Int
+getActionNrVar = fromMaybe (error "empty actionNrVar in getActionNrVar") <$> tryReadMVar actionNrVar
+{-# NOINLINE getActionNrVar #-}
+
+
+-- Actions
+data Act = Act Int
+  deriving (Show, Eq, Ord, NFData, Generic)
+
+instance Enum Act where
+  fromEnum (Act n) = n
+  toEnum n = Act n
+
+instance Bounded Act where
+  minBound = toEnum 0
+  maxBound = toEnum $ unsafePerformIO getActionNrVar - 1
+
+actionFun :: ActionFunction St Act
+actionFun agentType oldSt@(St render _) [Act idx] = do
+  gym <- getGym (fromEnum agentType)
+  res <- stepGymRender render gym (fromIntegral idx)
+  rew <- rewardFunction gym oldSt (fromIntegral idx) res
+  obs <-
+    if episodeDone res
+      then resetGym gym
+      else return (observation res)
+  return (rew, St render (gymObservationToFloatList obs), episodeDone res)
 
 
 rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
@@ -283,22 +305,23 @@ main = do
   args <- getArgs
   putStrLn $ "Received arguments: " ++ show args
   (gym, actionNodes, initState) <- mkInitSt'
+  setActionNrVar (fromIntegral actionNodes)
   let maxRew
         | length args >= 2 = read (args !! 1)
         | otherwise = maxReward gym
   name <- getName
   let actNames = actionNames name
-  let actions = zipWith action (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
-  let actFilter :: St -> V.Vector Bool
-      actFilter _ = V.replicate (length actions) True
+  -- let actions = zipWith actionFun (map Just actNames ++ repeat Nothing) [0 .. actionNodes - 1]
+  let actFilter :: St -> [V.Vector Bool]
+      actFilter _ = [V.replicate (fromIntegral actionNodes) True]
       initValues = Just $ defInitValues {defaultRho = 0, defaultRhoMinimum = 0, defaultR1 = 1}
-  putStrLn $ "Actions: " ++ show actions
+  putStrLn $ "Actions Count: " ++ show actionNodes
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
-  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []

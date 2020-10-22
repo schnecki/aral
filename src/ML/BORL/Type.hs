@@ -178,16 +178,25 @@ actionIndicesFiltered borl state = map (\fil -> V.ifilter (\idx _ -> fil V.! idx
   where
     filterVals :: [V.Vector Bool]
     filterVals = (borl ^. actionFilter) state
-    actionIndices = V.fromList [0 .. length (borl ^. actionList) - 1]
+    actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
 
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
 actionsFiltered :: BORL s as -> s -> FilteredActions as
-actionsFiltered borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (borl ^. actionList)) filterVals
+actionsFiltered borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (actionLengthCheck filterVals $ borl ^. actionList)) filterVals
   where
     filterVals :: [V.Vector Bool]
     filterVals = (borl ^. actionFilter) state
 
+
+actionLengthCheck :: [V.Vector Bool] -> VB.Vector (Action as) -> VB.Vector (Action as)
+#ifdef DEBUG
+actionLengthCheck fils as
+  | all ((== VB.length as) . V.length) fils = as
+  | otherwise = error $ "Action and ActionFilter length do not fit. Action Length: " ++ show (VB.length as) ++ " ++ show filters: " ++ show fils
+#endif
+actionLengthCheck _ xs = xs
+{-# INLINE actionLengthCheck #-}
 
 -- -- | Get a list of filtered actions with the actions list and the filter function for the current given state.
 -- filteredActions :: [Action a] -> (s -> V.Vector Bool) -> s -> [Action a]
