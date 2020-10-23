@@ -1,7 +1,5 @@
--- With the goal state being (0,0) an agent following the optimal policy needs on average 4 steps to the goal state.
--- Thus, it accumulates a reward of 4.0*4 + 10 = 26.0 every 5 steps. That is 5.2 as average reward in the optimal case.
+-- This is a xD world, where each dimension is steered by one agent. All of them can go left, right, up down. The goal is at (0,0,...)
 --
--- for 1 agent: rho^\pi^* = 5.20
 --
 
 {-# LANGUAGE DataKinds                  #-}
@@ -50,12 +48,13 @@ import           System.Random
 
 import           Debug.Trace
 
-maxX, maxY, goalX, goalY :: Int
-maxX = 4                        -- [0..maxX]
-maxY = 4                        -- [0..maxY]
-goalX = 0
-goalY = 0
+dim, cubeSize, goal :: Int
+dim = 3               -- dimensions
+cubeSize = 4          -- size of each dim
+goal = 0              -- goal is at [goal, goal, ...]
 
+goalSt :: St
+goalSt = St $ replicate dim goal
 
 expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
@@ -109,109 +108,6 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
-instance BorlLp St Act where
-  lpActions _ = actions
-  lpActionFunction = actionFun
-  lpActionFilter _ = head . actFilter
-
-policy :: Policy St Act
-policy s a
-  | s == fromIdx (goalX, goalY) && a == actRand =
-    let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
-        pol = map ((, 1 / fromIntegral (length distanceSA)) . first fromIdx) distanceSA
-     in pol
-  | s == fromIdx (goalX, goalY) = []
-  | a == actRand = []
-  | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
-  where
-    sa' = ((row, col), a)
-    step ((row, col), a)
-      | a == actUp = (max 0 $ row - 1, col)
-      | a == actDown = (min maxX $ row + 1, col)
-      | a == actLeft = (row, max 0 $ col - 1)
-      | a == actRight = (row, min maxY $ col + 1)
-      | a == actRand = (row, col)
-    row = fst $ getCurrentIdx s
-    col = snd $ getCurrentIdx s
-    actRand = head actions
-    actUp = actions !! 1
-    actDown = actions !! 2
-    actLeft = actions !! 3
-    actRight = actions !! 4
-    states = [minBound .. maxBound] :: [St]
-    stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
-    filterActRand ((r, c), a)
-      | r == goalX && c == goalY = a == actRand
-      | otherwise = a /= actRand
-    filterChance [x] = [x]
-    filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
-      where
-        stepsToBorder :: [Int]
-        stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
-        mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
-    filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
-      where
-        dist :: [Int]
-        dist = map (mkDistance . step) xs
-    mkDistance (r, c) = r + abs (c - goalY)
-    mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
-
-fakeEpisodes :: BORL St Act -> BORL St Act -> BORL St Act
-fakeEpisodes rl rl'
-  | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
-  | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
-
-
-instance ExperimentDef (BORL St Act)
-  -- type ExpM (BORL St Act) = TF.SessionT IO
-                                          where
-  type ExpM (BORL St Act) = IO
-  type InputValue (BORL St Act) = ()
-  type InputState (BORL St Act) = ()
-  type Serializable (BORL St Act) = BORLSerialisable St Act
-  serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
-  deserialisable = fromSerialisable actionFun actFilter tblInp
-  generateInput _ _ _ _ = return ((), ())
-  runStep phase rl _ _ = do
-    rl' <- stepM rl
-    let inverseSt | isAnn rl = Just mInverseSt
-                  | otherwise = Nothing
-    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True inverseSt rl' >>= print
-    let (eNr, eSteps) = rl ^. episodeNrStart
-        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
-        p = Just $ fromIntegral $ rl' ^. t
-        val l = realToFrac $ head $ fromValue (rl' ^?! l)
-        results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  , StepResult "avgEpisodeLength" p eLength
-                  ]
-                | otherwise =
-                  [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
-                  , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
-                  , StepResult "psiRho" p (val $ psis . _1)
-                  , StepResult "psiV" p (val $ psis . _2)
-                  , StepResult "psiW" p (val $ psis . _3)
-                  , StepResult "avgEpisodeLength" p eLength
-                  , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
-                  ] -- ++
-                  -- concatMap
-                  --   (\s ->
-                  --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
-                  --   (sort [(minBound :: St) .. maxBound])
-    return (results, fakeEpisodes rl rl')
-  parameters _ =
-    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-                                                                  -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  , AlgDQN 0.999 Exact
-                                                                  , AlgDQN 0.99 Exact
-                                                                  , AlgDQN 0.50 Exact
-                                                                  ]) Nothing Nothing Nothing]
-  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
@@ -280,39 +176,7 @@ initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
 
 main :: IO ()
-main = do
-  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
-  l <- getLine
-  case l of
-    "l"   -> lpMode
-    "e"   -> experimentMode
-    "exp" -> experimentMode
-    _     -> usermode
-
-
-experimentMode :: IO ()
-experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
-  ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
-  let runner = liftIO
-  ---
-  putStrLn $ "Any change: " ++ show changed
-  evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
-     -- print (view evalsResults evalRes)
-  writeAndCompileLatex databaseSetup evalRes
-  writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
-
-
-lpMode :: IO ()
-lpMode = do
-  putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
-  print lpRes
-  mkStateFile 0.65 False True lpRes
-  mkStateFile 0.65 False False lpRes
-  putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
+main = usermode
 
 
 mRefState :: Maybe (St, ActionIndex)
@@ -363,34 +227,29 @@ modelBuilderGrenade actions initState cols =
 
 netInp :: St -> V.Vector Float
 netInp st =
-  V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+  V.fromList $ map (scaleMinMax (0, fromIntegral cubeSize) . fromIntegral) (getCurrentIdx st)
 
 tblInp :: St -> V.Vector Float
-tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
+tblInp (St st) = V.fromList (map fromIntegral st)
 
 initState :: St
-initState = fromIdx (maxX,maxY)
-
-goal :: St
-goal = fromIdx (goalX, goalY)
+initState = St $ replicate dim (cubeSize^2 `div` 2)
 
 -- State
-newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
+newtype St =
+  St [Int] -- ^ Number in cubeSize^2 for each dimension.
+  deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
-instance Ord St where
-  x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
 
-instance Show St where
-  show xs = show (getCurrentIdx xs)
+-- instance Enum St where
+--   fromEnum (St st) = Prelude.sum $ zipWith (\i x -> i * dim + x) [0 ..] st
+--   toEnum x =
 
-instance Enum St where
-  fromEnum st = let (x,y) = getCurrentIdx st
-                in x * (maxX + 1) + y
-  toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
+--     fromIdx (x `div` (maxX + 1), x `mod` (maxX + 1))
 
-instance Bounded St where
-  minBound = fromIdx (0,0)
-  maxBound = fromIdx (maxX, maxY)
+-- instance Bounded St where
+--   minBound = fromIdx (0,0)
+--   maxBound = fromIdx (maxX, maxY)
 
 
 -- Actions
@@ -409,21 +268,24 @@ actions = [Random, Up, Down, Left, Right]
 
 
 actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
--- actionFun tp s [Random, Random] = goalState moveRand tp s
-actionFun tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
-  return ((r1 + r2) / 2, s2, e1 || e2)
+actionFun tp s acts =
+  let xs = zipWith (move tp s) acts [0..]
+  in undefined
+
+-- actionFun tp s [Up]     = goalState moveUp tp s
+-- actionFun tp s [Down]   = goalState moveDown tp s
+-- actionFun tp s [Left]   = goalState moveLeft tp s
+-- actionFun tp s [Right]  = goalState moveRight tp s
+-- -- actionFun tp s [Random, Random] = goalState moveRand tp s
+-- actionFun tp s [x, y] = do
+--   (r1, s1, e1) <- actionFun tp s [x]
+--   (r2, s2, e2) <- actionFun tp s1 [y]
+--   return ((r1 + r2) / 2, s2, e1 || e2)
 actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st
-  | st == fromIdx (goalX, goalY) = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
+  | st == goalSt = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
 actFilter _
   | borlSettings ^. independentAgents == 1 = [False `V.cons` V.replicate (length actions - 1) True]
 actFilter _
@@ -432,53 +294,71 @@ actFilter _ = error "Unexpected setup in actFilter in GridworldMini.hs"
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
-moveRand = moveUp
-
+moveRand tp st = do
+  when (st /= goalSt) $ error $ "moveRand in non-goal state: " ++ show st
+  xs <- sequenceA (replicate dim $ randomRIO (0, cubeSize^2 :: Int))
+  return (Reward 10, St xs, True)
 
 goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 goalState f tp st = do
-  x <- randomRIO (0, maxX :: Int)
-  y <- randomRIO (0, maxY :: Int)
   r <- randomRIO (0, 8 :: Float)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
-  case getCurrentIdx st of
-    (x', y')
-      | x' == goalX && y' == goalY ->
-                                   return (Reward 10, fromIdx (x, y), True)
-                                   -- return (Reward 10, fromIdx (x, y), False)
-    _ -> stepRew <$> f tp st
+  stepRew <$> f tp st
 
 
-moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveUp _ st
-    | m == 0 = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m-1,n), False)
-  where (m,n) = getCurrentIdx st
+move :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+move tp s acts
+  | all (== Random) acts = moveRand tp s
+  | otherwise = return $ zipWith moveX acts [0 ..]
+  where
+    moveX Random = moveRand tp s
+    moveX Up     = moveUp tp s
+    moveX Down   = moveUp tp s
+    moveX Down   = moveUp tp s
+    moveX Down   = moveUp tp s
+    moveX Down   = moveUp tp s
 
-moveDown :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveDown _ st
-    | m == maxX = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m+1,n), False)
-  where (m,n) = getCurrentIdx st
+moveUp :: AgentType -> St -> Int -> (Float, Int)
+moveUp _ (St st) agNr
+    | m == 0 = (-1, 0)
+    | otherwise = (0, m-cubeSize)
+  where m = st !! agNr
 
-moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveLeft _ st
-    | n == 0 = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m,n-1), False)
-  where (m,n) = getCurrentIdx st
+moveDown :: AgentType -> St -> Int -> (Float, Int)
+moveDown _ (St st) agNr
+    | m == cubeSize = (-1, cubeSize)
+    | otherwise = (0, m+cubeSize)
+  where m = st !! agNr
 
-moveRight :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveRight _ st
-    | n == maxY = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m,n+1), False)
-  where (m,n) = getCurrentIdx st
+moveLeft :: AgentType -> St -> Int -> (Float, Int)
+moveLeft _ (St st) agNr
+    | nRest == 0 = (-1, m)
+    | otherwise = (0, m-1)
+  where m = st !! agNr
+        nRest = m `mod` cubeSize
+        n = m `div` cubeSize
+
+moveRight :: AgentType -> St -> Act -> (Float, Int)
+moveRight _ (St st) agNr
+  | nRest == cubeSize = (-1, m)
+  | otherwise = (0, m + 1)
+  where
+    m = st !! agNr
+    nRest = m `mod` cubeSize
+    n = m `div` cubeSize
 
 
 -- Conversion from/to index for state
 
-fromIdx :: (Int, Int) -> St
-fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
-  where base = replicate 5 [0,0,0,0,0]
+-- -- Convert to list of [x,y] values
+-- toIndices :: St -> [[Int]]
+-- toIndices (St nr) =
+--   map (\x -> [x `div` cubeSize, x `mod` cubeSize]) nr
+
+
+-- toIndices :: [[Int]] -> St
+-- toIndices [x, y] =
+--   map (\x -> [x `div` cubeSize, x `mod` cubeSize]) nr
 
 
 allStateInputs :: M.Map NetInputWoAction St
@@ -487,7 +367,7 @@ allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..m
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
 mInverseSt xs = return <$> M.lookup xs allStateInputs
 
-getCurrentIdx :: St -> (Int,Int)
+getCurrentIdx :: St -> [Int]
 getCurrentIdx (St st) =
   second (fst . head . filter ((==1) . snd)) $
   head $ filter ((1 `elem`) . map snd . snd) $
