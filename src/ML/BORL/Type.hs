@@ -114,14 +114,6 @@ import           Debug.Trace
 
 -------------------- Main RL Datatype --------------------
 
--- type ActionIndexed s = ([ActionIndex], Action s)     -- ^ One action index for each agent is associated to one action transition.
--- -- type FilteredActions s = VB.Vector (ActionIndexed s) -- ^ A list of actions
-
-
--- [ActionIndex] -> Action s
--- [[ActionIndex]]
-
-
 data Objective
   = Minimise
   | Maximise
@@ -627,6 +619,14 @@ mkWorkers state as mNNConfig setts = do
         where err = error $ "Could not create replay memory for workers with nStep=" ++ show (setts ^. nStep) ++ " and memMaxSize=" ++ show (view replayMemoryMaxSize <$> mNNConfig)
 
 -------------------- Helpers --------------------
+
+-- checkNetworkOutput :: BORL s as -> BORL s as
+-- checkNetworkOutput borl
+--   | not (isAnn borl) = borl
+--   | otherwise =
+--   where
+--     required = length (borl ^. actionList) * (borl ^. settings . independentAgents)
+--     has = borl ^. ann . r1
 
 
 -- | Perform an action over all proxies (combined proxies are seen once only).

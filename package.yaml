@@ -22,7 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 flags:
   fast:
     description: Disables optimizations
-    manual: true
+    manual: false
     default: false
   debug:
     description: Turn on debug settings.

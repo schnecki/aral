@@ -141,18 +141,18 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
           maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
-        then mTrainBatch (getRhoMinimumVal') calcs pRhoMin `using` rpar
+        then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
         else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <-
       if isNeuralNetwork pRho
-        then mTrainBatch (getRhoVal') calcs pRho `using` rpar
+        then mTrainBatch getRhoVal' calcs pRho `using` rpar
         else mInsertProxy (getRhoVal' calc) pRho `using` rpar
-    !pV' <-     mTrainBatch (getVValState') calcs pV `using` rpar
-    !pW' <-     mTrainBatch (getWValState') calcs pW `using` rpar
-    !pPsiV' <-  mTrainBatch (getPsiVValState') calcs pPsiV `using` rpar
-    !pPsiW' <-  mTrainBatch (getPsiWValState') calcs pPsiW `using` rpar
-    !pR0' <-    mTrainBatch (getR0ValState') calcs pR0 `using` rpar
-    !pR1' <-    mTrainBatch (getR1ValState') calcs pR1 `using` rpar
+    !pV' <-     mTrainBatch getVValState' calcs pV `using` rpar
+    !pW' <-     mTrainBatch getWValState' calcs pW `using` rpar
+    !pPsiV' <-  mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
+    !pPsiW' <-  mTrainBatch getPsiWValState' calcs pPsiW `using` rpar
+    !pR0' <-    mTrainBatch getR0ValState' calcs pR0 `using` rpar
+    !pR1' <-    mTrainBatch getR1ValState' calcs pR1 `using` rpar
     return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMems'), calc)
   where
     (!stateFeat, !stateActs, !stateNextActs) = mkStateActs borl state stateNext
@@ -252,11 +252,14 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
     pxLearn = set proxyType (NoScaling (head pxs ^?! proxyType) mMinMaxs) $ head pxs ^?! proxySub
     combineProxyExpectedOuts :: [[((StateFeatures, [ActionIndex]), Value)]]
     combineProxyExpectedOuts = concatMap getAndScaleExpectedOutput (sortBy (compare `on` (^?! proxyOutCol)) pxs)
-    len = head pxs ^?! proxyNrActions
+    len =  (head pxs ^?! proxyNrActions) * setts ^. independentAgents
     mMinMaxs = mapM getMinMaxVal pxs
     scaleAlg = pxLearn ^?! proxyNNConfig . scaleOutputAlgorithm
     getAndScaleExpectedOutput px@(CombinedProxy _ idx outs) =
-      map (map (\((ft, curIdx), out) -> ((ft, map (idx * len +) curIdx), scaleValue scaleAlg (getMinMaxVal px) out))) outs
+      -- trace ("idx: " ++ show (idx, len))
+      map (map (\((ft, curIdx), out) ->
+                  -- trace ("curIdx: "++ show curIdx)
+                  ((ft, map (idx * len +) curIdx), scaleValue scaleAlg (getMinMaxVal px) out))) outs
     getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
 
 
@@ -291,7 +294,7 @@ updateNNTargetNet agent setts forceReset period px
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadIO m) => Period -> [[((StateFeatures, [ActionIndex]), Value)]] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs !agents) = do
-  let netW' = trainGrenade opt config minMaxVal netW trainingInstances'
+  let netW' = trainGrenade opt config minMaxVal netW (concatMap (map convertTrainingInstances) trainingInstances')
   return $! Grenade netT netW' tp config nrActs agents
   where
     minMaxVal =
@@ -300,6 +303,8 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
           where minV = minimum $ map fst minMaxVals
                 maxV = maximum $ map snd minMaxVals
         _ -> getMinMaxVal px
+    convertTrainingInstances :: ((StateFeatures, [ActionIndex]), Value) -> [((StateFeatures, ActionIndex), Float)]
+    convertTrainingInstances ((ft, as), AgentValue vs) = zipWith3 (\agNr aIdx val -> ((ft, agNr * nrActs + aIdx), val)) [0..] as vs
     trainingInstances' =
       case px ^?! proxyType of
         NoScaling {} -> trainingInstances

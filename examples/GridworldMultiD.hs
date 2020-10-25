@@ -15,42 +15,31 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL                  as B
-import           SolveLp
+import           ML.BORL              as B
 
 import           Experimenter
 
-import           Data.Default
 import           Helper
 
-import           Control.Arrow            (first, second, (***))
-import           Control.DeepSeq          (NFData)
-import           Control.Lens
-import           Control.Lens             (set, (^.))
-import           Control.Monad            (foldM, liftM, unless, when)
-import           Control.Monad.IO.Class   (liftIO)
+import           Control.DeepSeq      (NFData)
+import           Control.Lens         ((^.))
+
+import           Control.Monad        (when)
 import           Data.Default
-import           Data.Function            (on)
-import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
-import qualified Data.Map.Strict          as M
+import           Data.List            (elemIndex, genericLength)
+import qualified Data.Map.Strict      as M
 import           Data.Serialize
-import           Data.Singletons.TypeLits hiding (natVal)
-import qualified Data.Text                as T
-import           Data.Text.Encoding       as E
-import qualified Data.Vector.Storable     as V
+import qualified Data.Vector.Storable as V
 import           GHC.Generics
-import           GHC.Int                  (Int32, Int64)
-import           GHC.TypeLits
 import           Grenade
-import           Prelude                  hiding (Left, Right)
-import           System.IO
+import           Prelude              hiding (Left, Right)
 import           System.Random
 
 import           Debug.Trace
 
 dim, cubeSize, goal :: Int
-dim = 3               -- dimensions
-cubeSize = 4          -- size of each dim
+dim = 3               -- dimensions, this is also the number of independentAgents. Each agent steers one dimension
+cubeSize = 5          -- size of each dim
 goal = 0              -- goal is at [goal, goal, ...]
 
 goalSt :: St
@@ -119,7 +108,7 @@ nnConfig =
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
-    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _prettyPrintElems = take 500 $ map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
@@ -133,7 +122,7 @@ borlSettings :: Settings
 borlSettings = def
   { _workersMinExploration = [0.3, 0.2, 0.1]
   , _nStep = 2
-  , _independentAgents = 2
+  , _independentAgents = dim
   }
 
 
@@ -173,7 +162,7 @@ decay =
       }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 0 0
+initVals = InitValues 0 4.5 0 0 0 0
 
 main :: IO ()
 main = usermode
@@ -198,6 +187,7 @@ usermode = do
 
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -215,9 +205,9 @@ modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
   buildModel $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
+  fullyConnected 36 >> relu >> -- dropout 0.90 >>
+  fullyConnected 24 >> relu >>
+  fullyConnected 24 >> relu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
@@ -226,139 +216,104 @@ modelBuilderGrenade actions initState cols =
 
 
 netInp :: St -> V.Vector Float
-netInp st =
-  V.fromList $ map (scaleMinMax (0, fromIntegral cubeSize) . fromIntegral) (getCurrentIdx st)
+netInp (St st) =
+  V.fromList $ map (scaleMinMax (0, fromIntegral cubeSize) . fromIntegral) st
 
 tblInp :: St -> V.Vector Float
 tblInp (St st) = V.fromList (map fromIntegral st)
 
 initState :: St
-initState = St $ replicate dim (cubeSize^2 `div` 2)
+initState = St $ replicate dim (cubeSize `div` 2)
 
 -- State
 newtype St =
-  St [Int] -- ^ Number in cubeSize^2 for each dimension.
+  St [Int] -- ^ Number in cubeSize for each dimension.
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
+instance Enum St where
+  fromEnum (St st) = Prelude.sum $ zipWith (\i v -> v * cubeSize ^ i) [0 .. (dim - 1)] (reverse st)
+  toEnum nr = St $ fromEnum' (dim - 1) nr
+    where
+      fromEnum' 0 n = [n]
+      fromEnum' i n = n `div` cubeSize ^ i : fromEnum' (i - 1) (n `mod` cubeSize ^ i)
 
--- instance Enum St where
---   fromEnum (St st) = Prelude.sum $ zipWith (\i x -> i * dim + x) [0 ..] st
---   toEnum x =
-
---     fromIdx (x `div` (maxX + 1), x `mod` (maxX + 1))
-
--- instance Bounded St where
---   minBound = fromIdx (0,0)
---   maxBound = fromIdx (maxX, maxY)
+instance Bounded St where
+  minBound = St $ replicate dim 0
+  maxBound = St $ replicate dim (cubeSize-1)
 
 
 -- Actions
-data Act = Random | Up | Down | Left | Right
+data Act = NoOp | Random | Up | Down | Left | Right
   deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
 instance Show Act where
   show Random = "random"
+  show NoOp   = "noop  "
   show Up     = "up    "
   show Down   = "down  "
   show Left   = "left  "
   show Right  = "right "
 
 actions :: [Act]
-actions = [Random, Up, Down, Left, Right]
-
+actions = [minBound..maxBound]
 
 actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s acts =
-  let xs = zipWith (move tp s) acts [0..]
-  in undefined
+actionFun tp s@(St st) acts
+  | all (== Random) acts = moveRand tp s
+  | otherwise = do
+    stepRew <- randomRIO (0, 8 :: Float)
+    return (Reward $ stepRew + (Prelude.sum rews / fromIntegral (length rews)), St s', False)
+  where
+    (rews, s') = unzip $ zipWith moveX acts [0 ..]
+    moveX :: Act -> Int -> (Float, Int)
+    moveX NoOp   = \nr -> (0, st !! nr)
+    moveX Up     = moveUp tp s
+    moveX Down   = moveDown tp s
+    moveX Left   = moveLeft tp s
+    moveX Right  = moveRight tp s
+    moveX Random = error "Unexpected Random in actionFun.moveX. Check the actionFilter!"
 
--- actionFun tp s [Up]     = goalState moveUp tp s
--- actionFun tp s [Down]   = goalState moveDown tp s
--- actionFun tp s [Left]   = goalState moveLeft tp s
--- actionFun tp s [Right]  = goalState moveRight tp s
--- -- actionFun tp s [Random, Random] = goalState moveRand tp s
--- actionFun tp s [x, y] = do
---   (r1, s1, e1) <- actionFun tp s [x]
---   (r2, s2, e2) <- actionFun tp s1 [y]
---   return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st
-  | st == goalSt = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
-actFilter _
-  | borlSettings ^. independentAgents == 1 = [False `V.cons` V.replicate (length actions - 1) True]
-actFilter _
-  | borlSettings ^. independentAgents == 2 = [V.fromList [False, True, True, False, False], V.fromList [False, False, False, True, True]]
+  | st == goalSt = replicate (borlSettings ^. independentAgents) (False `V.cons` ( True `V.cons` V.replicate (length actions - 2) False))
+actFilter _ = replicate (borlSettings ^. independentAgents) (True `V.cons` (False `V.cons` V.replicate (length actions - 2) True))
 actFilter _ = error "Unexpected setup in actFilter in GridworldMini.hs"
 
 
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 moveRand tp st = do
   when (st /= goalSt) $ error $ "moveRand in non-goal state: " ++ show st
-  xs <- sequenceA (replicate dim $ randomRIO (0, cubeSize^2 :: Int))
+  xs <- sequenceA (replicate dim $ randomRIO (0, cubeSize :: Int))
   return (Reward 10, St xs, True)
-
-goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
-goalState f tp st = do
-  r <- randomRIO (0, 8 :: Float)
-  let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
-  stepRew <$> f tp st
-
-
-move :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-move tp s acts
-  | all (== Random) acts = moveRand tp s
-  | otherwise = return $ zipWith moveX acts [0 ..]
-  where
-    moveX Random = moveRand tp s
-    moveX Up     = moveUp tp s
-    moveX Down   = moveUp tp s
-    moveX Down   = moveUp tp s
-    moveX Down   = moveUp tp s
-    moveX Down   = moveUp tp s
 
 moveUp :: AgentType -> St -> Int -> (Float, Int)
 moveUp _ (St st) agNr
-    | m == 0 = (-1, 0)
-    | otherwise = (0, m-cubeSize)
-  where m = st !! agNr
+  | m == 0 = (-1, 0)
+  | otherwise = (0, m - 1)
+  where
+    m = st !! agNr
 
 moveDown :: AgentType -> St -> Int -> (Float, Int)
 moveDown _ (St st) agNr
-    | m == cubeSize = (-1, cubeSize)
-    | otherwise = (0, m+cubeSize)
-  where m = st !! agNr
-
-moveLeft :: AgentType -> St -> Int -> (Float, Int)
-moveLeft _ (St st) agNr
-    | nRest == 0 = (-1, m)
-    | otherwise = (0, m-1)
-  where m = st !! agNr
-        nRest = m `mod` cubeSize
-        n = m `div` cubeSize
-
-moveRight :: AgentType -> St -> Act -> (Float, Int)
-moveRight _ (St st) agNr
-  | nRest == cubeSize = (-1, m)
+  | m == cubeSize = (-1, cubeSize)
   | otherwise = (0, m + 1)
   where
     m = st !! agNr
-    nRest = m `mod` cubeSize
-    n = m `div` cubeSize
 
+moveLeft :: AgentType -> St -> Int -> (Float, Int)
+moveLeft _ (St st) agNr
+  | m == 0 = (-1, 0)
+  | otherwise = (0, m - 1)
+  where
+    m = st !! agNr
 
--- Conversion from/to index for state
-
--- -- Convert to list of [x,y] values
--- toIndices :: St -> [[Int]]
--- toIndices (St nr) =
---   map (\x -> [x `div` cubeSize, x `mod` cubeSize]) nr
-
-
--- toIndices :: [[Int]] -> St
--- toIndices [x, y] =
---   map (\x -> [x `div` cubeSize, x `mod` cubeSize]) nr
+moveRight :: AgentType -> St -> Int -> (Float, Int)
+moveRight _ (St st) agNr
+  | m == cubeSize = (-1, cubeSize)
+  | otherwise = (0, m + 1)
+  where
+    m = st !! agNr
 
 
 allStateInputs :: M.Map NetInputWoAction St
@@ -366,9 +321,3 @@ allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..m
 
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
 mInverseSt xs = return <$> M.lookup xs allStateInputs
-
-getCurrentIdx :: St -> [Int]
-getCurrentIdx (St st) =
-  second (fst . head . filter ((==1) . snd)) $
-  head $ filter ((1 `elem`) . map snd . snd) $
-  zip [0..] $ map (zip [0..]) st

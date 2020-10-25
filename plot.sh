@@ -19,6 +19,12 @@ echo "AGENTS: $agents"
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'episodeLength' using 0:col with points; pause mouse close; " &
 
 START=2
+END=$((START+agents))
+echo "col=$START:$END"
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with lines; pause mouse close; " &
+
+
+START=2
 END=$((START+agents*4))
 echo "col=$START:$END"
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with lines; pause mouse close; " &
@@ -39,7 +45,8 @@ gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'rew
 # if [[ $(age "$file") < 300 ]];
 # then
 NR="`head -n1 stateValuesAllStatesCount`"
-if [ $? -eq 0 ]; then
+MAX=100
+if [ $? -eq 0 ] && [[ "$NR" < "$MAX" ]]; then
     # NR="`head -n1 stateValuesAllStatesCount`"
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates' using 1:col with lines; set key title 'All V Values'; pause mouse close; " &
     gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:$((NR+1))] 'stateVAllStates_scaled' using 1:col with lines; set key title 'All V Values (Scaled)'; pause mouse close; " &
