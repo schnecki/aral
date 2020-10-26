@@ -48,7 +48,7 @@ goalSt = St $ replicate dim goal
 expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld-mini 28.1."
+    { _experimentBaseName         = "gridworld-multi 28.1."
     , _experimentInfoParameters   = [isNN]
     , _experimentRepetitions      = 40
     , _preparationSteps           = 500000
@@ -101,8 +101,8 @@ instance RewardFuture St where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
-    , _replayMemoryStrategy = ReplayMemorySingle
+    { _replayMemoryMaxSize = 1000
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
     , _trainBatchSize = 8
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
@@ -162,7 +162,8 @@ decay =
       }
 
 initVals :: InitValues
-initVals = InitValues 0 4.5 0 0 0 0
+initVals = InitValues 0 0 -- 4.5
+           0 0 0 0
 
 main :: IO ()
 main = usermode
@@ -190,14 +191,16 @@ usermode = do
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
 
   askUser inverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
-    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
-    usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
+    cmds | dim == 1 = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Inc, Dec])
+         | otherwise = []
+    usage | dim == 1 = [("i", "Move up"), ("k", "Move down")]
+          | otherwise = []
 
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
@@ -243,16 +246,14 @@ instance Bounded St where
 
 
 -- Actions
-data Act = NoOp | Random | Up | Down | Left | Right
+data Act = NoOp | Random | Inc | Dec
   deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
 instance Show Act where
   show Random = "random"
   show NoOp   = "noop  "
-  show Up     = "up    "
-  show Down   = "down  "
-  show Left   = "left  "
-  show Right  = "right "
+  show Inc    = "inc.  "
+  show Dec    = "dec.  "
 
 actions :: [Act]
 actions = [minBound..maxBound]
@@ -267,10 +268,8 @@ actionFun tp s@(St st) acts
     (rews, s') = unzip $ zipWith moveX acts [0 ..]
     moveX :: Act -> Int -> (Float, Int)
     moveX NoOp   = \nr -> (0, st !! nr)
-    moveX Up     = moveUp tp s
-    moveX Down   = moveDown tp s
-    moveX Left   = moveLeft tp s
-    moveX Right  = moveRight tp s
+    moveX Inc    = moveInc tp s
+    moveX Dec    = moveDec tp s
     moveX Random = error "Unexpected Random in actionFun.moveX. Check the actionFilter!"
 
 
@@ -287,29 +286,15 @@ moveRand tp st = do
   xs <- sequenceA (replicate dim $ randomRIO (0, cubeSize :: Int))
   return (Reward 10, St xs, True)
 
-moveUp :: AgentType -> St -> Int -> (Float, Int)
-moveUp _ (St st) agNr
+moveDec :: AgentType -> St -> Int -> (Float, Int)
+moveDec _ (St st) agNr
   | m == 0 = (-1, 0)
   | otherwise = (0, m - 1)
   where
     m = st !! agNr
 
-moveDown :: AgentType -> St -> Int -> (Float, Int)
-moveDown _ (St st) agNr
-  | m == cubeSize = (-1, cubeSize)
-  | otherwise = (0, m + 1)
-  where
-    m = st !! agNr
-
-moveLeft :: AgentType -> St -> Int -> (Float, Int)
-moveLeft _ (St st) agNr
-  | m == 0 = (-1, 0)
-  | otherwise = (0, m - 1)
-  where
-    m = st !! agNr
-
-moveRight :: AgentType -> St -> Int -> (Float, Int)
-moveRight _ (St st) agNr
+moveInc :: AgentType -> St -> Int -> (Float, Int)
+moveInc _ (St st) agNr
   | m == cubeSize = (-1, cubeSize)
   | otherwise = (0, m + 1)
   where

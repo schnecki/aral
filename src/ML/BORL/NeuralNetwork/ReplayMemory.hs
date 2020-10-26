@@ -28,8 +28,9 @@ import           Debug.Trace
 ------------------------------ Replay Memories ------------------------------
 
 data ReplayMemories
-  = ReplayMemoriesUnified !ReplayMemory                -- ^ All experiences are saved in a single replay memory.
-  | ReplayMemoriesPerActions (Maybe ReplayMemory) !(VI.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences.
+  = ReplayMemoriesUnified !ReplayMemory                                     -- ^ All experiences are saved in a single replay memory.
+  | ReplayMemoriesPerActions (Maybe ReplayMemory) !(VI.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of experiences. For
+                                                                            -- multiple agents the action that is used to save the experience is selected randomly.
   deriving (Generic)
 
 instance Show ReplayMemories where
@@ -73,7 +74,12 @@ addToReplayMemories 1 e@(_, [(_,idx)], _, _, _) (ReplayMemoriesPerActions tmp rs
   let r = rs VI.! idx
   r' <- addToReplayMemory e r
   return $!! ReplayMemoriesPerActions tmp (rs VI.// [(idx, r')])
-addToReplayMemories 1 (_, _, _, _, _) ReplayMemoriesPerActions{} = error "ReplayMemoriesPerActions and multiple agents are incompatible!"
+addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions tmp rs) = do
+  let idxs = map snd actChoices
+  idx <- randomRIO (0, length idxs - 1) -- randomly choose an agent that specifies the action
+  let r = rs VI.! idx
+  r' <- addToReplayMemory e r
+  return $!! ReplayMemoriesPerActions tmp (rs VI.// [(idx, r')])
 addToReplayMemories _ e (ReplayMemoriesPerActions Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
   tmpRepMem' <- addToReplayMemory e tmpRepMem
@@ -81,9 +87,9 @@ addToReplayMemories _ e (ReplayMemoriesPerActions (Just tmpRepMem) rs) = do
     then do -- temporary replay memory full, add experience to corresponding action memory
     let vec = tmpRepMem' ^. replayMemoryVector
     mems <- mapM (VM.read vec) [0.. tmpRepMem' ^. replayMemorySize-1]
-    let startIdx = case head mems ^. _2 of
-          [(_,idx)] -> idx
-          _ -> error "ReplayMemoriesPerActions and multiple agents are incompatible!"
+    startIdx <- case head mems ^. _2 of
+          [(_,idx)] -> return idx
+          idxs      -> randomRIO (0, length idxs - 1) -- randomly choose an agents first action
     let r = rs VI.! startIdx
     r' <- foldM (flip addToReplayMemory) r mems
     return $!! ReplayMemoriesPerActions (Just tmpRepMem') (rs VI.// [(startIdx, r')])
