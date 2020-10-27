@@ -23,14 +23,22 @@ type AgentNumber = Int
 
 -- Action
 type Action as = as
-type FilteredActions as = [VB.Vector (Action as)] -- ^ List of agents with possible actions for each agent.
+type FilteredActions as = VB.Vector (VB.Vector (Action as)) -- ^ List of agents with possible actions for each agent.
+type NumberOfActions = Int
 
 -- ActionIndex
 type ActionIndex = Int
-type FilteredActionIndices = [V.Vector ActionIndex] -- ^ Allowed actions for each agent.
+type AgentActionIndices = VB.Vector ActionIndex               -- ^ One action index per agent
+type FilteredActionIndices = VB.Vector (V.Vector ActionIndex) -- ^ Allowed actions for each agent.
 
 
-type ActionChoice = [(IsRandomAction, ActionIndex)]                       -- ^ One action per agent
+type ActionChoice = VB.Vector (IsRandomAction, ActionIndex)                       -- ^ One action per agent
+
+
+instance Serialize ActionChoice where
+  put xs = put (VB.toList xs)
+  get = VB.fromList <$> get
+
 type NextActions = (ActionChoice, [WorkerActionChoice])
 type RandomNormValue = Float
 type UseRand = Bool
@@ -39,8 +47,8 @@ type WorkerActionChoice = ActionChoice
 
 type IsRandomAction = Bool
 type IsOptimalValue = Bool
-type ActionFilter s = s -> [V.Vector Bool] -- ^ List of action flags for each agent. Each Vector must be of the length
-                                           -- of the actions.
+type ActionFilter s = s -> [V.Vector Bool] -- ^ List of action flags for each agent. Each Vector must be of
+                                                     -- the length of the actions.
 
 -- | Agent type. There is only one main agent, but there could be multiple workers (configured via NNConfig).
 data AgentType = MainAgent | WorkerAgent Int
@@ -87,104 +95,109 @@ type Gamma = Float
 --   | ValuesFiltered
 --   | ValuesUnfiltered
 
-newtype Value = AgentValue [Float] -- ^ One value for every agent
-  deriving (Show, Generic, NFData, Serialize)
+newtype Value = AgentValue (V.Vector Float) -- ^ One value for every agent
+  deriving (Show, Generic, NFData)
 
-newtype Values = AgentValues [V.Vector Float] -- ^ A vector of values for every agent
+instance Serialize Value where
+  put (AgentValue xs) = put (V.toList xs)
+  get = AgentValue . V.fromList <$> get
+
+newtype Values = AgentValues (VB.Vector (V.Vector Float)) -- ^ A vector of values for every agent
   deriving (Show)
 
 
 instance Num Value where
-  (AgentValue xs) + (AgentValue ys) = AgentValue (zipWith (+) xs ys)
-  (AgentValue xs) - (AgentValue ys) = AgentValue (zipWith (-) xs ys)
-  (AgentValue xs) * (AgentValue ys) = AgentValue (zipWith (*) xs ys)
-  abs (AgentValue xs) = AgentValue (map abs xs)
-  signum (AgentValue xs) = AgentValue (map signum xs)
+  (AgentValue xs) + (AgentValue ys) = AgentValue (V.zipWith (+) xs ys)
+  (AgentValue xs) - (AgentValue ys) = AgentValue (V.zipWith (-) xs ys)
+  (AgentValue xs) * (AgentValue ys) = AgentValue (V.zipWith (*) xs ys)
+  abs (AgentValue xs) = AgentValue (V.map abs xs)
+  signum (AgentValue xs) = AgentValue (V.map signum xs)
   -- fromInteger nr = AgentValue (repeat $ fromIntegral nr)
   fromInteger _ = error "fromInteger is not implemented for Value!"
     -- AgentValue (replicate 1 $ fromIntegral nr)
 
 toValue :: Int -> Float -> Value
-toValue nr v = AgentValue $ replicate nr v
+toValue nr v = AgentValue $ V.replicate nr v
 
 (.*) :: Float -> Value -> Value
-x .* (AgentValue xs) = AgentValue (map (x*) xs)
+x .* (AgentValue xs) = AgentValue (V.map (x*) xs)
 infixl 7 .*
 
 (*.) :: Value -> Float -> Value
-(AgentValue xs) *. x = AgentValue (map (*x) xs)
+(AgentValue xs) *. x = AgentValue (V.map (*x) xs)
 infixl 7 *.
 
 (.+) :: Float -> Value -> Value
-x .+ (AgentValue xs) = AgentValue (map (x+) xs)
+x .+ (AgentValue xs) = AgentValue (V.map (x+) xs)
 infixl 6 .+
 
 (+.) :: Value -> Float -> Value
-(AgentValue xs) +. x = AgentValue (map (+x) xs)
+(AgentValue xs) +. x = AgentValue (V.map (+x) xs)
 infixl 6 +.
 
 (.-) :: Float -> Value -> Value
-x .- (AgentValue xs) = AgentValue (map (x-) xs)
+x .- (AgentValue xs) = AgentValue (V.map (x-) xs)
 infixl 6 .-
 
 (-.) :: Value -> Float -> Value
-(AgentValue xs) -. x = AgentValue (map (subtract x) xs)
+(AgentValue xs) -. x = AgentValue (V.map (subtract x) xs)
 infixl 6 -.
 
 
 fromValue :: Value -> [Float]
-fromValue (AgentValue xs) = xs
+fromValue (AgentValue xs) = V.toList xs
 
 
 mapValue :: (Float -> Float) -> Value -> Value
-mapValue f (AgentValue vals) = AgentValue (fmap f vals)
+mapValue f (AgentValue vals) = AgentValue (V.map f vals)
 
-reduceValue :: ([Float] -> Float) -> Value -> Float
+reduceValue :: (V.Vector Float -> Float) -> Value -> Float
 reduceValue f (AgentValue vals) = f vals
 
 selectIndex :: Int -> Value -> Float
 selectIndex idx (AgentValue vals) =
 #ifdef DEBUG
-  (if length vals <= idx then error ("selectIndex out of Bounds " ++ show (idx, vals)) else id)
+  (if V.length vals <= idx then error ("selectIndex out of Bounds " ++ show (idx, vals)) else id)
 #endif
-  vals !! idx
+  vals V.! idx
 
 
 zipWithValue :: (Float -> Float -> Float) -> Value -> Value -> Value
-zipWithValue f (AgentValue xs) (AgentValue ys) = AgentValue $ zipWith f xs ys
+zipWithValue f (AgentValue xs) (AgentValue ys) = AgentValue $ V.zipWith f xs ys
 
 mapValues :: (V.Vector Float -> V.Vector Float) -> Values -> Values
 mapValues f (AgentValues vals) = AgentValues (fmap f vals)
 
-selectIndices :: [ActionIndex] -> Values -> Value
-selectIndices idxs (AgentValues vals) = AgentValue (zipWith (V.!) vals idxs)
+selectIndices :: AgentActionIndices -> Values -> Value
+selectIndices idxs (AgentValues vals) = AgentValue (V.convert $ VB.zipWith (V.!) vals idxs)
 
 reduceValues :: (V.Vector Float -> Float) -> Values -> Value
-reduceValues f (AgentValues vals) = AgentValue (map f vals)
+reduceValues f (AgentValues vals) = AgentValue (V.convert $ VB.map f vals)
 
-zipWithValues :: (a -> V.Vector Float -> b) -> [a] -> Values -> [b]
-zipWithValues f as (AgentValues vals) = zipWith f as vals
+zipWithValues :: (a -> V.Vector Float -> b) -> [a] -> Values -> VB.Vector b
+zipWithValues f as (AgentValues vals) = VB.zipWith f (VB.fromList as) vals
 
-fromValues :: Values -> [V.Vector Float]
+fromValues :: Values -> VB.Vector (V.Vector Float)
 fromValues (AgentValues xs) = xs
 
 -- | Use with care! This function does not work properly on filtered Values.
 toActionValue :: Values -> [Value]
-toActionValue (AgentValues xs) = map AgentValue (transpose $ map V.toList xs)
+toActionValue (AgentValues xs) = map (AgentValue . V.fromList) (transpose $ map V.toList (VB.toList xs))
 
 multiAgentValue :: V.Vector Float -> Value
 #ifdef DEBUG
 multiAgentValue xs | V.null xs = error "empty input list in singleAgentValues in ML.BORL.Types"
 #endif
-multiAgentValue xs = AgentValue (V.toList xs)
+multiAgentValue xs = AgentValue xs
 
-multiAgentValues :: [V.Vector Float] -> Values
+multiAgentValues :: VB.Vector (V.Vector Float) -> Values
 #ifdef DEBUG
-multiAgentValues [] = error "empty input list in singleAgentValues in ML.BORL.Types"
 multiAgentValues xs
+  | VB.null xs = error "empty input list in singleAgentValues in ML.BORL.Types"
   | any (/= l) ls = error $ "length in input list in singleAgentValues in ML.BORL.Types do not match: " ++ show (l : ls)
   where
-    (l:ls) = V.length <$> xs
+    l = V.length (VB.head xs)
+    ls = map V.length (VB.toList $ VB.tail xs)
 #endif
 multiAgentValues xs = AgentValues xs
 

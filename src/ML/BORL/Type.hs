@@ -140,8 +140,8 @@ data BORL s as = BORL
 
   -- Values:
   , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.0001).
-  , _lastVValues       :: ![Value]               -- ^ List of X last V values (head is last seen value)
-  , _lastRewards       :: ![Float]               -- ^ List of X last rewards (head is last received reward)
+  , _lastVValues       :: !(VB.Vector Value)     -- ^ List of X last V values (head is last seen value)
+  , _lastRewards       :: !(V.Vector Float)      -- ^ List of X last rewards (head is last received reward)
   , _psis              :: !(Value, Value, Value) -- ^ Exponentially smoothed psi values.
   , _proxies           :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
@@ -166,16 +166,17 @@ decayedParameters borl
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
 actionIndicesFiltered :: BORL s as -> s -> FilteredActionIndices
-actionIndicesFiltered borl state = map (\fil -> V.ifilter (\idx _ -> fil V.! idx) actionIndices) filterVals
+actionIndicesFiltered borl state = VB.map (\fil -> V.ifilter (\idx _ -> fil V.! idx) actionIndices) (VB.fromList filterVals)
   where
     filterVals :: [V.Vector Bool]
     filterVals = (borl ^. actionFilter) state
-    actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
+    -- actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
+    actionIndices = V.generate (length (actionLengthCheck filterVals $ borl ^. actionList)) id
 
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
 actionsFiltered :: BORL s as -> s -> FilteredActions as
-actionsFiltered borl state = map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (actionLengthCheck filterVals $ borl ^. actionList)) filterVals
+actionsFiltered borl state = VB.map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (actionLengthCheck filterVals $ borl ^. actionList)) (VB.fromList filterVals)
   where
     filterVals :: [V.Vector Bool]
     filterVals = (borl ^. actionFilter) state
@@ -564,17 +565,16 @@ mkReplayMemories = mkReplayMemories' False
 mkReplayMemories' :: Bool -> [Action as] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories' allowSz1 as setts nnConfig =
   case nnConfig ^. replayMemoryStrategy of
-    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 repMemSizeSingle
+    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 (repMemSizeSingle * agents)
     ReplayMemoryPerAction -> do
       tmpRepMem <- mkReplayMemory allowSz1 (setts ^. nStep)
-      fmap (ReplayMemoriesPerActions tmpRepMem) . sequence . VB.fromList <$> replicateM (length as) (mkReplayMemory allowSz1 repMemSizePerAction)
+      fmap (ReplayMemoriesPerActions (length as) tmpRepMem) . sequence . VB.fromList <$> replicateM (length as * agents) (mkReplayMemory allowSz1 repMemSizePerAction)
   where
+    agents = setts ^. independentAgents
     repMemSizeSingle = max (nnConfig ^. replayMemoryMaxSize) (setts ^. nStep * nnConfig ^. trainBatchSize)
     repMemSizePerAction = (size `div` (setts ^. nStep)) * (setts ^. nStep)
       where
-        size = -- repMemSizeSingle
-
-          max (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)) (setts ^. nStep)
+        size = max (ceiling $ fromIntegral (nnConfig ^. replayMemoryMaxSize) / fromIntegral (length as)) (setts ^. nStep)
 
 
 mkReplayMemory :: Bool -> Int -> IO (Maybe ReplayMemory)

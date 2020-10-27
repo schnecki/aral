@@ -33,7 +33,7 @@ data ReplayMemoryStrategy
 data NNConfig =
   NNConfig
     { _replayMemoryMaxSize             :: !Int                     -- ^ Maximum size of the replay memory. If you set this to `trainBatchSize * nStep` then there is no random selection, but all
-                                                                   -- memories are used!
+                                                                   -- memories are used! This size if for one agent, if you use more than one, then the size will be scaled up.
     , _replayMemoryStrategy            :: !ReplayMemoryStrategy    -- ^ How to store experiences. @ReplayMemoryPerAction@ only works with n-step=1.
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
     , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.

@@ -14,6 +14,7 @@ module ML.BORL.NeuralNetwork.Conversion
 
 import           Data.Singletons
 import           Data.Singletons.Prelude.List
+import qualified Data.Vector                  as VB
 import qualified Data.Vector.Storable         as V
 import           GHC.TypeLits
 import           Grenade
@@ -61,10 +62,10 @@ toAgents nr vec
   where
     len = V.length vec `div` nr
     toAgents' v
-      | V.null v = []
+      | V.null v = VB.empty
       | otherwise =
         let (this, that) = V.splitAt len v
-        in this : toAgents' that
+        in this `VB.cons` toAgents' that
     checkAgents :: Values -> Values
     checkAgents vs@(AgentValues xs)
       | length xs == nr = vs

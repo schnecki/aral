@@ -20,6 +20,7 @@ import           Control.Monad.IO.Class (liftIO)
 import           Data.Function          (on)
 import           Data.List              (find, sortBy)
 import           Data.Time.Clock
+import qualified Data.Vector            as VB
 import           System.CPUTime
 import           System.IO
 import           System.Random
@@ -167,7 +168,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                    liftIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x)
             Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
-          liftIO $ stepExecute ql (map (False,) cmd, []) >>= askUser mInverse False addUsage cmds qlCmds
+          liftIO $ stepExecute ql (VB.map (False,) (VB.fromList cmd), []) >>= askUser mInverse False addUsage cmds qlCmds
 
 
 time :: NFData t => IO t -> IO t

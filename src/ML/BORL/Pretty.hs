@@ -97,7 +97,7 @@ noMod _ _ = return
 
 modifierSubtract :: (MonadIO m) => BORL s as -> P.Proxy -> Modifier m
 modifierSubtract borl px lk k v0 = do
-  vS <- P.lookupProxy (borl ^. t) lk (second (replicate agents) k) px
+  vS <- P.lookupProxy (borl ^. t) lk (second (VB.replicate agents) k) px
   return (v0 - vS)
   where agents = px ^?! proxyNrAgents
 
@@ -111,7 +111,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printFloat (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
       in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-      sortBy (compare `on`  fst.fst) $ map ((\((st,a), v) -> ((st,a), AgentValue (V.toList v)))) (M.toList m)
+      sortBy (compare `on`  fst.fst) $ map ((\((st,a), v) -> ((st,a), AgentValue v))) (M.toList m)
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW)) | isEmpty kDoc = []

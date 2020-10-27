@@ -36,8 +36,6 @@ module ML.BORL.Proxy.Type
   )
 where
 
-import           ML.BORL.NeuralNetwork
-import           ML.BORL.Types                as T
 
 import           Control.DeepSeq
 import           Control.Lens
@@ -53,6 +51,10 @@ import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import           Unsafe.Coerce                (unsafeCoerce)
+
+import           ML.BORL.NeuralNetwork
+import           ML.BORL.Types                as T
+
 
 import           Debug.Trace
 
@@ -115,7 +117,7 @@ data Proxy
   | CombinedProxy
       { _proxySub            :: Proxy                                                -- ^ The actual proxy holding all combined values.
       , _proxyOutCol         :: Int                                                  -- ^ Output column/row of the data.
-      , _proxyExpectedOutput :: [[((StateFeatures, [ActionIndex]), Value)]]          -- ^ List of batches of list of n-step results. Used to save the data for learning.
+      , _proxyExpectedOutput :: [[((StateFeatures, AgentActionIndices), Value)]]     -- ^ List of batches of list of n-step results. Used to save the data for learning.
       }
 
 -- | This function adds two proxies. The proxies must be of the same type and for Grenade of the same shape. It does not work with Tenforflow proxies!
@@ -212,8 +214,8 @@ proxyOutCol :: Traversal' Proxy Int
 proxyOutCol f (CombinedProxy p c out) = (\c' -> CombinedProxy p c' out) <$> f c
 proxyOutCol _ p                       = pure p
 
-proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, [ActionIndex]), Value)]]
-proxyExpectedOutput f (CombinedProxy p c out) = (CombinedProxy p c) <$> f out
+proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, AgentActionIndices), Value)]]
+proxyExpectedOutput f (CombinedProxy p c out) = CombinedProxy p c <$> f out
 proxyExpectedOutput _ p                       = pure p
 
 

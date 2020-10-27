@@ -71,19 +71,36 @@ data BORLSerialisable s as = BORLSerialisable
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadIO m, RewardFuture s, Enum as, Bounded as) => BORL s as -> m (BORLSerialisable s as)
+toSerialisable :: (MonadIO m, RewardFuture s) => BORL s as -> m (BORLSerialisable s as)
 toSerialisable = toSerialisableWith id id
 
 
-toSerialisableWith :: (MonadIO m, RewardFuture s', Enum as, Bounded as) => (s -> s') -> (StoreType s -> StoreType s') -> BORL s as -> m (BORLSerialisable s' as)
-toSerialisableWith f g borl@(BORL as _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) = do
-  return $ BORLSerialisable (VB.toList as) (f state) (mapWorkers f g workers') time eNr par dec setts (map (mapRewardFutureData f g) future) (mapAlgorithmState V.toList alg) obj expSmthRew v rew psis prS
+toSerialisableWith :: (MonadIO m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s as -> m (BORLSerialisable s' as)
+toSerialisableWith f g (BORL as _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) =
+  return $
+  BORLSerialisable
+    (VB.toList as)
+    (f state)
+    (mapWorkers f g workers')
+    time
+    eNr
+    par
+    dec
+    setts
+    (map (mapRewardFutureData f g) future)
+    (mapAlgorithmState V.toList alg)
+    obj
+    expSmthRew
+    (VB.toList v)
+    (V.toList rew)
+    psis
+    prS
 
-fromSerialisable :: (MonadIO m, RewardFuture s, Enum as, Bounded as) => ActionFunction s as -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s as -> m (BORL s as)
+fromSerialisable :: (MonadIO m, RewardFuture s) => ActionFunction s as -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s as -> m (BORL s as)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
-     (MonadIO m, RewardFuture s, Enum as, Bounded as)
+     (MonadIO m, RewardFuture s)
   => (s' -> s)
   -> (StoreType s' -> StoreType s)
   -> ActionFunction s as
@@ -91,46 +108,39 @@ fromSerialisableWith ::
   -> FeatureExtractor s
   -> BORLSerialisable s' as
   -> m (BORL s as)
-fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) = do
-  let borl =
-        BORL
-          (VB.fromList as)
-          asFun
-          aF
-          (f st)
-          (mapWorkers f g workers')
-          ftExt
-          t
-          e
-          par
-          dec
-          setts
-          (map (mapRewardFutureData f g) future)
-          (mapAlgorithmState V.fromList alg)
-          obj
-          expSmthRew
-          lastV
-          rew
-          psis
-          prS
-      pxs = borl ^. proxies
-      nrOutCols
-        | isCombinedProxies pxs && isAlgDqn alg = 1
-        | isCombinedProxies pxs && isAlgDqnAvgRewardAdjusted alg = 2
-        | isCombinedProxies pxs = 6
-        | otherwise = 1
-  return borl
+fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) =
+  return $
+  BORL
+    (VB.fromList as)
+    asFun
+    aF
+    (f st)
+    (mapWorkers f g workers')
+    ftExt
+    t
+    e
+    par
+    dec
+    setts
+    (map (mapRewardFutureData f g) future)
+    (mapAlgorithmState V.fromList alg)
+    obj
+    expSmthRew
+    (VB.fromList lastV)
+    (V.fromList rew)
+    psis
+    prS
 
 
 instance Serialize Proxies
 instance Serialize ReplayMemories where
   put (ReplayMemoriesUnified r)         = put (0 :: Int) >> put r
-  put (ReplayMemoriesPerActions tmp xs) = put (1 :: Int) >> put tmp >> put (VB.toList xs)
+  put (ReplayMemoriesPerActions nrAs tmp xs) = put (1 :: Int) >> put nrAs >> put tmp >> put (VB.toList xs)
   get = do
     nr <- get
     case (nr :: Int) of
       0 -> ReplayMemoriesUnified <$> get
-      1 -> ReplayMemoriesPerActions <$> get <*> fmap VB.fromList get
+      1 -> ReplayMemoriesPerActions <$> get <*> get <*> fmap VB.fromList get
       _ -> error "index error"
 
 instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
@@ -192,12 +202,12 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, map V.toList as), assel, rew, (V.toList st', map V.toList as'), epsEnd)) xs
+    put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd)) xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    (xs :: [Experience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, map V.fromList as), assel, rew, (V.fromList st', map V.fromList as'), epsEnd)) <$> get
+    (xs :: [Experience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, VB.fromList $ map V.fromList as), assel, rew, (V.fromList st', VB.fromList $ map V.fromList as'), epsEnd)) <$> get
     maxIdx <- get
     return $
       unsafePerformIO $ do

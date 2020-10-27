@@ -8,6 +8,8 @@ module ML.BORL.Calculation.Type where
 import           Control.DeepSeq
 import           Control.Monad.IO.Class
 import           Data.List
+import qualified Data.Vector            as VB
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 
 import           ML.BORL.Reward
@@ -40,24 +42,24 @@ emptyExpectedValuationNext = ExpectedValuationNext Nothing Nothing Nothing Nothi
 data Calculation = Calculation
   { getRhoMinimumVal'     :: Maybe Value
   , getRhoVal'            :: Maybe Value
-  , getPsiVValState'      :: Maybe Value -- [Float] -- ^ Deviation of this state
-  , getVValState'         :: Maybe Value -- [Float]
-  , getPsiWValState'      :: Maybe Value -- [Float] -- ^ Deviation of this state
-  , getWValState'         :: Maybe Value -- [Float]
-  , getR0ValState'        :: Maybe Value -- [Float]
-  , getR1ValState'        :: Maybe Value -- [Float]
-  , getPsiValRho'         :: Maybe Value -- Float -- ^ Scalar deviation over all states (for output only)
-  , getPsiValV'           :: Maybe Value -- [Float] -- ^ Scalar deviation over all states (for output only)
-  , getPsiValW'           :: Maybe Value -- [Float] -- ^ Scalar deviation over all states (for output only)
-  , getLastVs'            :: Maybe [Value]
-  , getLastRews'          :: [RewardValue]
+  , getPsiVValState'      :: Maybe Value -- ^ Deviation of this state
+  , getVValState'         :: Maybe Value
+  , getPsiWValState'      :: Maybe Value -- ^ Deviation of this state
+  , getWValState'         :: Maybe Value
+  , getR0ValState'        :: Maybe Value
+  , getR1ValState'        :: Maybe Value
+  , getPsiValRho'         :: Maybe Value -- ^ Scalar deviation over all states (for output only)
+  , getPsiValV'           :: Maybe Value -- ^ Scalar deviation over all states (for output only)
+  , getPsiValW'           :: Maybe Value -- ^ Scalar deviation over all states (for output only)
+  , getLastVs'            :: Maybe (VB.Vector Value)
+  , getLastRews'          :: V.Vector RewardValue
   , getEpisodeEnd         :: Bool
   , getExpSmoothedReward' :: Float
   } deriving (Show, Generic)
 
 
 emptyCalculation :: Calculation
-emptyCalculation = Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing [] True 0
+emptyCalculation = Calculation Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing mempty True 0
 
 instance NFData Calculation where
   rnf calc =

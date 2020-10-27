@@ -28,6 +28,7 @@ import           Data.Serialize
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import           Data.Text.Encoding     as E
+import qualified Data.Vector            as VB
 import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
@@ -195,7 +196,7 @@ instance ExperimentDef (BORL St Act) where
             ++
             concatMap
               (\s ->
-                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ head $ actionIndicesFiltered rl' s))
+                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ VB.head $ actionIndicesFiltered rl' s))
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =

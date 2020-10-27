@@ -61,7 +61,7 @@ nextAction !borl = do
                       | otherwise = borl ^. settings . explorationStrategy
 
 nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Float -> m ActionChoice
-nextActionFor borl strategy state explore = zipWithM chooseAgentAction acts [0 ..]
+nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate (VB.length acts) id)
   where
     acts = actionIndicesFiltered borl state
     chooseAgentAction as agentIndex
