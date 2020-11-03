@@ -151,7 +151,7 @@ instance (NFData as, NFData s) => NFData (BORL s as) where
   rnf (BORL as _ af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
     rnf as `seq` rnf af `seq` rnf st `seq` rnf ws `seq` rnf ftExt `seq` rnf time `seq`
     rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf setts `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf expSmth `seq`
-    rnf1 lastVs `seq` rnf1 lastRews  `seq` rnf psis' `seq` rnf proxies'
+    rnf lastVs `seq` rnf lastRews  `seq` rnf psis' `seq` rnf proxies'
 
 
 decayedParameters :: BORL s as -> ParameterDecayedValues
