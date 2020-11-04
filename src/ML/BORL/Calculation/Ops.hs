@@ -135,6 +135,13 @@ overEstimateRhoCalc borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * 
         Maximise -> max
         Minimise -> min
 
+shareRhoVal :: Settings -> Value -> Value
+shareRhoVal setts v@(AgentValue vec)
+  | setts ^. independentAgentsSharedRho = AgentValue $ V.map (const val) vec
+  | otherwise = v
+  where val = V.sum vec / fromIntegral (V.length vec)
+
+
 mkCalculation' ::
      (MonadIO m)
   => BORL s as
@@ -208,8 +215,9 @@ mkCalculation' borl (state, stateActIdxes) as reward (stateNext, stateNextActIdx
           Maximise -> max
           Minimise -> min
   let rhoVal'
-        | randomAction && not learnFromRandom = rhoVal
+        | randomAction && not learnFromRandom = shareRhoVal (borl ^. settings) $ rhoVal
         | otherwise =
+          shareRhoVal (borl ^. settings) $
           zipWithValue maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
@@ -308,8 +316,9 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
           Maximise -> max
           Minimise -> min
   let rhoVal'
-        | randomAction && not learnFromRandom = zipWithValue maxOrMin rhoMinimumState rhoVal
+        | randomAction && not learnFromRandom = shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState rhoVal
         | otherwise =
+          shareRhoVal (borl ^. settings) $
           zipWithValue maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
@@ -394,16 +403,17 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
           Maximise -> max
           Minimise -> min
   let rhoVal'
-        | randomAction = rhoVal
+        | randomAction = shareRhoVal (borl ^. settings) rhoVal
         | otherwise =
+          shareRhoVal (borl ^. settings) $
           zipWithValue maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x -> toValue agents x
             _ -> (1 - alp) .* rhoVal + alp .* rhoState
       rhoValOverEstimated
-        | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
-        | otherwise = rhoVal'
+        | borl ^. settings . overEstimateRho = shareRhoVal (borl ^. settings) $ mapValue (overEstimateRhoCalc borl) rhoVal'
+        | otherwise = shareRhoVal (borl ^. settings) rhoVal'
   let rhoMinimumVal'
         | randomAction = rhoMinimumState
         | otherwise = zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'

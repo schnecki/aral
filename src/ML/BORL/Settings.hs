@@ -23,9 +23,10 @@ data Settings = Settings
   , _useProcessForking             :: !Bool                -- ^ Use actual process forking where possible. [Default: True]
   , _overEstimateRho               :: !Bool                -- ^ Overestimate the average reward to find better policies. This may lead to incorrect state value estimates! [Default: False]
   , _independentAgents             :: !Int                 -- ^ Split action space into independent X agents. At least 1. Changes have no effect after initialisation of the agent.
+  , _independentAgentsSharedRho    :: !Bool                -- ^ Share the average reward over all independent agents. Default: True
   } deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 makeLenses ''Settings
 
 
 instance Default Settings where
-  def = Settings EpsilonGreedy [] False 1 False True False 1
+  def = Settings EpsilonGreedy [] False 1 False True False 1 True

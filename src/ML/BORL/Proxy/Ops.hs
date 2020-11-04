@@ -226,7 +226,7 @@ insertProxy !agent !setts !p !st !aNr !val = insertProxyMany agent setts p [[((s
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadIO m) => AgentType -> Settings -> Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> m Proxy
-insertProxyMany _ _ p [] px = trace ("\n\nEmpty input in insertProxyMany. Period: " ++ show p ++ "\n\n") return px
+insertProxyMany _ _ p [] px = liftIO $ putStrLn ("\n\nEmpty input in insertProxyMany. Period: " ++ show p) >> return px
 insertProxyMany _ _ _ !xs (Scalar _) = return $ Scalar (V.fromList $ fromValue $ snd $ last $ last xs)
 insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
   where
@@ -252,10 +252,7 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
     mMinMaxs = mapM getMinMaxVal pxs
     scaleAlg = pxLearn ^?! proxyNNConfig . scaleOutputAlgorithm
     getAndScaleExpectedOutput px@(CombinedProxy _ idx outs) =
-      -- trace ("idx: " ++ show (idx, len))
-      map (map (\((ft, curIdx), out) ->
-                  -- trace ("curIdx: "++ show curIdx)
-                  ((ft, VB.map (idx * len +) curIdx), scaleValue scaleAlg (getMinMaxVal px) out))) outs
+      map (map (\((ft, curIdx), out) -> ((ft, VB.map (idx * len +) curIdx), scaleValue scaleAlg (getMinMaxVal px) out))) outs
     getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
 
 
