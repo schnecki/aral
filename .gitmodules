@@ -1,15 +1,9 @@
 [submodule "grenade"]
 	path = grenade
 	url = git@github.com:schnecki/grenade.git
-[submodule "tensorflow-haskell"]
-	path = tensorflow-haskell
-	url = https://github.com/schnecki/haskell.git
 [submodule "gym-haskell"]
 	path = gym-haskell
-	url = https://github.com/schnecki/gym-haskell.git
+	url = git@github.com:schnecki/gym-haskell.git
 [submodule "experimenter"]
 	path = experimenter
 	url = git@git.uibk.ac.at:c4371143/experimenter.git
-[submodule "high-level-tensorflow"]
-	path = high-level-tensorflow
-	url = git@github.com:schnecki/high-level-tensorflow.git
