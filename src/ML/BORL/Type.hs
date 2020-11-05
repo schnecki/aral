@@ -86,6 +86,7 @@ import qualified Data.Proxy                   as Type
 import           Data.Serialize
 import           Data.Singletons              (SingI, sing)
 import           Data.Singletons.Prelude.List
+import           Data.Singletons.TypeLits
 import qualified Data.Text                    as T
 import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB

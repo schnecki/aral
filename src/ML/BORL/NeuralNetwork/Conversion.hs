@@ -14,6 +14,7 @@ module ML.BORL.NeuralNetwork.Conversion
 
 import           Data.Singletons
 import           Data.Singletons.Prelude.List
+import           Data.Singletons.TypeLits
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Storable         as V
 import           GHC.TypeLits
