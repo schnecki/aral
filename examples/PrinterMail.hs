@@ -41,8 +41,6 @@ import           GHC.Generics
 import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
-type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
-
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
@@ -52,6 +50,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 20
@@ -59,8 +58,6 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
-    , _updateTargetInterval = 100
-    , _updateTargetIntervalDecay = NoDecay
     }
 
 borlSettings :: Settings
@@ -123,7 +120,6 @@ main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
 
-  nn <- randomNetworkInitWith HeEtAl :: IO NN
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho

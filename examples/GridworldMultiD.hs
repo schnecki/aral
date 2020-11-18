@@ -107,6 +107,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = take 500 $ map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
@@ -114,8 +115,6 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _updateTargetInterval = 1
-    , _updateTargetIntervalDecay = NoDecay
     }
 
 borlSettings :: Settings
@@ -162,8 +161,7 @@ decay =
       }
 
 initVals :: InitValues
-initVals = InitValues 0 0 -- 4.5
-           0 0 0 0
+initVals = InitValues 0 0 0 0 0 0
 
 main :: IO ()
 main = usermode

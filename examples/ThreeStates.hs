@@ -59,6 +59,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 2
@@ -66,8 +67,6 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
-    , _updateTargetInterval = 1
-    , _updateTargetIntervalDecay = NoDecay
     }
 
 

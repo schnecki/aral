@@ -33,3 +33,8 @@ To build in debug mode use (this writes several files, thus use with care):
 ## Debug in GHCI
 
     stack ghci --flag borl:debug borl borl-examples:exe:gridworld-step
+
+## Profiling
+
+    stack build --profile --library-profiling --flag borl:debug
+    stack exec --profile -- borl-releaser-exe +RTS -p

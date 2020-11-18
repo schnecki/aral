@@ -222,6 +222,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
@@ -229,8 +230,6 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _updateTargetInterval = 1
-    , _updateTargetIntervalDecay = NoDecay
     }
 
 borlSettings :: Settings
@@ -336,7 +335,7 @@ usermode = do
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
 
@@ -349,7 +348,7 @@ usermode = do
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  buildModel $
+  buildModelWith (NetworkInitSettings UniformInit HMatrix) def $
   inputLayer1D lenIn >>
   fullyConnected 20 >> relu >> dropout 0.90 >>
   fullyConnected 10 >> relu >>

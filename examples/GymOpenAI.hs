@@ -93,6 +93,7 @@ nnConfig gym maxRew =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.5 100000
     , _prettyPrintElems = map (V.fromList . zipWith3 (\l u -> scaleMinMax (l, u)) lows highs) ppSts
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False (1.25 * maxRew)
@@ -100,8 +101,6 @@ nnConfig gym maxRew =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
-    , _updateTargetInterval = 10000
-    , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     }
   where
     (lows, highs) = observationSpaceBounds gym
@@ -318,7 +317,7 @@ main = do
   putStrLn $ "Actions Count: " ++ show actionNodes
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
-  nn <- randomNetworkInitWith HeEtAl :: IO NN
+  nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix) :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
   rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues

@@ -86,6 +86,7 @@ import qualified Data.Proxy                   as Type
 import           Data.Serialize
 import           Data.Singletons              (SingI, sing)
 import           Data.Singletons.Prelude.List
+import           Data.Singletons.TypeLits
 import qualified Data.Text                    as T
 import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
@@ -565,7 +566,7 @@ mkReplayMemories = mkReplayMemories' False
 mkReplayMemories' :: Bool -> [Action as] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories' allowSz1 as setts nnConfig =
   case nnConfig ^. replayMemoryStrategy of
-    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 (repMemSizeSingle * agents)
+    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 repMemSizeSingle
     ReplayMemoryPerAction -> do
       tmpRepMem <- mkReplayMemory allowSz1 (setts ^. nStep)
       fmap (ReplayMemoriesPerActions (length as) tmpRepMem) . sequence . VB.fromList <$> replicateM (length as * agents) (mkReplayMemory allowSz1 repMemSizePerAction)

@@ -114,7 +114,7 @@ main = do
   mkStateFile 0.65 False False lpRes
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
-  nn <- randomNetworkInitWith HeEtAl :: IO NN
+  nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix) :: IO NN
 
   rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
   -- rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
@@ -137,6 +137,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 1
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsReward False 6
@@ -144,8 +145,6 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
-    , _updateTargetInterval = 1
-    , _updateTargetIntervalDecay = NoDecay
     }
 
 borlSettings :: Settings

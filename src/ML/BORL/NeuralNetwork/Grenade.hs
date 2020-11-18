@@ -90,5 +90,14 @@ runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> Nr
 runGrenade net nrAgents st = snd $ fromLastShapes net nrAgents $ runNetwork net (toHeadShapes net st)
 
 
-mkLoss :: (Fractional a) => a -> a -> a
-mkLoss o t = let l = o-t in 0.5 * signum l * l^(2::Int)
+mkLoss :: (Show a, Fractional a) => a -> a -> a
+mkLoss o t =
+
+  let l = o-t in
+     -- trace ("o: " ++ show o ++ "\n" ++
+     -- "t: " ++ show t ++ "\n" ++
+     -- "l: " ++ show l ++ "\n" ++
+     -- "r: " ++ show (0.5 * signum l * l^(2::Int))) undefined $
+
+
+    0.5 * signum l * l^(2::Int)

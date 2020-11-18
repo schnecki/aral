@@ -12,6 +12,8 @@ extra-deps:
 - proto-lens-0.5.1.0@sha256:d959c40aabda1ab208a64b0c5abb5519e7956b665275b38beb4c812f51f95987,3266
 - proto-lens-protobuf-types-0.5.0.0@sha256:d2531abfc884a7dbc2a11f18b12cda8afb3063123713cfbfbd376110b1d2a53d,2333
 - proto-lens-runtime-0.5.0.0@sha256:cb39cf13ce4f7dac5414f94a7afe0adc9b831312e6b60588a23bd816accc385f,3132
+- cublas-0.6.0.0@sha256:f25a633f067f31b6df0aff751710b1a4d79d39c5ed717462879e0ece46cf294b,2363
+- cuda-0.10.2.0@sha256:29912a2273840bbad934b404c7bd27633a1b9b5449c57ae8118bc35e7dcfeb74,5656
 
 allow-newer: false
-resolver: lts-14.27
+resolver: lts-16.20

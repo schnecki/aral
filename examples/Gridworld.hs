@@ -128,12 +128,13 @@ instance ExperimentDef (BORL St Act) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemoryPerAction
-    , _trainBatchSize = 2
+    { _replayMemoryMaxSize = 10000
+    , _replayMemoryStrategy = ReplayMemorySingle
+    , _trainBatchSize = 4
     , _trainingIterations = 1
-    , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
+    , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
@@ -141,15 +142,13 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _updateTargetInterval = 1
-    , _updateTargetIntervalDecay = StepWiseIncrease (Just 500) 0.1 10000
     }
 
 borlSettings :: Settings
 borlSettings =
   def
     { _workersMinExploration = replicate 7 0.01
-    , _nStep = 2
+    , _nStep = 1
     , _mainAgentSelectsGreedyActions = False
     }
 
@@ -250,7 +249,7 @@ usermode = do
 
 
   -- Use an own neural network for every function to approximate
-  -- rl <- (randomNetworkInitWith UniformInit :: IO NN) >>= \nn -> mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay nn nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -270,12 +269,18 @@ goalY = 2
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  buildModel $
+  -- buildModel $ -- With (def { cpuBackend = HMatrix } ) $
+  -- inputLayer1D lenIn >>
+  -- fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
+  -- fullyConnected 10 >> leakyRelu >>
+  -- fullyConnected 10 >> leakyRelu >>
+  -- fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  buildModelWith (def { cpuBackend = BLAS } ) def $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
-  fullyConnected 10 >> leakyRelu >>
-  fullyConnected 10 >> leakyRelu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  fullyConnected 20 >> relu >>
+  fullyConnected 10 >> relu >>
+  fullyConnected 10 >> relu >>
+  fullyConnected lenOut >> tanhLayer
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length (netInp initState)
