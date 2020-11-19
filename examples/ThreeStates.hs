@@ -74,17 +74,17 @@ borlSettings :: Settings
 borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
-netInp :: St -> V.Vector Float
+netInp :: St -> V.Vector Double
 netInp st = V.singleton (scaleMinMax (minVal, maxVal) (fromIntegral $ fromEnum st))
 
-tblInp :: St -> V.Vector Float
+tblInp :: St -> V.Vector Double
 tblInp st = V.singleton (fromIntegral $ fromEnum st)
 
 
-maxVal :: Float
+maxVal :: Double
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
-minVal :: Float
+minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64

@@ -48,7 +48,7 @@ import           Debug.Trace
 
 type Render = Bool
 
-data St = St Render [Float]
+data St = St Render [Double]
   deriving (Generic, NFData)
 
 instance Eq St where
@@ -58,7 +58,7 @@ instance Ord St where
   (St _ xs1) `compare` (St _ xs2) = xs1 `compare` xs2
 
 instance Show St where
-  show (St _ xs) = showFloatList xs
+  show (St _ xs) = showDoubleList xs
 
 
 maxX,maxY :: Int
@@ -72,9 +72,9 @@ type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 2
 
 modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade gym initState lenActs cols =
-  buildModel $
+  buildModelWith (def { cpuBackend = BLAS }) def $
   inputLayer1D lenIn >>
-  fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
+  -- fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
   fullyConnected (10 * lenIn) >> relu >>
   fullyConnected (5 * lenIn) >> relu >>
   fullyConnected (2*lenOut) >> relu >>
@@ -84,7 +84,7 @@ modelBuilderGrenade gym initState lenActs cols =
     lenIn = fromIntegral $ V.length $ netInp False gym initState
 
 
-nnConfig :: Gym -> Float -> NNConfig
+nnConfig :: Gym -> Double -> NNConfig
 nnConfig gym maxRew =
   NNConfig
     { _replayMemoryMaxSize = 10000
@@ -132,13 +132,13 @@ combinations (xs:xss) = concatMap (\x -> map (x:) ys) xs
   where ys = combinations xss
 
 
-globalVar :: MVar (Maybe Float)
+globalVar :: MVar (Maybe Double)
 globalVar = unsafePerformIO $ newMVar Nothing
 {-# NOINLINE globalVar #-}
-setGlobalVar :: Maybe Float -> IO ()
+setGlobalVar :: Maybe Double -> IO ()
 setGlobalVar x = modifyMVar_ globalVar (return . const x)
 {-# NOINLINE setGlobalVar #-}
-getGlobalVar :: IO (Maybe Float)
+getGlobalVar :: IO (Maybe Double)
 getGlobalVar = join <$> tryReadMVar globalVar
 {-# NOINLINE getGlobalVar #-}
 
@@ -174,7 +174,7 @@ actionFun agentType oldSt@(St render _) [Act idx] = do
     if episodeDone res
       then resetGym gym
       else return (observation res)
-  return (rew, St render (gymObservationToFloatList obs), episodeDone res)
+  return (rew, St render (gymObservationToDoubleList obs), episodeDone res)
 
 
 rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
@@ -198,7 +198,8 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         setGlobalVar (Just $ step + 1)
         let movGoal = min 0.5 (5e-6 * step - 0.3)
         epsStep <- getElapsedSteps gym
-        return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) id $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
+        return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) (* (helperSteps/(helperSteps + step))) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
+        where helperSteps = 20000
     AlgDQNAvgRewAdjusted  {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
@@ -209,16 +210,16 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
     AlgDQNAvgRewAdjusted {}
       | name gym == "Pong-ram-v0" -> return $ Reward $ realToFrac rew
   where
-    xs = gymObservationToFloatList obs
+    xs = gymObservationToDoubleList obs
     ite True x _  = x
     ite False _ x = x
     maxEpsSteps = maximumEpisodeSteps (name gym)
 rewardFunction gym _ _ _ = error $ "rewardFunction not yet defined for this environment: " ++ T.unpack (name gym)
 
-maxReward :: Gym -> Float
+maxReward :: Gym -> Double
 maxReward _ | isAlgDqn alg = 10
 maxReward gym | name gym == "CartPole-v1" = 50
-              | name gym == "MountainCar-v0" = 50 -- 200
+              | name gym == "MountainCar-v0" = 25 -- 200
               | name gym == "Copy-v0" = 1.0
               | name gym == "Acrobot-v1" = 50
               -- | name gym == "Pendulum-v0" =
@@ -227,7 +228,7 @@ maxReward gym   = error $ "Max Reward (maxReward) function not yet defined for t
 
 
 -- | Scales values to (-1, 1).
-netInp :: Bool -> Gym -> St -> V.Vector Float
+netInp :: Bool -> Gym -> St -> V.Vector Double
 netInp isTabular gym (St _ st)
   | not isTabular = V.fromList $ zipWith3 (\l u -> scaleMinMax (l, u)) lowerBounds upperBounds st
   | isTabular = V.fromList $ map (rnd . fst) $ filter snd (stSelector st)
@@ -238,8 +239,8 @@ netInp isTabular gym (St _ st)
       -- | name gym == "MountainCar-v0" = [(head xs, True), (5 * (xs !! 1), False)]
       | otherwise = zip xs (repeat True)
 
-observationSpaceBounds :: Gym -> ([Float], [Float])
-observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToFloatLists $ getGymRangeFromSpace $ observationSpace gym
+observationSpaceBounds :: Gym -> ([Double], [Double])
+observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
   where
     maxVal | name gym == "CartPole-v1" = 5
            | otherwise = 1000
@@ -295,7 +296,7 @@ mkInitSt' = do
   putStrLn $ "Default maximum episode steps: " ++ show maxEpsSteps
   setMaxEpisodeSteps gym (maximumEpisodeSteps name)
   let actionNodes = spaceSize (actionSpace gym)
-      initState = St False (gymObservationToFloatList obs)
+      initState = St False (gymObservationToDoubleList obs)
   return (gym, actionNodes, initState)
 
 
@@ -317,10 +318,10 @@ main = do
   putStrLn $ "Actions Count: " ++ show actionNodes
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
-  nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix) :: IO NN
+  -- nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix) :: IO NN
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
   -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
-  rl <-  mkUnichainGrenadeCombinedNet alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  rl <-  mkUnichainGrenade alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []
@@ -329,7 +330,7 @@ main = do
 
 
  -- | BORL Parameters.
-params :: Gym -> Float -> ParameterInitValues
+params :: Gym -> Double -> ParameterInitValues
 params gym maxRew =
   Parameters
     { _alpha               = 0.03

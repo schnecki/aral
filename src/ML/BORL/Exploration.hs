@@ -14,7 +14,7 @@ import           GHC.Generics
 
 import           ML.BORL.NeuralNetwork.Scaling
 
-type TemperatureInitFactor = Float -- ^ Will be decayed by multiplying with the exploration value of the parameters.
+type TemperatureInitFactor = Double -- ^ Will be decayed by multiplying with the exploration value of the parameters.
 
 data ExplorationStrategy
   = Greedy                                  -- ^ Use greedy action selection
@@ -40,7 +40,7 @@ softmax temp xs
 -- | Normalise the input list to (-1, 1).
 normalise :: (Ord n, Fractional n) => [n] -> [n]
 normalise [] = error "empty input to normalise in ML.BORL.Exploration"
-normalise xs = map (scaleZeroOneFloat (minV, maxV)) xs
+normalise xs = map (scaleZeroOneDouble (minV, maxV)) xs
   where minV = minimum xs
         maxV = maximum xs
 

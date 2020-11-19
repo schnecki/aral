@@ -27,11 +27,11 @@ type ReplMemFun m s
 
 data ExpectedValuationNext =
   ExpectedValuationNext
-    { getExpectedValStateNextRho :: Maybe Value -- Float
-    , getExpectedValStateNextV   :: Maybe Value -- Float
-    , getExpectedValStateNextW   :: Maybe Value -- Float
-    , getExpectedValStateNextR0  :: Maybe Value -- Float
-    , getExpectedValStateNextR1  :: Maybe Value -- Float
+    { getExpectedValStateNextRho :: Maybe Value -- Double
+    , getExpectedValStateNextV   :: Maybe Value -- Double
+    , getExpectedValStateNextW   :: Maybe Value -- Double
+    , getExpectedValStateNextR0  :: Maybe Value -- Double
+    , getExpectedValStateNextR1  :: Maybe Value -- Double
     }
   deriving (Show, Generic, NFData)
 
@@ -54,7 +54,7 @@ data Calculation = Calculation
   , getLastVs'            :: Maybe (VB.Vector Value)
   , getLastRews'          :: V.Vector RewardValue
   , getEpisodeEnd         :: Bool
-  , getExpSmoothedReward' :: Float
+  , getExpSmoothedReward' :: Double
   } deriving (Show, Generic)
 
 
@@ -68,7 +68,7 @@ instance NFData Calculation where
     rnf (getPsiValRho' calc) `seq` rnf (getPsiValV' calc) `seq` rnf (getPsiValW' calc) `seq` rnf1 (getLastVs' calc) `seq` rnf (getLastRews' calc) `seq` rnf (getEpisodeEnd calc)
 
 
-fmapCalculation :: (Float -> Float) -> Calculation -> Calculation
+fmapCalculation :: (Double -> Double) -> Calculation -> Calculation
 fmapCalculation f calc =
   Calculation
     { getRhoMinimumVal'       = mapValue f <$> getRhoMinimumVal' calc
@@ -108,5 +108,5 @@ fmapCalculation f calc =
 --     (all getEpisodeEnd xs)
 --     (avg $ map getExpSmoothedReward' xs)
 --   where
---     avg :: [Float] -> Float
+--     avg :: [Double] -> Double
 --     avg xs' = sum xs' / fromIntegral (length xs')

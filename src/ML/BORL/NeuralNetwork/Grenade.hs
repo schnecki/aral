@@ -43,16 +43,15 @@ trainGrenade ::
      )
   => Optimizer opt
   -> NNConfig
-  -> Maybe (MinValue Float, MaxValue Float)
+  -> Maybe (MinValue Double, MaxValue Double)
   -> Network layers shapes
-  -> [[((StateFeatures, ActionIndex), Float)]]
+  -> [[((StateFeatures, ActionIndex), Double)]]
   -> Network layers shapes
 trainGrenade opt nnConfig mMinMaxVal net chs =
   let trainIter = nnConfig ^. trainingIterations
       cropFun = maybe id (\x -> max (-x) . min x) (nnConfig ^. cropTrainMaxValScaled)
       batchGradients = parMap rdeepseq (makeGradients cropFun net) chs
       clippingRatio =
-        realToFrac $
         case mMinMaxVal of
           Nothing               -> 0.01
           Just (minVal, maxVal) -> 0.01 / (maxVal - minVal)
@@ -69,9 +68,9 @@ trainGrenade opt nnConfig mMinMaxVal net chs =
 -- | Accumulate gradients for a list of n-step updates. The arrising gradients are summed up.
 makeGradients ::
      forall layers shapes nrH. (GNum (Gradients layers), NFData (Tapes layers shapes), NFData (Gradients layers), KnownNat nrH, 'D1 nrH ~ Head shapes, SingI (Last shapes))
-  => (Float -> Float)
+  => (Double -> Double)
   -> Network layers shapes
-  -> [((StateFeatures, ActionIndex), Float)]
+  -> [((StateFeatures, ActionIndex), Double)]
   -> Gradients layers
 makeGradients _ _ [] = error "Empty list of n-step updates in NeuralNetwork.Grenade"
 makeGradients cropFun net chs

@@ -51,13 +51,13 @@ instance Enum St where
 
 type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
-netInp :: St -> V.Vector Float
+netInp :: St -> V.Vector Double
 netInp st = V.singleton (scaleMinMax (minVal,maxVal) (fromIntegral $ fromEnum st))
 
-maxVal :: Float
+maxVal :: Double
 maxVal = fromIntegral $ fromEnum (maxBound :: St)
 
-minVal :: Float
+minVal :: Double
 minVal = fromIntegral $ fromEnum (minBound :: St)
 
 numActions :: Int64

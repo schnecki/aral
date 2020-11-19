@@ -11,8 +11,8 @@ module ML.BORL.Pretty
     , prettyBORLHead
     , prettyBORLTables
     , wideStyle
-    , showFloat
-    , showFloatList
+    , showDouble
+    , showDoubleList
     ) where
 
 
@@ -67,27 +67,27 @@ nestCols = 75
 wideStyle :: Style
 wideStyle = Style { lineLength = 300, ribbonsPerLine = 200, mode = PageMode }
 
-printFloat :: Float -> Doc
-printFloat = text . showFloat
+printDouble :: Double -> Doc
+printDouble = text . showDouble
 
 printValue :: Value -> Doc
-printValue = hcat . punctuate ", " . map printFloat . fromValue
+printValue = hcat . punctuate ", " . map printDouble . fromValue
 
 printActionIndices :: (ActionIndex -> Doc) -> [ActionIndex] -> Doc
 printActionIndices f = hcat . punctuate ", " . map f
 
 
-showFloat :: (PrintfArg n, Fractional n) => n -> String
-showFloat = printf ("%+." ++ show commas ++ "f")
+showDouble :: (PrintfArg n, Fractional n) => n -> String
+showDouble = printf ("%+." ++ show commas ++ "f")
 
-showFloatList :: (PrintfArg n, Fractional n) => [n] -> String
-showFloatList xs = "[" ++ intercalate "," (map showFloat xs) ++ "]"
+showDoubleList :: (PrintfArg n, Fractional n) => [n] -> String
+showDoubleList xs = "[" ++ intercalate "," (map showDouble xs) ++ "]"
 
-printFloatWith :: Int -> Float -> Doc
-printFloatWith commas x = text $ printf ("%." ++ show commas ++ "f") x
+printDoubleWith :: Int -> Double -> Doc
+printDoubleWith commas x = text $ printf ("%." ++ show commas ++ "f") x
 
-printFloatListWith :: Int -> [Float] -> Doc
-printFloatListWith commas xs = hcat $ punctuate ", " $ map (text . printf ("%." ++ show commas ++ "f")) xs
+printDoubleListWith :: Int -> [Double] -> Doc
+printDoubleListWith commas xs = hcat $ punctuate ", " $ map (text . printf ("%." ++ show commas ++ "f")) xs
 
 
 type Modifier m = LookupType -> (NetInputWoAction, ActionIndex) -> Value -> m Value
@@ -109,7 +109,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ _ ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
-          mkInput k = maybe (text (filter (/= '"') $ show $ map printFloat (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+          mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
       in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
       sortBy (compare `on`  fst.fst) $ map ((\((st,a), v) -> ((st,a), AgentValue v))) (M.toList m)
     pr -> do
@@ -204,11 +204,11 @@ prettyAvgRewardType _ (ByMovAvg nr)          = "moving average" <> parens (int n
 prettyAvgRewardType _ ByReward               = "reward"
 prettyAvgRewardType _ ByStateValues          = "state values"
 prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
-  printFloat ratio' <> "*state values + " <> printFloat (1 - ratio') <> "*reward" <+>
-  parens (text "Period 0" <> colon <+> printFloat ratio <> "*state values + " <> printFloat (1 - ratio) <> "*reward")
+  printDouble ratio' <> "*state values + " <> printDouble (1 - ratio') <> "*reward" <+>
+  parens (text "Period 0" <> colon <+> printDouble ratio <> "*state values + " <> printDouble (1 - ratio) <> "*reward")
   where
     ratio' = decaySetup decay period ratio
-prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> float x
+prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
 prettyBORLTables :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s as -> m Doc
@@ -225,7 +225,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
   prettyRhoVal <-
     case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
       (Scalar val, Scalar valRhoMin) ->
-        return $ text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatListWith 8 (V.toList val) <> text "/" <> printFloatListWith 8 (V.toList valRhoMin))
+        return $ text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
       (m,_) -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
@@ -253,7 +253,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
 mkPrettyState :: Show st => Maybe (NetInputWoAction -> Maybe (Either String st)) -> NetInputWoAction -> Maybe (Maybe st, String)
 mkPrettyState mStInverse netinp =
   case mStInverse of
-    Nothing  -> Just (Nothing, showFloatList $ V.toList netinp)
+    Nothing  -> Just (Nothing, showDoubleList $ V.toList netinp)
     Just inv -> fromEither <$> inv netinp
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
@@ -269,7 +269,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
       actionNrs = length (borl ^. actionList)
       prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
-          (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printFloatListWith 8 (V.toList val) <> text "/" <> printFloatListWith 8 (V.toList valRhoMin))
+          (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
           _ -> empty
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -281,36 +281,36 @@ prettyBORLHead' printRho prettyStateFun borl = do
         where
           isANN = P.isNeuralNetwork px && borl ^. t >= px ^?! proxyNNConfig . replayMemoryMaxSize
           px = borl ^. proxies . p
-  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s) <+> "Exp. Smth Reward: " <> printFloat (borl ^. expSmoothedReward)) $+$
+  return $ text "\n" $+$ text "Current state" <> colon $$ nest nestCols (text (show $ borl ^. s) <+> "Exp. Smth Reward: " <> printDouble (borl ^. expSmoothedReward)) $+$
     vcat
       (map
-         (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printFloat rew)
+         (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printDouble rew)
          (borl ^. workers)) $+$
     text "Period" <>
     colon $$
     nest nestCols (int $ borl ^. t) $+$
     text "Alpha/AlphaRhoMin" <>
     colon $$
-    nest nestCols (printFloatWith 8 (getExpSmthParam True rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False rho alpha) <> text "/" <> printFloatWith 8 (getExpSmthParam False rhoMinimum alphaRhoMin)) $+$
+    nest nestCols (printDoubleWith 8 (getExpSmthParam True rho alpha) <> text "/" <> printDoubleWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
+    parens (text "Period 0" <> colon <+> printDoubleWith 8 (getExpSmthParam False rho alpha) <> text "/" <> printDoubleWith 8 (getExpSmthParam False rhoMinimum alphaRhoMin)) $+$
     algDoc
-      (text "Beta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True v beta) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False v beta))) $+$
+      (text "Beta" <> colon $$ nest nestCols (printDoubleWith 8 $ getExpSmthParam True v beta) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (getExpSmthParam False v beta))) $+$
     algDoc
-      (text "Delta" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True w delta) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False w delta))) $+$
-    (text "Gamma" <> colon $$ nest nestCols (printFloatWith 8 $ getExpSmthParam True r1 gamma)) <+>
-    parens (text "Period 0" <> colon <+> printFloatWith 8 (getExpSmthParam False r1 gamma)) $+$
+      (text "Delta" <> colon $$ nest nestCols (printDoubleWith 8 $ getExpSmthParam True w delta) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (getExpSmthParam False w delta))) $+$
+    (text "Gamma" <> colon $$ nest nestCols (printDoubleWith 8 $ getExpSmthParam True r1 gamma)) <+>
+    parens (text "Period 0" <> colon <+> printDoubleWith 8 (getExpSmthParam False r1 gamma)) $+$
     text "Epsilon" <>
     colon $$
-    nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params' ^. epsilon) <+>
-    parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printFloatWith 8 <$> params ^. epsilon)) <+>
+    nest nestCols (hcat $ intersperse (text ", ") $ toFiniteList $ printDoubleWith 8 <$> params' ^. epsilon) <+>
+    parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printDoubleWith 8 <$> params ^. epsilon)) <+>
     text "Strategy" <> colon <+> text (show $ borl ^. settings . explorationStrategy) $+$
-    text "Exploration" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. exploration) <+> parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. exploration)) $+$
+    text "Exploration" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. exploration) <+> parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. exploration)) $+$
     nnWorkers $+$
     algDoc
-      (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. learnRandomAbove) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. learnRandomAbove))) $+$
+      (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. learnRandomAbove) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. learnRandomAbove))) $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
@@ -324,11 +324,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
     nest nestCols (prettyAlgorithm borl prettyState prettyActionIdx (borl ^. algorithm)) $+$
     text "Number of Agents" <> colon $$ nest nestCols (text (show $ borl ^. settings . independentAgents)) $+$
     algDoc
-      (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. zeta) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. zeta))) $+$
+      (text "Zeta (for forcing V instead of W)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. zeta) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. zeta))) $+$
     algDoc
-      (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printFloatWith 8 $ params' ^. xi) <+>
-       parens (text "Period 0" <> colon <+> printFloatWith 8 (params ^. xi))) $+$
+      (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
        AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
@@ -336,7 +336,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
        AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
-       nest nestCols (text (show (printFloatListWith 8 $ fromValue $ borl ^. psis . _1, printFloatListWith 8 $ fromValue $ borl ^. psis . _2, printFloatListWith 8 $ fromValue $ borl ^. psis . _3)))) $+$
+       nest nestCols (text (show (printDoubleListWith 8 $ fromValue $ borl ^. psis . _1, printDoubleListWith 8 $ fromValue $ borl ^. psis . _2, printDoubleListWith 8 $ fromValue $ borl ^. psis . _3)))) $+$
     (if printRho
        then prettyRhoVal
        else empty)
@@ -345,12 +345,12 @@ prettyBORLHead' printRho prettyStateFun borl = do
     params' = decayedParameters borl
     scalingAlg cfg = case cfg ^. scaleOutputAlgorithm of
       ScaleMinMax    -> "Min-Max Normalisation"
-      ScaleLog shift -> "Logarithmic Scaling w/ shift: " <> text (showFloat shift)
+      ScaleLog shift -> "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
         px ->
-          text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showFloatList (borl ^. settings . workersMinExploration))) <+>
+          text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showDoubleList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     scalingText =
       case borl ^. proxies . v of
@@ -360,16 +360,16 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textNNConf conf =
           text
             (show
-               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinWValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxWValue)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
+               ( (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue)
+               , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinWValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxWValue)
+               , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextDqn =
       case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
+        textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -378,21 +378,21 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textNNConf conf =
           text
             (show
-               ( (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
-               , (printFloatWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
+               ( (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR0Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR0Value)
+               , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
         px         -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
       where
-        textNNConf conf = text (show (printFloatWith 8 $ conf ^. scaleParameters . scaleMinVValue, printFloatWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
+        textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =
       case borl ^. proxies . v of
         P.Table {} -> empty
         px         -> textTargetUpdate (px ^?! proxyNNConfig)
       where
         textTargetUpdate conf =
-            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printFloatWith 8 $ fromRational $ conf ^. grenadeSmoothTargetUpdate) <+>
+            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printDoubleWith 8 $ fromRational $ conf ^. grenadeSmoothTargetUpdate) <+>
             text "every" <+> int (conf ^. grenadeSmoothTargetUpdatePeriod) <+> text "periods"
     nnBatchSize =
       case borl ^. proxies . v of
@@ -428,7 +428,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac rate
            in text "NN Learning Rate/Momentum/L2" <> colon $$
-              nest nestCols (text "SGD Optimizer with" <+> text (show (printFloatWith 8 (realToFrac l), printFloatWith 8 (realToFrac momentum), printFloatWith 8 (realToFrac l2))))
+              nest nestCols (text "SGD Optimizer with" <+> text (show (printDoubleWith 8 (realToFrac l), printDoubleWith 8 (realToFrac momentum), printDoubleWith 8 (realToFrac l2))))
         textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon lambda) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac alpha
@@ -438,11 +438,11 @@ prettyBORLHead' printRho prettyStateFun borl = do
                 (text "Adam Optimizer with" <+>
                  text
                    (show
-                      ( printFloatWith 8 (realToFrac l)
-                      , printFloatWith 8 (realToFrac beta1)
-                      , printFloatWith 8 (realToFrac beta2)
-                      , printFloatWith 8 (realToFrac epsilon)
-                      , printFloatWith 8 (realToFrac lambda))))
+                      ( printDoubleWith 8 (realToFrac l)
+                      , printDoubleWith 8 (realToFrac beta1)
+                      , printDoubleWith 8 (realToFrac beta2)
+                      , printDoubleWith 8 (realToFrac epsilon)
+                      , printDoubleWith 8 (realToFrac lambda))))
 
 
 prettyBORL :: (Ord s, Show s, Show as) => BORL s as -> IO Doc

@@ -10,7 +10,7 @@ import           ML.BORL.Exploration
 import           ML.BORL.Parameters
 import           ML.BORL.Types
 
-type Decay = Period -> Parameters Float -> Parameters Float -- ^ Function specifying the decay of the parameters at time t.
+type Decay = Period -> Parameters Double -> Parameters Double -- ^ Function specifying the decay of the parameters at time t.
 
 
 decaySetup :: DecaySetup -> Period -> InitialValue -> DecayedValue
@@ -37,18 +37,18 @@ decaySettingParameters (Parameters decAlp decAlpRhoMin decBet decDel decGa decEp
     }
 
 
-exponentialDecayValue :: Maybe Float -> DecayRate -> DecaySteps -> Period -> Float -> Float
+exponentialDecayValue :: Maybe Double -> DecayRate -> DecaySteps -> Period -> Double -> Double
 exponentialDecayValue mMin rate steps t v = max (fromMaybe 0 mMin) (decay * v)
   where decay = rate ** (fromIntegral t / fromIntegral steps)
 
-exponentialIncreaseValue :: Maybe Float -> DecayRate -> DecaySteps -> Period -> Float -> Float
+exponentialIncreaseValue :: Maybe Double -> DecayRate -> DecaySteps -> Period -> Double -> Double
 exponentialIncreaseValue mMin rate steps t v = v - exponentialDecayValue ((v *) <$> mMin) rate steps t v
 
 
-linearIncreaseValue :: Maybe Float -> Float -> Period -> Float -> Float
+linearIncreaseValue :: Maybe Double -> Double -> Period -> Double -> Double
 linearIncreaseValue mD k t v = min v $ fromIntegral t * k + fromMaybe 0 mD
 
-stepWiseIncreaseValue :: Maybe Float -> Float -> Period -> Period -> Float -> Float
+stepWiseIncreaseValue :: Maybe Double -> Double -> Period -> Period -> Double -> Double
 stepWiseIncreaseValue mD k step t = linearIncreaseValue mD k t'
   where
     t' = t - t `mod` step

@@ -13,14 +13,14 @@ import           GHC.Generics
 
 import           ML.BORL.Decay.Type
 
-type FractionStateValue = Float
+type FractionStateValue = Double
 
 data AvgReward
   = ByMovAvg Int
   | ByReward
   | ByStateValues
   | ByStateValuesAndReward !FractionStateValue !DecaySetup
-  | Fixed !Float
+  | Fixed !Double
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 type DecideOnVPlusPsi = Bool    -- ^ Decide actions on V + psiV? Otherwise on V solely.
@@ -35,7 +35,7 @@ data Comparison
   | Exact
   deriving (Ord, Eq, Show, Generic, NFData, Serialize)
 
-type EpsilonMiddle = Float
+type EpsilonMiddle = Double
 
 
 data Algorithm s
@@ -78,7 +78,7 @@ isAlgBorlVOnly AlgBORLVOnly{} = True
 isAlgBorlVOnly _              = False
 
 
-defaultGamma0,defaultGamma1,defaultGammaDQN :: Float
+defaultGamma0,defaultGamma1,defaultGammaDQN :: Double
 defaultGamma0 = 0.50
 defaultGamma1 = 0.80
 defaultGammaDQN = 0.99

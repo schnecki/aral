@@ -216,11 +216,11 @@ modelBuilderGrenade actions initState cols =
     lenActs = genericLength actions * fromIntegral (borlSettings ^. independentAgents)
 
 
-netInp :: St -> V.Vector Float
+netInp :: St -> V.Vector Double
 netInp (St st) =
   V.fromList $ map (scaleMinMax (0, fromIntegral cubeSize) . fromIntegral) st
 
-tblInp :: St -> V.Vector Float
+tblInp :: St -> V.Vector Double
 tblInp (St st) = V.fromList (map fromIntegral st)
 
 initState :: St
@@ -260,11 +260,11 @@ actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
 actionFun tp s@(St st) acts
   | all (== Random) acts = moveRand tp s
   | otherwise = do
-    stepRew <- randomRIO (0, 8 :: Float)
+    stepRew <- randomRIO (0, 8 :: Double)
     return (Reward $ stepRew + (Prelude.sum rews / fromIntegral (length rews)), St s', False)
   where
     (rews, s') = unzip $ zipWith moveX acts [0 ..]
-    moveX :: Act -> Int -> (Float, Int)
+    moveX :: Act -> Int -> (Double, Int)
     moveX NoOp   = \nr -> (0, st !! nr)
     moveX Inc    = moveInc tp s
     moveX Dec    = moveDec tp s
@@ -284,14 +284,14 @@ moveRand tp st = do
   xs <- sequenceA (replicate dim $ randomRIO (0, cubeSize :: Int))
   return (Reward 10, St xs, True)
 
-moveDec :: AgentType -> St -> Int -> (Float, Int)
+moveDec :: AgentType -> St -> Int -> (Double, Int)
 moveDec _ (St st) agNr
   | m == 0 = (-1, 0)
   | otherwise = (0, m - 1)
   where
     m = st !! agNr
 
-moveInc :: AgentType -> St -> Int -> (Float, Int)
+moveInc :: AgentType -> St -> Int -> (Double, Int)
 moveInc _ (St st) agNr
   | m == cubeSize = (-1, cubeSize)
   | otherwise = (0, m + 1)

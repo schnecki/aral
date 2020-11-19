@@ -15,8 +15,8 @@ import           GHC.Generics
 import           ML.BORL.Decay.Type
 import           ML.BORL.InftyVector
 
-type ParameterInitValues = Parameters Float
-type ParameterDecayedValues = Parameters Float
+type ParameterInitValues = Parameters Double
+type ParameterDecayedValues = Parameters Double
 type ParameterDecaySetting = Parameters DecaySetup
 
 -- Parameters

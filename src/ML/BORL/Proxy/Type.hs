@@ -68,7 +68,7 @@ data ProxyType
   | PsiWTable
   | CombinedUnichain
 --  | CombinedUnichainScaleAs ProxyType
-  | NoScaling !ProxyType (Maybe [(MinValue Float, MaxValue Float)] )
+  | NoScaling !ProxyType (Maybe [(MinValue Double, MaxValue Double)] )
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 proxyTypeName :: ProxyType -> Text.Text
@@ -85,11 +85,11 @@ proxyTypeName (NoScaling p _)  = "noscaling-" <> proxyTypeName p
 
 data Proxy
   = Scalar -- ^ Combines multiple proxies in one for performance benefits.
-      { _proxyScalar :: !(V.Vector Float) -- ^ One value for each agent
+      { _proxyScalar :: !(V.Vector Double) -- ^ One value for each agent
       }
   | Table  -- ^ Representation using a table.
-      { _proxyTable     :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Float)) -- ^ Shared state and one action for each agent, returns one value for each agent.
-      , _proxyDefault   :: !(V.Vector Float)
+      { _proxyTable     :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Double)) -- ^ Shared state and one action for each agent, returns one value for each agent.
+      , _proxyDefault   :: !(V.Vector Double)
       , _proxyNrActions :: !Int
       }
   | forall nrH shapes layers. ( KnownNat nrH
@@ -138,7 +138,7 @@ addWorkerProxy (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 
 addWorkerProxy (CombinedProxy px1 outCol1 expOut1) (CombinedProxy px2 _ _) = CombinedProxy (addWorkerProxy px1 px2) outCol1 expOut1
 addWorkerProxy x1 x2 = error $ "Cannot add proxies of differnt types: " ++ show (x1, x2)
 
-multiplyWorkerProxy :: Float -> Proxy -> Proxy
+multiplyWorkerProxy :: Double -> Proxy -> Proxy
 multiplyWorkerProxy n (Scalar x) = Scalar (V.map (n *) x)
 multiplyWorkerProxy n (Table x d acts) = Table (M.map (V.map (* n)) x) d acts
 multiplyWorkerProxy n (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1 nrAgents1) =
@@ -173,15 +173,15 @@ replaceTargetProxyFromTo x1 x2 = error $ "Cannot replace proxies of differnt typ
 mergeTables :: (Ord k, Num n) => M.Map k n -> M.Map k n -> M.Map k n
 mergeTables = M.mergeWithKey (\_ v1 v2 -> Just (v1 + v2)) (M.map (*2)) (M.map (*2))
 
-proxyScalar :: Traversal' Proxy (V.Vector Float)
+proxyScalar :: Traversal' Proxy (V.Vector Double)
 proxyScalar f (Scalar x) = Scalar <$> f x
 proxyScalar _ p          = pure p
 
-proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Float))
+proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Double))
 proxyTable f (Table m d acts) = (\m' -> Table m' d acts) <$> f m
 proxyTable  _ p               = pure p
 
-proxyDefault :: Traversal' Proxy (V.Vector Float)
+proxyDefault :: Traversal' Proxy (V.Vector Double)
 proxyDefault f (Table m d acts) = (\d' -> Table m d' acts) <$> f d
 proxyDefault _ p                = pure p
 

@@ -55,13 +55,13 @@ maxQueueSize :: Int
 maxQueueSize = 5 -- was 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
-lambda, mu, fixedPayoffR, c :: Float
+lambda, mu, fixedPayoffR, c :: Double
 lambda = 5                      -- arrival rate/time
 mu = 5                          -- service rate/time
 fixedPayoffR = 12               -- fixed payoff
 c = 1                           -- holding cost per order
 
-costFunctionF :: Int -> IO Float
+costFunctionF :: Int -> IO Double
 costFunctionF j = -- do
   -- x <- randomRIO (0.25, 1.75)
   return $ c * fromIntegral j -- (j+1) - fromIntegral j * x -- holding cost function
@@ -371,10 +371,10 @@ modelBuilderGrenade cols =
     lenActs = genericLength actions
 
 
-netInp :: St -> V.Vector Float
+netInp :: St -> V.Vector Double
 netInp (St len arr) = V.fromList [scaleMinMax (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleMinMax (0, 1) $ fromIntegral $ fromEnum arr]
 
-tblInp :: St -> V.Vector Float
+tblInp :: St -> V.Vector Double
 tblInp (St len arr)        = V.fromList [fromIntegral len, fromIntegral $ fromEnum arr]
 
 allStateInputs :: M.Map NetInputWoAction St
@@ -435,13 +435,13 @@ rewardFunction (St s _) Reject = do
 reject :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 reject _ st@(St len True) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Float)
+  r <- randomRIO (0, 1 :: Double)
   return $ if r <= lambda / (lambda + mu)
     then (reward, St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward, St (max 0 (len-1)) False, False) -- no new arrival with probability: mu / (lambda+mu)
 reject _ st@(St len False) = do
   reward <- rewardFunction st Reject
-  r <- randomRIO (0, 1 :: Float) -- case for continue (only the reject action is allowed)
+  r <- randomRIO (0, 1 :: Double) -- case for continue (only the reject action is allowed)
   return $ if r <= lambda / (lambda + mu)
     then (reward,St len True, False)              -- new arrival with probability lambda/(lambda+mu)
     else (reward,St (max 0 (len-1)) False, False) -- processing finished with probability: mu / (lambda+mu)
@@ -450,7 +450,7 @@ reject _ st@(St len False) = do
 admit :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 admit _ st@(St len True) = do
   reward <- rewardFunction st Admit
-  r <- randomRIO (0, 1 :: Float)
+  r <- randomRIO (0, 1 :: Double)
   return $ if r <= lambda / (lambda + mu)
     then (reward, St (len+1) True, False)  -- admit + new arrival
     else (reward, St len False, False)     -- admit + no new arrival

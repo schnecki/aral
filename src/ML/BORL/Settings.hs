@@ -16,7 +16,7 @@ import           ML.BORL.Exploration
 -- Parameters
 data Settings = Settings
   { _explorationStrategy           :: !ExplorationStrategy -- ^ Strategy for exploration.
-  , _workersMinExploration         :: ![Float]             -- ^ Set worker minimum exploration values. [Default: No workers]
+  , _workersMinExploration         :: ![Double]             -- ^ Set worker minimum exploration values. [Default: No workers]
   , _mainAgentSelectsGreedyActions :: !Bool                -- ^ Let the main agent always choose the greedy action. [Default: False]
   , _nStep                         :: !Int                 -- ^ N-Step Q-Learning. 1 means no N-step Q-learning. Only works with @ReplayMemorySingle@! [Default: 1]
   , _disableAllLearning            :: !Bool                -- ^ Completely disable learning (e.g. for evaluation). Enabling increases performance. [Default: False]

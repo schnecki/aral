@@ -360,11 +360,11 @@ modelBuilderGrenade actions initState cols =
     lenActs = genericLength actions * fromIntegral (borlSettings ^. independentAgents)
 
 
-netInp :: St -> V.Vector Float
+netInp :: St -> V.Vector Double
 netInp st =
   V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
-tblInp :: St -> V.Vector Float
+tblInp :: St -> V.Vector Double
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
 
 initState :: St
@@ -438,7 +438,7 @@ goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType ->
 goalState f tp st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
-  r <- randomRIO (0, 8 :: Float)
+  r <- randomRIO (0, 8 :: Double)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')

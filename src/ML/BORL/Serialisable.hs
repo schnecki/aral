@@ -60,13 +60,13 @@ data BORLSerialisable s as = BORLSerialisable
   , serRewardFutures     :: [RewardFutureData s]
 
   -- define algorithm to use
-  , serAlgorithm         :: !(Algorithm [Float])
+  , serAlgorithm         :: !(Algorithm [Double])
   , serObjective         :: !Objective
 
   -- Values:
-  , serExpSmoothedReward :: Float                  -- ^ Exponentially smoothed reward
+  , serExpSmoothedReward :: Double                  -- ^ Exponentially smoothed reward
   , serLastVValues       :: ![Value]               -- ^ List of X last V values
-  , serLastRewards       :: ![Float]               -- ^ List of X last rewards
+  , serLastRewards       :: ![Double]               -- ^ List of X last rewards
   , serPsis              :: !(Value, Value, Value) -- ^ Exponentially smoothed psi values.
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)

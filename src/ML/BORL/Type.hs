@@ -140,9 +140,9 @@ data BORL s as = BORL
   , _objective         :: !Objective                 -- ^ Objective to minimise or maximise.
 
   -- Values:
-  , _expSmoothedReward :: !Float                 -- ^ Exponentially smoothed reward value (with rate 0.0001).
+  , _expSmoothedReward :: !Double                 -- ^ Exponentially smoothed reward value (with rate 0.0001).
   , _lastVValues       :: !(VB.Vector Value)     -- ^ List of X last V values (head is last seen value)
-  , _lastRewards       :: !(V.Vector Float)      -- ^ List of X last rewards (head is last received reward)
+  , _lastRewards       :: !(V.Vector Double)      -- ^ List of X last rewards (head is last received reward)
   , _psis              :: !(Value, Value, Value) -- ^ Exponentially smoothed psi values.
   , _proxies           :: !Proxies               -- ^ Scalar, Tables and Neural Networks
   }
@@ -207,12 +207,12 @@ idxStart :: Int
 idxStart = 0
 
 data InitValues = InitValues
-  { defaultRho        :: !Float -- ^ Starting rho value [Default: 0]
-  , defaultRhoMinimum :: !Float -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
-  , defaultV          :: !Float -- ^ Starting V value [Default: 0]
-  , defaultW          :: !Float -- ^ Starting W value [Default: 0]
-  , defaultR0         :: !Float -- ^ Starting R0 value [Default: 0]
-  , defaultR1         :: !Float -- ^ starting R1 value [Default: 0]
+  { defaultRho        :: !Double -- ^ Starting rho value [Default: 0]
+  , defaultRhoMinimum :: !Double -- ^ Starting minimum value (when objective is Maximise, otherwise if the objective is Minimise it's the Maximum rho value) [Default: 0]
+  , defaultV          :: !Double -- ^ Starting V value [Default: 0]
+  , defaultW          :: !Double -- ^ Starting W value [Default: 0]
+  , defaultR0         :: !Double -- ^ Starting R0 value [Default: 0]
+  , defaultR1         :: !Double -- ^ starting R1 value [Default: 0]
   }
 
 
@@ -588,7 +588,7 @@ mkReplayMemory _ sz = do
 -------------------- Other Constructors --------------------
 
 -- | Infer scaling by maximum reward.
-scalingByMaxAbsReward :: Bool -> Float -> ScalingNetOutParameters
+scalingByMaxAbsReward :: Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (-maxW) maxW (if onlyPositive then 0 else -maxR0) maxR0 (if onlyPositive then 0 else -maxR1) maxR1
   where maxDiscount g = sum $ take 10000 $ map (\p -> (g^p) * maxR) [(0::Int)..]
         maxV = 1.0 * maxR
@@ -596,7 +596,7 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
         maxR0 = 2 * maxDiscount defaultGamma0
         maxR1 = 1.0 * maxDiscount defaultGamma1
 
-scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Float -> ScalingNetOutParameters
+scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
     AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1

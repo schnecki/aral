@@ -62,8 +62,8 @@ data LookupType = Target | Worker
   deriving (Eq, Ord, Show, Read)
 
 -- data Output =
---   SingleAgent (V.Vector Float)
---   | MultiAgent (V.Vector (V.Vector Float))
+--   SingleAgent (V.Vector Double)
+--   | MultiAgent (V.Vector (V.Vector Double))
 --   deriving (Eq, Ord, Show, Read)
 
 
@@ -231,7 +231,7 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     trunc x = fromInteger (round $ x * (10 ^ n)) / (10.0 ^^ n)
     n = 3 :: Int
     m' = foldl' (\m' ((st, as), AgentValue vs) -> update m' st as vs) m (concat xs)
-    update :: M.Map (StateFeatures, ActionIndex) (V.Vector Float) -> StateFeatures -> AgentActionIndices -> V.Vector Float -> M.Map (StateFeatures, ActionIndex) (V.Vector Float)
+    update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
   | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
@@ -311,7 +311,7 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
           where minV = minimum $ map fst minMaxVals
                 maxV = maximum $ map snd minMaxVals
         _ -> getMinMaxVal px
-    convertTrainingInstances :: ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Float)]
+    convertTrainingInstances :: ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Double)]
     convertTrainingInstances ((ft, as), AgentValue vs) = zipWith3 (\agNr aIdx val -> ((ft, agNr * nrActs + aIdx), val)) [0..VB.length as - 1] (VB.toList as) (V.toList vs)
     trainingInstances' =
       case px ^?! proxyType of
@@ -333,7 +333,7 @@ trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (program
 -- lookupProxy _ _ k (Table m def acts) = return $ AgentValue $ V.toList $ M.findWithDefault def k m
 -- lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
 
-lookupProxyAgent :: (MonadIO m) => Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Float
+lookupProxyAgent :: (MonadIO m) => Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupProxyAgent _ _ agNr _ (Scalar x)    = return $ x V.! agNr
 lookupProxyAgent _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
 lookupProxyAgent _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
@@ -373,7 +373,7 @@ lookupState tp (k, ass) px = do
   AgentValues vals <- lookupActionsNeuralNetwork tp k px
   return $ AgentValues $ VB.zipWith filterActions ass vals
   where
-    filterActions :: V.Vector ActionIndex -> V.Vector Float -> V.Vector Float
+    filterActions :: V.Vector ActionIndex -> V.Vector Double -> V.Vector Double
     filterActions as vs =
       if V.length vs == V.length as
         then vs -- no need to filter
@@ -461,7 +461,7 @@ cached st ~f = do
 
 
 -- | Finds the correct value for scaling.
-getMinMaxVal :: Proxy -> Maybe (MinValue Float, MaxValue Float)
+getMinMaxVal :: Proxy -> Maybe (MinValue Double, MaxValue Double)
 getMinMaxVal Table{} = error "getMinMaxVal called for Table"
 getMinMaxVal !p =
   case unCombine (p ^?! proxyType) of

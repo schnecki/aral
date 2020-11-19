@@ -143,7 +143,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
             liftIO $ maybe ql (\v' -> decaySetting . exploration .~ NoDecay $ parameters . exploration .~ v' $ ql) <$> getIOMWithDefault Nothing
           "eps" -> do
             liftIO $ putStr "New value: " >> hFlush stdout
-            liftIO $ maybe ql (\v' -> decaySetting . epsilon .~ Last NoDecay $ parameters . epsilon .~ Last (v' :: Float) $ ql) <$> getIOMWithDefault Nothing
+            liftIO $ maybe ql (\v' -> decaySetting . epsilon .~ Last NoDecay $ parameters . epsilon .~ Last (v' :: Double) $ ql) <$> getIOMWithDefault Nothing
           "lr" -> do
             liftIO $ putStr "New value: " >> hFlush stdout
             liftIO $

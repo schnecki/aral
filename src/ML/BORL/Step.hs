@@ -364,7 +364,7 @@ writeDebugFiles borl = do
       liftIO $ appendFile fileDebugPsiWValues (show (borl' ^. t) <> "\t" <> mkListStrV show psiWValues <> "\n")
   return borl'
   where
-    getStateFeatList :: Proxy -> [V.Vector Float]
+    getStateFeatList :: Proxy -> [V.Vector Double]
     getStateFeatList Scalar {} = []
     getStateFeatList (Table t _ _) = -- map fst (M.keys t)
       map (\(xs, y) -> xs V.++ V.replicate agents (fromIntegral y)) (M.keys t)
@@ -374,7 +374,7 @@ writeDebugFiles borl = do
     agents = borl ^. settings . independentAgents
     mkListStrAg :: (a -> String) -> [a] -> String
     mkListStrAg f = intercalate "\t" . concatMap (\x -> map (\nr -> f x <> "-Ag" <> show nr) [1..agents])
-    mkListStrV :: (Float -> String) -> [Value] -> String
+    mkListStrV :: (Double -> String) -> [Value] -> String
     mkListStrV f = intercalate "\t" . concatMap (map f . fromValue)
     shorten xs | length xs > 60 = "..." <> drop (length xs - 60) xs
                | otherwise = xs

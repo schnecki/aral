@@ -72,10 +72,10 @@ data RSize
   | RBig
 
 
-expSmthPsi :: Float
+expSmthPsi :: Double
 expSmthPsi = 0.001
 
--- expSmthReward :: Float
+-- expSmthReward :: Double
 -- expSmthReward = 0.001
 
 
@@ -114,7 +114,7 @@ rhoMinimumState' borl rhoVal' = mapValue go rhoVal'
 
 -- | Get an exponentially smoothed parameter. Due to lazy evaluation the calculation for the other parameters are
 -- ignored!
-getExpSmthParam :: BORL s as -> ((Proxy -> Const Proxy Proxy) -> Proxies -> Const Proxy Proxies) -> Getting Float (Parameters Float) Float -> Float
+getExpSmthParam :: BORL s as -> ((Proxy -> Const Proxy Proxy) -> Proxies -> Const Proxy Proxies) -> Getting Double (Parameters Double) Double -> Double
 getExpSmthParam borl p param
   | isANN = 1
   | otherwise = params' ^. param
@@ -124,7 +124,7 @@ getExpSmthParam borl p param
     params' = decayedParameters borl
 
 -- | Overestimates the average reward. This ensures that we constantly aim for better policies.
-overEstimateRhoCalc :: BORL s as -> Float -> Float
+overEstimateRhoCalc :: BORL s as -> Double -> Double
 overEstimateRhoCalc borl rhoVal = max' (max' expSmthRho rhoVal) (rhoVal + 0.1 * diff)
   where
     expSmthRho = borl ^. expSmoothedReward
@@ -494,7 +494,7 @@ rhoValue borl s = rhoValueWith Worker borl (ftExt s)
     ftExt = borl ^. featureExtractor
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-rhoValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> P.AgentNumber -> State s -> ActionIndex -> m Float
+rhoValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> P.AgentNumber -> State s -> ActionIndex -> m Double
 rhoValueAgentWith lkTp borl agent s a = P.lookupProxyAgent (borl ^. t) lkTp agent (ftExt s, a) (borl ^. proxies . rho)
   where
     ftExt = borl ^. featureExtractor
@@ -522,7 +522,7 @@ vValue borl s = vValueWith Worker borl (ftExt s)
     ftExt = borl ^. featureExtractor
 
 -- | Expected average value of state-action tuple, that is y_{-1}(s,a).
-vValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> P.AgentNumber -> State s -> ActionIndex -> m Float
+vValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> P.AgentNumber -> State s -> ActionIndex -> m Double
 vValueAgentWith lkTp borl agent s a = P.lookupProxyAgent (borl ^. t) lkTp agent (ftExt s, a) (borl ^. proxies . v)
   where
     ftExt = borl ^. featureExtractor
@@ -548,7 +548,7 @@ vStateValueWith lkTp borl (state, asIdxes) = reduceValues maxOrMin <$> lookupSta
         Minimise -> V.minimum
 
 
--- psiVValueWith :: (MonadIO m) => LookupType -> BORL s as -> StateFeatures -> ActionIndex -> m Float
+-- psiVValueWith :: (MonadIO m) => LookupType -> BORL s as -> StateFeatures -> ActionIndex -> m Double
 -- psiVValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . psiV)
 
 wValue :: (MonadIO m) => BORL s as -> State s -> AgentActionIndices -> m Value
@@ -579,7 +579,7 @@ rValue borl size s aNr = rValueWith Worker borl size (ftExt s) aNr
   where ftExt = borl ^. featureExtractor
 
 -- | Calculates the expected discounted value with the provided gamma (small/big).
-rValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> RSize -> AgentNumber -> State s -> ActionIndex -> m Float
+rValueAgentWith :: (MonadIO m) => LookupType -> BORL s as -> RSize -> AgentNumber -> State s -> ActionIndex -> m Double
 rValueAgentWith lkTp borl size agent s aNr = P.lookupProxyAgent (borl ^. t) lkTp agent (ftExt s, aNr) mr
   where
     ftExt = borl ^. featureExtractor
@@ -654,7 +654,7 @@ eValueAvgCleaned borl state = eValueAvgCleanedFeat borl sFeat
     sFeat = (borl ^. featureExtractor) state
 
 -- | Calculates the difference between the expected discounted values: e_gamma1 - e_gamma0 - avgRew * (1/(1-gamma1)+1/(1-gamma0)).
-eValueAvgCleanedAgent :: (MonadIO m) => BORL s as -> AgentNumber -> s -> ActionIndex -> m Float
+eValueAvgCleanedAgent :: (MonadIO m) => BORL s as -> AgentNumber -> s -> ActionIndex -> m Double
 eValueAvgCleanedAgent borl agent state act =
   case borl ^. algorithm of
     AlgBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1

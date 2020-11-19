@@ -40,11 +40,11 @@ import           ML.BORL.Workers.Type
 import           Debug.Trace
 
 
-type ActionSelection s = [[(Float, ActionIndex)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
+type ActionSelection s = [[(Double, ActionIndex)]] -> IO (SelectedActions s) -- ^ Incoming actions are sorted with highest value in the head.
 
 data SelectedActions s = SelectedActions
-  { maximised :: [(Float, ActionIndex)] -- ^ Choose actions by maximising objective
-  , minimised :: [(Float, ActionIndex)] -- ^ Choose actions by minimising objective
+  { maximised :: [(Double, ActionIndex)] -- ^ Choose actions by maximising objective
+  , minimised :: [(Double, ActionIndex)] -- ^ Choose actions by minimising objective
   }
 
 
@@ -60,7 +60,7 @@ nextAction !borl = do
     mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
                       | otherwise = borl ^. settings . explorationStrategy
 
-nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Float -> m ActionChoice
+nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
 nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate (VB.length acts) id)
   where
     acts = actionIndicesFiltered borl state
@@ -81,12 +81,12 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do
-  r <- liftIO $ randomRIO (0 :: Float, 1)
+  r <- liftIO $ randomRIO (0 :: Double, 1)
   return $ SelectedActions (xs !! chooseByProbability r 0 0 probs) (reverse xs !! chooseByProbability r 0 0 probs)
   where
     probs = softmax temp $ map (fst . head) xs
 
-chooseByProbability :: RandomNormValue -> ActionIndex -> Float -> [Float] -> Int
+chooseByProbability :: RandomNormValue -> ActionIndex -> Double -> [Double] -> Int
 chooseByProbability r idx acc [] = error $ "no more options in chooseByProbability in Action.Ops: " ++ show (r, idx, acc)
 chooseByProbability r idx acc (v:vs)
   | acc + v >= r = idx
@@ -96,7 +96,7 @@ chooseByProbability r idx acc (v:vs)
 data ActionPickingConfig s =
   ActionPickingConfig
     { actPickState      :: !s
-    , actPickExpl       :: !Float
+    , actPickExpl       :: !Double
     , actPickAgentIndex :: !Int
     , actPickActions    :: [ActionIndex]
     }
@@ -119,16 +119,16 @@ chooseAction borl useRand selFromList = do
                  if isUnichain borl
                    then return as
                    else do
-                     (rhoVals :: [Float]) <- mapM (rhoValueAgentWith Worker borl agent state) as -- every agent has a list of possible actions
+                     (rhoVals :: [Double]) <- mapM (rhoValueAgentWith Worker borl agent state) as -- every agent has a list of possible actions
                      map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
                bestV <-
-                 do (vVals :: [Float]) <- mapM (vValueAgentWith Worker borl agent state) bestRho
+                 do (vVals :: [Double]) <- mapM (vValueAgentWith Worker borl agent state) bestRho
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
                if length bestV == 1
                  then return (False, head bestV)
                  else do
                    bestE <-
-                     do (eVals :: [Float]) <- mapM (eValueAvgCleanedAgent borl agent state) bestV
+                     do (eVals :: [Double]) <- mapM (eValueAvgCleanedAgent borl agent state) bestV
                         let (increasing, decreasing) = partition ((0 <) . fst) (zip eVals bestV)
                             actionsToChooseFrom
                               | null decreasing = increasing

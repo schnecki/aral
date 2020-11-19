@@ -44,7 +44,7 @@ data NNConfig =
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
     , _scaleParameters                 :: !ScalingNetOutParameters -- ^ How to scale the output to the original range.
     , _scaleOutputAlgorithm            :: !ScalingAlgorithm        -- ^ What algorithm to use for scaling. Usually @ScaleMinMax@ is a good value and @ScaleLog@ might be interesting for minimization problem.
-    , _cropTrainMaxValScaled           :: !(Maybe Float)           -- ^ Crop the min and max of the learned scaled values, e.g. Just 0.98 -> Crops all values to (-0.98, 0.98) prior to learning. Useful
+    , _cropTrainMaxValScaled           :: !(Maybe Double)           -- ^ Crop the min and max of the learned scaled values, e.g. Just 0.98 -> Crops all values to (-0.98, 0.98) prior to learning. Useful
                                                                    -- when using Tanh as output activation. Currently for Grenade only (as this part is in the sublibrary higher-level-tensorflow)!
     , _grenadeDropoutFlipActivePeriod  :: !Int                     -- ^ Flip dropout active/inactive state every X periods.
     , _grenadeDropoutOnlyInactiveAfter :: !Int                     -- ^ Keep dropout inactive when reaching the given number of periods. Set to 0 to inactive dropout active state flipping!

@@ -38,7 +38,7 @@ data WorkerState s =
     , _workerS             :: !s                    -- ^ Current state.
     , _workerReplayMemory  :: !ReplayMemories       -- ^ Replay Memories of worker.
     , _workerFutureRewards :: ![RewardFutureData s] -- ^ Future reward data.
-    , _workerExpSmthReward :: Float                 -- ^ Exponentially smoothed reward with rate 0.0001
+    , _workerExpSmthReward :: Double                 -- ^ Exponentially smoothed reward with rate 0.0001
     }
   deriving (Generic)
 makeLenses ''WorkerState
