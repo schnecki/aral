@@ -50,17 +50,21 @@ trainGrenade ::
 trainGrenade opt nnConfig mMinMaxVal net chs =
   let trainIter = nnConfig ^. trainingIterations
       cropFun = maybe id (\x -> max (-x) . min x) (nnConfig ^. cropTrainMaxValScaled)
-      batchGradients = parMap rdeepseq (makeGradients cropFun net) chs
+      batchGradients = parMap (rparWith rdeepseq) (makeGradients cropFun net) chs
       clippingRatio =
         case mMinMaxVal of
           Nothing               -> 0.01
           Just (minVal, maxVal) -> 0.01 / (maxVal - minVal)
+      clipGrads | nnConfig ^. clipGradients = clipByGlobalNorm clippingRatio
+                | otherwise = id
+      -- res = foldl' (applyUpdate opt) net batchGradients
       res =
-        force $
+        -- force $
         applyUpdate opt net $
-        clipByGlobalNorm clippingRatio $
+        clipGrads $
         -- 1/sum (map genericLength batchGradients) |* -- better to use avg?!!? also for RL?: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
-        foldl1 (|+) batchGradients
+        -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) batchGradients
+        sumG batchGradients -- foldl1 (|+) batchGradients
    in if trainIter <= 1
         then res
         else trainGrenade opt (set trainingIterations (trainIter - 1) nnConfig) mMinMaxVal res chs
@@ -75,14 +79,17 @@ makeGradients ::
 makeGradients _ _ [] = error "Empty list of n-step updates in NeuralNetwork.Grenade"
 makeGradients cropFun net chs
   | length chs == 1 =
-    head $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
+    head $ parMap (rparWith rdeepseq) (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   | otherwise =
-    foldl1 (|+) $ parMap rdeepseq (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
+    -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) $
+    -- foldl1 (|+) $
+    sumG $
+    parMap (rparWith rdeepseq) (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
     -- valueMap = foldl' (\m ((inp, acts), AgentValue outs) -> M.insertWith (++) inp (zipWith (\act out -> (act, cropFun out)) acts outs) m) mempty chs
     valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
     inputs = M.keys valueMap
-    (tapes, outputs) = unzip $ parMap rdeepseq (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
+    (tapes, outputs) = unzip $ parMap (rparWith rdeepseq) (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
     labels = zipWith (V.//) outputs (M.elems valueMap)
 
 runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrAgents -> StateFeatures -> [Values]

@@ -38,7 +38,7 @@ data NNConfig =
     , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
     , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
-    , _grenadeSmoothTargetUpdate       :: !Rational                -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
+    , _grenadeSmoothTargetUpdate       :: !Double                -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
     , _grenadeSmoothTargetUpdatePeriod :: !Int                     -- ^ Every x periods the smooth update will take place.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.
@@ -48,14 +48,15 @@ data NNConfig =
                                                                    -- when using Tanh as output activation. Currently for Grenade only (as this part is in the sublibrary higher-level-tensorflow)!
     , _grenadeDropoutFlipActivePeriod  :: !Int                     -- ^ Flip dropout active/inactive state every X periods.
     , _grenadeDropoutOnlyInactiveAfter :: !Int                     -- ^ Keep dropout inactive when reaching the given number of periods. Set to 0 to inactive dropout active state flipping!
+    , _clipGradients                   :: Bool                     -- ^ Clip the gradients (takes time, but is a safer update). The amount is deduced by the min-max and the global norm.
     } deriving (Show)
 makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat batchsize tr !lp smooth smoothPer dec pp sc scalg crop dropFlip dropInactive) =
+  rnf (NNConfig rep repStrat batchsize tr !lp smooth smoothPer dec pp sc scalg crop dropFlip dropInactive clip) =
     rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq`
-    rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip `seq` rnf dropInactive
+    rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip `seq` rnf dropInactive `seq` rnf clip
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

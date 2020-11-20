@@ -87,7 +87,7 @@ modelBuilderGrenade gym initState lenActs cols =
 nnConfig :: Gym -> Double -> NNConfig
 nnConfig gym maxRew =
   NNConfig
-    { _replayMemoryMaxSize = 10000
+    { _replayMemoryMaxSize = 1000
     , _replayMemoryStrategy = ReplayMemoryPerAction
     , _trainBatchSize = 8
     , _trainingIterations = 1
@@ -101,6 +101,7 @@ nnConfig gym maxRew =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
+    , _clipGradients = True
     }
   where
     (lows, highs) = observationSpaceBounds gym
@@ -198,8 +199,7 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         setGlobalVar (Just $ step + 1)
         let movGoal = min 0.5 (5e-6 * step - 0.3)
         epsStep <- getElapsedSteps gym
-        return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) (* (helperSteps/(helperSteps + step))) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
-        where helperSteps = 20000
+        return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) (* 1) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
     AlgDQNAvgRewAdjusted  {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
@@ -318,9 +318,8 @@ main = do
   putStrLn $ "Actions Count: " ++ show actionNodes
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
-  -- nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix) :: IO NN
-  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) nn (nnConfig gym maxRew) borlSettings initValues
-  -- let rl = mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
+  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  -- rl <- mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
   rl <-  mkUnichainGrenade alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
@@ -333,7 +332,7 @@ main = do
 params :: Gym -> Double -> ParameterInitValues
 params gym maxRew =
   Parameters
-    { _alpha               = 0.03
+    { _alpha               = 0.01
     , _alphaRhoMin         = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
@@ -350,7 +349,7 @@ params gym maxRew =
 decay :: Gym -> ParameterDecaySetting
 decay gym =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 30000
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 15000
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-2) 0.5 50000
       , _delta            = ExponentialDecay (Just 1e-2) 0.5 150000

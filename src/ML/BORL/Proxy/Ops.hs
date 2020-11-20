@@ -254,41 +254,14 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
     getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
 
 
--- -- | Copy the worker net to the target.
--- updateNNTargetNet :: (MonadIO m) => AgentType -> Settings -> Bool -> Period -> Proxy -> m Proxy
--- updateNNTargetNet _ _ _ _ px | not (isNeuralNetwork px) = error "updateNNTargetNet called on non-neural network proxy"
--- updateNNTargetNet agent setts forceReset period px
---   -- | config ^. updateTargetInterval <= 1 || currentUpdateInterval <= 1 = return px
---   | forceReset = copyValues
---   | period <= memSubSize = return px
---   | nStepUpdate || isGrenade px = copyValues -- updating 2 steps offset to round numbers to ensure we see the difference in the values
---   | otherwise = return px
---   where
---     nStepUpdate
---       | setts ^. nStep == 1 = (period - memSubSize - 1) `mod` currentUpdateInterval == 0
---       | otherwise = any ((== 0) . (`mod` currentUpdateInterval)) [period - memSubSize - 1 - setts ^. nStep .. period - memSubSize - 1]
---     memSubSize = px ^?! proxyNNConfig . replayMemoryMaxSize
---     config = px ^?! proxyNNConfig
---     currentUpdateInterval = -- max 1 $ round $ decaySetup (config ^. updateTargetIntervalDecay) period (fromIntegral $ config ^. updateTargetInterval)
---        max 1 $ config ^. grenadeSmoothTargetUpdatePeriod
---     copyValues =
---       case px of
---         (Grenade netT' netW' tp' config' nrActs agents)
---           | smoothUpd > 0 -> return $! Grenade (((1 - smoothUpd) |* netT') |+ (smoothUpd |* netW') `using` rdeepseq) netW' tp' config' nrActs agents
---           | nStepUpdate -> return $ Grenade netW' netW' tp' config' nrActs agents
---           | otherwise -> return px
---           where smoothUpd = config ^. grenadeSmoothTargetUpdate
---         CombinedProxy {} -> error "Combined proxy in updateNNTargetNet. Should not happen!"
---         Table {} -> error "not possible"
---         Scalar {} -> error "not possible"
-
 -- | Copy the worker net to the target.
 updateNNTargetNet :: (MonadIO m) => AgentType -> Settings -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agents)
   | period <= memSubSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod = return $ Grenade netW' netW' tp' config' nrActs agents
   | updatePeriod =
-    return $ Grenade (((1 - smoothUpd) |* netT') |+ (smoothUpd |* netW') `using` rdeepseq) netW' tp' config' nrActs agents
+      return $ Grenade ((zipVectorsWithInPlaceReplSnd (\w t -> (smoothUpd * w + (1 - smoothUpd) * t)) netW' netT') `using` rdeepseq) netW' tp' config' nrActs agents
+    -- return $ Grenade (((1 - toRational smoothUpd) |* netT') |+ (toRational smoothUpd |* netW') `using` rdeepseq) netW' tp' config' nrActs agents
   | otherwise = return px
   where
     memSubSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -355,16 +328,6 @@ lookupProxyNoUnscale _ _ (k,ass) (Table m def _) = return $ AgentValue $ V.conve
 lookupProxyNoUnscale _ lkType k px       = lookupNeuralNetworkUnscaled lkType k px
 
 
--- -- | Retrieves all action values for the state but filters to the provided actions.
--- lookupState :: (MonadIO m) => LookupType -> (StateFeatures, V.Vector ActionIndex) -> Proxy -> m Values
--- lookupState _ (_, as) (Scalar x) = return $ AgentValues $ replicate (V.length as) x
--- lookupState _ (k, as) (Table m def acts) = return $ AgentValues $ map V.fromList $ transpose $ map (\a -> V.toList $ M.findWithDefault def (k,a) m) (V.toList as)
--- lookupState tp (k, as) px = do
---   unfiltered@(AgentValues vals) <- lookupActionsNeuralNetwork tp k px
---   if V.length (head vals) == V.length as
---     then return unfiltered -- no need to filter
---     else return $ mapValues (\vs -> V.map (vs V.!) as) unfiltered
-
 -- | Retrieves all action values for the state but filters to the provided actions.
 lookupState :: (MonadIO m) => LookupType -> (StateFeatures, FilteredActionIndices) -> Proxy -> m Values
 lookupState _ (_, ass) (Scalar x) = return $ AgentValues $ VB.zipWith (\agentValue as -> V.replicate (V.length as) agentValue) (V.convert x) ass
@@ -407,16 +370,6 @@ lookupActionsNeuralNetworkUnscaled tp st px@Grenade{} = head <$> lookupActionsNe
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> lookupActionsNeuralNetworkUnscaledFull tp st px
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
-
--- -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
--- lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
--- lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW tp _ _ agents) =
---   cached (Worker, tp, st) (return $ runGrenade netW agents st)
--- lookupActionsNeuralNetworkUnscaledFull Target st px@(Grenade netT _ tp config _ agents)
---   | config ^. grenadeSmoothTargetUpdate == 1 && config ^. grenadeSmoothTargetUpdatePeriod <= 1 = lookupActionsNeuralNetworkUnscaledFull Worker st px
---   | otherwise = cached (Target, tp, st) (return $ runGrenade netT agents st)
--- lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{} = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
--- lookupActionsNeuralNetworkUnscaledFull _ _ _ = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]

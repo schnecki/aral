@@ -146,10 +146,10 @@ instance Serialize ReplayMemories where
 instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec) =
+  put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec
-      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec >> put clip
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec >> put clip
   get = do
     memSz <- get
     memStrat <- get
@@ -165,7 +165,8 @@ instance Serialize NNConfig where
     crop <- get
     stab <- get
     stabDec <- get
-    return $ NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec
+    clip <- get
+    return $ NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip
 
 
 instance Serialize Proxy where
@@ -182,7 +183,7 @@ instance Serialize Proxy where
         Table m d <$> get
       2 -> do
         (specT :: SpecNet) <- get
-        case unsafePerformIO (networkFromSpecificationWith (NetworkInitSettings UniformInit HMatrix) specT) of
+        case unsafePerformIO (networkFromSpecificationWith (NetworkInitSettings UniformInit HMatrix Nothing) specT) of
           SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
             (t :: Network tLayers tShapes) <- get
             (w :: Network tLayers tShapes) <- get

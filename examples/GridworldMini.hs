@@ -230,6 +230,7 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
+    , _clipGradients = True
     }
 
 borlSettings :: Settings
@@ -348,7 +349,7 @@ usermode = do
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  buildModelWith (NetworkInitSettings UniformInit HMatrix) def $
+  buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
   inputLayer1D lenIn >>
   fullyConnected 20 >> relu >> dropout 0.90 >>
   fullyConnected 10 >> relu >>

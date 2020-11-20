@@ -392,7 +392,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
         px         -> textTargetUpdate (px ^?! proxyNNConfig)
       where
         textTargetUpdate conf =
-            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printDoubleWith 8 $ fromRational $ conf ^. grenadeSmoothTargetUpdate) <+>
+            text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printDoubleWith 8 $ conf ^. grenadeSmoothTargetUpdate) <+>
             text "every" <+> int (conf ^. grenadeSmoothTargetUpdatePeriod) <+> text "periods"
     nnBatchSize =
       case borl ^. proxies . v of

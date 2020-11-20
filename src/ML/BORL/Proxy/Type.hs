@@ -25,9 +25,6 @@ module ML.BORL.Proxy.Type
   , proxyExpectedOutput
   , _proxyNNTarget
   , _proxyNNWorker
-  , addWorkerProxy
-  , multiplyWorkerProxy
-  , replaceTargetProxyFromTo
   , isNeuralNetwork
   , isGrenade
   , isCombinedProxy
@@ -119,56 +116,6 @@ data Proxy
       , _proxyOutCol         :: Int                                                  -- ^ Output column/row of the data.
       , _proxyExpectedOutput :: [[((StateFeatures, AgentActionIndices), Value)]]     -- ^ List of batches of list of n-step results. Used to save the data for learning.
       }
-
--- | This function adds two proxies. The proxies must be of the same type and for Grenade of the same shape. It does not work with Tenforflow proxies!
-addWorkerProxy :: Proxy -> Proxy -> Proxy
-addWorkerProxy (Scalar x) (Scalar y)   = Scalar (x+y)
-addWorkerProxy (Table x d acts) (Table y _ _) = Table (mergeTables x y) d acts
-addWorkerProxy (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1 nrAgents1) (Grenade (target2 :: Network layers2 shapes2) worker2 _ _ _ _) =
-  case (cast worker2, cast target2) of
-    (Just worker2', Just target2') ->
-      Grenade
-        (target1 |+ target2')  -- (disabled in multiplyWorkerProxy)
-        (worker1 |+ worker2')
-        tp1
-        nnCfg1
-        nrActs1
-        nrAgents1
-    _ -> error "cannot replace worker1 of different type"
-addWorkerProxy (CombinedProxy px1 outCol1 expOut1) (CombinedProxy px2 _ _) = CombinedProxy (addWorkerProxy px1 px2) outCol1 expOut1
-addWorkerProxy x1 x2 = error $ "Cannot add proxies of differnt types: " ++ show (x1, x2)
-
-multiplyWorkerProxy :: Double -> Proxy -> Proxy
-multiplyWorkerProxy n (Scalar x) = Scalar (V.map (n *) x)
-multiplyWorkerProxy n (Table x d acts) = Table (M.map (V.map (* n)) x) d acts
-multiplyWorkerProxy n (Grenade (target1 :: Network layers1 shapes1) worker1 tp1 nnCfg1 nrActs1 nrAgents1) =
-  Grenade
-    (toRational n |* target1) -- (disabled in addWorkerProxy)
-    (toRational n |* worker1)
-    tp1
-    nnCfg1
-    nrActs1
-    nrAgents1
-multiplyWorkerProxy n (CombinedProxy px1 outCol1 expOut1) = CombinedProxy (multiplyWorkerProxy n px1) outCol1 expOut1
-
-
-replaceTargetProxyFromTo :: Proxy -> Proxy -> Proxy
-replaceTargetProxyFromTo (Scalar x) (Scalar _)   = Scalar x
-replaceTargetProxyFromTo (Table x d acts) (Table _ _ _) = Table x d acts
-replaceTargetProxyFromTo (Grenade (target1 :: Network layers1 shapes1) worker1 _ _ _ _) (Grenade (target2 :: Network layers2 shapes2) worker2 tp2 nnCfg2 nrActs2 nrAgents2) =
-  case cast worker1 of
-    Nothing -> error "cannot replace target1 of different type"
-    Just worker1' ->
-      Grenade
-        target2 -- (0.5 |* (target1' |+ target2))
-        worker1' -- target1' -- (0.5 |* (worker1' |+ worker2))
-        tp2
-        nnCfg2
-        nrActs2
-        nrAgents2
-replaceTargetProxyFromTo (CombinedProxy px1 _ _) (CombinedProxy px2 outCol2 expOut2) = CombinedProxy (replaceTargetProxyFromTo px1 px2) outCol2 expOut2
-replaceTargetProxyFromTo x1 x2 = error $ "Cannot replace proxies of differnt types: " ++ show (x1, x2)
-
 
 mergeTables :: (Ord k, Num n) => M.Map k n -> M.Map k n -> M.Map k n
 mergeTables = M.mergeWithKey (\_ v1 v2 -> Just (v1 + v2)) (M.map (*2)) (M.map (*2))
