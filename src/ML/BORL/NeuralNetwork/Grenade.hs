@@ -64,7 +64,9 @@ trainGrenade opt nnConfig mMinMaxVal net chs =
         clipGrads $
         -- 1/sum (map genericLength batchGradients) |* -- better to use avg?!!? also for RL?: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
         -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) batchGradients
-        sumG batchGradients -- foldl1 (|+) batchGradients
+        -- foldl1 (|+) batchGradients
+
+        sumG batchGradients
    in if trainIter <= 1
         then res
         else trainGrenade opt (set trainingIterations (trainIter - 1) nnConfig) mMinMaxVal res chs

@@ -260,8 +260,9 @@ updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agen
   | period <= memSubSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod = return $ Grenade netW' netW' tp' config' nrActs agents
   | updatePeriod =
-      return $ Grenade ((zipVectorsWithInPlaceReplSnd (\w t -> (smoothUpd * w + (1 - smoothUpd) * t)) netW' netT') `using` rdeepseq) netW' tp' config' nrActs agents
+      return $ Grenade ((zipVectorsWithInPlaceReplSnd (\w t -> (1 - smoothUpd) * t + smoothUpd * w) netW' netT') `using` rdeepseq) netW' tp' config' nrActs agents
     -- return $ Grenade (((1 - toRational smoothUpd) |* netT') |+ (toRational smoothUpd |* netW') `using` rdeepseq) netW' tp' config' nrActs agents
+
   | otherwise = return px
   where
     memSubSize = px ^?! proxyNNConfig . replayMemoryMaxSize

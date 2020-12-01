@@ -276,7 +276,7 @@ modelBuilderGrenade actions initState cols =
   -- fullyConnected 10 >> leakyRelu >>
   -- fullyConnected 10 >> leakyRelu >>
   -- fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  buildModelWith (def { cpuBackend = BLAS } ) def $
+  buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   inputLayer1D lenIn >>
   fullyConnected 20 >> relu >>
   fullyConnected 10 >> relu >>

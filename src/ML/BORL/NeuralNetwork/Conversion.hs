@@ -47,6 +47,10 @@ fromLastShapesVector _ (tapes, val@S2DV{}) = (tapes, V.concat $ toColumnsS2D val
 fromLastShapesVector _ (tapes, val@S2D{})  = (tapes, V.concat $ toColumnsS2D val)
 fromLastShapesVector _ _                   = error "3D output not supported"
 
+-- fromLastShapesVector :: Network layers shapes -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, V.Vector Float)
+-- fromLastShapesVector _ (tapes, S1D out)    = (tapes, V.map realToFrac $ extract out)
+-- fromLastShapesVector _ (tapes, S2D mat) = (tapes, V.concat $ map (V.map realToFrac . extract) (toColumns mat))
+
 
 fromLastShapes :: Network layers shapes -> NrAgents -> (Tapes layers shapes, S (Last shapes)) -> (Tapes layers shapes, [Values])
 fromLastShapes _ nrAgents (tapes, S1DV val)    = (tapes, [toAgents nrAgents $ val])

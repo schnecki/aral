@@ -38,6 +38,7 @@ import           ML.BORL.Algorithm
 import           ML.BORL.Calculation.Type
 import           ML.BORL.Decay                  (decaySetup)
 import           ML.BORL.NeuralNetwork.NNConfig
+import           ML.BORL.NeuralNetwork.ReplayMemory
 import           ML.BORL.Parameters
 import           ML.BORL.Properties
 import           ML.BORL.Settings
@@ -295,6 +296,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
   let agents = borl ^. settings . independentAgents
   let params' = decayedParameters borl
   let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+  let initPhase = borl ^. t < maybe 0 replayMemoriesSubSize (borl ^. proxies . replayMemory)
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -316,6 +318,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
           Maximise -> max
           Minimise -> min
   let rhoVal'
+        | initPhase = AgentValue $ V.fromList $ replicate agents (borl ^. expSmoothedReward)
         | randomAction && not learnFromRandom = shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState rhoVal
         | otherwise =
           shareRhoVal (borl ^. settings) $
@@ -340,10 +343,10 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       expStateValR1 = reward .- rhoValOverEstimated + ga1 * epsEnd .* expStateNextValR1
   let r0ValState' = (1 - gam) .* r0ValState + gam .* expStateValR0
   let r1ValState' = (1 - gam) .* r1ValState + gam .* expStateValR1
-  let expSmthRewRate | borl ^. t < 100 = 0.5
+  let expSmthRewRate | initPhase = 0.5
                      | otherwise = min alp 0.001
-      expSmthRew' | randomAction && not learnFromRandom = borl ^. expSmoothedReward
-                  | borl ^. t < 100 = sum (fromValue rhoVal') / fromIntegral agents
+      expSmthRew' | not initPhase && randomAction && not learnFromRandom = borl ^. expSmoothedReward
+                  --  | borl ^. t < 100 = sum (fromValue rhoVal') / fromIntegral agents
                   | otherwise = (1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward
   return
     ( Calculation
