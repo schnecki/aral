@@ -101,7 +101,7 @@ nnConfig gym maxRew =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
-    , _clipGradients = True
+    , _clipGradients = ClipByGlobalNorm 0.01
     }
   where
     (lows, highs) = observationSpaceBounds gym

@@ -224,7 +224,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       prBoolTblsStateAction False _ _ _ = return empty
   prettyRhoVal <-
     case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
-      (Scalar val, Scalar valRhoMin) ->
+      (Scalar val _, Scalar valRhoMin _) ->
         return $ text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
       (m,_) -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
@@ -269,7 +269,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
       actionNrs = length (borl ^. actionList)
       prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
-          (Scalar val, Scalar valRhoMin) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
+          (Scalar val _, Scalar valRhoMin _) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
           _ -> empty
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc

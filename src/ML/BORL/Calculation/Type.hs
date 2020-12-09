@@ -17,10 +17,10 @@ import           ML.BORL.Types
 
 
 type ReplMemFun m s
-   = (StateFeatures, FilteredActionIndices)
+   = (StateFeatures, DisallowedActionIndicies)
    -> ActionChoice
    -> RewardValue
-   -> (StateNextFeatures, FilteredActionIndices)
+   -> (StateNextFeatures, DisallowedActionIndicies)
    -> EpisodeEnd
    -> ExpectedValuationNext
    -> m ( Calculation, ExpectedValuationNext)

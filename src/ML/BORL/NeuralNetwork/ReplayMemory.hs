@@ -13,50 +13,55 @@ module ML.BORL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad        (foldM)
-import           Data.Maybe           (fromJust, isNothing)
-import qualified Data.Vector          as VB
-import qualified Data.Vector.Mutable  as VM
-import qualified Data.Vector.Storable as V
+import           Control.Monad       (foldM)
+import           Data.Maybe          (fromJust, isNothing)
+import qualified Data.Vector         as VB
+import qualified Data.Vector.Mutable as VM
 import           GHC.Generics
 import           System.Random
 
 import           ML.BORL.Types
 
-import           Debug.Trace
 
 ------------------------------ Replay Memories ------------------------------
 
 
 data ReplayMemories
-  = ReplayMemoriesUnified !ReplayMemory                                                     -- ^ All experiences are saved in a single replay memory.
-  | ReplayMemoriesPerActions NumberOfActions (Maybe ReplayMemory) !(VB.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of
+  = ReplayMemoriesUnified !NumberOfActions !ReplayMemory                                      -- ^ All experiences are saved in a single replay memory.
+  | ReplayMemoriesPerActions !NumberOfActions !(Maybe ReplayMemory) !(VB.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of
                                                                                             -- experiences. For multiple agents the action that is used to save the experience is selected randomly.
   deriving (Generic)
 
 instance Show ReplayMemories where
-  show (ReplayMemoriesUnified r)         = "Unified " <> show r
+  show (ReplayMemoriesUnified _ r)       = "Unified " <> show r
   show (ReplayMemoriesPerActions _ _ rs) = "Per Action " <> show (VB.head rs)
 
 replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
-replayMemories _ f (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> f rm
+replayMemories _ f (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> f rm
 replayMemories idx f (ReplayMemoriesPerActions nr tmp rs) = (\x -> ReplayMemoriesPerActions nr tmp (rs VB.// [(idx, x)])) <$> f (rs VB.! idx)
 
 
 instance NFData ReplayMemories where
-  rnf (ReplayMemoriesUnified rm)           = rnf rm
+  rnf (ReplayMemoriesUnified nr rm)        = rnf nr `seq` rnf rm
   rnf (ReplayMemoriesPerActions nr tmp rs) = rnf nr `seq` rnf1 tmp `seq` rnf rs
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, FilteredActionIndices),     -- State Features s & allowed actions per agent
-                   ActionChoice,                                -- true, iff the action was randomly chosen, actionIndex a
-                   RewardValue,                                 -- reward r
-                   (StateNextFeatures, FilteredActionIndices), -- state features s' & allowed actions per agent
-                   EpisodeEnd)                                  -- true, iff it is the end of the episode
+type Experience = ((StateFeatures, DisallowedActionIndicies),     -- State Features s & allowed actions per agent
+                   ActionChoice,                                  -- true, iff the action was randomly chosen, actionIndex a
+                   RewardValue,                                   -- reward r
+                   (StateNextFeatures, DisallowedActionIndicies), -- state features s' & allowed actions per agent
+                   EpisodeEnd)                                    -- true, iff it is the end of the episode
+
+type InternalExperience = ((StateFeatures, DisallowedActionIndicies), -- State Features s & allowed actions per agent
+                   ActionChoice,                                         -- true, iff the action was randomly chosen, actionIndex a
+                   RewardValue,                                          -- reward r
+                   (StateFeatures, DisallowedActionIndicies),         -- state features s' & allowed actions per agent
+                   EpisodeEnd)                                           -- true, iff it is the end of the episode
+
 
 data ReplayMemory = ReplayMemory
-  { _replayMemoryVector :: !(VM.IOVector Experience)
+  { _replayMemoryVector :: !(VM.IOVector InternalExperience)
   , _replayMemorySize   :: !Int  -- size
   , _replayMemoryIdx    :: !Int  -- index to use when adding the next element
   , _replayMemoryMaxIdx :: !Int  -- in {0,..,size-1}
@@ -70,23 +75,23 @@ instance NFData ReplayMemory where
   rnf (ReplayMemory !_ s idx mx) = rnf s `seq` rnf idx `seq` rnf mx
 
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
-addToReplayMemories _ e (ReplayMemoriesUnified rm) = ReplayMemoriesUnified <$> addToReplayMemory e rm
+addToReplayMemories _ e (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> addToReplayMemory nr e rm
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs)
   | VB.length actChoices == 1 = do
     let (_,idx) = VB.head actChoices
     let r = rs VB.! idx
-    r' <- addToReplayMemory e r
-    return $!! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(idx, r')])
+    r' <- addToReplayMemory nrAs e r
+    return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(idx, r')])
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs) = do
   agent <- randomRIO (0, length actChoices - 1) -- randomly choose an agent that specifies the action
   let actionIdx = snd $ actChoices VB.! agent
       memIdx = agent * nrAs + actionIdx
   let r = rs VB.! memIdx
-  r' <- addToReplayMemory e r
-  return $!! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(memIdx, r')])
+  r' <- addToReplayMemory nrAs e r
+  return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(memIdx, r')])
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions nrAs Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
-  tmpRepMem' <- addToReplayMemory e tmpRepMem
+  tmpRepMem' <- addToReplayMemory nrAs e tmpRepMem
   if tmpRepMem' ^. replayMemoryIdx == 0
     then do -- temporary replay memory full, add experience to corresponding action memory
     let vec = tmpRepMem' ^. replayMemoryVector
@@ -97,16 +102,16 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
             agent <- randomRIO (0, length idxs - 1) -- randomly choose an agents first action
             return $ agent * nrAs + snd (idxs VB.! agent)
     let r = rs VB.! startIdx
-    r' <- foldM (flip addToReplayMemory) r mems
-    return $!! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
-    else return $!! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
+    r' <- foldM (flip $ addToReplayMemory nrAs) r mems
+    return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
+    else return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
 
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
-addToReplayMemory :: Experience -> ReplayMemory -> IO ReplayMemory
-addToReplayMemory e (ReplayMemory vec sz idx maxIdx) = do
-  VM.write vec (fromIntegral idx) e
+addToReplayMemory :: NumberOfActions -> Experience -> ReplayMemory -> IO ReplayMemory
+addToReplayMemory nrAs e (ReplayMemory vec sz idx maxIdx) = do
+  VM.write vec (fromIntegral idx) (force e)
   return $ ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
 type AllExpAreConsecutive = Bool
@@ -159,8 +164,8 @@ splitList f (x:xs) = (x : y) : ys
 
 -- | Get a list of random input-output tuples from the replay memory.
 getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
-getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified rm) = getRandomReplayMemoryElements True nStep bs rm
-getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions _ tmpRepMem rs) = do
+getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified nrAs rm) = getRandomReplayMemoryElements True nStep bs rm
+getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions nrAs tmpRepMem rs) = do
   g <- newStdGen
   let idxs = take bs $ randomRs (0, length rs - 1) g
       rsSel = map (rs VB.!) idxs
@@ -176,11 +181,11 @@ getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions _ tmpRepMem r
 
 -- | Size of replay memory (combined if it is a per action replay memory).
 replayMemoriesSize :: ReplayMemories -> Int
-replayMemoriesSize (ReplayMemoriesUnified m)     = m ^. replayMemorySize
+replayMemoriesSize (ReplayMemoriesUnified _ m)     = m ^. replayMemorySize
 replayMemoriesSize (ReplayMemoriesPerActions _ _ ms) = sum $ VB.map (view replayMemorySize) ms
 
 replayMemoriesSubSize :: ReplayMemories -> Int
-replayMemoriesSubSize (ReplayMemoriesUnified m) = m ^. replayMemorySize
+replayMemoriesSubSize (ReplayMemoriesUnified _ m) = m ^. replayMemorySize
 replayMemoriesSubSize (ReplayMemoriesPerActions _ _ xs)
   | VB.null xs = 0
   | otherwise = VB.head xs ^. replayMemorySize

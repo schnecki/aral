@@ -54,6 +54,7 @@ module ML.BORL.Type
   , proxies
     -- actions
   , actionIndicesFiltered
+  , actionIndicesDisallowed
   , actionsFiltered
     -- initial values
   , InitValues (..)
@@ -174,6 +175,15 @@ actionIndicesFiltered borl state = VB.map (\fil -> V.ifilter (\idx _ -> fil V.! 
     -- actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
     actionIndices = V.generate (length (actionLengthCheck filterVals $ borl ^. actionList)) id
 
+-- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
+actionIndicesDisallowed :: BORL s as -> s -> DisallowedActionIndicies
+actionIndicesDisallowed borl state = DisallowedActionIndicies $ VB.map (\fil -> V.ifilter (\idx _ -> not (fil V.! idx)) actionIndices) (VB.fromList filterVals)
+  where
+    filterVals :: [V.Vector Bool]
+    filterVals = (borl ^. actionFilter) state
+    -- actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
+    actionIndices = V.generate (length (actionLengthCheck filterVals $ borl ^. actionList)) id
+
 
 -- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
 actionsFiltered :: BORL s as -> s -> FilteredActions as
@@ -258,28 +268,39 @@ mkUnichainTabular ::
   -> IO (BORL s as)
 mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   st <- initialStateFun MainAgent
-  let proxies' = Proxies (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) (tabSA 0) (tabSA defV) (tabSA 0) (tabSA defW) (tabSA defR0) (tabSA defR1) Nothing
+  let proxies' =
+        Proxies
+          (Scalar (V.replicate agents defRhoMin) (length as))
+          (Scalar (V.replicate agents defRho) (length as))
+          (tabSA 0)
+          (tabSA defV)
+          (tabSA 0)
+          (tabSA defW)
+          (tabSA defR0)
+          (tabSA defR1)
+          Nothing
   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
-  return $ BORL
-    (VB.fromList as)
-    asFun
-    asFilter
-    st
-    workers'
-    ftExt
-    0
-    (0, 0)
-    params
-    decayFun
-    settings
-    mempty
-    (convertAlgorithm ftExt alg)
-    Maximise
-    defRhoMin
-    mempty
-    mempty
-    (toValue agents 0, toValue agents 0, toValue agents 0)
-    proxies'
+  return $
+    BORL
+      (VB.fromList as)
+      asFun
+      asFilter
+      st
+      workers'
+      ftExt
+      0
+      (0, 0)
+      params
+      decayFun
+      settings
+      mempty
+      (convertAlgorithm ftExt alg)
+      Maximise
+      defRhoMin
+      mempty
+      mempty
+      (toValue agents 0, toValue agents 0, toValue agents 0)
+      proxies'
   where
     as = [minBound .. maxBound] :: [Action as]
     tabSA def = Table mempty def (length as)
@@ -454,8 +475,18 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt asFun asFilter params decayFun
   initialState <- initialStateFun MainAgent
   let proxies' =
         case (sing :: Sing (Last shapes)) of
-          D1Sing SNat -> Proxies (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
-          D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar $ V.replicate agents defRhoMin) (Scalar $ V.replicate agents defRho) nnComb repMem
+          D1Sing SNat ->
+            Proxies
+              (Scalar (V.replicate agents defRhoMin) (length as))
+              (Scalar (V.replicate agents defRho) (length as))
+              nnPsiV
+              nnSAVTable
+              nnPsiW
+              nnSAWTable
+              nnSAR0Table
+              nnSAR1Table
+              repMem
+          D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $
@@ -480,7 +511,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt asFun asFilter params decayFun
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    as = [minBound..maxBound] :: [Action as]
+    as = [minBound .. maxBound] :: [Action as]
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
@@ -566,7 +597,7 @@ mkReplayMemories = mkReplayMemories' False
 mkReplayMemories' :: Bool -> [Action as] -> Settings -> NNConfig -> IO (Maybe ReplayMemories)
 mkReplayMemories' allowSz1 as setts nnConfig =
   case nnConfig ^. replayMemoryStrategy of
-    ReplayMemorySingle -> fmap ReplayMemoriesUnified <$> mkReplayMemory allowSz1 repMemSizeSingle
+    ReplayMemorySingle -> fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory allowSz1 repMemSizeSingle
     ReplayMemoryPerAction -> do
       tmpRepMem <- mkReplayMemory allowSz1 (setts ^. nStep)
       fmap (ReplayMemoriesPerActions (length as) tmpRepMem) . sequence . VB.fromList <$> replicateM (length as * agents) (mkReplayMemory allowSz1 repMemSizePerAction)
@@ -614,10 +645,11 @@ mkWorkers state as mNNConfig setts = do
   if nr <= 0
     then return []
     else do
-      repMems <- replicateM nr (maybe (fmap ReplayMemoriesUnified <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
+      repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
       states <- mapM state workerTypes
-      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) [] 0) [1..] states repMems
-        where err = error $ "Could not create replay memory for workers with nStep=" ++ show (setts ^. nStep) ++ " and memMaxSize=" ++ show (view replayMemoryMaxSize <$> mNNConfig)
+      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) [] 0) [1 ..] states repMems
+  where
+    err = error $ "Could not create replay memory for workers with nStep=" ++ show (setts ^. nStep) ++ " and memMaxSize=" ++ show (view replayMemoryMaxSize <$> mNNConfig)
 
 -------------------- Helpers --------------------
 

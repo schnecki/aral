@@ -82,7 +82,8 @@ proxyTypeName (NoScaling p _)  = "noscaling-" <> proxyTypeName p
 
 data Proxy
   = Scalar -- ^ Combines multiple proxies in one for performance benefits.
-      { _proxyScalar :: !(V.Vector Double) -- ^ One value for each agent
+      { _proxyScalar    :: !(V.Vector Double) -- ^ One value for each agent
+      , _proxyNrActions :: !Int
       }
   | Table  -- ^ Representation using a table.
       { _proxyTable     :: !(M.Map (StateFeatures, ActionIndex) (V.Vector Double)) -- ^ Shared state and one action for each agent, returns one value for each agent.
@@ -113,16 +114,13 @@ data Proxy
                                 }
   | CombinedProxy
       { _proxySub            :: Proxy                                                -- ^ The actual proxy holding all combined values.
-      , _proxyOutCol         :: Int                                                  -- ^ Output column/row of the data.
+      , _proxyOutCol         :: Int                                                  -- ^ Index of data
       , _proxyExpectedOutput :: [[((StateFeatures, AgentActionIndices), Value)]]     -- ^ List of batches of list of n-step results. Used to save the data for learning.
       }
 
-mergeTables :: (Ord k, Num n) => M.Map k n -> M.Map k n -> M.Map k n
-mergeTables = M.mergeWithKey (\_ v1 v2 -> Just (v1 + v2)) (M.map (*2)) (M.map (*2))
-
 proxyScalar :: Traversal' Proxy (V.Vector Double)
-proxyScalar f (Scalar x) = Scalar <$> f x
-proxyScalar _ p          = pure p
+proxyScalar f (Scalar x nrAs) = (flip Scalar nrAs) <$> f x
+proxyScalar _ p               = pure p
 
 proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Double))
 proxyTable f (Table m d acts) = (\m' -> Table m' d acts) <$> f m
@@ -167,7 +165,7 @@ proxyExpectedOutput _ p                       = pure p
 
 
 instance Show Proxy where
-  show (Scalar x)              = "Scalar: " ++ show x
+  show (Scalar x _)            = "Scalar: " ++ show x
   show (Table t _ _)           = "Table: " ++ take 300 txt ++ (if length txt > 300 then "..." else "")
     where txt = show t
   show (Grenade _ _ t _ _ _)   = "Grenade " ++ show t
@@ -183,7 +181,7 @@ prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProx
 instance NFData Proxy where
   rnf (Table x def acts) = rnf x `seq` rnf def `seq` rnf acts
   rnf (Grenade t w tp cfg nrActs agents) = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents
-  rnf (Scalar x) = rnf x
+  rnf (Scalar x nrAs) = rnf x `seq` rnf nrAs
   rnf (CombinedProxy p nr xs) = rnf p `seq` rnf nr `seq` rnf xs
 
 

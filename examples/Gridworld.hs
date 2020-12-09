@@ -128,13 +128,13 @@ instance ExperimentDef (BORL St Act) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
-    , _replayMemoryStrategy = ReplayMemorySingle
+    { _replayMemoryMaxSize = 10000 -- 1000
+    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
     , _trainBatchSize = 4
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
-    , _grenadeSmoothTargetUpdatePeriod = 1
+    , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
@@ -142,7 +142,7 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = True
+    , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
     }
 
 borlSettings :: Settings
@@ -169,7 +169,7 @@ params =
     , _epsilon             = 0.25
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 0.99
+    , _learnRandomAbove    = 0.75
 
     }
 
@@ -270,18 +270,18 @@ goalY = 2
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  -- buildModel $ -- With (def { cpuBackend = HMatrix } ) $
-  -- inputLayer1D lenIn >>
-  -- fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
-  -- fullyConnected 10 >> leakyRelu >>
-  -- fullyConnected 10 >> leakyRelu >>
-  -- fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >>
+  fullyConnected 20 >> relu >> -- dropout 0.90 >>
   fullyConnected 10 >> relu >>
   fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> tanhLayer
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  -- buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
+  -- inputLayer1D lenIn >>
+  -- fullyConnected 20 >> relu >>
+  -- fullyConnected 10 >> relu >>
+  -- fullyConnected 10 >> relu >>
+  -- fullyConnected lenOut >> tanhLayer
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length (netInp initState)
@@ -357,7 +357,7 @@ goalState f agentType st = do
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
-      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), True)
+      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), False)
     _ -> stepRew <$> f agentType st
 
 

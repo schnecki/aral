@@ -86,10 +86,10 @@ keepXLastValues = 100
 mkCalculation ::
      (MonadIO m)
   => BORL s as
-  -> (StateFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
+  -> (StateFeatures, DisallowedActionIndicies) -- ^ State features and filtered actions for each agent
   -> ActionChoice -- ^ ActionIndex for each agent
   -> RewardValue
-  -> (StateNextFeatures, FilteredActionIndices) -- ^ State features and filtered actions for each agent
+  -> (StateNextFeatures, DisallowedActionIndicies) -- ^ State features and filtered actions for each agent
   -> EpisodeEnd
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
@@ -146,15 +146,15 @@ shareRhoVal setts v@(AgentValue vec)
 mkCalculation' ::
      (MonadIO m)
   => BORL s as
-  -> (StateFeatures, FilteredActionIndices)
+  -> (StateFeatures, DisallowedActionIndicies)
   -> ActionChoice
   -> RewardValue
-  -> (StateNextFeatures, FilteredActionIndices)
+  -> (StateNextFeatures, DisallowedActionIndicies)
   -> EpisodeEnd
   -> Algorithm NetInputWoAction
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
-mkCalculation' borl (state, stateActIdxes) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
+mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
   let params' = decayedParameters borl
   let aNr = VB.map snd as
       randomAction = any fst as
@@ -331,8 +331,8 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
                           | otherwise = rhoVal'
   -- RhoMin
   let rhoMinimumVal'
-        | randomAction = rhoMinimumState
-        | otherwise = zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
+        | randomAction && not learnFromRandom = rhoMinimumState
+        | otherwise = shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
   let expStateNextValR0
         | randomAction = r0StateNext
         | otherwise = fromMaybe r0StateNext (getExpectedValStateNextR0 expValStateNext)
@@ -506,10 +506,10 @@ rhoValueAgentWith lkTp borl agent s a = P.lookupProxyAgent (borl ^. t) lkTp agen
 rhoValueWith :: (MonadIO m) => LookupType -> BORL s as -> StateFeatures -> AgentActionIndices -> m Value
 rhoValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state,a) (borl ^. proxies.rho)
 
-rhoStateValue :: (MonadIO m) => BORL s as -> (StateFeatures, FilteredActionIndices) -> m Value
+rhoStateValue :: (MonadIO m) => BORL s as -> (StateFeatures, DisallowedActionIndicies) -> m Value
 rhoStateValue borl (state, actIdxes) =
   case borl ^. proxies . rho of
-    Scalar r -> return $ AgentValue r
+    Scalar r _ -> return $ AgentValue r
     _ -> reduceValues maxOrMin <$> lookupState Target (state, actIdxes) (borl ^. proxies . rho)
       -- V.mapM (rhoValueWith Target borl state) actIdxes
   where
@@ -541,7 +541,7 @@ vValueNoUnscaleWith lkTp borl state a = P.lookupProxyNoUnscale (borl ^. t) lkTp 
 
 
 -- | Get maximum bias value of state of specified net.
-vStateValueWith :: (MonadIO m) => LookupType -> BORL s as -> (StateFeatures, FilteredActionIndices) -> m Value
+vStateValueWith :: (MonadIO m) => LookupType -> BORL s as -> (StateFeatures, DisallowedActionIndicies) -> m Value
 vStateValueWith lkTp borl (state, asIdxes) = reduceValues maxOrMin <$> lookupState lkTp (state, asIdxes) (borl ^. proxies . v)
   -- V.mapM (vValueWith lkTp borl state) asIdxes
   where
@@ -566,7 +566,7 @@ wValueFeat = wValueWith Worker
 wValueWith :: (MonadIO m) => LookupType -> BORL s as -> StateFeatures -> AgentActionIndices -> m Value
 wValueWith lkTp borl state a = P.lookupProxy (borl ^. t) lkTp (state, a) (borl ^. proxies . w)
 
-wStateValue :: (MonadIO m) => BORL s as -> (StateFeatures, FilteredActionIndices) -> m Value
+wStateValue :: (MonadIO m) => BORL s as -> (StateFeatures, DisallowedActionIndicies) -> m Value
 wStateValue borl (state, asIdxes) = reduceValues maxOrMin <$> lookupState Target (state, asIdxes) (borl ^. proxies . w)
   -- V.mapM (wValueWith Target borl state) asIdxes
   where
@@ -611,7 +611,7 @@ rValueNoUnscaleWith lkTp borl size state a = P.lookupProxyNoUnscale (borl ^. t) 
         RBig   -> borl ^. proxies.r1
 
 
-rStateValueWith :: (MonadIO m) => LookupType -> BORL s as -> RSize -> (StateFeatures, FilteredActionIndices) -> m Value
+rStateValueWith :: (MonadIO m) => LookupType -> BORL s as -> RSize -> (StateFeatures, DisallowedActionIndicies) -> m Value
 rStateValueWith lkTp borl size (state, actIdxes) = reduceValues maxOrMin <$> lookupState lkTp (state, actIdxes) mr
   where
     maxOrMin =

@@ -13,6 +13,7 @@
 module ML.BORL.Serialisable where
 
 import           Control.Arrow                (first)
+import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (zipWithM_)
@@ -134,12 +135,12 @@ fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par
 
 instance Serialize Proxies
 instance Serialize ReplayMemories where
-  put (ReplayMemoriesUnified r)         = put (0 :: Int) >> put r
+  put (ReplayMemoriesUnified nr r)         = put (0 :: Int) >> put nr >> put r
   put (ReplayMemoriesPerActions nrAs tmp xs) = put (1 :: Int) >> put nrAs >> put tmp >> put (VB.toList xs)
   get = do
     nr <- get
     case (nr :: Int) of
-      0 -> ReplayMemoriesUnified <$> get
+      0 -> ReplayMemoriesUnified <$> get <*> get
       1 -> ReplayMemoriesPerActions <$> get <*> get <*> fmap VB.fromList get
       _ -> error "index error"
 
@@ -170,13 +171,13 @@ instance Serialize NNConfig where
 
 
 instance Serialize Proxy where
-  put (Scalar x) = put (0 :: Int) >> put (V.toList x)
+  put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
   get = do
     (c :: Int) <- get
     case c of
-      0 -> get >>= return . Scalar . V.fromList
+      0 -> Scalar <$> fmap V.fromList get <*> get
       1 -> do
         m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
         d <- V.fromList <$> get
@@ -201,12 +202,26 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd)) xs
+    -- put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, as), assel, rew, (V.toList st', as'), epsEnd)) xs
+    put $
+      map
+        (\((st, DisallowedActionIndicies as), assel, rew, (st', DisallowedActionIndicies as'), epsEnd) ->
+           ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd))
+        xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    (xs :: [Experience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, VB.fromList $ map V.fromList as), assel, rew, (V.fromList st', VB.fromList $ map V.fromList as'), epsEnd)) <$> get
+    -- (xs :: [InternalExperience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, as), assel, rew, (V.fromList st', as'), epsEnd)) <$> get
+    (xs :: [InternalExperience]) <-
+      map
+        (\((st, as), assel, rew, (st', as'), epsEnd) ->
+           ( (V.fromList st, DisallowedActionIndicies $ VB.fromList $ map V.fromList as)
+           , assel
+           , rew
+           , (V.fromList st', DisallowedActionIndicies $ VB.fromList $ map V.fromList as')
+           , epsEnd)) <$>
+      get
     maxIdx <- get
     return $
       unsafePerformIO $ do

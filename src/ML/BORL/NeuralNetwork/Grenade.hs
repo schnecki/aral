@@ -51,12 +51,14 @@ trainGrenade opt nnConfig mMinMaxVal net chs =
   let trainIter = nnConfig ^. trainingIterations
       cropFun = maybe id (\x -> max (-x) . min x) (nnConfig ^. cropTrainMaxValScaled)
       batchGradients = parMap (rparWith rdeepseq) (makeGradients cropFun net) chs
-      clippingRatio =
-        case mMinMaxVal of
-          Nothing               -> 0.01
-          Just (minVal, maxVal) -> 0.01 / (maxVal - minVal)
-      clipGrads | nnConfig ^. clipGradients = clipByGlobalNorm clippingRatio
-                | otherwise = id
+      -- clippingRatioDiv =
+      --   case mMinMaxVal of
+      --     Nothing               -> 1
+      --     Just (minVal, maxVal) -> (maxVal - minVal)
+      clipGrads = case  nnConfig ^. clipGradients of
+        NoClipping         -> id
+        ClipByGlobalNorm v -> clipByGlobalNorm v
+        ClipByValue v      -> clipByValue v
       -- res = foldl' (applyUpdate opt) net batchGradients
       res =
         -- force $
@@ -81,21 +83,29 @@ makeGradients ::
 makeGradients _ _ [] = error "Empty list of n-step updates in NeuralNetwork.Grenade"
 makeGradients cropFun net chs
   | length chs == 1 =
+    -- trace ("chs: " ++ show chs ++ "inputs: " ++ show inputs ++ "\noutputs: " ++ show outputs ++ "\nlabels:" ++ show labels)
     head $ parMap (rparWith rdeepseq) (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   | otherwise =
     -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) $
     -- foldl1 (|+) $
     sumG $
+
     parMap (rparWith rdeepseq) (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
     -- valueMap = foldl' (\m ((inp, acts), AgentValue outs) -> M.insertWith (++) inp (zipWith (\act out -> (act, cropFun out)) acts outs) m) mempty chs
-    valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
-    inputs = M.keys valueMap
+    -- valueMap :: M.Map StateFeatures [(ActionIndex, Double)]
+    -- valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
+    -- inputs = M.keys valueMap
+    -- (tapes, outputs) = unzip $ parMap (rparWith rdeepseq) (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
+    -- labels = zipWith (V.//) outputs (M.elems valueMap)
+    -- valueMap :: M.Map StateFeatures [(ActionIndex, Double)]
+    -- valueMap = foldl' (\m ((inp, act), out) -> M.insertWith (++) inp [(act, cropFun out)] m) mempty chs
+    inputs = map (fst.fst) chs
     (tapes, outputs) = unzip $ parMap (rparWith rdeepseq) (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
-    labels = zipWith (V.//) outputs (M.elems valueMap)
+    labels = zipWith (V.//) outputs (map (\((_,act),out) -> [(act, cropFun out)]) chs)
 
-runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrAgents -> StateFeatures -> [Values]
-runGrenade net nrAgents st = snd $ fromLastShapes net nrAgents $ runNetwork net (toHeadShapes net st)
+runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrActions -> NrAgents -> StateFeatures -> [Values]
+runGrenade net nrAs nrAgents st = snd $ fromLastShapes net nrAs nrAgents $ runNetwork net (toHeadShapes net st)
 
 
 mkLoss :: (Show a, Fractional a) => a -> a -> a
@@ -108,4 +118,5 @@ mkLoss o t =
      -- "r: " ++ show (0.5 * signum l * l^(2::Int))) undefined $
 
 
-    0.5 * signum l * l^(2::Int)
+    -- 0.5 * signum l * l^(2::Int)
+    signum l * l^(2::Int)

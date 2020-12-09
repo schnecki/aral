@@ -28,6 +28,11 @@ data ReplayMemoryStrategy
                                 -- the action is selected randomly.
   deriving (Show, Eq, Ord, Generic, NFData, Serialize)
 
+data Clipping = NoClipping              -- ^ No Clipping
+              | ClipByGlobalNorm Double -- ^ Specifies the maximum norm of the gradient on the normed values (-1,1).
+              | ClipByValue Double      -- ^ Clip the gradients by this exact value for the normed values in range (-1,1).
+  deriving (Show, Eq, Ord, Generic, NFData, Serialize)
+
 ------------------------------ NN Config ------------------------------
 
 data NNConfig =
@@ -48,7 +53,7 @@ data NNConfig =
                                                                    -- when using Tanh as output activation. Currently for Grenade only (as this part is in the sublibrary higher-level-tensorflow)!
     , _grenadeDropoutFlipActivePeriod  :: !Int                     -- ^ Flip dropout active/inactive state every X periods.
     , _grenadeDropoutOnlyInactiveAfter :: !Int                     -- ^ Keep dropout inactive when reaching the given number of periods. Set to 0 to inactive dropout active state flipping!
-    , _clipGradients                   :: Bool                     -- ^ Clip the gradients (takes time, but is a safer update). The amount is deduced by the min-max and the global norm.
+    , _clipGradients                   :: !Clipping                -- ^ Clip the gradients (takes time, but is a safer update).
     } deriving (Show)
 makeLenses ''NNConfig
 

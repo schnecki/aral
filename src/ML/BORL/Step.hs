@@ -26,11 +26,9 @@ import           Control.Arrow                      ((&&&), (***))
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
-import           Control.Monad.IO.Class             (liftIO)
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
-import           Data.Function                      (on)
 import           Data.Function                      (on)
 import           Data.List                          (find, foldl', groupBy, intercalate,
                                                      maximumBy, partition, sortBy,

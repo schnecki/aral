@@ -115,7 +115,7 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = True
+    , _clipGradients = ClipByGlobalNorm 0.01
     }
 
 borlSettings :: Settings

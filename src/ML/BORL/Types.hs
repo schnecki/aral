@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InstanceSigs        #-}
@@ -29,9 +30,17 @@ type FilteredActions as = VB.Vector (VB.Vector (Action as)) -- ^ List of agents 
 type NumberOfActions = Int
 
 -- ActionIndex
-type ActionIndex = Int
+type ActionIndex = Int                                        -- ^ This restricts to max 256 actions!
 type AgentActionIndices = VB.Vector ActionIndex               -- ^ One action index per agent
 type FilteredActionIndices = VB.Vector (V.Vector ActionIndex) -- ^ Allowed actions for each agent.
+newtype DisallowedActionIndicies = DisallowedActionIndicies (VB.Vector (V.Vector ActionIndex)) -- ^ Disallowed actions for each agent.
+  deriving (NFData, Generic)
+
+fromPositiveActionList :: NumberOfActions -> FilteredActionIndices -> DisallowedActionIndicies
+fromPositiveActionList nr as = DisallowedActionIndicies $ VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` (V.toList acts)]) as
+
+toPositiveActionList :: NumberOfActions -> DisallowedActionIndicies -> FilteredActionIndices
+toPositiveActionList nr (DisallowedActionIndicies nas) = VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` (V.toList acts)]) nas
 
 
 type ActionChoice = VB.Vector (IsRandomAction, ActionIndex)                       -- ^ One action per agent
