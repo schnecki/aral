@@ -179,14 +179,14 @@ decay =
     Parameters
       { _alpha            = ExponentialDecay (Just 5e-5) 0.5 10000  -- 5e-4
       , _alphaRhoMin      = NoDecay
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 25000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 25000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 25000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- [ExponentialDecay (Just 0.050) 0.05 150000]
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 25000
       , _learnRandomAbove = NoDecay
       }
 

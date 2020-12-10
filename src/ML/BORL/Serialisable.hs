@@ -202,26 +202,20 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    -- put $ map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.toList st, as), assel, rew, (V.toList st', as'), epsEnd)) xs
-    put $
-      map
-        (\((st, DisallowedActionIndicies as), assel, rew, (st', DisallowedActionIndicies as'), epsEnd) ->
-           ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd))
-        xs
+    let mkReplMem ((st, DisallowedActionIndicies as), assel, rew, (st', DisallowedActionIndicies as'), epsEnd) =
+          ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd)
+    put $ map mkReplMem xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    -- (xs :: [InternalExperience]) <- map (\((st,as), assel, rew, (st',as'), epsEnd) -> ((V.fromList st, as), assel, rew, (V.fromList st', as'), epsEnd)) <$> get
-    (xs :: [InternalExperience]) <-
-      map
-        (\((st, as), assel, rew, (st', as'), epsEnd) ->
-           ( (V.fromList st, DisallowedActionIndicies $ VB.fromList $ map V.fromList as)
-           , assel
-           , rew
-           , (V.fromList st', DisallowedActionIndicies $ VB.fromList $ map V.fromList as')
-           , epsEnd)) <$>
-      get
+    let mkReplMem ((st, as), assel, rew, (st', as'), epsEnd) =
+          ( (V.fromList st, DisallowedActionIndicies $ VB.fromList $ map V.fromList as)
+          , assel
+          , rew
+          , (V.fromList st', DisallowedActionIndicies $ VB.fromList $ map V.fromList as')
+          , epsEnd)
+    (xs :: [Experience]) <- map mkReplMem <$> get
     maxIdx <- get
     return $
       unsafePerformIO $ do

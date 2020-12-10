@@ -53,15 +53,8 @@ type Experience = ((StateFeatures, DisallowedActionIndicies),     -- State Featu
                    (StateNextFeatures, DisallowedActionIndicies), -- state features s' & allowed actions per agent
                    EpisodeEnd)                                    -- true, iff it is the end of the episode
 
-type InternalExperience = ((StateFeatures, DisallowedActionIndicies), -- State Features s & allowed actions per agent
-                   ActionChoice,                                         -- true, iff the action was randomly chosen, actionIndex a
-                   RewardValue,                                          -- reward r
-                   (StateFeatures, DisallowedActionIndicies),         -- state features s' & allowed actions per agent
-                   EpisodeEnd)                                           -- true, iff it is the end of the episode
-
-
 data ReplayMemory = ReplayMemory
-  { _replayMemoryVector :: !(VM.IOVector InternalExperience)
+  { _replayMemoryVector :: !(VM.IOVector Experience)
   , _replayMemorySize   :: !Int  -- size
   , _replayMemoryIdx    :: !Int  -- index to use when adding the next element
   , _replayMemoryMaxIdx :: !Int  -- in {0,..,size-1}
