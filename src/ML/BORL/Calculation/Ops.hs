@@ -408,8 +408,7 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
   let rhoVal'
         | randomAction = shareRhoVal (borl ^. settings) rhoVal
         | otherwise =
-          shareRhoVal (borl ^. settings) $
-          zipWithValue maxOrMin rhoMinimumState $
+          shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x -> toValue agents x
@@ -418,8 +417,8 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
         | borl ^. settings . overEstimateRho = shareRhoVal (borl ^. settings) $ mapValue (overEstimateRhoCalc borl) rhoVal'
         | otherwise = shareRhoVal (borl ^. settings) rhoVal'
   let rhoMinimumVal'
-        | randomAction = rhoMinimumState
-        | otherwise = zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
+        | randomAction = shareRhoVal (borl ^. settings) rhoMinimumState
+        | otherwise = shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
   let expStateNextValV
         | randomAction = epsEnd * vValStateNext
         | otherwise = fromMaybe (epsEnd * vValStateNext) (getExpectedValStateNextV expValStateNext)
