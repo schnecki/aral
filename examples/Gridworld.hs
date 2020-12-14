@@ -51,14 +51,14 @@ import           Debug.Trace
 expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld"
-    , _experimentInfoParameters   = [isNN]
-    , _experimentRepetitions      = 3
-    , _preparationSteps           = 300000
-    , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
-    , _evaluationReplications     = 3
-    , _maximumParallelEvaluations = 1
+    { _experimentBaseName = "gridworld"
+    , _experimentInfoParameters = [isNN]
+    , _experimentRepetitions = 3
+    , _preparationSteps = 300000
+    , _evaluationWarmUpSteps = 0
+    , _evaluationSteps = 10000
+    , _evaluationReplications = 3
+    , _evaluationMaxStepsBetweenSaves = Nothing
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))

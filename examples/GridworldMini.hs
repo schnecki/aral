@@ -60,14 +60,14 @@ goalY = 0
 expSetup :: BORL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "gridworld-mini 28.1."
-    , _experimentInfoParameters   = [isNN]
-    , _experimentRepetitions      = 40
-    , _preparationSteps           = 500000
-    , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
-    , _evaluationReplications     = 1
-    , _maximumParallelEvaluations = 1
+    { _experimentBaseName = "gridworld-mini 28.1."
+    , _experimentInfoParameters = [isNN]
+    , _experimentRepetitions = 40
+    , _preparationSteps = 500000
+    , _evaluationWarmUpSteps = 0
+    , _evaluationSteps = 10000
+    , _evaluationReplications = 1
+    , _evaluationMaxStepsBetweenSaves = Nothing
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))

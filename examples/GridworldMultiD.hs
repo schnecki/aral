@@ -55,7 +55,7 @@ expSetup borl =
     , _evaluationWarmUpSteps      = 0
     , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
-    , _maximumParallelEvaluations = 1
+    , _evaluationMaxStepsBetweenSaves = Nothing
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))

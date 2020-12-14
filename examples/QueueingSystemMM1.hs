@@ -99,7 +99,7 @@ expSetup borl =
     , _evaluationWarmUpSteps      = 0
     , _evaluationSteps            = 100000
     , _evaluationReplications     = 1
-    , _maximumParallelEvaluations = 1
+    , _evaluationMaxStepsBetweenSaves = Nothing
     }
 
   where
