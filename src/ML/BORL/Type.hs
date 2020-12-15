@@ -128,7 +128,7 @@ data BORL s as = BORL
   , _s                 :: !s                       -- ^ Current state.
   , _workers           :: !(Workers s)             -- ^ Additional workers. (Workers s = [WorkerState s])
 
-  , _featureExtractor  :: !(FeatureExtractor s)    -- ^ Function that extracts the features of a state.
+  , _featureExtractor  :: !(FeatureExtractor s)    -- ^ Function that extracts the features of a state. For ANNs the resulting values are expected to be in the range (-1,1).
   , _t                 :: !Int                     -- ^ Current time t.
   , _episodeNrStart    :: !(Int, Int)              -- ^ Nr of Episode and start period.
   , _parameters        :: !ParameterInitValues     -- ^ Parameter setup.

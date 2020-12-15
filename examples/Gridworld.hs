@@ -32,7 +32,6 @@ import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import qualified Data.Vector.Storable     as V
 import           GHC.Generics
-import           GHC.Int                  (Int64)
 import           GHC.TypeLits
 import           Grenade
 import           Prelude                  hiding (Left, Right)

@@ -13,10 +13,15 @@ module ML.BORL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad       (foldM)
-import           Data.Maybe          (fromJust, isNothing)
-import qualified Data.Vector         as VB
-import qualified Data.Vector.Mutable as VM
+import           Control.Monad        (foldM)
+import           Data.Int
+import           Data.List            (genericLength)
+import           Data.Maybe           (fromJust, isNothing)
+import qualified Data.Vector          as VB
+import qualified Data.Vector.Mutable  as VM
+import qualified Data.Vector.Storable as VS
+import qualified Data.Vector.Unboxed  as V
+import           Data.Word
 import           GHC.Generics
 import           System.Random
 
@@ -47,17 +52,48 @@ instance NFData ReplayMemories where
 
 ------------------------------ Replay Memory ------------------------------
 
-type Experience = ((StateFeatures, DisallowedActionIndicies),     -- State Features s & allowed actions per agent
-                   ActionChoice,                                  -- true, iff the action was randomly chosen, actionIndex a
-                   RewardValue,                                   -- reward r
-                   (StateNextFeatures, DisallowedActionIndicies), -- state features s' & allowed actions per agent
-                   EpisodeEnd)                                    -- true, iff it is the end of the episode
+-- ^ Experience for the outside world. Internal representation is more memory efficient, see @InternalExperience@. The invariant is that the state features are in (-1,1).
+type Experience
+   = ( (StateFeatures, DisallowedActionIndicies)     -- ^ State Features s & disallowed actions per agent
+     , ActionChoice                                  -- ^ True, iff the action was randomly chosen, actionIndex a
+     , RewardValue                                   -- ^ Reward r
+     , (StateNextFeatures, DisallowedActionIndicies) -- ^ State features s' & disallowed actions per agent
+     , EpisodeEnd                                    -- ^ True, iff it is the end of the episode
+      )
+
+-- ^ Internal representation, which is more memory efficient. The invariant is that the state features are in (-1,1).
+type InternalExperience
+   = ((VS.Vector Int8, Maybe (VB.Vector (VS.Vector Word8))), ActionChoice, RewardValue, (VS.Vector Int8, Maybe (VB.Vector (VS.Vector Word8))), EpisodeEnd, Word8)
+
+-- ^ Convert to internal representation.
+toInternal :: Experience -> InternalExperience
+toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActionIndicies dis'), eps) = ((VS.map toInt8 stFt, toDis dis), act, r, (VS.map toInt8 stFt', toDis dis'), eps, fromIntegral $ VB.length dis)
+  where
+    toDis :: VB.Vector (VS.Vector ActionIndex) -> Maybe (VB.Vector (VS.Vector Word8))
+    toDis nas | all VS.null nas = Nothing
+              | otherwise = Just $ VB.map (VS.map fromIntegral) nas
+    toInt8 :: Double -> Int8
+    toInt8 !x = fromIntegral (round (x * 100) :: Int)
+
+
+-- ^ Convert from internal representation.
+fromInternal :: InternalExperience -> Experience
+fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromInt8 stFt, fromDis dis), act, r, (VS.map fromInt8 stFt', fromDis dis'), eps)
+  where
+    fromDis :: Maybe (VB.Vector (VS.Vector Word8)) -> DisallowedActionIndicies
+    fromDis Nothing = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
+    fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
+    fromInt8 :: Int8 -> Double
+    fromInt8 !x = fromIntegral x / 100
+
+
+-------------------- Replay Memory --------------------
 
 data ReplayMemory = ReplayMemory
-  { _replayMemoryVector :: !(VM.IOVector Experience)
-  , _replayMemorySize   :: !Int  -- size
-  , _replayMemoryIdx    :: !Int  -- index to use when adding the next element
-  , _replayMemoryMaxIdx :: !Int  -- in {0,..,size-1}
+  { _replayMemoryVector :: !(VM.IOVector InternalExperience) -- ^ Memory
+  , _replayMemorySize   :: !Int                              -- ^ Memory size
+  , _replayMemoryIdx    :: !Int                              -- ^ Index to use when adding the next element
+  , _replayMemoryMaxIdx :: !Int                              -- ^ max index which is in {0,..,size-1}
   }
 makeLenses ''ReplayMemory
 
@@ -68,23 +104,23 @@ instance NFData ReplayMemory where
   rnf (ReplayMemory !_ s idx mx) = rnf s `seq` rnf idx `seq` rnf mx
 
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
-addToReplayMemories _ e (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> addToReplayMemory nr e rm
+addToReplayMemories _ e (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> addToReplayMemory nr (toInternal e) rm
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs)
   | VB.length actChoices == 1 = do
     let (_,idx) = VB.head actChoices
     let r = rs VB.! idx
-    r' <- addToReplayMemory nrAs e r
+    r' <- addToReplayMemory nrAs (toInternal e) r
     return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(idx, r')])
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs) = do
   agent <- randomRIO (0, length actChoices - 1) -- randomly choose an agent that specifies the action
   let actionIdx = snd $ actChoices VB.! agent
       memIdx = agent * nrAs + actionIdx
   let r = rs VB.! memIdx
-  r' <- addToReplayMemory nrAs e r
+  r' <- addToReplayMemory nrAs (toInternal e) r
   return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(memIdx, r')])
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions nrAs Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
-  tmpRepMem' <- addToReplayMemory nrAs e tmpRepMem
+  tmpRepMem' <- addToReplayMemory nrAs (toInternal e) tmpRepMem
   if tmpRepMem' ^. replayMemoryIdx == 0
     then do -- temporary replay memory full, add experience to corresponding action memory
     let vec = tmpRepMem' ^. replayMemoryVector
@@ -102,12 +138,13 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
-addToReplayMemory :: NumberOfActions -> Experience -> ReplayMemory -> IO ReplayMemory
+addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
 addToReplayMemory nrAs e (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) (force e)
   return $ ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
-type AllExpAreConsecutive = Bool
+
+type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are consecutive.
 
 -- | Get a list of random input-output tuples from the replay memory. Returns a list at least the length of the batch size with a list of consecutive experiences without a terminal state in between.
 -- In case a terminal state is detected the list is split and the first list exeecds the batchsize.
@@ -119,7 +156,7 @@ getRandomReplayMemoryElements _ 1 bs (ReplayMemory vec size _ maxIdx) = do
   let rands
         | len == size = take len [0 .. maxIdx]
         | otherwise = take len $ randomRs (0, maxIdx) g
-  map return <$> mapM (VM.read vec) rands
+  map (return . fromInternal) <$> mapM (VM.read vec) rands
 getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consequitive experiences
   let len = min bs ((1 + maxIdx) `div` nStep)
   g <- newStdGen
@@ -129,7 +166,7 @@ getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = d
       idxes = map (\r -> filter (>= 0) [r - nStep + 1 .. r]) rands
   concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
-    splitTerminal xs = filter (not . null) $ splitList isTerminal xs
+    splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
 getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
   | nStep > maxIdx + 1 = return []
   | otherwise = do
@@ -141,7 +178,7 @@ getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
         idxes = map (\r -> [r .. r + nStep - 1]) rands
     concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
-    splitTerminal xs = filter (not . null) $ splitList isTerminal xs
+    splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
 
 isTerminal :: Experience -> Bool
 isTerminal (_, _, _, _, t) = t

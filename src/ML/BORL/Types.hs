@@ -33,6 +33,7 @@ type NumberOfActions = Int
 type ActionIndex = Int                                        -- ^ This restricts to max 256 actions!
 type AgentActionIndices = VB.Vector ActionIndex               -- ^ One action index per agent
 type FilteredActionIndices = VB.Vector (V.Vector ActionIndex) -- ^ Allowed actions for each agent.
+
 newtype DisallowedActionIndicies = DisallowedActionIndicies (VB.Vector (V.Vector ActionIndex)) -- ^ Disallowed actions for each agent.
   deriving (NFData, Generic)
 

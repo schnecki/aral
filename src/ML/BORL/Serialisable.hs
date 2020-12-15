@@ -19,6 +19,7 @@ import           Control.Lens
 import           Control.Monad                (zipWithM_)
 import           Control.Monad.IO.Class
 import           Data.Constraint              (Dict (..))
+import           Data.Int
 import           Data.List                    (foldl')
 import qualified Data.Map                     as M
 import           Data.Serialize
@@ -28,6 +29,7 @@ import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Mutable          as VM
 import qualified Data.Vector.Storable         as V
+import           Data.Word
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
@@ -202,20 +204,18 @@ instance Serialize ReplayMemory where
     let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    let mkReplMem ((st, DisallowedActionIndicies as), assel, rew, (st', DisallowedActionIndicies as'), epsEnd) =
-          ((V.toList st, VB.toList $ VB.map V.toList as), assel, rew, (V.toList st', VB.toList $ VB.map V.toList as'), epsEnd)
+    let mkReplMem :: InternalExperience -> (([Int8], Maybe [[Word8]]), ActionChoice, RewardValue, ([Int8], Maybe [[Word8]]), EpisodeEnd, Word8)
+        mkReplMem ((st, as), assel, rew, (st', as'), epsEnd, nrAgs) =
+          ((V.toList st, VB.toList . VB.map V.toList <$> as), assel, rew, (V.toList st', VB.toList . VB.map V.toList <$> as'), epsEnd, nrAgs)
     put $ map mkReplMem xs
     put maxIdx
   get = do
     sz <- get
     idx <- get
-    let mkReplMem ((st, as), assel, rew, (st', as'), epsEnd) =
-          ( (V.fromList st, DisallowedActionIndicies $ VB.fromList $ map V.fromList as)
-          , assel
-          , rew
-          , (V.fromList st', DisallowedActionIndicies $ VB.fromList $ map V.fromList as')
-          , epsEnd)
-    (xs :: [Experience]) <- map mkReplMem <$> get
+    let mkReplMem :: (([Int8], Maybe [[Word8]]), ActionChoice, RewardValue, ([Int8], Maybe [[Word8]]), EpisodeEnd, Word8) -> InternalExperience
+        mkReplMem ((st, as), assel, rew, (st', as'), epsEnd, nrAg) =
+          ((V.fromList st, fmap (VB.fromList . map V.fromList) as), assel, rew, (V.fromList st', fmap (VB.fromList . map V.fromList) as'), epsEnd, nrAg)
+    (xs :: [InternalExperience]) <- map mkReplMem <$> get
     maxIdx <- get
     return $
       unsafePerformIO $ do
