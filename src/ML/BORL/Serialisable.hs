@@ -7,7 +7,9 @@
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE Strict              #-}
 {-# LANGUAGE Unsafe              #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 
 module ML.BORL.Serialisable where
@@ -16,7 +18,7 @@ import           Control.Arrow                (first)
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (zipWithM_)
+import           Control.Monad                (foldM_, zipWithM_)
 import           Control.Monad.IO.Class
 import           Data.Constraint              (Dict (..))
 import           Data.Int
@@ -176,7 +178,7 @@ instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
-  get = do
+  get = fmap force $! do
     (c :: Int) <- get
     case c of
       0 -> Scalar <$> fmap V.fromList get <*> get
@@ -198,27 +200,47 @@ instance Serialize Proxy where
           _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.BORL.Serialisable")
       _ -> error "Unknown constructor for proxy"
 
+
 -- ^ Replay Memory
 instance Serialize ReplayMemory where
   put (ReplayMemory vec sz idx maxIdx) = do
-    let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
+    -- let xs = unsafePerformIO $ mapM (VM.read vec) [0 .. maxIdx]
     put sz
     put idx
-    let mkReplMem :: InternalExperience -> (([Int8], Maybe [[Word8]]), ActionChoice, RewardValue, ([Int8], Maybe [[Word8]]), EpisodeEnd, Word8)
-        mkReplMem ((st, as), assel, rew, (st', as'), epsEnd, nrAgs) =
-          ((V.toList st, VB.toList . VB.map V.toList <$> as), assel, rew, (V.toList st', VB.toList . VB.map V.toList <$> as'), epsEnd, nrAgs)
-    put $ map mkReplMem xs
     put maxIdx
+    let putReplMem :: Int -> PutM ()
+    -- (([Int8], Maybe [[Word8]]), ActionChoice, RewardValue, ([Int8], Maybe [[Word8]]), EpisodeEnd, Word8)
+        putReplMem (-1) = return ()
+        putReplMem idx = do
+          let ((st, as), assel, rew, (st', as'), epsEnd, nrAgs) = unsafePerformIO $ VM.read vec idx
+          let !stL =  force $ V.toList st
+              !asL =  force $ fmap (VB.toList . VB.map V.toList) as
+              !stL' = force $ V.toList st'
+              !asL' = force $ fmap (VB.toList . VB.map V.toList) as'
+          put ((stL, asL), assel, rew, (stL', asL'), epsEnd, nrAgs)
+          putReplMem (idx-1)
+    putReplMem maxIdx
   get = do
-    sz <- get
-    idx <- get
-    let mkReplMem :: (([Int8], Maybe [[Word8]]), ActionChoice, RewardValue, ([Int8], Maybe [[Word8]]), EpisodeEnd, Word8) -> InternalExperience
-        mkReplMem ((st, as), assel, rew, (st', as'), epsEnd, nrAg) =
-          ((V.fromList st, fmap (VB.fromList . map V.fromList) as), assel, rew, (V.fromList st', fmap (VB.fromList . map V.fromList) as'), epsEnd, nrAg)
-    (xs :: [InternalExperience]) <- map mkReplMem <$> get
-    maxIdx <- get
-    return $
-      unsafePerformIO $ do
-        vec <- VM.new sz
-        vec `seq` zipWithM_ (VM.write vec) [0 .. maxIdx] xs
-        return (ReplayMemory vec sz idx maxIdx)
+    !sz <- get
+    !idx <- get
+    !maxIdx <- get
+    let !vec = unsafePerformIO $ VM.new sz
+    let getReplMem :: Int -> Get ()
+        getReplMem (-1) = return ()
+        getReplMem idx = do
+          ((!st, !as), !assel, !rew, (!st', !as'), !epsEnd, !nrAg) <- get
+          let !stV = force $ V.fromList st
+              !asV = force $ fmap (VB.fromList . map V.fromList) as
+              !stV' = force $ V.fromList st'
+              !asV' = force $ fmap (VB.fromList . map V.fromList) as'
+              !tuple = ((stV, asV), assel, rew, (stV', asV'), epsEnd, nrAg)
+          unsafePerformIO (VM.write vec idx tuple) `seq` getReplMem (idx-1)
+    getReplMem maxIdx
+    return $! ReplayMemory vec sz idx maxIdx
+    -- -- (xs :: [InternalExperience]) <- map (force . mkReplMem) <$> get
+    -- return $!
+    --   force $!
+    --   unsafePerformIO $! do
+    --     !vec <- VM.new sz
+    --     vec `seq` foldM_ (\i x -> VM.write vec i x >> return (i + 1)) 0 xs
+    --     return $! ReplayMemory vec sz idx maxIdx

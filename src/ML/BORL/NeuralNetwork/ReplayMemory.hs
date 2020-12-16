@@ -1,11 +1,13 @@
 {-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE DeriveAnyClass  #-}
 {-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE GADTs           #-}
 {-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE Strict          #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ViewPatterns    #-}
 
 
 module ML.BORL.NeuralNetwork.ReplayMemory where
@@ -23,6 +25,7 @@ import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed  as V
 import           Data.Word
 import           GHC.Generics
+import           System.IO.Unsafe     (unsafePerformIO)
 import           System.Random
 
 import           ML.BORL.Types
@@ -101,7 +104,9 @@ instance Show ReplayMemory where
   show (ReplayMemory _ sz idx maxIdx) = "Replay Memory with size " <> show sz <> ". Next index: " <> show idx <> "/" <> show maxIdx
 
 instance NFData ReplayMemory where
-  rnf (ReplayMemory !_ s idx mx) = rnf s `seq` rnf idx `seq` rnf mx
+  rnf (ReplayMemory !vec s idx mx) = rnf s `seq` rnf idx `seq` rnf mx -- `seq` unsafePerformIO (frc mx)
+    -- where frc (-1) = return ()
+    --       frc idx  = VM.modify vec force idx >> frc (idx-1)
 
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
 addToReplayMemories _ e (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> addToReplayMemory nr (toInternal e) rm
@@ -109,7 +114,7 @@ addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs 
   | VB.length actChoices == 1 = do
     let (_,idx) = VB.head actChoices
     let r = rs VB.! idx
-    r' <- addToReplayMemory nrAs (toInternal e) r
+    !r' <- addToReplayMemory nrAs (toInternal e) r
     return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(idx, r')])
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs) = do
   agent <- randomRIO (0, length actChoices - 1) -- randomly choose an agent that specifies the action
@@ -120,28 +125,30 @@ addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs 
   return $! ReplayMemoriesPerActions nrAs tmp (rs VB.// [(memIdx, r')])
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs Nothing rs) = addToReplayMemories 1 e (ReplayMemoriesPerActions nrAs Nothing rs) -- cannot use action tmp replay memory, add immediately
 addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
-  tmpRepMem' <- addToReplayMemory nrAs (toInternal e) tmpRepMem
+  !tmpRepMem' <- addToReplayMemory nrAs (toInternal e) tmpRepMem
   if tmpRepMem' ^. replayMemoryIdx == 0
     then do -- temporary replay memory full, add experience to corresponding action memory
-    let vec = tmpRepMem' ^. replayMemoryVector
-    mems <- mapM (VM.read vec) [0.. tmpRepMem' ^. replayMemorySize-1]
-    startIdx <- case head mems ^. _2 of
-          idxs | VB.length idxs == 1       -> return (snd $ VB.head idxs)
-          idxs      -> do
+      let !vec = tmpRepMem' ^. replayMemoryVector
+      !mems <- mapM (VM.read vec) [0 .. tmpRepMem' ^. replayMemorySize - 1]
+      !startIdx <-
+        case head mems ^. _2 of
+          idxs
+            | VB.length idxs == 1 -> return (snd $ VB.head idxs)
+          idxs -> do
             agent <- randomRIO (0, length idxs - 1) -- randomly choose an agents first action
-            return $ agent * nrAs + snd (idxs VB.! agent)
-    let r = rs VB.! startIdx
-    r' <- foldM (flip $ addToReplayMemory nrAs) r mems
-    return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
+            return $! agent * nrAs + snd (idxs VB.! agent)
+      let !r = rs VB.! startIdx
+      !r' <- foldM (flip $ addToReplayMemory nrAs) r mems
+      return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
     else return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
 
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
 -- reached.
 addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
-addToReplayMemory nrAs e (ReplayMemory vec sz idx maxIdx) = do
-  VM.write vec (fromIntegral idx) (force e)
-  return $ ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
+addToReplayMemory nrAs (force -> !e) (ReplayMemory vec sz idx maxIdx) = do
+  VM.write vec (fromIntegral idx) e
+  return $! ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
 
 type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are consecutive.
