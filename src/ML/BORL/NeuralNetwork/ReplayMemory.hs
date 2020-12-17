@@ -33,6 +33,8 @@ import           ML.BORL.Types
 
 ------------------------------ Replay Memories ------------------------------
 
+type IntX = Int16
+
 
 data ReplayMemories
   = ReplayMemoriesUnified !NumberOfActions !ReplayMemory                                      -- ^ All experiences are saved in a single replay memory.
@@ -66,28 +68,28 @@ type Experience
 
 -- ^ Internal representation, which is more memory efficient. The invariant is that the state features are in (-1,1).
 type InternalExperience
-   = ((VS.Vector Int8, Maybe (VB.Vector (VS.Vector Word8))), ActionChoice, RewardValue, (VS.Vector Int8, Maybe (VB.Vector (VS.Vector Word8))), EpisodeEnd, Word8)
+   = ((VS.Vector IntX, Maybe (VB.Vector (VS.Vector Word8))), ActionChoice, RewardValue, (VS.Vector IntX, Maybe (VB.Vector (VS.Vector Word8))), EpisodeEnd, Word8)
 
 -- ^ Convert to internal representation.
 toInternal :: Experience -> InternalExperience
-toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActionIndicies dis'), eps) = ((VS.map toInt8 stFt, toDis dis), act, r, (VS.map toInt8 stFt', toDis dis'), eps, fromIntegral $ VB.length dis)
+toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActionIndicies dis'), eps) = ((VS.map toIntX stFt, toDis dis), act, r, (VS.map toIntX stFt', toDis dis'), eps, fromIntegral $ VB.length dis)
   where
     toDis :: VB.Vector (VS.Vector ActionIndex) -> Maybe (VB.Vector (VS.Vector Word8))
     toDis nas | all VS.null nas = Nothing
               | otherwise = Just $ VB.map (VS.map fromIntegral) nas
-    toInt8 :: Double -> Int8
-    toInt8 !x = fromIntegral (round (x * 100) :: Int)
+    toIntX :: Double -> IntX
+    toIntX !x = fromIntegral (round (x * 100) :: Int)
 
 
 -- ^ Convert from internal representation.
 fromInternal :: InternalExperience -> Experience
-fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromInt8 stFt, fromDis dis), act, r, (VS.map fromInt8 stFt', fromDis dis'), eps)
+fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromIntX stFt, fromDis dis), act, r, (VS.map fromIntX stFt', fromDis dis'), eps)
   where
     fromDis :: Maybe (VB.Vector (VS.Vector Word8)) -> DisallowedActionIndicies
     fromDis Nothing = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
     fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
-    fromInt8 :: Int8 -> Double
-    fromInt8 !x = fromIntegral x / 100
+    fromIntX :: IntX -> Double
+    fromIntX !x = fromIntegral x / 100
 
 
 -------------------- Replay Memory --------------------
