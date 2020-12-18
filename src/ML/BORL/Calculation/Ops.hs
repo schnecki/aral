@@ -420,8 +420,8 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
         | randomAction = shareRhoVal (borl ^. settings) rhoMinimumState
         | otherwise = shareRhoVal (borl ^. settings) $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
   let expStateNextValV
-        | randomAction = epsEnd * vValStateNext
-        | otherwise = fromMaybe (epsEnd * vValStateNext) (getExpectedValStateNextV expValStateNext)
+        | randomAction = epsEnd .* vValStateNext
+        | otherwise = fromMaybe (epsEnd .* vValStateNext) (getExpectedValStateNextV expValStateNext)
       expStateValV = reward .- rhoValOverEstimated + expStateNextValV
   let vValState' = (1 - bta) .* vValState + bta .* (reward .- rhoValOverEstimated + expStateValV)
   let lastVs' = VB.take keepXLastValues $ vValState' `VB.cons` (borl ^. lastVValues)
@@ -464,10 +464,10 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let expStateNextValR1
-        | randomAction = epsEnd * r1StateNext
-        | otherwise = fromMaybe (epsEnd * r1StateNext) (getExpectedValStateNextR1 expValStateNext)
+        | randomAction = epsEnd .* r1StateNext
+        | otherwise = fromMaybe (epsEnd .* r1StateNext) (getExpectedValStateNextR1 expValStateNext)
       expStateValR1 = reward .+ ga .* expStateNextValR1
-  let r1ValState' = (1 - gam) .* r1ValState + gam .* (reward .+ epsEnd * expStateValR1)
+  let r1ValState' = (1 - gam) .* r1ValState + gam .* (reward .+ epsEnd .* expStateValR1)
   return
     ( emptyCalculation
         { getR1ValState' = Just r1ValState'

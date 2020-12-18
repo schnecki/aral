@@ -102,10 +102,10 @@ alg :: Algorithm St
 alg =
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.5  Exact
-        -- AlgDQN 0.8027  Exact
+        AlgDQN 0.8027  Exact
         -- AlgDQN 0.50  EpsilonSensitive
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgBORLVOnly ByStateValues mRefStateAct
         -- AlgBORL 0.5 0.8 ByStateValues mRefStateAct

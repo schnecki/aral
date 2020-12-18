@@ -17,15 +17,12 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad        (foldM)
 import           Data.Int
-import           Data.List            (genericLength)
 import           Data.Maybe           (fromJust, isNothing)
 import qualified Data.Vector          as VB
 import qualified Data.Vector.Mutable  as VM
 import qualified Data.Vector.Storable as VS
-import qualified Data.Vector.Unboxed  as V
 import           Data.Word
 import           GHC.Generics
-import           System.IO.Unsafe     (unsafePerformIO)
 import           System.Random
 
 import           ML.BORL.Types
@@ -35,11 +32,14 @@ import           ML.BORL.Types
 
 type IntX = Int16
 
+shift :: Double
+shift = 1000 -- 100 for Int8, 100 or 1000 for Int16
+
 
 data ReplayMemories
   = ReplayMemoriesUnified !NumberOfActions !ReplayMemory                                      -- ^ All experiences are saved in a single replay memory.
   | ReplayMemoriesPerActions !NumberOfActions !(Maybe ReplayMemory) !(VB.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of
-                                                                                            -- experiences. For multiple agents the action that is used to save the experience is selected randomly.
+                                                                                              -- experiences. For multiple agents the action that is used to save the experience is selected randomly.
   deriving (Generic)
 
 instance Show ReplayMemories where
@@ -78,7 +78,7 @@ toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActi
     toDis nas | all VS.null nas = Nothing
               | otherwise = Just $ VB.map (VS.map fromIntegral) nas
     toIntX :: Double -> IntX
-    toIntX !x = fromIntegral (round (x * 100) :: Int)
+    toIntX !x = fromIntegral (round (x * shift) :: Int)
 
 
 -- ^ Convert from internal representation.
@@ -89,7 +89,7 @@ fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromIntX
     fromDis Nothing = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
     fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
     fromIntX :: IntX -> Double
-    fromIntX !x = fromIntegral x / 100
+    fromIntX !x = fromIntegral x / shift
 
 
 -------------------- Replay Memory --------------------
@@ -106,10 +106,10 @@ instance Show ReplayMemory where
   show (ReplayMemory _ sz idx maxIdx) = "Replay Memory with size " <> show sz <> ". Next index: " <> show idx <> "/" <> show maxIdx
 
 instance NFData ReplayMemory where
-  rnf (ReplayMemory !vec s idx mx) = rnf s `seq` rnf idx `seq` rnf mx -- `seq` unsafePerformIO (frc mx)
-    -- where frc (-1) = return ()
-    --       frc idx  = VM.modify vec force idx >> frc (idx-1)
+  rnf (ReplayMemory !vec s idx mx) = rnf s `seq` rnf idx `seq` rnf mx
 
+
+-- | Add an experience to the Replay Memory.
 addToReplayMemories :: NStep -> Experience -> ReplayMemories -> IO ReplayMemories
 addToReplayMemories _ e (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> addToReplayMemory nr (toInternal e) rm
 addToReplayMemories 1 e@(_, actChoices, _, _, _) (ReplayMemoriesPerActions nrAs tmp rs)
@@ -145,8 +145,7 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
     else return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
 
 
--- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is
--- reached.
+-- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is reached.
 addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
 addToReplayMemory nrAs (force -> !e) (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) e
