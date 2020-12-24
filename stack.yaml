@@ -2,7 +2,6 @@ flags: {}
 packages:
 - .
 - examples/
-- experimenter
 - grenade
 - gym-haskell
 - gym-haskell/haskell-cpython
@@ -14,6 +13,7 @@ extra-deps:
 - proto-lens-runtime-0.5.0.0@sha256:cb39cf13ce4f7dac5414f94a7afe0adc9b831312e6b60588a23bd816accc385f,3132
 - cublas-0.6.0.0@sha256:f25a633f067f31b6df0aff751710b1a4d79d39c5ed717462879e0ece46cf294b,2363
 - cuda-0.10.2.0@sha256:29912a2273840bbad934b404c7bd27633a1b9b5449c57ae8118bc35e7dcfeb74,5656
+- experimenter-0.1.0.2@sha256:ba0d63d5b4fda9e21b58962fc429a98785f8e5130a49d4dc8a8e278adaf73eb6,3826
 
 allow-newer: false
 resolver: lts-16.20
