@@ -101,28 +101,29 @@ instance RewardFuture St where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
-    , _trainBatchSize = 8
+    { _replayMemoryMaxSize = 10000
+    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
+    , _trainBatchSize = 4
     , _trainingIterations = 1
-    , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
+    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
-    , _grenadeSmoothTargetUpdatePeriod = 1
-    , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
-    , _prettyPrintElems = take 500 $ map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _grenadeSmoothTargetUpdatePeriod = 100
+    , _learningParamsDecay = NoDecay -- ExponentialDecay (Just 1e-6) 0.75 10000
+    , _prettyPrintElems = take 250 $ map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 10
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = ClipByGlobalNorm 0.01
+    , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
     }
 
 borlSettings :: Settings
 borlSettings = def
-  { _workersMinExploration = [0.3, 0.2, 0.1]
-  , _nStep = 2
+  { _workersMinExploration = replicate 7 0.01 -- ++ [0.1, 0.2, 0.3]
+  , _nStep = 4
   , _independentAgents = dim
+  , _overEstimateRho = True
   }
 
 
@@ -138,28 +139,46 @@ params =
     , _epsilon             = 0.25
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 1.5
+    , _learnRandomAbove    = 0.7
     , _zeta                = 0.03
     , _xi                  = 0.005
 
     }
 
+
 -- | Decay function of parameters.
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 5e-5) 0.5 25000  -- 5e-4
       , _alphaRhoMin      = NoDecay
-      , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
-      , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
+      , _beta             = ExponentialDecay (Just 1e-4) 0.5 50000
+      , _delta            = ExponentialDecay (Just 5e-4) 0.5 50000
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 50000
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _epsilon          = [NoDecay] -- [ExponentialDecay (Just 0.050) 0.05 150000]
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 25000
       , _learnRandomAbove = NoDecay
       }
+
+-- -- | Decay function of parameters.
+-- decay :: ParameterDecaySetting
+-- decay =
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+--       , _alphaRhoMin      = NoDecay
+--       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+--       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+--       , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
+--       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+--       , _xi               = NoDecay
+--       -- Exploration
+--       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
+--       , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+--       , _learnRandomAbove = NoDecay
+--       }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
@@ -179,7 +198,7 @@ alg =
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
@@ -205,11 +224,11 @@ usermode = do
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
 modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
-  buildModel $
+  buildModelWith (def { cpuBackend = BLAS }) def $
   inputLayer1D lenIn >>
   fullyConnected 36 >> relu >> -- dropout 0.90 >>
   fullyConnected 24 >> relu >>
-  fullyConnected 24 >> relu >>
+  -- fullyConnected 24 >> relu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols

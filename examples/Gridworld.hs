@@ -168,7 +168,7 @@ params =
     , _epsilon             = 0.25
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 0.75
+    , _learnRandomAbove    = 0.8
 
     }
 

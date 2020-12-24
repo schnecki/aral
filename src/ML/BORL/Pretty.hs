@@ -308,9 +308,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
     text "Strategy" <> colon <+> text (show $ borl ^. settings . explorationStrategy) $+$
     text "Exploration" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. exploration) <+> parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. exploration)) $+$
     nnWorkers $+$
-    algDoc
-      (text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. learnRandomAbove) <+>
-       parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. learnRandomAbove))) $+$
+    text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. learnRandomAbove) <+>
+       parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. learnRandomAbove)) $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$

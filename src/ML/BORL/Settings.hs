@@ -29,4 +29,4 @@ makeLenses ''Settings
 
 
 instance Default Settings where
-  def = Settings EpsilonGreedy [] False 1 False True False 1 True
+  def = Settings EpsilonGreedy [] False 1 False True False 1 False

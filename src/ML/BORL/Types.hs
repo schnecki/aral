@@ -35,7 +35,7 @@ type AgentActionIndices = VB.Vector ActionIndex               -- ^ One action in
 type FilteredActionIndices = VB.Vector (V.Vector ActionIndex) -- ^ Allowed actions for each agent.
 
 newtype DisallowedActionIndicies = DisallowedActionIndicies (VB.Vector (V.Vector ActionIndex)) -- ^ Disallowed actions for each agent.
-  deriving (NFData, Generic)
+  deriving (NFData, Generic, Show)
 
 fromPositiveActionList :: NumberOfActions -> FilteredActionIndices -> DisallowedActionIndicies
 fromPositiveActionList nr as = DisallowedActionIndicies $ VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` (V.toList acts)]) as
