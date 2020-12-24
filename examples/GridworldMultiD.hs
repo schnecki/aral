@@ -102,9 +102,9 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000
-    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
     , _trainBatchSize = 4
-    , _trainingIterations = 1
+    , _trainingIterations = 3
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
     , _grenadeSmoothTargetUpdatePeriod = 100
@@ -123,7 +123,8 @@ borlSettings = def
   { _workersMinExploration = replicate 7 0.01 -- ++ [0.1, 0.2, 0.3]
   , _nStep = 4
   , _independentAgents = dim
-  , _overEstimateRho = True
+  , _overEstimateRho = False -- True
+  , _independentAgentsSharedRho = True
   }
 
 

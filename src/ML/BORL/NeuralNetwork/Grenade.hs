@@ -89,7 +89,6 @@ makeGradients cropFun net chs
     -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) $
     -- foldl1 (|+) $
     sumG $
-
     parMap (rparWith rdeepseq) (\(tape, output, label) -> fst $ runGradient net tape (mkLoss (toLastShapes net output) (toLastShapes net label))) (zip3 tapes outputs labels)
   where
     -- valueMap = foldl' (\m ((inp, acts), AgentValue outs) -> M.insertWith (++) inp (zipWith (\act out -> (act, cropFun out)) acts outs) m) mempty chs
