@@ -301,8 +301,8 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       gam = getExpSmthParam borl r1 gamma
   let agents = borl ^. settings . independentAgents
   let params' = decayedParameters borl
-  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
-  let initPhase = maybe False ((borl ^. t <=) . replayMemoriesSubSize ) (borl ^. proxies . replayMemory)
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove && maybe True ((borl ^. t - 1000 >) . replayMemoriesSubSize) (borl ^. proxies . replayMemory)
+  let initPhase = maybe False ((borl ^. t <=) . replayMemoriesSubSize) (borl ^. proxies . replayMemory)
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -327,14 +327,14 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
         | initPhase = AgentValue $ V.fromList $ replicate agents (borl ^. expSmoothedReward)
         | randomAction && not learnFromRandom = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState rhoVal
         | otherwise =
-          shareRhoVal borl $
-          zipWithValue maxOrMin rhoMinimumState $
+          shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $
           case avgRewardType of
             ByMovAvg _ -> rhoState
             Fixed x -> toValue agents x
             _ -> (1 - alp) .* rhoVal + alp .* rhoState
-      rhoValOverEstimated | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
-                          | otherwise = rhoVal'
+      rhoValOverEstimated
+        | borl ^. settings . overEstimateRho = mapValue (overEstimateRhoCalc borl) rhoVal'
+        | otherwise = rhoVal'
   -- RhoMin
   let rhoMinimumVal'
         | randomAction && not learnFromRandom = rhoMinimumState
@@ -349,11 +349,12 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       expStateValR1 = reward .- rhoValOverEstimated + ga1 * epsEnd .* expStateNextValR1
   let r0ValState' = (1 - gam) .* r0ValState + gam .* expStateValR0
   let r1ValState' = (1 - gam) .* r1ValState + gam .* expStateValR1
-  let expSmthRewRate | initPhase = 0.01
-                     | otherwise = min alp 0.001
-      expSmthRew' | not initPhase && randomAction && not learnFromRandom = borl ^. expSmoothedReward
-                  --  | borl ^. t < 100 = sum (fromValue rhoVal') / fromIntegral agents
-                  | otherwise = (1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward
+  let expSmthRewRate
+        | initPhase = 0.01
+        | otherwise = min alp 0.001
+      expSmthRew'
+        | not initPhase && randomAction && not learnFromRandom = borl ^. expSmoothedReward
+        | otherwise = (1 - expSmthRewRate) * borl ^. expSmoothedReward + expSmthRewRate * reward
   return
     ( Calculation
         { getRhoMinimumVal' = Just rhoMinimumVal'
