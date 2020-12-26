@@ -118,7 +118,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
-  | (1 + period) `mod` (borl ^. settings . nStep) /= 0 || period <= fromIntegral (replayMemoriesSubSize replMems) - 1 = do
+  | (1 + period) `mod` (borl ^. settings . nStep) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
     replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let aNr = VB.map snd as
@@ -174,7 +174,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy (Just !replMems))
-  | (1 + period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replayMemoriesSubSize replMems) - 1 = do
+  | (1 + period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
     !replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let aNr = VB.map snd as
@@ -273,7 +273,7 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
 -- | Copy the worker net to the target.
 updateNNTargetNet :: (MonadIO m) => AgentType -> Settings -> Period -> Proxy -> m Proxy
 updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agents)
-  | period <= memSubSize = return px
+  | period <= memSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod = return $ Grenade netW' netW' tp' config' nrActs agents
   | updatePeriod =
       -- return $ Grenade ((zipVectorsWithInPlaceReplSnd (\w t -> (1 - smoothUpd) * t + smoothUpd * w) netW' netT') `using` rdeepseq) netW' tp' config' nrActs agents
@@ -281,11 +281,11 @@ updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agen
 
   | otherwise = return px
   where
-    memSubSize = px ^?! proxyNNConfig . replayMemoryMaxSize
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     config = px ^?! proxyNNConfig
     smoothUpd = config ^. grenadeSmoothTargetUpdate
     smoothUpdPer = config ^. grenadeSmoothTargetUpdatePeriod
-    updatePeriod = (period - memSubSize - 1) `mod` smoothUpdPer < setts ^. nStep
+    updatePeriod = (period - memSize - 1) `mod` smoothUpdPer < setts ^. nStep
 updateNNTargetNet _ _ _ px = error $ show px ++ " proxy in updateNNTargetNet. Should not happen!"
 
 

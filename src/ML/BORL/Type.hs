@@ -158,11 +158,11 @@ instance (NFData as, NFData s) => NFData (BORL s as) where
 
 decayedParameters :: BORL s as -> ParameterDecayedValues
 decayedParameters borl
-  | borl ^. t < repMemSubSize = mkStaticDecayedParams decayedParams
+  | borl ^. t < repMemSize = mkStaticDecayedParams decayedParams
   | otherwise = decayedParams
   where
-    decayedParams = decaySettingParameters (borl ^. decaySetting) (borl ^. t - repMemSubSize) (borl ^. parameters)
-    repMemSubSize = maybe 0 replayMemoriesSubSize (borl ^. proxies . replayMemory)
+    decayedParams = decaySettingParameters (borl ^. decaySetting) (borl ^. t - repMemSize) (borl ^. parameters)
+    repMemSize = maybe 0 replayMemoriesSize (borl ^. proxies . replayMemory)
 
 ------------------------------ Indexed Action ------------------------------
 

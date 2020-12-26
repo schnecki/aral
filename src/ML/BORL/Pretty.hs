@@ -307,9 +307,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
     parens (text "Period 0" <> colon <+> hcat (intersperse (text ", ") $ toFiniteList $ printDoubleWith 8 <$> params ^. epsilon)) <+>
     text "Strategy" <> colon <+> text (show $ borl ^. settings . explorationStrategy) $+$
     text "Exploration" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. exploration) <+> parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. exploration)) $+$
-    nnWorkers $+$
     text "Learn From Random Actions until Expl. hits" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. learnRandomAbove) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. learnRandomAbove)) $+$
+    nnWorkers $+$
     text "Function Approximation (inferred by R1 Config)" <>
     colon $$
     nest nestCols (text $ prettyProxyType $ borl ^. proxies . r1) $+$
@@ -338,7 +338,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
        nest nestCols (text (show (printDoubleListWith 8 $ fromValue $ borl ^. psis . _1, printDoubleListWith 8 $ fromValue $ borl ^. psis . _2, printDoubleListWith 8 $ fromValue $ borl ^. psis . _3)))) $+$
     (if printRho
        then prettyRhoVal
-       else empty)
+       else empty) $+$
+    text "Overestimate Rho" <> colon $$ nest nestCols (text $ show $ borl ^. settings. overEstimateRho)
   where
     params = borl ^. parameters
     params' = decayedParameters borl

@@ -141,12 +141,12 @@ shareRhoVal borl v@(AgentValue vec)
   | borl ^. settings . independentAgentsSharedRho = AgentValue $ V.map (const val) vec
   | otherwise = v
   where
-    -- val = V.sum vec / fromIntegral (V.length vec)
-    val = maxOrMin vec
-    maxOrMin =
-      case borl ^. objective of
-        Maximise -> V.maximum
-        Minimise -> V.minimum
+    val = V.sum vec / fromIntegral (V.length vec)
+    -- val = maxOrMin vec
+    -- maxOrMin =
+    --   case borl ^. objective of
+    --     Maximise -> V.maximum
+    --     Minimise -> V.minimum
 
 
 mkCalculation' ::
@@ -301,8 +301,9 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       gam = getExpSmthParam borl r1 gamma
   let agents = borl ^. settings . independentAgents
   let params' = decayedParameters borl
-  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove && maybe True ((borl ^. t - 1000 >) . replayMemoriesSubSize) (borl ^. proxies . replayMemory)
-  let initPhase = maybe False ((borl ^. t <=) . replayMemoriesSubSize) (borl ^. proxies . replayMemory)
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove -- && maybe True ((borl ^. t - 1000 >) . replayMemoriesSize) (borl ^. proxies . replayMemory)
+  let initPhase = maybe False ((borl ^. t <=) . replayMemoriesSize) (borl ^. proxies . replayMemory)
+  let fixedPhase = maybe False ((borl ^. t - 500 <=) . replayMemoriesSize) (borl ^. proxies . replayMemory)
   let epsEnd
         | episodeEnd = 0
         | otherwise = 1
@@ -325,6 +326,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
           Minimise -> min
   let rhoVal'
         | initPhase = AgentValue $ V.fromList $ replicate agents (borl ^. expSmoothedReward)
+        | fixedPhase = rhoVal
         | randomAction && not learnFromRandom = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState rhoVal
         | otherwise =
           shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $
