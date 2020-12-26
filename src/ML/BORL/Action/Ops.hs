@@ -61,8 +61,9 @@ nextAction !borl = do
                       | otherwise = borl ^. settings . explorationStrategy
 
 nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
-nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate (VB.length acts) id)
+nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate agents id)
   where
+    agents = VB.length acts
     acts = actionIndicesFiltered borl state
     chooseAgentAction as agentIndex
       | V.null as = error $ "Empty action list for at least one agent: " ++ show acts
@@ -75,9 +76,9 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
           SoftmaxBoltzmann t0
             | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
             | otherwise -> chooseAction borl False (chooseBySoftmax temp)
-            where temp = t0 * explore
+            where temp = t0 * explore / fromIntegral agents
       where
-        cfg = ActionPickingConfig state explore agentIndex (V.toList as)
+        cfg = ActionPickingConfig state (explore / fromIntegral agents) agentIndex (V.toList as)
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do
