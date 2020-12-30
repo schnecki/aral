@@ -292,7 +292,7 @@ updateNNTargetNet _ _ _ px = error $ show px ++ " proxy in updateNNTargetNet. Sh
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadIO m) => Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs !agents) = do
-  let netW' = trainGrenade opt config minMaxVal netW trainingInstances'
+  netW' <- liftIO $ trainGrenade period opt config netW trainingInstances'
   return $! Grenade netT netW' tp config nrActs agents
   where
     minMaxVal =

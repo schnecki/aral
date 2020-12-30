@@ -1,8 +1,8 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Strict              #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 module ML.BORL.NeuralNetwork.Grenade
@@ -10,19 +10,26 @@ module ML.BORL.NeuralNetwork.Grenade
     , runGrenade
     ) where
 
-
+import           Control.Concurrent
+import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens                     (set, (^.))
+import           Control.Monad                    (unless, void, when)
 import           Control.Parallel.Strategies
+import           Data.IORef
 import           Data.List                        (foldl', foldl1, genericLength)
 import qualified Data.Map.Strict                  as M
+import           Data.Maybe                       (fromMaybe)
 import           Data.Proxy
 import           Data.Singletons
 import           Data.Singletons.Prelude.List
+import           Data.Time.Clock
 import qualified Data.Vector.Storable             as V
 import           GHC.TypeLits
 import           Grenade
+import           System.IO.Unsafe                 (unsafePerformIO)
 
+import           ML.BORL.Fork
 import           ML.BORL.NeuralNetwork.Conversion
 import           ML.BORL.NeuralNetwork.NNConfig
 import           ML.BORL.Types
@@ -30,6 +37,36 @@ import           ML.BORL.Types
 
 import           Debug.Trace
 
+executionTimeMVar :: MVar NominalDiffTime
+executionTimeMVar = unsafePerformIO $ newMVar 0
+{-# NOINLINE executionTimeMVar #-}
+
+
+gradientsMVar :: MVar [IORef (ThreadState (Gradients layers))]
+gradientsMVar = unsafePerformIO $ newMVar []
+{-# NOINLINE gradientsMVar #-}
+
+-- | Add some gradients to the shared list of gradients.
+putGradients :: IORef (ThreadState (Gradients layers)) -> IO ()
+putGradients val = modifyMVar_ gradientsMVar (return . (++ [val]))
+
+-- | Retrieve the ready gradients for updating the network.
+getGradients :: IO [Gradients layers]
+getGradients = modifyMVar gradientsMVar collectAllReadyGradients
+  where
+    collectAllReadyGradients grads = do
+      ready <- collRess grads
+      return (drop (length ready) grads, ready)
+    collRess [] = return []
+    collRess (ref:xs) = do
+      mRes <- readIORef ref
+      case mRes of
+        Ready a -> do
+          rs <- collRess xs
+          return (a : rs)
+        NotReady -> return []
+
+-- | Train grenade network.
 trainGrenade ::
      forall layers shapes nrH opt.
      ( GNum (Gradients layers)
@@ -41,37 +78,48 @@ trainGrenade ::
      , NFData (Gradients layers)
      , FoldableGradient (Gradients layers)
      )
-  => Optimizer opt
+  => Period
+  -> Optimizer opt
   -> NNConfig
-  -> Maybe (MinValue Double, MaxValue Double)
   -> Network layers shapes
   -> [[((StateFeatures, ActionIndex), Double)]]
-  -> Network layers shapes
-trainGrenade opt nnConfig mMinMaxVal net chs =
+  -> IO (Network layers shapes)
+trainGrenade period opt nnConfig net chs = do
   let trainIter = nnConfig ^. trainingIterations
       cropFun = maybe id (\x -> max (-x) . min x) (nnConfig ^. cropTrainMaxValScaled)
-      batchGradients = parMap (rparWith rdeepseq) (makeGradients cropFun net) chs
-      -- clippingRatioDiv =
-      --   case mMinMaxVal of
-      --     Nothing               -> 1
-      --     Just (minVal, maxVal) -> (maxVal - minVal)
-      clipGrads = case  nnConfig ^. clipGradients of
-        NoClipping         -> id
-        ClipByGlobalNorm v -> clipByGlobalNorm v
-        ClipByValue v      -> clipByValue v
+      ~batchGradients = parMap (rparWith rdeepseq) (makeGradients cropFun net) chs
+      ~clipGrads =
+        case nnConfig ^. clipGradients of
+          NoClipping         -> id
+          ClipByGlobalNorm v -> clipByGlobalNorm v
+          ClipByValue v      -> clipByValue v
       -- res = foldl' (applyUpdate opt) net batchGradients
-      res =
-        -- force $
-        applyUpdate opt net $
+      ~res =
+        -- applyUpdate opt net $
         clipGrads $
         -- 1/sum (map genericLength batchGradients) |* -- better to use avg?!!? also for RL?: https://stats.stackexchange.com/questions/183840/sum-or-average-of-gradients-in-mini-batch-gradient-decent
         -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) batchGradients
         -- foldl1 (|+) batchGradients
-
         sumG batchGradients
-   in if trainIter <= 1
-        then res
-        else trainGrenade opt (set trainingIterations (trainIter - 1) nnConfig) mMinMaxVal res chs
+
+  execTime0 <- fromMaybe 0 <$> tryReadMVar executionTimeMVar
+  if execTime0 < 0.2 || period `mod` 3000 == 0
+    then do
+      start <- getCurrentTime
+      let !net' = force $ applyUpdate opt net res
+      end <- getCurrentTime
+      let execTime = diffUTCTime end start
+      modifyMVar_ executionTimeMVar (\_ -> return execTime)
+      return $! net'
+    else do
+    doFork (return res) >>= putGradients
+    grads <- getGradients
+    if null grads
+      then return net
+      else return $! foldl (applyUpdate opt) net grads
+    -- if trainIter <= 1
+    --     then return res
+    --     else trainGrenade period opt (set trainingIterations (trainIter - 1) nnConfig) res chs
 
 -- | Accumulate gradients for a list of n-step updates. The arrising gradients are summed up.
 makeGradients ::

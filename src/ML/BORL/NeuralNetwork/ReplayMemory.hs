@@ -15,12 +15,13 @@ module ML.BORL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad        (foldM)
+import           Control.Monad               (foldM)
+import           Control.Parallel.Strategies
 import           Data.Int
-import           Data.Maybe           (fromJust, isNothing)
-import qualified Data.Vector          as VB
-import qualified Data.Vector.Mutable  as VM
-import qualified Data.Vector.Storable as VS
+import           Data.Maybe                  (fromJust, isNothing)
+import qualified Data.Vector                 as VB
+import qualified Data.Vector.Mutable         as VM
+import qualified Data.Vector.Storable        as VS
 import           Data.Word
 import           GHC.Generics
 import           System.Random
@@ -207,7 +208,7 @@ getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions nrAs tmpRepMe
   g <- newStdGen
   let idxs = take bs $ randomRs (0, length rs - 1) g
       rsSel = map (rs VB.!) idxs
-  concat <$> mapM getRandomReplayMemoriesElements' rsSel
+  concat <$> sequence (parMap rpar getRandomReplayMemoriesElements' rsSel)
   where getRandomReplayMemoriesElements' replMem
            | nStep == 1 || isNothing tmpRepMem = getRandomReplayMemoryElements False 1 1 replMem
            | otherwise = do

@@ -15,14 +15,14 @@ import           Data.IORef
 
 
 doFork :: NFData a => IO a -> IO (IORef (ThreadState a))
-doFork !f = do
+doFork ~f = do
   ref <- newIORef NotReady
   void $ forkIO (f >>= writeIORef ref . Ready . force)
   return ref
 
 -- | Does not actually fork, thus runs sequentially, but does not force the result!
 doForkFake :: IO a -> IO (IORef (ThreadState a))
-doForkFake !f = do
+doForkFake f = do
   ref <- newIORef NotReady
   (f >>= writeIORef ref . Ready) `using` rparWith rpar
   return ref

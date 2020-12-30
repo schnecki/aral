@@ -25,7 +25,7 @@ data ScalingAlgorithm
 
 isScaleLog :: ScalingAlgorithm -> Bool
 isScaleLog ScaleLog{} = True
-isScaleLog _          = True
+isScaleLog _          = False
 
 
 data ScalingNetOutParameters = ScalingNetOutParameters
@@ -87,7 +87,8 @@ scaleLog :: (Floating n, Ord n) => n -> (MinValue n, MaxValue n) -> n -> n
 scaleLog shift (mn, mx) val = scaleMinMax (log shift, appLog mx) $ appLog $ max mn val
   where appLog x = log (x - mn + shift)
 
-unscaleLog :: (Floating n, Ord n) => n -> (MinValue n, MaxValue n) -> n -> n
+-- | Unscale from a logarthmic scale.
+unscaleLog :: (Floating n) => n -> (MinValue n, MaxValue n) -> n -> n
 unscaleLog shift (mn, mx) val = appExp $ unscaleMinMax (log shift, appLog mx) val
   where appExp x = exp x + mn - shift
         appLog x = log (x - mn + shift)
