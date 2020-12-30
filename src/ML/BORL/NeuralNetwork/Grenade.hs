@@ -24,6 +24,7 @@ import           Data.Proxy
 import           Data.Singletons
 import           Data.Singletons.Prelude.List
 import           Data.Time.Clock
+import qualified Data.Vector                      as VB
 import qualified Data.Vector.Storable             as V
 import           GHC.TypeLits
 import           Grenade
@@ -42,27 +43,28 @@ executionTimeMVar = unsafePerformIO $ newMVar 0
 {-# NOINLINE executionTimeMVar #-}
 
 
-gradientsMVar :: MVar [IORef (ThreadState (Gradients layers))]
-gradientsMVar = unsafePerformIO $ newMVar []
+gradientsMVar :: MVar (VB.Vector (IORef (ThreadState (Gradients layers))))
+gradientsMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE gradientsMVar #-}
 
 -- | Add some gradients to the shared list of gradients.
 putGradients :: IORef (ThreadState (Gradients layers)) -> IO ()
-putGradients val = modifyMVar_ gradientsMVar (return . (++ [val]))
+putGradients val = modifyMVar_ gradientsMVar (return . flip VB.snoc val)
 
 -- | Retrieve the ready gradients for updating the network.
 getGradients :: IO [Gradients layers]
 getGradients = modifyMVar gradientsMVar collectAllReadyGradients
   where
     collectAllReadyGradients grads = do
-      ready <- collRess grads
-      return (drop (length ready) grads, ready)
-    collRess [] = return []
-    collRess (ref:xs) = do
-      mRes <- readIORef ref
+      !ready <- collRess grads
+      return (VB.drop (length ready) grads, ready)
+    collRess xs
+      | VB.null xs = return []
+    collRess xs = do
+      mRes <- readIORef (VB.head xs)
       case mRes of
         Ready a -> do
-          rs <- collRess xs
+          rs <- collRess (VB.tail xs)
           return (a : rs)
         NotReady -> return []
 
