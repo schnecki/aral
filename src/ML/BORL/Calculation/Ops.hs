@@ -292,9 +292,9 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr
   rhoVal <- rhoValueWith Worker borl state aNr
   r0ValState <- rValueWith Worker borl RSmall state aNr `using` rpar
-  r0StateNext <- rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
+  let ~r0StateNext = rStateValueWith Target borl RSmall (stateNext, stateNextActIdxes) `using` rpar
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
-  r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
+  let ~r1StateNext = rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   r1StateNextWorker <- rStateValueWith Worker borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let alp = getExpSmthParam borl rho alpha
       alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
@@ -341,13 +341,15 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
   let rhoMinimumVal'
         | randomAction && not learnFromRandom = rhoMinimumState
         | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
-  let expStateNextValR0
-        | randomAction = r0StateNext
-        | otherwise = fromMaybe r0StateNext (getExpectedValStateNextR0 expValStateNext)
-      expStateNextValR1
-        | randomAction = r1StateNext
-        | otherwise = fromMaybe r1StateNext (getExpectedValStateNextR1 expValStateNext)
-      expStateValR0 = reward .- rhoValOverEstimated + ga0 * epsEnd .* expStateNextValR0
+  expStateNextValR0 <-
+    if randomAction
+      then r0StateNext
+      else maybe r0StateNext return (getExpectedValStateNextR0 expValStateNext)
+  expStateNextValR1 <-
+    if randomAction
+      then r1StateNext
+      else maybe r1StateNext return (getExpectedValStateNextR1 expValStateNext)
+  let expStateValR0 = reward .- rhoValOverEstimated + ga0 * epsEnd .* expStateNextValR0
       expStateValR1 = reward .- rhoValOverEstimated + ga1 * epsEnd .* expStateNextValR1
   let r0ValState' = (1 - gam) .* r0ValState + gam .* expStateValR0
   let r1ValState' = (1 - gam) .* r1ValState + gam .* expStateValR1

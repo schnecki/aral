@@ -148,8 +148,8 @@ borlSettings :: Settings
 borlSettings =
   def
     { _workersMinExploration = replicate 7 0.01
-    , _nStep = 50
-    , _mainAgentSelectsGreedyActions = False
+    , _nStep = 1
+    , _mainAgentSelectsGreedyActions = False -- True
     }
 
 

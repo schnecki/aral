@@ -125,6 +125,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    emptyCache
     return (replayMemory ?~ replMem' $ pxs { _rhoMinimum = pRhoMin', _rho = pRho' }, calc)
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
@@ -181,8 +182,8 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    emptyCache
     return (replayMemory ?~ replMem' $ pxs { _rhoMinimum = pRhoMin', _rho = pRho' }, calc)
-    -- return (replayMemory ?~ replMems' $ pxs, calc)
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (~calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
@@ -397,20 +398,47 @@ lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m Values
-lookupActionsNeuralNetworkUnscaled tp st px@Grenade{} = head <$> lookupActionsNeuralNetworkUnscaledFull tp st px
-lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> lookupActionsNeuralNetworkUnscaledFull tp st px
+lookupActionsNeuralNetworkUnscaled tp st px@(Grenade _ _ pxTp config _ _) = head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
+  where
+    tp' = mkLookupType config tp
+lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> cached (tp', CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
+  where
+    tp' = mkLookupType (px ^?! proxyNNConfig) tp
 lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
-lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW tp _ nrAs agents) =
-  cached (Worker, tp, st) (return $ runGrenade netW nrAs agents st)
-lookupActionsNeuralNetworkUnscaledFull Target st px@(Grenade netT _ tp config nrAs agents)
-  | config ^. grenadeSmoothTargetUpdate == 1 && config ^. grenadeSmoothTargetUpdatePeriod <= 1 = lookupActionsNeuralNetworkUnscaledFull Worker st px
-  | otherwise = cached (Target, tp, st) (return $ runGrenade netT nrAs agents st)
+lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ _ nrAs agents) = return $ runGrenade netW nrAs agents st
+lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ _ nrAs agents) = return $ runGrenade netT nrAs agents st
 lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{} = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
 lookupActionsNeuralNetworkUnscaledFull _ _ _ = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
+
+
+mkLookupType :: NNConfig -> LookupType -> LookupType
+mkLookupType config lp
+  | onlyUseWorker config = Worker
+  | otherwise = lp
+
+onlyUseWorker :: NNConfig -> Bool
+onlyUseWorker config = config ^. grenadeSmoothTargetUpdate == 1 && config ^. grenadeSmoothTargetUpdatePeriod <= 1
+
+
+-- -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
+-- lookupActionsNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m Values
+-- lookupActionsNeuralNetworkUnscaled tp st px@(Grenade _ _ pxTp _ _ _) = head <$> cached (fromLookupType tp, pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp st px)
+-- lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> cached (CacheCombined, CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaledFull tp st px)
+-- lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+
+
+-- -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
+-- lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
+-- lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ _ nrAs agents) = return $ runGrenade netW nrAs agents st
+-- lookupActionsNeuralNetworkUnscaledFull Target st px@(Grenade netT _ _ config nrAs agents)
+--   | config ^. grenadeSmoothTargetUpdate == 1 && config ^. grenadeSmoothTargetUpdatePeriod <= 1 = lookupActionsNeuralNetworkUnscaledFull Worker st px
+--   | otherwise = return $ runGrenade netT nrAs agents st
+-- lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{} = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
+-- lookupActionsNeuralNetworkUnscaledFull _ _ _ = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 
 ------------------------------ Helpers ------------------------------
@@ -431,9 +459,8 @@ addCache k val = liftIO $ modifyMVar_ cacheMVar (return . M.insert k val)
 lookupCache :: (MonadIO m) => CacheKey -> m (Maybe [Values])
 lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
-
 -- | Get output of function f, if possible from cache according to key (st).
-cached :: (MonadIO m) => (LookupType, ProxyType, StateFeatures) -> m [Values] -> m [Values]
+cached :: (MonadIO m) => CacheKey -> m [Values] -> m [Values]
 cached st ~f = do
   c <- lookupCache st
   case c of
@@ -441,7 +468,8 @@ cached st ~f = do
       res <- f
       res `seq` addCache st res
       return res
-    Just res -> return res
+    Just res -> do
+      return res
 
 
 -- | Finds the correct value for scaling.
