@@ -339,7 +339,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
     (if printRho
        then prettyRhoVal
        else empty) $+$
-    text "Overestimate Rho" <> colon $$ nest nestCols (text $ show $ borl ^. settings. overEstimateRho)
+    text "Overestimate Rho" <> colon $$ nest nestCols (text $ show $ borl ^. settings. overEstimateRho) $+$
+    text "Main Agent Chooses Greedy Action" <> colon $$ nest nestCols (text $ show $ borl ^. settings. mainAgentSelectsGreedyActions)
   where
     params = borl ^. parameters
     params' = decayedParameters borl

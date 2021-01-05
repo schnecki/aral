@@ -138,7 +138,7 @@ nnConfig =
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
     , _scaleOutputAlgorithm = ScaleMinMax
-    , _cropTrainMaxValScaled = Just 0.98
+    , _cropTrainMaxValScaled = Nothing -- Just 0.98. Implemented using LeakyTanh Layer
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
@@ -274,7 +274,7 @@ modelBuilderGrenade actions initState cols =
   fullyConnected 20 >> relu >> -- dropout 0.90 >>
   fullyConnected 10 >> relu >>
   fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> leakyTanhLayer 0.98
   -- buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   -- inputLayer1D lenIn >>
   -- fullyConnected 20 >> relu >>

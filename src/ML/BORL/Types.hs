@@ -125,8 +125,13 @@ instance Num Value where
   abs (AgentValue xs) = AgentValue (mapVector abs xs)
   signum (AgentValue xs) = AgentValue (mapVector signum xs)
   -- fromInteger nr = AgentValue (repeat $ fromIntegral nr)
-  fromInteger _ = error "fromInteger is not implemented for Value!"
+  fromInteger _ = error "fromInteger is not supported for Value!"
     -- AgentValue (replicate 1 $ fromIntegral nr)
+
+instance Fractional Value where
+  fromRational _ = error "fromRational is not supported for Value!"
+  (AgentValue x) / (AgentValue y) = AgentValue (zipWithVector (/) x y)
+
 
 toValue :: Int -> Double -> Value
 toValue nr v = AgentValue $ V.replicate nr v
@@ -159,9 +164,18 @@ infixl 6 -.
 fromValue :: Value -> [Double]
 fromValue (AgentValue xs) = V.toList xs
 
+unpackValue :: Value -> V.Vector Double
+unpackValue (AgentValue xs) = xs
 
 mapValue :: (Double -> Double) -> Value -> Value
 mapValue f (AgentValue vals) = AgentValue $ mapVector f vals
+
+applyToValue :: ([Double] -> Double) -> [Value] -> Value
+applyToValue f vals = AgentValue $ V.fromList $ map f (transpose vals')
+  where vals' = map fromValue vals
+
+valueLength :: Value -> Int
+valueLength (AgentValue xs) = V.length xs
 
 reduceValue :: (V.Vector Double -> Double) -> Value -> Double
 reduceValue f (AgentValue vals) = f vals
