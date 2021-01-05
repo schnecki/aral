@@ -342,11 +342,11 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
         | randomAction && not learnFromRandom = rhoMinimumState
         | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
   expStateNextValR0 <-
-    if randomAction
+    if randomAction && not learnFromRandom
       then r0StateNext
       else maybe r0StateNext return (getExpectedValStateNextR0 expValStateNext)
   expStateNextValR1 <-
-    if randomAction
+    if randomAction && not learnFromRandom
       then r1StateNext
       else maybe r1StateNext return (getExpectedValStateNextR1 expValStateNext)
   let expStateValR0 = reward .- rhoValOverEstimated + ga0 * epsEnd .* expStateNextValR0
