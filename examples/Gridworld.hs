@@ -129,7 +129,7 @@ nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 10000 -- 1000
     , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
-    , _trainBatchSize = 4
+    , _trainBatchSize = 8
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
@@ -147,8 +147,8 @@ nnConfig =
 borlSettings :: Settings
 borlSettings =
   def
-    { _workersMinExploration = replicate 7 0.01
-    , _nStep = 3
+    { _workersMinExploration = [0.01] -- replicate 0 0.01
+    , _nStep = 5
     , _mainAgentSelectsGreedyActions = False -- True
     }
 
@@ -274,7 +274,7 @@ modelBuilderGrenade actions initState cols =
   fullyConnected 20 >> relu >> -- dropout 0.90 >>
   fullyConnected 10 >> relu >>
   fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> leakyTanhLayer 0.98
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   -- buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   -- inputLayer1D lenIn >>
   -- fullyConnected 20 >> relu >>

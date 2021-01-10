@@ -36,38 +36,6 @@ import           ML.BORL.NeuralNetwork.NNConfig
 import           ML.BORL.Types
 
 
-import           Debug.Trace
-
-executionTimeMVar :: MVar NominalDiffTime
-executionTimeMVar = unsafePerformIO $ newMVar 0
-{-# NOINLINE executionTimeMVar #-}
-
-
-gradientsMVar :: MVar (VB.Vector (IORef (ThreadState (Gradients layers))))
-gradientsMVar = unsafePerformIO $ newMVar mempty
-{-# NOINLINE gradientsMVar #-}
-
--- | Add some gradients to the shared list of gradients.
-putGradients :: IORef (ThreadState (Gradients layers)) -> IO ()
-putGradients val = modifyMVar_ gradientsMVar (return . flip VB.snoc val)
-
--- | Retrieve the ready gradients for updating the network.
-getGradients :: IO [Gradients layers]
-getGradients = modifyMVar gradientsMVar collectAllReadyGradients
-  where
-    collectAllReadyGradients grads = do
-      !ready <- collRess grads
-      return (VB.drop (length ready) grads, ready)
-    collRess xs
-      | VB.null xs = return []
-    collRess xs = do
-      mRes <- readIORef (VB.head xs)
-      case mRes of
-        Ready a -> do
-          rs <- collRess (VB.tail xs)
-          return (a : rs)
-        NotReady -> return []
-
 -- | Train grenade network.
 trainGrenade ::
      forall layers shapes nrH opt.
@@ -103,25 +71,10 @@ trainGrenade period opt nnConfig net chs = do
         -- foldl1 (zipVectorsWithInPlaceReplSnd (+)) batchGradients
         -- foldl1 (|+) batchGradients
         sumG batchGradients
-
-  execTime0 <- fromMaybe 0 <$> tryReadMVar executionTimeMVar
-  if execTime0 < 0.2 || period `mod` 3000 == 0
-    then do
-      start <- getCurrentTime
-      let !net' = force $ applyUpdate opt net res
-      end <- getCurrentTime
-      let execTime = diffUTCTime end start
-      modifyMVar_ executionTimeMVar (\_ -> return execTime)
-      return $! net'
-    else do
-    doFork (return res) >>= putGradients
-    grads <- getGradients
-    if null grads
-      then return net
-      else return $! foldl (applyUpdate opt) net grads
-    -- if trainIter <= 1
-    --     then return res
-    --     else trainGrenade period opt (set trainingIterations (trainIter - 1) nnConfig) res chs
+  let !net' = force $ applyUpdate opt net res
+  if trainIter <= 1
+    then return net'
+    else trainGrenade period opt (set trainingIterations (trainIter - 1) nnConfig) net' chs
 
 -- | Accumulate gradients for a list of n-step updates. The arrising gradients are summed up.
 makeGradients ::
