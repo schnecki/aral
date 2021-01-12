@@ -81,11 +81,11 @@ import           Control.Lens
 import           Control.Monad                (join, replicateM)
 import           Control.Monad.IO.Class       (liftIO)
 import           Data.Default                 (def)
-import           Data.List                    (foldl', zipWith3)
+import           Data.List                    (foldl', genericLength, zipWith3)
 import           Data.Maybe                   (catMaybes, fromMaybe)
 import qualified Data.Proxy                   as Type
 import           Data.Serialize
-import           Data.Singletons              (SingI, sing)
+import           Data.Singletons              (Sing, SingI, SomeSing (..), sing)
 import           Data.Singletons.Prelude.List
 import           Data.Singletons.TypeLits
 import qualified Data.Text                    as T
@@ -361,7 +361,7 @@ mkMultichainTabular alg initialStateFun ftExt asFun asFilter params decayFun set
 -- Neural network approximations
 
 mkUnichainGrenade ::
-  forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as) =>
+  forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as, NFData s) =>
      Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
@@ -376,7 +376,7 @@ mkUnichainGrenade ::
   -> IO (BORL s as)
 mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun nnConfig settings initValues = do
   specNet <- netFun 1
-  case specNet of
+  fmap (checkNetworkOutput False) $ case specNet of
     SpecConcreteNetwork1D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
@@ -392,7 +392,7 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun netFun n
 
 -- | Modelbuilder takes the number of output columns, which determins if the ANN is 1D or 2D! (#actions, #columns, 1)
 mkUnichainGrenadeCombinedNet ::
-     forall as s . (Eq as, Ord as, NFData as, Enum as, Bounded as) =>
+     forall as s . (Eq as, Ord as, NFData as, Enum as, Bounded as, NFData s) =>
      Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
@@ -410,7 +410,7 @@ mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayF
              | isAlgDqnAvgRewardAdjusted alg = 2
              | otherwise = 6
   specNet <- netFun nrNets
-  case specNet of
+  fmap (checkNetworkOutput True) $ case specNet of
     SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
@@ -441,6 +441,7 @@ mkUnichainGrenadeHelper ::
      , Show (Network layers shapes)
      , FromDynamicLayer (Network layers shapes)
      , GNum (Network layers shapes)
+     , NFData s
      )
   => Algorithm s
   -> InitialStateFun s
@@ -489,7 +490,7 @@ mkUnichainGrenadeHelper alg initialStateFun ftExt asFun asFilter params decayFun
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
           _ -> error "3D output is not supported by BORL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
-  return $
+  return $! force $
     BORL
       (VB.fromList as)
       asFun
@@ -563,7 +564,7 @@ mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net
   initialState <- initialStateFun MainAgent
   let proxies' = Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
   workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
-  return $! force $
+  return $! force $ checkNetworkOutput False $
     BORL
       (VB.fromList as)
       asFun
@@ -653,13 +654,36 @@ mkWorkers state as mNNConfig setts = do
 
 -------------------- Helpers --------------------
 
--- checkNetworkOutput :: BORL s as -> BORL s as
--- checkNetworkOutput borl
---   | not (isAnn borl) = borl
---   | otherwise =
---   where
---     required = length (borl ^. actionList) * (borl ^. settings . independentAgents)
---     has = borl ^. ann . r1
+checkNetworkOutput :: Bool -> BORL s as -> BORL s as
+checkNetworkOutput combined borl
+  | not isAnn = borl
+  | (reqX, reqY, reqZ) /= (x, y, z) = error $ "Expected ANN output: " ++ show (reqX, reqY, reqZ) ++ ". Actual ANN output: " ++ show (x, y, z)
+  | otherwise = borl
+  where
+    isAnn :: Bool
+    isAnn = any isNeuralNetwork (allProxies $ borl ^. proxies)
+    reqZ = 1 :: Integer
+    reqX = fromIntegral $ length (borl ^. actionList) * (borl ^. settings . independentAgents) :: Integer
+    (x, y, z) = case px of
+      Grenade t _ _ _ _ _ -> mkDims t
+      CombinedProxy (Grenade t _ _ _ _ _) _ _ -> mkDims t
+      px'                  -> error $ "Error in checkNetworkOutput. This should not have happend. Proxy is: "++ show px'
+    mkDims :: forall layers shapes . (SingI (Last shapes)) => Network layers shapes -> (Integer,Integer,Integer)
+    mkDims _ = tripleFromSomeShape (SomeSing (sing :: Sing (Last shapes)))
+    px =
+      case borl ^. algorithm of
+        AlgDQNAvgRewAdjusted {} -> borl ^. proxies . r1
+        AlgBORL {}              -> borl ^. proxies . v
+        AlgBORLVOnly {}         -> borl ^. proxies . v
+        AlgDQN {}               -> borl ^. proxies . r1
+    reqY :: Integer
+    reqY
+      | not combined = 1
+      | otherwise =
+        case borl ^. algorithm of
+          AlgDQNAvgRewAdjusted {} -> 2
+          AlgDQN {}               -> 1
+          _                       -> 6
 
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
