@@ -234,10 +234,10 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
        -- AlgBORLVOnly ByStateValues Nothing
-        -- AlgDQN 0.99 EpsilonSensitive            -- does not work
+        AlgDQN 0.99 Exact            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  -- AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 
@@ -245,16 +245,18 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  -- rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
 
   -- Use an own neural network for every function to approximate
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
-  askUser mInverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
+  let invSt | isAnn rl = mInverseSt
+            | otherwise = Nothing
+  askUser invSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]

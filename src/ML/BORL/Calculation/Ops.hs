@@ -475,10 +475,10 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
   r1ValState <- rValueWith Worker borl RBig state aNr `using` rpar
   r1StateNext <- rStateValueWith Target borl RBig (stateNext, stateNextActIdxes) `using` rpar
   let expStateNextValR1
-        | randomAction = epsEnd .* r1StateNext
+        | randomAction && not learnFromRandom = epsEnd .* r1StateNext
         | otherwise = fromMaybe (epsEnd .* r1StateNext) (getExpectedValStateNextR1 expValStateNext)
-      expStateValR1 = reward .+ ga .* expStateNextValR1
-  let r1ValState' = (1 - gam) .* r1ValState + gam .* (reward .+ epsEnd .* expStateValR1)
+      expStateValR1 = reward .+ (epsEnd * ga) .* expStateNextValR1
+  let r1ValState' = (1 - gam) .* r1ValState + gam .* expStateValR1
   return
     ( emptyCalculation
         { getR1ValState' = Just r1ValState'
