@@ -66,7 +66,6 @@ data LookupType = Target | Worker
 --   | MultiAgent (V.Vector (V.Vector Double))
 --   deriving (Eq, Ord, Show, Read)
 
-
 mkStateActs :: BORL s as -> s -> s -> (StateFeatures, (StateFeatures, DisallowedActionIndicies), (StateNextFeatures, DisallowedActionIndicies))
 mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
   where
@@ -136,18 +135,21 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
     let mkCalc (s, idx, rew, s', epiEnd) = getCalc s idx rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
-    let aNr = VB.map snd as
-    let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    -- let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+        aNr = VB.map snd as
     let mTrainBatch !accessor !calcs !px =
           maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
         then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
-        else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
+        -- else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
+        else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <-
       if isNeuralNetwork pRho
         then mTrainBatch getRhoVal' calcs pRho `using` rpar
-        else mInsertProxy (traverse (traverse (getRhoVal' . snd)) calcs) pRho `using` rpar
+        -- else mInsertProxy (traverse (traverse (getRhoVal' . snd))  calcs) pRho `using` rpar
+        else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     !pV' <-     mTrainBatch getVValState' calcs pV `using` rpar
     !pW' <-     mTrainBatch getWValState' calcs pW `using` rpar
     !pPsiV' <-  mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
@@ -193,18 +195,21 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
     let mkCalc (!sas, !idx, !sarew, !sas', !epiEnd) = getCalc sas idx sarew sas' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
-    let aNr = VB.map snd as
-    let mInsertProxy mVals px = maybe (return (px, False)) (\val -> (,True) <$> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    -- let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+        aNr = VB.map snd as
     let mTrainBatch !accessor !calculations !px =
           maybe (return (px, False)) (\xs -> (,True) <$> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calculations)
-    (!pRhoMin', _) <-
+    !pRhoMin' <-
       if isNeuralNetwork pRhoMin
-        then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
-        else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
-    (!pRho', _) <-
+        then fst <$> mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
+        -- else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
+        else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+    !pRho' <-
       if isNeuralNetwork pRho
-        then mTrainBatch getRhoVal' calcs pRho `using` rpar
-        else mInsertProxy (traverse (traverse (getRhoVal' . snd)) calcs) pRho `using` rpar
+        then fst <$> mTrainBatch getRhoVal' calcs pRho `using` rpar
+        -- else mInsertProxy (traverse (traverse (getRhoVal' . snd)) calcs) pRho `using` rpar
+        else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     (!pV', vActive) <-       mTrainBatch getVValState' calcs (pxs ^. v) `using` rpar
     (!pW', wActive) <-       mTrainBatch getWValState' calcs (pxs ^. w) `using` rpar
     (!pPsiV', psiVActive) <- mTrainBatch getPsiVValState' calcs (pxs ^. psiV) `using` rpar

@@ -227,9 +227,13 @@ modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
   buildModelWith (def { cpuBackend = BLAS }) def $
   inputLayer1D lenIn >>
-  fullyConnected 36 >> relu >> -- dropout 0.90 >>
-  fullyConnected 24 >> relu >>
+  fullyConnected (3*lenIn) >> relu >>
+  fullyConnected (1*lenIn) >> relu >>
+  fullyConnected (lenIn `div` 2) >> relu >>
+
+  -- fullyConnected 36 >> relu >> -- dropout 0.90 >>
   -- fullyConnected 24 >> relu >>
+  -- -- fullyConnected 24 >> relu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
