@@ -31,8 +31,11 @@ gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$E
 
 START=$((END+1))
 END=$((START+agents*2-1))
-echo "col=$START:$END"
-gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with points; pause mouse close; " &
+START2=$((END+agents*2+1))
+END2=$((START2+1))
+echo "col=$START:$END, $START2:$END2"
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with points, for [col2=$START2:$END2] 'stateValues' using 0:col2 with lines; pause mouse close; " &
+# echo -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$END] 'stateValues' using 0:col with points, for [col2=$START2:$END2] 'stateValues' using 0:col2 with lines; pause mouse close; " &
 
 START=$((END+1))
 END=$((START+agents*2-1))
@@ -66,3 +69,6 @@ fi
 # watch 'tail -n 10000 queueLength | awk "{ sum += \$1; n++ } END { if (n > 0) print sum / n ; }"'
 # watch 'tail -n 1000 episodeLength | awk "{ sum += \$2; n++ } END { if (n > 0) print sum / n ; }"'
 # watch 'pr -m -t reward costs | tail -n 1000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"; pr -m -t reward costs | tail -n 10000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"; pr -m -t reward costs | tail -n 100000 - | awk "{ sum += \$2; sum4 += \$4; n++ } END { if (n > 0) print (sum / n, sum4 /n) ; }"'
+
+
+# cat stateValues | awk '{print $33; }' - | sort  -n -r | head -1; cat stateValues | awk '{print $33; }' - | sort  -n | head -1

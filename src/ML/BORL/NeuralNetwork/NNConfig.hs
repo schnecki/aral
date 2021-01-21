@@ -40,10 +40,11 @@ data NNConfig =
     { _replayMemoryMaxSize             :: !Int                     -- ^ Maximum size of the replay memory. If you set this to `trainBatchSize * nStep` then there is no random selection, but all
                                                                    -- memories are used! This size if for one agent, if you use more than one, then the size will be scaled up.
     , _replayMemoryStrategy            :: !ReplayMemoryStrategy    -- ^ How to store experiences. @ReplayMemoryPerAction@ only works with n-step=1.
-    , _trainBatchSize                  :: !Int                     -- ^ Batch size for training. Values are fed from the replay memory.
+    , _trainBatchSize                  :: !Int                     -- ^ Batch size of each worker/of the main agent for training. Values are fed from the replay memory. Thus, resulting number of
+                                                                   -- batchsize = #workers * trainBatchSize.
     , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.
     , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
-    , _grenadeSmoothTargetUpdate       :: !Double                -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
+    , _grenadeSmoothTargetUpdate       :: !Double                  -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
     , _grenadeSmoothTargetUpdatePeriod :: !Int                     -- ^ Every x periods the smooth update will take place.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
     , _prettyPrintElems                :: ![NetInputWoAction]      -- ^ Sample input features for printing.

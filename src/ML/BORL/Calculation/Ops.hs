@@ -215,7 +215,7 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
       ByMovAvg _ -> error "ByMovAvg is not allowed in multichain setups"
       ByReward -> return $ toValue agents reward
       ByStateValues -> return $ reward .+ vValStateNext - vValState
-      ByStateValuesAndReward ratio decay -> return $ ratio' .* (reward .+ vValStateNext - vValState) +. (1 - ratio') * reward
+      ByStateValuesAndReward ratio decay -> return $ (1 - ratio') .* (reward .+ vValStateNext - vValState) +. ratio' * reward
         where ratio' = decaySetup decay period ratio
   let maxOrMin =
         case borl ^. objective of
@@ -318,7 +318,7 @@ mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episo
       ByMovAvg l -> return $ toValue agents $ sum (V.toList lastRews') / fromIntegral l
       ByReward -> return $ toValue agents reward
       ByStateValues -> return $ reward .+ r1StateNextWorker - r1ValState
-      ByStateValuesAndReward ratio decay -> return $ ratio' .* (reward .+ r1StateNextWorker - r1ValState) +. (1 - ratio') * reward
+      ByStateValuesAndReward ratio decay -> return $ (1 - ratio') .* (reward .+ r1StateNextWorker - r1ValState) +. ratio' * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
   let maxOrMin =
         case borl ^. objective of
@@ -410,7 +410,7 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
       ByMovAvg _ -> return $ toValue agents $ sum (V.toList lastRews') / fromIntegral (V.length lastRews')
       ByReward -> return $ toValue agents reward
       ByStateValues -> return $ reward .+ vValStateNext - vValState
-      ByStateValuesAndReward ratio decay -> return $ ratio' .* (reward .+ vValStateNext - vValState) +. (1 - ratio') * reward
+      ByStateValuesAndReward ratio decay -> return $ (1 - ratio') .* (reward .+ vValStateNext - vValState) +. ratio' * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
   let maxOrMin =
         case borl ^. objective of

@@ -20,8 +20,17 @@ import           GHC.Generics
 
 import           Grenade.Utils.Vector
 
+
+data Objective
+  = Minimise
+  | Maximise
+  deriving (Eq, Ord, NFData, Generic, Show, Serialize)
+
+
 -- Agent
 type AgentNumber = Int
+type NrAgents = Int
+type NrActions = Int
 
 
 -- Action
@@ -38,10 +47,13 @@ newtype DisallowedActionIndicies = DisallowedActionIndicies (VB.Vector (V.Vector
   deriving (NFData, Generic, Show)
 
 fromPositiveActionList :: NumberOfActions -> FilteredActionIndices -> DisallowedActionIndicies
-fromPositiveActionList nr as = DisallowedActionIndicies $ VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` (V.toList acts)]) as
+fromPositiveActionList nr as = DisallowedActionIndicies $ VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` V.toList acts]) as
 
 toPositiveActionList :: NumberOfActions -> DisallowedActionIndicies -> FilteredActionIndices
-toPositiveActionList nr (DisallowedActionIndicies nas) = VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` (V.toList acts)]) nas
+toPositiveActionList nr (DisallowedActionIndicies nas) = VB.map (\acts -> V.fromList [ x | x <- [0..nr-1], x `notElem` V.toList acts]) nas
+
+allActions :: NrAgents -> DisallowedActionIndicies
+allActions nr = DisallowedActionIndicies $ VB.replicate nr V.empty
 
 
 type ActionChoice = VB.Vector (IsRandomAction, ActionIndex)                       -- ^ One action per agent

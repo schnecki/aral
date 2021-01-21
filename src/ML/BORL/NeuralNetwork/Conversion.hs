@@ -27,9 +27,6 @@ import           Debug.Trace
 
 -------------------- Conversion --------------------
 
-type NrAgents = Int
-type NrActions = Int
-
 
 toHeadShapes :: (KnownNat nr, 'D1 nr ~ Head shapes) => Network layers shapes -> StateFeatures -> S (Head shapes)
 toHeadShapes _ inp = S1DV inp

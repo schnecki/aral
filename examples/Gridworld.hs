@@ -127,21 +127,21 @@ instance ExperimentDef (BORL St Act) where
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000 -- 1000
-    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
-    , _trainBatchSize = 8
-    , _trainingIterations = 1
-    , _grenadeLearningParams = OptAdam 0.001 0.9 0.999 1e-8 1e-3
-    , _grenadeSmoothTargetUpdate = 0.01
+    { _replayMemoryMaxSize             = 10000 -- 1000
+    , _replayMemoryStrategy            = ReplayMemorySingle -- ReplayMemoryPerAction
+    , _trainBatchSize                  = 8
+    , _trainingIterations              = 1
+    , _grenadeLearningParams           = OptAdam 0.001 0.9 0.999 1e-8 1e-3
+    , _grenadeSmoothTargetUpdate       = 0.01
     , _grenadeSmoothTargetUpdatePeriod = 100
-    , _learningParamsDecay = ExponentialDecay (Just 1e-6) 0.75 10000
-    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
-    , _scaleOutputAlgorithm = ScaleMinMax
-    , _cropTrainMaxValScaled = Nothing -- Just 0.98. Implemented using LeakyTanh Layer
-    , _grenadeDropoutFlipActivePeriod = 10000
+    , _learningParamsDecay             = ExponentialDecay (Just 1e-6) 0.75 10000
+    , _prettyPrintElems                = map netInp ([minBound .. maxBound] :: [St])
+    , _scaleParameters                 = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleOutputAlgorithm            = ScaleMinMax
+    , _cropTrainMaxValScaled           = Nothing -- Just 0.98. Implemented using LeakyTanh Layer
+    , _grenadeDropoutFlipActivePeriod  = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
+    , _clipGradients                   = NoClipping -- ClipByGlobalNorm 0.01
     }
 
 borlSettings :: Settings
@@ -234,10 +234,10 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
        -- AlgBORLVOnly ByStateValues Nothing
-        AlgDQN 0.99 Exact            -- does not work
+        -- AlgDQN 0.99 Exact            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-  -- AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgBORL 0.5 0.8 ByStateValues mRefState
 
 
@@ -245,14 +245,14 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  -- rl <- force <$> mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
 
   -- Use an own neural network for every function to approximate
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   let invSt | isAnn rl = mInverseSt
             | otherwise = Nothing

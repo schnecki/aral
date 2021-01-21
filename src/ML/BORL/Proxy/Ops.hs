@@ -135,21 +135,21 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
     let mkCalc (s, idx, rew, s', epiEnd) = getCalc s idx rew s' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
-    -- let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
-    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
-        aNr = VB.map snd as
+    let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    -- let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+    --     aNr = VB.map snd as
     let mTrainBatch !accessor !calcs !px =
           maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
         then mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
-        -- else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
-        else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+        else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
+        -- else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <-
       if isNeuralNetwork pRho
         then mTrainBatch getRhoVal' calcs pRho `using` rpar
-        -- else mInsertProxy (traverse (traverse (getRhoVal' . snd))  calcs) pRho `using` rpar
-        else mInsertProxy (getRhoVal' calc) pRho `using` rpar
+        else mInsertProxy (traverse (traverse (getRhoVal' . snd))  calcs) pRho `using` rpar
+        -- else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     !pV' <-     mTrainBatch getVValState' calcs pV `using` rpar
     !pW' <-     mTrainBatch getWValState' calcs pW `using` rpar
     !pPsiV' <-  mTrainBatch getPsiVValState' calcs pPsiV `using` rpar
@@ -195,21 +195,21 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) (config ^. trainBatchSize)) workerReplMems
     let mkCalc (!sas, !idx, !sarew, !sas', !epiEnd) = getCalc sas idx sarew sas' epiEnd
     !calcs <- parMap rdeepseq force <$> mapM (executeAndCombineCalculations mkCalc) (mems ++ concat workerMems)
-    -- let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
-    let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
-        aNr = VB.map snd as
-    let mTrainBatch !accessor !calculations !px =
-          maybe (return (px, False)) (\xs -> (,True) <$> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calculations)
+    let mInsertProxy mVals px = maybe (return px) (\val -> insertProxyManyScalar agent (borl ^. settings) period val px) mVals
+    -- let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+    --     aNr = VB.map snd as
+    let mTrainBatch !field !calculations !px =
+          maybe (return (px, False)) (\xs -> (,True) <$> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second field c in mOut >>= \out -> Just (inp, out))) calculations)
     !pRhoMin' <-
       if isNeuralNetwork pRhoMin
         then fst <$> mTrainBatch getRhoMinimumVal' calcs pRhoMin `using` rpar
-        -- else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
-        else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+        else mInsertProxy (traverse (traverse (getRhoMinimumVal' . snd)) calcs) pRhoMin `using` rpar
+        -- else mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <-
       if isNeuralNetwork pRho
         then fst <$> mTrainBatch getRhoVal' calcs pRho `using` rpar
-        -- else mInsertProxy (traverse (traverse (getRhoVal' . snd)) calcs) pRho `using` rpar
-        else mInsertProxy (getRhoVal' calc) pRho `using` rpar
+        else mInsertProxy (traverse (traverse (getRhoVal' . snd)) calcs) pRho `using` rpar
+        -- else mInsertProxy (getRhoVal' calc) pRho `using` rpar
     (!pV', vActive) <-       mTrainBatch getVValState' calcs (pxs ^. v) `using` rpar
     (!pW', wActive) <-       mTrainBatch getWValState' calcs (pxs ^. w) `using` rpar
     (!pPsiV', psiVActive) <- mTrainBatch getPsiVValState' calcs (pxs ^. psiV) `using` rpar
@@ -245,9 +245,7 @@ insertProxy !agent !setts !p !st !aNr !val = insertProxyMany agent setts p [[((s
 
 insertProxyManyScalar :: (MonadIO m) => AgentType -> Settings -> Period -> [[Value]] -> Proxy -> m Proxy
 insertProxyManyScalar _ _ p [] px = liftIO $ putStrLn ("\n\nEmpty input in insertProxyMany. Period: " ++ show p) >> return px
-insertProxyManyScalar _ _ _ !xs (Scalar _ nrAs) = return $ flip Scalar nrAs (unpackValue $ avg $ map avg xs)
-  -- (unpackValue $ applyToValue avg $ last xs)
-                                                  -- (unpackValue $ applyToValue avg $ map (applyToValue avg) xs)
+insertProxyManyScalar _ _ _ !xs (Scalar _ nrAs) = return $ Scalar (unpackValue $ avg $ map avg xs) nrAs
 insertProxyManyScalar _ _ _ _ _ = error "Called insertProxyManyScalar on nonScalar proxy! This is a programming error"
 
 
@@ -255,7 +253,7 @@ insertProxyManyScalar _ _ _ _ _ = error "Called insertProxyManyScalar on nonScal
 -- `trainBatch` to train the neural networks.
 insertProxyMany :: (MonadIO m) => AgentType -> Settings -> Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> m Proxy
 insertProxyMany _ _ p [] px = liftIO $ putStrLn ("\n\nEmpty input in insertProxyMany. Period: " ++ show p) >> return px
-insertProxyMany _ _ _ !xs (Scalar _ nrAs) = return $ flip Scalar nrAs (unpackValue $ avg $ map (avg . map snd) xs)
+insertProxyMany _ _ _ !xs (Scalar _ nrAs) = return $ Scalar (unpackValue $ avg $ map (avg . map snd) xs) nrAs
 insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
   where
     trunc x = fromInteger (round $ x * (10 ^ n)) / (10.0 ^^ n)

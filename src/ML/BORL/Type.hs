@@ -116,10 +116,6 @@ import           Debug.Trace
 
 -------------------- Main RL Datatype --------------------
 
-data Objective
-  = Minimise
-  | Maximise
-  deriving (Eq, Ord, NFData, Generic, Show, Serialize)
 
 data BORL s as = BORL
   { _actionList        :: !(VB.Vector (Action as)) -- ^ List of possible actions each agent. All agents can do the same actions!

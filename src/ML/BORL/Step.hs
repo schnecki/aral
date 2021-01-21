@@ -17,12 +17,11 @@ module ML.BORL.Step
     ) where
 
 #ifdef DEBUG
-import           Control.Concurrent.MVar
 import           Data.List                          (elemIndex)
-import           System.IO.Unsafe                   (unsafePerformIO)
 #endif
 import           Control.Applicative                ((<|>))
 import           Control.Arrow                      ((&&&), (***))
+import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad
@@ -43,6 +42,7 @@ import           GHC.Generics
 import           Grenade
 import           System.Directory
 import           System.IO
+import           System.IO.Unsafe                   (unsafePerformIO)
 import           System.Random
 import           Text.Printf
 
@@ -133,7 +133,7 @@ stepExecute borl (as, workerActions) = do
         times txt = concatMap (\nr -> "\t" <> txt <> "-Ag" <> show nr) [1..agents]
     writeFile fileDebugStateValuesAgents (show agents)
     writeFile fileStateValues $ "Period" ++ times "Rho" ++ "\tExpSmthRho" ++ times "RhoOverEstimated" ++ times "MinRho" ++ times "VAvg" ++
-      times "R0" ++ times "R1" ++ times "R0_scaled" ++ times "R1_scaled" ++ "\n"
+      times "R0" ++ times "R1" ++ times "R0_scaled" ++ times "R1_scaled" ++ "\tMinValue\tMaxValue" ++ "\n"
     writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period borl) workerActions
@@ -207,6 +207,42 @@ stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
     RewardFuture {} -> return (nr, True, borl)
     Reward {}       -> (nr+1, False, ) <$> execute borl agent dt
 
+
+minMaxStates :: MVar ((Double, (s, AgentActionIndices)), (Double, (s, AgentActionIndices)))
+minMaxStates = unsafePerformIO newEmptyMVar
+{-# NOINLINE minMaxStates #-}
+
+updateMinMax :: BORL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
+updateMinMax borl as calc = do
+  mMinMax <- tryReadMVar minMaxStates
+  let minMax' =
+        case mMinMax of
+          Nothing -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
+          Just minMax@((minVal, _), (maxVal, _)) -> bimap (replaceIf V.minimum (V.minimum value < minVal)) (replaceIf V.maximum (V.maximum value > maxVal)) minMax
+  when (borl ^. t == 0) $ void $ putMVar minMaxStates minMax'
+  when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $ modifyMVar_ minMaxStates (const $ return minMax')
+  when (borl ^. t `mod` 1000 == 0) $ do
+    let ((_, (minS, minA)), (_, (maxS, maxA))) = minMax'
+    AgentValue vMin <- valueFunction minS minA
+    AgentValue vMax <- valueFunction maxS maxA
+    modifyMVar_ minMaxStates (const $ return ((V.minimum vMin, (minS, minA)), (V.maximum vMax, (maxS, maxA))))
+  return $ bimap fst fst minMax'
+  where
+    replaceIf reduce True _ = (reduce value, (borl ^. s, as))
+    replaceIf _ False x     = x
+    AgentValue value =
+      fromMaybe (error "unexpected empty value in updateMinMax") $
+      case borl ^. algorithm of
+        AlgDQNAvgRewAdjusted {} -> getR1ValState' calc
+        AlgDQN {}               -> getR1ValState' calc
+        _                       -> getVValState' calc
+    valueFunction =
+      case borl ^. algorithm of
+        AlgDQNAvgRewAdjusted {} -> rValue borl RBig
+        AlgDQN {}               -> rValue borl RBig
+        _                       -> vValue borl
+
+
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
 execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
@@ -227,7 +263,6 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
       strRhoSmth = show (borl ^. expSmoothedReward)
       strRhoOver = map (show . overEstimateRhoCalc borl) (fromValue rhoVal)
       strMinRho = map show $ fromValue $ fromMaybe (toValue agents 0) (getRhoMinimumVal' calc)
-
       strR0 = map show $ fromValue $ fromMaybe (toValue agents 0) (getR0ValState' calc)
       mCfg = borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig
       strR0Scaled = map show $ fromValue $ fromMaybe (toValue agents 0) $ do
@@ -247,7 +282,9 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
       zero = toValue agents 0
   if isMainAgent agent
   then do
-    liftIO $ appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ "\n")
+    (minVal, maxVal) <- liftIO $ updateMinMax borl (VB.map snd as) calc
+    let minMaxValTxt = "\t" ++ show minVal ++ "\t" ++ show maxVal
+    liftIO $ appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ minMaxValTxt ++ "\n" )
     let (eNr, eStart) = borl ^. episodeNrStart
         eLength = borl ^. t - eStart
     when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
@@ -274,9 +311,8 @@ maybeFlipDropout borl =
       | borl ^. t > cfg ^. grenadeDropoutOnlyInactiveAfter -> borl
       | borl ^. t `mod` cfg ^. grenadeDropoutFlipActivePeriod == 0 ->
         let occurance = borl ^. t `div` cfg ^. grenadeDropoutFlipActivePeriod
-            isEven x = x `mod` 2 == 0
             value
-              | isEven occurance = True
+              | even occurance = True
               | otherwise = False
          in setDropoutValue value borl
     _ -> borl

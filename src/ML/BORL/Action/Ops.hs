@@ -79,6 +79,12 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
             where temp = t0 * explore / fromIntegral agents
       where
         cfg = ActionPickingConfig state (explore / fromIntegral agents) agentIndex (V.toList as)
+        -- avg xs = V.sum xs / fromIntegral (V.length xs)
+        -- minExplore =
+        --   case (borl ^. objective, borl ^. algorithm) of
+        --     (Minimise, AlgDQNAvgRewAdjusted {}) -> (borl ^. expSmoothedReward - avg (borl ^?! proxies . rho . proxyScalar)) / borl ^. expSmoothedReward
+        --     (Maximise, AlgDQNAvgRewAdjusted {}) -> (avg (borl ^?! proxies . rho . proxyScalar) - borl ^. expSmoothedReward) / borl ^. expSmoothedReward
+        --     _ -> explore
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do
