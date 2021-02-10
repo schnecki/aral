@@ -146,11 +146,26 @@ nnConfig =
 
 borlSettings :: Settings
 borlSettings =
-  def
-    { _workersMinExploration = [0.01] -- replicate 0 0.01
-    , _nStep = 5
+  Settings
+    { _useProcessForking             = True
+    , _disableAllLearning            = False
+    , _explorationStrategy           = EpsilonGreedy
+    , _nStep                         = 5
     , _mainAgentSelectsGreedyActions = False -- True
+    , _workersMinExploration         = take 5 [0.05, 0.10 .. 1.0] -- DIFFERENT ONES?
+    , _overEstimateRho               = False -- True
+    , _independentAgents             = 1
+    , _independentAgentsSharedRho    = True -- False
     }
+
+
+-- borlSettings :: Settings
+-- borlSettings =
+--   def
+--     { _workersMinExploration = replicate 5 0.10
+--     , _nStep = 5
+--     , _mainAgentSelectsGreedyActions = False -- True
+--     }
 
 
 -- | BORL Parameters.
@@ -168,7 +183,7 @@ params =
     , _epsilon             = 0.25
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 0.8
+    , _learnRandomAbove    = 1.0 -- 0.8
 
     }
 
@@ -273,16 +288,20 @@ modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
 modelBuilderGrenade actions initState cols =
   buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> -- dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
+  -- fullyConnected 20 >> relu >> -- dropout 0.90 >>
+  -- fullyConnected 10 >> relu >>
+  -- fullyConnected 10 >> relu >>
+  -- fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   -- buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
   -- inputLayer1D lenIn >>
   -- fullyConnected 20 >> relu >>
   -- fullyConnected 10 >> relu >>
   -- fullyConnected 10 >> relu >>
   -- fullyConnected lenOut >> tanhLayer
+  fullyConnected (200) >> leakyRelu >>
+  fullyConnected (round $ 1.75*fromIntegral lenIn) >> leakyRelu >>
+  fullyConnected ((lenIn + lenOut) `div` 2) >> leakyRelu >>
+  fullyConnected lenOut >> reshape (lenActs, cols, 1) -- >> tanhLayer -- leakyTanhLayer 0.98
   where
     lenOut = lenActs * cols
     lenIn = fromIntegral $ V.length (netInp initState)
