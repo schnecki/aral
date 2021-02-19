@@ -206,8 +206,8 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -223,8 +223,8 @@ usermode = do
 
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade actions initState cols =
+modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
+modelBuilderGrenade lenIn (lenActs, cols) =
   buildModelWith (def { cpuBackend = BLAS }) def $
   inputLayer1D lenIn >>
   fullyConnected (3*lenIn) >> relu >>
@@ -237,8 +237,6 @@ modelBuilderGrenade actions initState cols =
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
-    lenIn = fromIntegral $ V.length (netInp initState)
-    lenActs = genericLength actions * fromIntegral (borlSettings ^. independentAgents)
 
 
 netInp :: St -> V.Vector Double

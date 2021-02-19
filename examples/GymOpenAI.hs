@@ -70,8 +70,8 @@ type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, Ful
 type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
 type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
 
-modelBuilderGrenade :: Gym -> St -> Integer -> Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade gym initState lenActs cols =
+modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
+modelBuilderGrenade lenIn (lenActs, cols) =
   buildModelWith (def { cpuBackend = BLAS }) def $
   inputLayer1D lenIn >>
   -- fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
@@ -81,7 +81,6 @@ modelBuilderGrenade gym initState lenActs cols =
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
-    lenIn = fromIntegral $ V.length $ netInp False gym initState
 
 
 nnConfig :: Gym -> Double -> NNConfig
@@ -320,7 +319,7 @@ main = do
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
   -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   -- rl <- mkUnichainTabular alg initState (netInp True gym) actions actFilter (params gym maxRew) (decay gym) borlSettings initValues
-  rl <-  mkUnichainGrenade alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
+  rl <-  mkUnichainGrenade alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) modelBuilderGrenade (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []

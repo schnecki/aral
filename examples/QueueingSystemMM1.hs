@@ -357,8 +357,8 @@ usermode = do
   where cmds = []
         usage = []
 
-modelBuilderGrenade :: Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade cols =
+modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
+modelBuilderGrenade lenIn (lenActs, cols) =
   buildModel $
   inputLayer1D lenIn >>
   fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
@@ -368,8 +368,6 @@ modelBuilderGrenade cols =
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
-    lenIn = fromIntegral $ V.length (netInp initState)
-    lenActs = genericLength actions
 
 
 netInp :: St -> V.Vector Double

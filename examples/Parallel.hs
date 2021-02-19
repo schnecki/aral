@@ -116,7 +116,7 @@ main = do
 
   nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix Nothing) :: IO NN
 
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ _ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
   -- rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
