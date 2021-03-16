@@ -228,7 +228,7 @@ updateMinMax borl as calc = do
         case mMinMax of
           Nothing -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
           Just minMax@((minVal, _), (maxVal, _)) -> bimap (replaceIf V.minimum (V.minimum value < minVal)) (replaceIf V.maximum (V.maximum value > maxVal)) minMax
-  when (borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ putMVar minMaxStates minMax'
+  when (borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ tryPutMVar minMaxStates minMax'
   when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $ hasLocked "updateMinMax modifyMVar 1" $ modifyMVar_ minMaxStates (const $ return minMax')
   when (borl ^. t `mod` 1000 == 0) $ do
     let ((_, (minS, minA)), (_, (maxS, maxA))) = minMax'
