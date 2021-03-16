@@ -60,7 +60,8 @@ dependencies:
   - data-default
   - constraints
   - cuda
-  - experimenter >= 0.1.0.2
+  - experimenter >= 0.1.0.10
+  - say
 
 library:
   source-dirs: src

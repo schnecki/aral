@@ -23,6 +23,7 @@ import           Control.Applicative                ((<|>))
 import           Control.Arrow                      ((&&&), (***))
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
+import           Control.Exception
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class             (MonadIO, liftIO)
@@ -40,6 +41,7 @@ import qualified Data.Vector                        as VB
 import qualified Data.Vector.Storable               as V
 import           GHC.Generics
 import           Grenade
+import           Say
 import           System.Directory
 import           System.IO
 import           System.IO.Unsafe                   (unsafePerformIO)
@@ -212,20 +214,27 @@ minMaxStates :: MVar ((Double, (s, AgentActionIndices)), (Double, (s, AgentActio
 minMaxStates = unsafePerformIO newEmptyMVar
 {-# NOINLINE minMaxStates #-}
 
+hasLocked :: String -> IO a -> IO a
+hasLocked msg action =
+  action `catches`
+  [ Handler $ \exc@BlockedIndefinitelyOnMVar -> sayString ("[MVar]: " ++ msg) >> throwIO exc
+  , Handler $ \exc@BlockedIndefinitelyOnSTM -> sayString ("[STM]: " ++ msg) >> throwIO exc
+  ]
+
 updateMinMax :: BORL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
 updateMinMax borl as calc = do
-  mMinMax <- tryReadMVar minMaxStates
+  mMinMax <- hasLocked "updateMinMax tryReadMVar" $ tryReadMVar minMaxStates
   let minMax' =
         case mMinMax of
           Nothing -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
           Just minMax@((minVal, _), (maxVal, _)) -> bimap (replaceIf V.minimum (V.minimum value < minVal)) (replaceIf V.maximum (V.maximum value > maxVal)) minMax
-  when (borl ^. t == 0) $ void $ putMVar minMaxStates minMax'
-  when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $ modifyMVar_ minMaxStates (const $ return minMax')
+  when (borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ putMVar minMaxStates minMax'
+  when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $ hasLocked "updateMinMax modifyMVar 1" $ modifyMVar_ minMaxStates (const $ return minMax')
   when (borl ^. t `mod` 1000 == 0) $ do
     let ((_, (minS, minA)), (_, (maxS, maxA))) = minMax'
     AgentValue vMin <- valueFunction minS minA
     AgentValue vMax <- valueFunction maxS maxA
-    modifyMVar_ minMaxStates (const $ return ((V.minimum vMin, (minS, minA)), (V.maximum vMax, (maxS, maxA))))
+    hasLocked "updateMinMax modifyMVar 2" $ modifyMVar_ minMaxStates (const $ return ((V.minimum vMin, (minS, minA)), (V.maximum vMax, (maxS, maxA))))
   return $ bimap fst fst minMax'
   where
     replaceIf reduce True _ = (reduce value, (borl ^. s, as))
@@ -331,10 +340,10 @@ stateFeatures = unsafePerformIO $ newMVar mempty
 {-# NOINLINE stateFeatures #-}
 
 setStateFeatures :: (MonadIO m) => [a] -> m ()
-setStateFeatures x = liftIO $ modifyMVar_ stateFeatures (return . const x)
+setStateFeatures x = liftIO $ hasLocked "setStateFeatures" $ modifyMVar_ stateFeatures (return . const x)
 
 getStateFeatures :: (MonadIO m) => m [a]
-getStateFeatures = liftIO $ fromMaybe mempty <$> tryReadMVar stateFeatures
+getStateFeatures = liftIO $ hasLocked "getStateFeatures" $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
 writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => BORL s as -> m (BORL s as)

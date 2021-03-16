@@ -32,6 +32,7 @@ import           Control.Applicative         ((<|>))
 import           Control.Arrow
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
+import           Control.Exception
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -43,6 +44,7 @@ import           Data.Maybe                  (fromMaybe, isNothing)
 import qualified Data.Vector                 as VB
 import qualified Data.Vector.Storable        as V
 import           Grenade
+import           Say
 import           System.IO.Unsafe            (unsafePerformIO)
 
 import           ML.BORL.Calculation.Type
@@ -456,6 +458,14 @@ onlyUseWorker config = config ^. grenadeSmoothTargetUpdate == 1 && config ^. gre
 
 ------------------------------ Helpers ------------------------------
 
+hasLocked :: String -> IO a -> IO a
+hasLocked msg action =
+  action `catches`
+  [ Handler $ \exc@BlockedIndefinitelyOnMVar -> sayString ("[MVar]: " ++ msg) >> throwIO exc
+  , Handler $ \exc@BlockedIndefinitelyOnSTM -> sayString ("[STM]: " ++ msg) >> throwIO exc
+  ]
+
+
 -- | Caching of results
 type CacheKey = (LookupType, ProxyType, StateFeatures)
 
@@ -464,13 +474,13 @@ cacheMVar = unsafePerformIO $ newMVar mempty
 {-# NOINLINE cacheMVar #-}
 
 emptyCache :: MonadIO m => m ()
-emptyCache = liftIO $ modifyMVar_ cacheMVar (const mempty)
+emptyCache = liftIO $ hasLocked "emptyCache" $ modifyMVar_ cacheMVar (const mempty)
 
 addCache :: (MonadIO m) => CacheKey -> [Values] -> m ()
-addCache k val = liftIO $ modifyMVar_ cacheMVar (return . M.insert k val)
+addCache k val = liftIO $ hasLocked "addCache" $ modifyMVar_ cacheMVar (return . M.insert k val)
 
 lookupCache :: (MonadIO m) => CacheKey -> m (Maybe [Values])
-lookupCache k = liftIO $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
+lookupCache k = liftIO $ hasLocked "lookupCache" $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 -- | Get output of function f, if possible from cache according to key (st).
 cached :: (MonadIO m) => CacheKey -> m [Values] -> m [Values]
