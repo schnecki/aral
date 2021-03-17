@@ -228,15 +228,15 @@ updateMinMax borl as calc = do
         case mMinMax of
           Nothing -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
           Just minMax@((minVal, _), (maxVal, _)) -> bimap (replaceIf V.minimum (V.minimum value < minVal)) (replaceIf V.maximum (V.maximum value > maxVal)) minMax
-  when (borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ tryPutMVar minMaxStates minMax'
-  when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $
-    hasLocked "updateMinMax modifyMVar 1" $ catch (modifyMVar_ minMaxStates (const $ return minMax')) (\BlockedIndefinitelyOnSTM -> void (tryPutMVar minMaxStates minMax'))
+  empty <- isEmptyMVar minMaxStates
+  when (empty || borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ tryPutMVar minMaxStates minMax'
+  when (fmap (bimap fst fst) mMinMax /= Just (bimap fst fst minMax')) $ hasLocked "updateMinMax modifyMVar 1" $ modifyMVar_ minMaxStates (const $ return minMax')
   when (borl ^. t `mod` 1000 == 0) $ do
     let ((_, (minS, minA)), (_, (maxS, maxA))) = minMax'
     AgentValue vMin <- valueFunction minS minA
     AgentValue vMax <- valueFunction maxS maxA
     let res = ((V.minimum vMin, (minS, minA)), (V.maximum vMax, (maxS, maxA)))
-    hasLocked "updateMinMax modifyMVar 2" $ catch (modifyMVar_ minMaxStates (const $ return res)) (\BlockedIndefinitelyOnSTM -> void (tryPutMVar minMaxStates res))
+    hasLocked "updateMinMax modifyMVar 2" $ modifyMVar_ minMaxStates (const $ return res)
   return $ bimap fst fst minMax'
   where
     replaceIf reduce True _ = (reduce value, (borl ^. s, as))
