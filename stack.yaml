@@ -2,17 +2,13 @@ flags: {}
 packages:
 - .
 - examples/
-- grenade
-- gym-haskell
-- gym-haskell/haskell-cpython
+- ../grenade
+- ../gym-haskell
+- ../haskell-cpython
 extra-deps:
-- HaTeX-3.22.2.0@sha256:c491c38724d2c9beac25c5a11c1848e3e1e96bd08b3909bd9711870d3610a594,5407
+- cuda-0.11.0.0@sha256:4e572a36f9ed3d2f8b40d6ce582b98b9ee0f499ed4ef1e88a33bb691e5be28c7,5654
 - hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
-- proto-lens-0.5.1.0@sha256:d959c40aabda1ab208a64b0c5abb5519e7956b665275b38beb4c812f51f95987,3266
-- proto-lens-protobuf-types-0.5.0.0@sha256:d2531abfc884a7dbc2a11f18b12cda8afb3063123713cfbfbd376110b1d2a53d,2333
-- proto-lens-runtime-0.5.0.0@sha256:cb39cf13ce4f7dac5414f94a7afe0adc9b831312e6b60588a23bd816accc385f,3132
-- cublas-0.6.0.0@sha256:f25a633f067f31b6df0aff751710b1a4d79d39c5ed717462879e0ece46cf294b,2363
-- cuda-0.10.2.0@sha256:29912a2273840bbad934b404c7bd27633a1b9b5449c57ae8118bc35e7dcfeb74,5656
-- experimenter-0.1.0.10@sha256:ad13bd1d8f4190338a0459a2b73aa3c5fdf25ec30c18ba3407caed957468cc1b,3827
+
 allow-newer: false
-resolver: lts-16.20
+resolver:
+  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/11.yaml
