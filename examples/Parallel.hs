@@ -76,8 +76,8 @@ instance BorlLp St Act where
 
 policy :: Policy St Act
 policy s a
-  | s == End = [((Start, Up), 1.0)]
-  -- | s == End = [((Start, down), 1.0)]
+  -- | s == End = [((Start, Up), 1.0)]
+  | s == End = [((Start, Down), 1.0)]
   | (s, a) == (Start, Up) = [((Top 1, Up), 1.0)]
   | (s, a) == (Start, Down) = [((Bottom 1, Down), 1.0)]
   | otherwise =
@@ -99,7 +99,9 @@ alg :: Algorithm St
 alg =
         -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.84837 0.99 ByStateValues
+        AlgDQNAvgRewAdjusted 0.9 0.99 ByStateValues
+        -- AlgDQNAvgRewAdjusted 0.84837 0.99 ByStateValues
+
         -- AlgBORLVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -116,8 +118,8 @@ main = do
 
   nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix Nothing) :: IO NN
 
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ _ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ _ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where cmds = []
@@ -161,7 +163,7 @@ params =
     , _beta = 0.01
     , _delta = 0.01
     , _gamma = 0.01
-    , _epsilon = 0.1
+    , _epsilon = 0.015
 
     , _exploration = 1.0
     , _learnRandomAbove = 0.5

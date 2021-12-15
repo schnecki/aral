@@ -1,4 +1,4 @@
-name:                borl
+name:                aral
 version:             0.2.0.0
 github:              "github.com/schnecki"
 license:             AllRightsReserved
@@ -17,7 +17,7 @@ category:            Machine Learning
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/borl#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/aral#readme>
 
 flags:
   fast:
@@ -88,7 +88,7 @@ library:
   cc-options: -std=c99 -O4 -msse4.2 -Wall -Werror -DCABAL=1 -fopenmp
 
 tests:
-  borl-test:
+  aral-test:
     main:                Main.hs
     source-dirs:         test
     default-extensions: CPP
@@ -98,6 +98,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
       - base >= 4.7 && < 5
-      - borl
+      - aral
       - QuickCheck
       - hspec

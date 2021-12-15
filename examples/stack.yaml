@@ -1,7 +1,10 @@
 flags: {}
 packages:
 - .
-- ../grenade
+- ../
+- ../../grenade
+- ../../haskell-cpython
+- ../../gym-haskell
 extra-deps:
 - cuda-0.11.0.0@sha256:4e572a36f9ed3d2f8b40d6ce582b98b9ee0f499ed4ef1e88a33bb691e5be28c7,5654
 - hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683

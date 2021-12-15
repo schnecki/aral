@@ -64,3 +64,5 @@ queueLength
 /examples/lp_v_delta
 /stateVAllStates_scaled
 /stateValuesAgents
+/examples/stack.yaml.lock
+/examples/stateValuesAgents

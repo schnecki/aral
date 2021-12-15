@@ -150,7 +150,7 @@ executables:
     - borl
     - gym-haskell
     - experimenter
-    extra-libraries: python3.9
+    extra-libraries: python3.10
 
 
   multichain:
