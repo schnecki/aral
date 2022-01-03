@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -97,6 +96,7 @@ import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Mutable          as VM
 import qualified Data.Vector.Storable         as V
+import           EasyLogger
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
@@ -231,7 +231,7 @@ data InitValues = InitValues
   , defaultW          :: !Double -- ^ Starting W value [Default: 0]
   , defaultR0         :: !Double -- ^ Starting R0 value [Default: 0]
   , defaultR1         :: !Double -- ^ starting R1 value [Default: 0]
-  }
+  } deriving (Show, Eq, Ord, Serialize, Generic)
 
 
 defInitValues :: InitValues
@@ -256,11 +256,11 @@ flipObjective borl = case borl ^. objective of
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm StateFeatures
 convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s, a))) = AlgBORL g0 g1 avgRew (Just (ftExt s, a))
-convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a))) = AlgBORLVOnly avgRew (Just (ftExt s, a))
-convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing) = AlgBORL g0 g1 avgRew Nothing
-convertAlgorithm _ (AlgBORLVOnly avgRew Nothing) = AlgBORLVOnly avgRew Nothing
-convertAlgorithm _ (AlgDQN ga cmp) = AlgDQN ga cmp
-convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew) = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
+convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a)))  = AlgBORLVOnly avgRew (Just (ftExt s, a))
+convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing)           = AlgBORL g0 g1 avgRew Nothing
+convertAlgorithm _ (AlgBORLVOnly avgRew Nothing)            = AlgBORLVOnly avgRew Nothing
+convertAlgorithm _ (AlgDQN ga cmp)                          = AlgDQN ga cmp
+convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew)    = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 mkUnichainTabular ::
      forall s as. (Enum as, Bounded as, Eq as, Ord as, NFData as)
@@ -275,7 +275,8 @@ mkUnichainTabular ::
   -> Maybe InitValues
   -> IO (BORL s as)
 mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
-  st <- initialStateFun MainAgent
+  $(logPrintDebugText) "Creating tabular unichain ARAL"
+  st <- force <$> initialStateFun MainAgent
   let proxies' =
         Proxies
           (Scalar (V.replicate agents defRhoMin) (length as))
@@ -383,6 +384,7 @@ mkUnichainGrenade ::
   -> Maybe InitValues
   -> IO (BORL s as)
 mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig settings initValues = do
+  $(logPrintDebugText) "Creating unichain ARAL with Grenade"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
       rows = genericLength ([minBound .. maxBound] :: [as]) * fromIntegral (settings ^. independentAgents)
@@ -648,7 +650,7 @@ scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParame
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
     AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
-    _ -> scalingByMaxAbsReward onlyPositive maxR
+    _                      -> scalingByMaxAbsReward onlyPositive maxR
   where
     maxW = 50 * maxR
     maxR1 = 1.0 * maxR
@@ -681,9 +683,9 @@ checkNetworkOutput combined borl
     reqZ = 1 :: Integer
     reqX = fromIntegral $ length (borl ^. actionList) * (borl ^. settings . independentAgents) :: Integer
     (x, y, z) = case px of
-      Grenade t _ _ _ _ _ -> mkDims t
+      Grenade t _ _ _ _ _                     -> mkDims t
       CombinedProxy (Grenade t _ _ _ _ _) _ _ -> mkDims t
-      px'                  -> error $ "Error in checkNetworkOutput. This should not have happend. Proxy is: "++ show px'
+      px'                                     -> error $ "Error in checkNetworkOutput. This should not have happend. Proxy is: "++ show px'
     mkDims :: forall layers shapes . (SingI (Last shapes)) => Network layers shapes -> (Integer,Integer,Integer)
     mkDims _ = tripleFromSomeShape (SomeSing (sing :: Sing (Last shapes)))
     px =
