@@ -5,7 +5,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE ViewPatterns        #-}
 module ML.BORL.Step
     ( step
     , steps
@@ -31,9 +30,7 @@ import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
-import           Data.List                          (find, foldl', groupBy, intercalate,
-                                                     maximumBy, partition, sortBy,
-                                                     transpose)
+import           Data.List                          (find, foldl', groupBy, intercalate, maximumBy, partition, sortBy, transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
@@ -64,7 +61,6 @@ import           ML.BORL.Serialisable
 import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
-import           ML.BORL.Workers.Type
 import           ML.BORL.Workers.Type
 
 
@@ -183,7 +179,7 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = d
   let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state as reward stateNext episodeEnd])
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
   let addNewRewardToExp currentExpSmthRew (RewardFutureData _ _ _ (Reward rew') _ _) = (1 - expSmthPsi) * currentExpSmthRew + expSmthPsi * rew'
-      addNewRewardToExp _ _ = error "unexpected RewardFutureData in runWorkerAction"
+      addNewRewardToExp _ _                                                          = error "unexpected RewardFutureData in runWorkerAction"
   newReplMem <- foldM addExperience replMem materialisedFutures
   return $! force $ WorkerState wNr stateNext newReplMem newFutures (foldl' addNewRewardToExp rew materialisedFutures)
   where
@@ -227,7 +223,7 @@ updateMinMax borl as calc = do
   mMinMax <- hasLocked "updateMinMax tryReadMVar" $ tryReadMVar minMaxStates
   let minMax' =
         case mMinMax of
-          Nothing -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
+          Nothing                                -> ((V.minimum value, (borl ^. s, as)), (V.maximum value, (borl ^. s, as)))
           Just minMax@((minVal, _), (maxVal, _)) -> bimap (replaceIf V.minimum (V.minimum value < minVal)) (replaceIf V.maximum (V.maximum value > maxVal)) minMax
   empty <- isEmptyMVar minMaxStates
   when (empty || borl ^. t == 0) $ void $ hasLocked "updateMinMax putMVar" $ tryPutMVar minMaxStates minMax'

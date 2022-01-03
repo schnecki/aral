@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 module ML.BORL.Action.Ops
   ( NextActions
   , ActionChoice
@@ -21,6 +22,7 @@ import qualified Data.Vector.Storable           as V
 import           System.Random
 
 
+import           EasyLogger
 import           ML.BORL.Algorithm
 import           ML.BORL.Calculation
 import           ML.BORL.Exploration
@@ -35,7 +37,6 @@ import           ML.BORL.Settings
 import           ML.BORL.Type
 import           ML.BORL.Types
 import           ML.BORL.Workers.Type
-
 
 import           Debug.Trace
 
@@ -191,7 +192,7 @@ chooseAction borl useRand selFromList = do
       let groupValues =
             case cmp of
               EpsilonSensitive -> groupBy (epsCompareN 0 (==) `on` fst) . sortBy (flip compare `on` fst)
-              Exact -> groupBy ((==) `on` fst) . sortBy (flip compare `on` fst)
+              Exact            -> groupBy ((==) `on` fst) . sortBy (flip compare `on` fst)
       bestR <- liftIO $ fmap maxOrMin $ selFromList $ groupValues (zip rValues as)
       if length bestR == 1
         then return (False, snd $ headDqn bestR)

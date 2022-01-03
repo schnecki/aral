@@ -276,7 +276,7 @@ mkUnichainTabular ::
   -> IO (BORL s as)
 mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   $(logPrintDebugText) "Creating tabular unichain ARAL"
-  st <- force <$> initialStateFun MainAgent
+  st <- initialStateFun MainAgent
   let proxies' =
         Proxies
           (Scalar (V.replicate agents defRhoMin) (length as))

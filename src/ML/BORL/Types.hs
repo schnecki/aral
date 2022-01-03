@@ -207,7 +207,16 @@ mapValues :: (V.Vector Double -> V.Vector Double) -> Values -> Values
 mapValues f (AgentValues vals) = AgentValues (fmap f vals)
 
 selectIndices :: AgentActionIndices -> Values -> Value
-selectIndices idxs (AgentValues vals) = AgentValue (V.convert $ VB.zipWith (V.!) vals idxs)
+selectIndices idxs (AgentValues vals) =
+#if DEBUG
+  AgentValue (V.convert $ VB.zipWith idx vals idxs)
+  where
+    idx vs i
+      | V.length vs >= i = error $ "Selecting out of bounds index for agent: " ++ show (vals, idxs) ++ ". Did you set the value of independentAgents right?"
+      | otherwise = vs V.! i
+#else
+  AgentValue (V.convert $ VB.zipWith (V.!) vals idxs)
+#endif
 
 reduceValues :: (V.Vector Double -> Double) -> Values -> Value
 reduceValues f (AgentValues vals) = AgentValue (V.convert $ VB.map f vals)

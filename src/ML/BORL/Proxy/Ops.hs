@@ -246,9 +246,9 @@ insertProxy :: (MonadIO m) => AgentType -> Settings -> Period -> StateFeatures -
 insertProxy !agent !setts !p !st !aNr !val = insertProxyMany agent setts p [[((st, aNr), val)]]
 
 insertProxyManyScalar :: (MonadIO m) => AgentType -> Settings -> Period -> [[Value]] -> Proxy -> m Proxy
-insertProxyManyScalar _ _ p [] px = liftIO $ putStrLn ("\n\nEmpty input in insertProxyMany. Period: " ++ show p) >> return px
+insertProxyManyScalar _ _ p [] px               = liftIO $ putStrLn ("\n\nEmpty input in insertProxyMany. Period: " ++ show p) >> return px
 insertProxyManyScalar _ _ _ !xs (Scalar _ nrAs) = return $ Scalar (unpackValue $ avg $ map avg xs) nrAs
-insertProxyManyScalar _ _ _ _ _ = error "Called insertProxyManyScalar on nonScalar proxy! This is a programming error"
+insertProxyManyScalar _ _ _ _ _                 = error "Called insertProxyManyScalar on nonScalar proxy! This is a programming error"
 
 
 -- | Insert a new (single) value to the proxy. For neural networks this will add the value to the startup table. See
@@ -284,7 +284,7 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
       -- ((ft, VB.zipWith (\agNr idx -> columnMajorModeIndex nrPxs (agNr * nrAs + idx) pxNr) nrAgents curIdx), scaleValue scaleAlg (getMinMaxVal px) out)
       ((ft, VB.zipWith (\agNr idx -> pxNr * len + agNr * nrAs + idx) nrAgents curIdx), scaleValue scaleAlg (getMinMaxVal px) out)
     getAndScaleExpectedOutput px@(CombinedProxy _ col outs) = map (map (convertData px col)) outs
-    getAndScaleExpectedOutput px = error $ "unexpected proxy in insertCombinedProxies" ++ show px
+    getAndScaleExpectedOutput px                            = error $ "unexpected proxy in insertCombinedProxies" ++ show px
     nrPxs = length pxs
     len = nrAs * (pxLearn ^?! proxyNrAgents)
 
@@ -323,8 +323,8 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     trainingInstances' =
       case px ^?! proxyType of
         NoScaling CombinedUnichain _ -> concatMap (map (convertTrainingInstances (\_ idx -> idx))) trainingInstances -- combined proxies (idx already lculated)
-        NoScaling {} -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
-        _ -> concatMap (map (convertTrainingInstances mkIdx . (second $ scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
+        NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
+        _                            -> concatMap (map (convertTrainingInstances mkIdx . (second $ scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
     mkIdx agNr aIdx = agNr * nrActs + aIdx
     lRate = getLearningRate (config ^. grenadeLearningParams)
     scaleAlg = config ^. scaleOutputAlgorithm
@@ -352,16 +352,16 @@ lookupProxyAgent _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetw
 
 -- | Retrieve a value.
 lookupProxy :: (MonadIO m) => Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
-lookupProxy _ _ _ (Scalar x _)    = return $ AgentValue x
+lookupProxy _ _ _ (Scalar x _)           = return $ AgentValue x
 lookupProxy _ _ (k, ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k, a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxy _ lkType k px       = lookupNeuralNetwork lkType k px
+lookupProxy _ lkType k px                = lookupNeuralNetwork lkType k px
 
 
 -- | Retrieve a value, but do not unscale! For DEBUGGING only!
 lookupProxyNoUnscale :: (MonadIO m) => Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
-lookupProxyNoUnscale _ _ _ (Scalar x _)    = return $ AgentValue x
+lookupProxyNoUnscale _ _ _ (Scalar x _)          = return $ AgentValue x
 lookupProxyNoUnscale _ _ (k,ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k,a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxyNoUnscale _ lkType k px       = lookupNeuralNetworkUnscaled lkType k px
+lookupProxyNoUnscale _ lkType k px               = lookupNeuralNetworkUnscaled lkType k px
 
 
 -- | Retrieves all action values for the state but filters to the provided actions.
@@ -406,9 +406,9 @@ lookupActionsNeuralNetwork !tp !k !px = unscaleVal <$> lookupActionsNeuralNetwor
 
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
-lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{} = selectIndices actIdx <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{}           = selectIndices actIdx <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px _ _) = lookupNeuralNetworkUnscaled tp (st, actIdx) px
-lookupNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
+lookupNeuralNetworkUnscaled _ _ _                                     = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
@@ -426,8 +426,8 @@ lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled ca
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
 lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ _ nrAs agents) = return $ runGrenade netW nrAs agents st
 lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ _ nrAs agents) = return $ runGrenade netT nrAs agents st
-lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{} = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
-lookupActionsNeuralNetworkUnscaledFull _ _ _ = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
+lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                        = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
+lookupActionsNeuralNetworkUnscaledFull _ _ _                                      = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 
 mkLookupType :: NNConfig -> LookupType -> LookupType
@@ -500,13 +500,13 @@ getMinMaxVal :: Proxy -> Maybe (MinValue Double, MaxValue Double)
 getMinMaxVal Table{} = error "getMinMaxVal called for Table"
 getMinMaxVal !p =
   case unCombine (p ^?! proxyType) of
-    VTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
-    WTable -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
-    R0Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR0Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR0Value)
-    R1Table -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR1Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR1Value)
-    PsiVTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
-    PsiWTable -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
-    NoScaling {} -> Nothing
+    VTable           -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
+    WTable           -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
+    R0Table          -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR0Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR0Value)
+    R1Table          -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinR1Value, p ^?! proxyNNConfig . scaleParameters . scaleMaxR1Value)
+    PsiVTable        -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
+    PsiWTable        -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
+    NoScaling {}     -> Nothing
     CombinedUnichain -> error "should not happend"
     -- CombinedUnichainScaleAs {} -> error "should not happend"
   where
