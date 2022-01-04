@@ -21,8 +21,7 @@ import           Control.Lens
 import           Control.Monad          (join, when)
 import           Control.Monad.IO.Class
 import           Data.Function          (on)
-import           Data.List              (find, foldl', intercalate, intersperse, sort,
-                                         sortBy)
+import           Data.List              (find, foldl', intercalate, intersperse, sort, sortBy)
 import qualified Data.Map.Strict        as M
 import           Data.Maybe             (fromMaybe, isJust, listToMaybe)
 import qualified Data.Set               as S
@@ -43,8 +42,7 @@ import           ML.BORL.InftyVector
 import           ML.BORL.NeuralNetwork
 import           ML.BORL.Parameters
 import qualified ML.BORL.Proxy          as P
-import           ML.BORL.Proxy.Ops      (LookupType (..), getMinMaxVal,
-                                         lookupNeuralNetwork, mkNNList)
+import           ML.BORL.Proxy.Ops      (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
 import           ML.BORL.Proxy.Proxies
 import           ML.BORL.Proxy.Type
 import           ML.BORL.Settings
@@ -196,7 +194,7 @@ prettyComparison Exact            = "optimising by exact comparison"
 
 
 prettyRefState :: (Show a) => (NetInputWoAction -> a) -> (ActionIndex -> Doc) -> Maybe (NetInputWoAction, [ActionIndex]) -> Doc
-prettyRefState _ _ Nothing = mempty
+prettyRefState _ _ Nothing                                  = mempty
 prettyRefState prettyState prettyAction (Just (stFeat,aNr)) = ";" <+>  "Ref state: " <> text (show $ prettyState stFeat) <> " - " <> printActionIndices prettyAction aNr
 
 prettyAvgRewardType :: Period -> AvgReward -> Doc
@@ -221,7 +219,7 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
           AlgDQN {} -> mempty
           _         -> doc
   let prBoolTblsStateAction True h m1 m2 = (h $+$) <$> prettyTablesState borl prettyState prettyActionIdx m1 prettyState noMod m2
-      prBoolTblsStateAction False _ _ _ = return empty
+      prBoolTblsStateAction False _ _ _  = return empty
   prettyRhoVal <-
     case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
       (Scalar val _, Scalar valRhoMin _) ->
@@ -270,7 +268,7 @@ prettyBORLHead' printRho prettyStateFun borl = do
       prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
           (Scalar val _, Scalar valRhoMin _) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
-          _ -> empty
+          _                                  -> empty
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
@@ -286,9 +284,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
       (map
          (\(WorkerState wId wSt _ _ rew) -> text "Current state Worker " <+> int wId <> colon $$ nest nestCols (text $ show wSt) <+> "Exp. Smth Reward: " <> printDouble rew)
          (borl ^. workers)) $+$
-    text "Period" <>
-    colon $$
-    nest nestCols (int $ borl ^. t) $+$
+
+    text "Period" <> colon $$ nest nestCols (int $ borl ^. t) $+$
+    text "Objective" <> colon $$ nest nestCols (text $ show $ borl ^. objective) $+$
     text "Alpha/AlphaRhoMin" <>
     colon $$
     nest nestCols (printDoubleWith 8 (getExpSmthParam True rho alpha) <> text "/" <> printDoubleWith 8 (getExpSmthParam True rhoMinimum alphaRhoMin)) <+>
@@ -329,9 +327,9 @@ prettyBORLHead' printRho prettyStateFun borl = do
       (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
-       AlgBORL {} -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-       AlgBORLVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgDQN {} -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
+       AlgBORL {}              -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+       AlgBORLVOnly {}         -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgDQN {}               -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
        AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
@@ -415,14 +413,14 @@ prettyBORLHead' printRho prettyStateFun borl = do
         textNNConf conf =
           text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+>
           maybe mempty (brackets . textReplayMemoryType) (borl ^. proxies . replayMemory)
-    textReplayMemoryType ReplayMemoriesUnified {} = text "unified replay memory"
+    textReplayMemoryType ReplayMemoriesUnified {}        = text "unified replay memory"
     textReplayMemoryType mem@ReplayMemoriesPerActions {} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
-        P.Table {} -> empty
-        P.Grenade _ _ _ conf _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.Table {}                                     -> empty
+        P.Grenade _ _ _ conf _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        _ -> error "nnLearningParams in Pretty.hs"
+        _                                              -> error "nnLearningParams in Pretty.hs"
       where
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
