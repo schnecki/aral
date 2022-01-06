@@ -142,7 +142,7 @@ data BORL s as = BORL
   , _parameters        :: !ParameterInitValues     -- ^ Parameter setup.
   , _decaySetting      :: !ParameterDecaySetting   -- ^ Decay Setup
   , _settings          :: !Settings                -- ^ Parameter setup.
-  , _futureRewards     :: ![RewardFutureData s]    -- ^ List of future reward.
+  , _futureRewards     :: !(VB.Vector (RewardFutureData s)) -- ^ List of future reward.
 
   -- define algorithm to use
   , _algorithm         :: !(Algorithm StateFeatures) -- ^ What algorithm to use.
@@ -348,7 +348,7 @@ mkMultichainTabular alg initialStateFun ftExt asFun asFilter params decayFun set
       params
       decayFun
       settings
-      mempty
+      VB.empty
       (convertAlgorithm ftExt alg)
       Maximise
       0
@@ -521,7 +521,7 @@ mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter pa
       params
       decayFun
       settings
-      []
+      VB.empty
       (convertAlgorithm ftExt alg)
       Maximise
       defRhoMin
@@ -595,7 +595,7 @@ mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net
       params
       decayFun
       settings
-      []
+      VB.empty
       (convertAlgorithm ftExt alg)
       Maximise
       defRhoMin
@@ -666,7 +666,7 @@ mkWorkers state as mNNConfig setts = do
     else do
       repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
       states <- mapM state workerTypes
-      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) [] 0) [1 ..] states repMems
+      return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) VB.empty 0) [1 ..] states repMems
   where
     err = error $ "Could not create replay memory for workers with nStep=" ++ show (setts ^. nStep) ++ " and memMaxSize=" ++ show (view replayMemoryMaxSize <$> mNNConfig)
 

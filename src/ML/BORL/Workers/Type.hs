@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveAnyClass       #-}
@@ -21,6 +20,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Data.Either           (isRight)
 import           Data.Serialize
+import qualified Data.Vector           as VB
 import           GHC.Generics
 
 import           ML.BORL.Action.Type
@@ -37,7 +37,7 @@ data WorkerState s =
     { _workerNumber        :: Int                   -- ^ Worker nr.
     , _workerS             :: !s                    -- ^ Current state.
     , _workerReplayMemory  :: !ReplayMemories       -- ^ Replay Memories of worker.
-    , _workerFutureRewards :: ![RewardFutureData s] -- ^ Future reward data.
+    , _workerFutureRewards :: !(VB.Vector (RewardFutureData s)) -- ^ Future reward data.
     , _workerExpSmthReward :: Double                 -- ^ Exponentially smoothed reward with rate 0.0001
     }
   deriving (Generic)
@@ -47,7 +47,7 @@ mapWorkers :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') ->
 mapWorkers f g = map (mapWorkerState f g)
 
 mapWorkerState :: (RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> WorkerState s -> WorkerState s'
-mapWorkerState f g (WorkerState nr s px futs rew) = WorkerState nr (f s) px (map (mapRewardFutureData f g) futs) rew
+mapWorkerState f g (WorkerState nr s px futs rew) = WorkerState nr (f s) px (VB.map (mapRewardFutureData f g) futs) rew
 
 instance NFData s => NFData (WorkerState s) where
   rnf (WorkerState nr state replMem fut rew) = rnf nr `seq` rnf state `seq` rnf replMem `seq` rnf1 fut `seq` rnf rew

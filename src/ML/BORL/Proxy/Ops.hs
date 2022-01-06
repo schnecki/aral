@@ -6,6 +6,7 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
@@ -41,8 +42,10 @@ import           Data.Function               (on)
 import           Data.List                   (foldl', sortBy, transpose)
 import qualified Data.Map.Strict             as M
 import           Data.Maybe                  (fromMaybe, isNothing)
+import qualified Data.Text                   as T
 import qualified Data.Vector                 as VB
 import qualified Data.Vector.Storable        as V
+import           EasyLogger
 import           Grenade
 import           Say
 import           System.IO.Unsafe            (unsafePerformIO)
@@ -126,6 +129,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    when (period == fromIntegral (replayMemoriesSize replMems) - 1) $ $(logPrintInfoText) (T.pack $ "Starting to learn. Period: " <> show period)
     emptyCache
     return (replayMemory ?~ replMem' $ pxs { _rhoMinimum = pRhoMin', _rho = pRho' }, calc)
   | otherwise = do
@@ -186,6 +190,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    when (period == fromIntegral (replayMemoriesSize replMems) - 1) $ $(logPrintInfoText) (T.pack $ "Starting to learn. Period: " <>  show period)
     emptyCache
     return (replayMemory ?~ replMem' $ pxs { _rhoMinimum = pRhoMin', _rho = pRho' }, calc)
   | otherwise = do

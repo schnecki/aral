@@ -9,7 +9,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE Strict              #-}
 {-# LANGUAGE Unsafe              #-}
-{-# LANGUAGE ViewPatterns        #-}
 
 
 module ML.BORL.Serialisable where
@@ -92,7 +91,7 @@ toSerialisableWith f g (BORL as _ _ state workers' _ time eNr par dec setts futu
     par
     dec
     setts
-    (map (mapRewardFutureData f g) future)
+    (VB.toList $ VB.map (mapRewardFutureData f g) future)
     (mapAlgorithmState V.toList alg)
     obj
     expSmthRew
@@ -127,7 +126,7 @@ fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par
     par
     dec
     setts
-    (map (mapRewardFutureData f g) future)
+    (VB.map (mapRewardFutureData f g) (VB.fromList future))
     (mapAlgorithmState V.fromList alg)
     obj
     expSmthRew
@@ -139,7 +138,7 @@ fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par
 
 instance Serialize Proxies
 instance Serialize ReplayMemories where
-  put (ReplayMemoriesUnified nr r)         = put (0 :: Int) >> put nr >> put r
+  put (ReplayMemoriesUnified nr r)           = put (0 :: Int) >> put nr >> put r
   put (ReplayMemoriesPerActions nrAs tmp xs) = put (1 :: Int) >> put nrAs >> put tmp >> put (VB.toList xs)
   get = do
     nr <- get
@@ -148,7 +147,21 @@ instance Serialize ReplayMemories where
       1 -> ReplayMemoriesPerActions <$> get <*> get <*> fmap VB.fromList get
       _ -> error "index error"
 
-instance (Serialize s, RewardFuture s) => Serialize (WorkerState s)
+data WorkerStateSerialisable s =
+  WorkerStateSerialisable
+    { _serWorkerNumber        :: Int                   -- ^ Worker nr.
+    , _serWorkerS             :: !s                    -- ^ Current state.
+    , _serWorkerReplayMemory  :: !ReplayMemories       -- ^ Replay Memories of worker.
+    , _serWorkerFutureRewards :: ![RewardFutureData s] -- ^ Future reward data.
+    , _serWorkerExpSmthReward :: Double                -- ^ Exponentially smoothed reward with rate 0.0001
+    }
+  deriving (Generic, Serialize)
+
+
+instance (Serialize s, RewardFuture s) => Serialize (WorkerState s) where
+  put (WorkerState n st rep fts exp) = put (WorkerStateSerialisable n st rep (VB.toList fts) exp)
+  get = (\(WorkerStateSerialisable n st rep fts exp) -> (WorkerState n st rep (VB.fromList fts) exp)) <$> get
+
 
 instance Serialize NNConfig where
   put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip) =
@@ -175,8 +188,8 @@ instance Serialize NNConfig where
 
 
 instance Serialize Proxy where
-  put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
-  put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
+  put (Scalar x nrAs)                 = put (0 :: Int) >> put (V.toList x) >> put nrAs
+  put (Table m d acts)                = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
   get = fmap force $! do
     (c :: Int) <- get

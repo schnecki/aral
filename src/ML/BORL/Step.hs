@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
 module ML.BORL.Step
     ( step
@@ -35,8 +36,10 @@ import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
 import           Data.Serialize
+import qualified Data.Text                          as T
 import qualified Data.Vector                        as VB
 import qualified Data.Vector.Storable               as V
+import           EasyLogger
 import           GHC.Generics
 import           Grenade
 import           Say
@@ -141,10 +144,10 @@ stepExecute borl (as, workerActions) = do
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
   (reward, stateNext, episodeEnd) <- liftIO $ action MainAgent state acts
-  let borl' = over futureRewards (applyStateToRewardFutureData state . (++ [RewardFutureData period state as reward stateNext episodeEnd])) borl
+  let borl' = over futureRewards (applyStateToRewardFutureData state . (`VB.snoc` RewardFutureData period state as reward stateNext episodeEnd)) borl
   (dropLen, _, newBorl) <- foldM (stepExecuteMaterialisedFutures MainAgent) (0, False, borl') (borl' ^. futureRewards)
   newWorkers <- liftIO $ collectWorkers workerRefs
-  return $ set workers newWorkers $ over futureRewards (drop dropLen) $ set s stateNext newBorl
+  return $ set workers newWorkers $ over futureRewards (VB.drop dropLen) $ set s stateNext newBorl
   where
     collectWorkers (Left xs)      = return xs
     collectWorkers (Right ioRefs) = mapM collectForkResult ioRefs
@@ -162,8 +165,8 @@ runWorkerActions borl acts = Right <$> zipWithM (\act worker -> doFork' $ runWor
       | otherwise = doForkFake
 
 -- | Apply the given state to a list of future reward data.
-applyStateToRewardFutureData :: State s -> [RewardFutureData s] -> [RewardFutureData s]
-applyStateToRewardFutureData state = map (over futureReward applyToReward)
+applyStateToRewardFutureData :: State s -> VB.Vector (RewardFutureData s) -> VB.Vector (RewardFutureData s)
+applyStateToRewardFutureData state = VB.map (over futureReward applyToReward)
   where
     applyToReward (RewardFuture storage) = applyState storage state
     applyToReward r                      = r
@@ -176,7 +179,7 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = d
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
   (reward, stateNext, episodeEnd) <- liftIO $ action (WorkerAgent wNr) state acts
-  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards ++ [RewardFutureData (borl ^. t) state as reward stateNext episodeEnd])
+  let newFuturesUndropped = applyStateToRewardFutureData state (oldFutureRewards `VB.snoc` RewardFutureData (borl ^. t) state as reward stateNext episodeEnd)
   let (materialisedFutures, newFutures) = splitMaterialisedFutures newFuturesUndropped
   let addNewRewardToExp currentExpSmthRew (RewardFutureData _ _ _ (Reward rew') _ _) = (1 - expSmthPsi) * currentExpSmthRew + expSmthPsi * rew'
       addNewRewardToExp _ _                                                          = error "unexpected RewardFutureData in runWorkerAction"
@@ -184,8 +187,8 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = d
   return $! force $ WorkerState wNr stateNext newReplMem newFutures (foldl' addNewRewardToExp rew materialisedFutures)
   where
     splitMaterialisedFutures fs =
-      let xs = takeWhile (not . isRewardFuture . view futureReward) fs
-       in (filter (not . isRewardEmpty . view futureReward) xs, drop (length xs) fs)
+      let (futures, finished) = VB.partition (isRewardFuture . view futureReward) fs
+       in (VB.filter (not . isRewardEmpty . view futureReward) finished, futures)
     addExperience replMem' (RewardFutureData _ state' as' (Reward reward) stateNext episodeEnd) = do
       let (_, stateActs, stateNextActs) = mkStateActs borl state' stateNext
       liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as', reward, stateNextActs, episodeEnd) replMem'

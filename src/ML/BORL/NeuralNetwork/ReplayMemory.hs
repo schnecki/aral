@@ -7,7 +7,6 @@
 {-# LANGUAGE Strict          #-}
 {-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ViewPatterns    #-}
 
 
 module ML.BORL.NeuralNetwork.ReplayMemory where
@@ -48,7 +47,7 @@ instance Show ReplayMemories where
   show (ReplayMemoriesPerActions _ _ rs) = "Per Action " <> show (VB.head rs)
 
 replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
-replayMemories _ f (ReplayMemoriesUnified nr rm) = ReplayMemoriesUnified nr <$> f rm
+replayMemories _ f (ReplayMemoriesUnified nr rm)          = ReplayMemoriesUnified nr <$> f rm
 replayMemories idx f (ReplayMemoriesPerActions nr tmp rs) = (\x -> ReplayMemoriesPerActions nr tmp (rs VB.// [(idx, x)])) <$> f (rs VB.! idx)
 
 
@@ -87,7 +86,7 @@ fromInternal :: InternalExperience -> Experience
 fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromIntX stFt, fromDis dis), act, r, (VS.map fromIntX stFt', fromDis dis'), eps)
   where
     fromDis :: Maybe (VB.Vector (VS.Vector Word8)) -> DisallowedActionIndicies
-    fromDis Nothing = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
+    fromDis Nothing    = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
     fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
     fromIntX :: IntX -> Double
     fromIntX !x = fromIntegral x / shift
@@ -148,7 +147,8 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is reached.
 addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
-addToReplayMemory nrAs (force -> !e) (ReplayMemory vec sz idx maxIdx) = do
+-- addToReplayMemory nrAs (force -> !e) (ReplayMemory vec sz idx maxIdx) = do
+addToReplayMemory nrAs !e (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) e
   return $! ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
 
@@ -220,7 +220,7 @@ getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions nrAs tmpRepMe
 
 -- | Size of replay memory (combined if it is a per action replay memory).
 replayMemoriesSize :: ReplayMemories -> Int
-replayMemoriesSize (ReplayMemoriesUnified _ m)     = m ^. replayMemorySize
+replayMemoriesSize (ReplayMemoriesUnified _ m)       = m ^. replayMemorySize
 replayMemoriesSize (ReplayMemoriesPerActions _ _ ms) = sum $ VB.map (view replayMemorySize) ms
 
 replayMemoriesSubSize :: ReplayMemories -> Int
