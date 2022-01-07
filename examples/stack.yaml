@@ -2,6 +2,7 @@ flags: {}
 packages:
 - .
 - ../
+- ../../easy-logger
 - ../../grenade
 - ../../haskell-cpython
 - ../../gym-haskell

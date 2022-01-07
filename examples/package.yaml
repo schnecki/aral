@@ -1,4 +1,4 @@
-name:                borl-examples
+name:                aral-examples
 version:             0.2.0.0
 github:              "github.com/schnecki"
 license:             AllRightsReserved
@@ -13,7 +13,7 @@ category:            Machine Learning
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/borl#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/aral#readme>
 
 flags:
   fast:
@@ -54,7 +54,7 @@ dependencies:
   - random
   - random-shuffle
   - data-default
-  - borl
+  - aral
 
 executables:
   gridworld:
@@ -69,7 +69,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -85,7 +85,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -101,7 +101,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -117,7 +117,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -133,7 +133,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -147,7 +147,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - gym-haskell
     - experimenter
     extra-libraries: python3.10
@@ -163,7 +163,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
 
   printer-mail:
     main:                PrinterMail.hs
@@ -177,7 +177,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - hmatrix-glpk
 
   three-states:
@@ -192,7 +192,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
 
@@ -208,6 +208,6 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - borl
+    - aral
     - experimenter
     - hmatrix-glpk
