@@ -18,8 +18,8 @@
 module Main where
 
 import           Control.Arrow            (first, second, (***))
-import           Control.DeepSeq          (NFData)
 import           Control.DeepSeq
+import           Control.DeepSeq          (NFData)
 import           Control.Lens
 import           Control.Lens             (set, (^.))
 import           Control.Monad            (foldM, liftM, unless, when)
@@ -39,7 +39,7 @@ import           System.IO
 import           System.Random
 
 import           Experimenter
-import           ML.BORL
+import           ML.ARAL
 import           SolveLp
 
 import           Helper

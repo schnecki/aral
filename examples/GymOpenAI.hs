@@ -40,7 +40,7 @@ import           System.Environment      (getArgs)
 import           System.IO.Unsafe        (unsafePerformIO)
 
 import           Helper
-import           ML.BORL
+import           ML.ARAL
 import           ML.Gym
 
 
@@ -379,7 +379,7 @@ actionNames "Acrobot-v1"     = ["left ", "cont ", "right"]
 actionNames _                = []
 
 observationSpaceInfo :: T.Text -> [T.Text]
-observationSpaceInfo "CartPole-v1" = ["Cart Position (-4.8, 4.8)", "Cart Velocity (-Inf, Inf)", "Pole Angle (-24 deg, 24 deg)", "Pole Velocity At Tip (-Inf, Inf)"]
+observationSpaceInfo "CartPole-v1"    = ["Cart Position (-4.8, 4.8)", "Cart Velocity (-Inf, Inf)", "Pole Angle (-24 deg, 24 deg)", "Pole Velocity At Tip (-Inf, Inf)"]
 observationSpaceInfo "MountainCar-v0" = ["Position (-1.2, 0.6)", "Velocity (-0.07, 0.07)"]
-observationSpaceInfo "Acrobot-v1" = ["cos(theta1)", "sin(theta1)", "cos(theta2)", "sin(theta2)", "thetaDot1", "thetaDot2"]
-observationSpaceInfo _ = ["unkown observation space description"]
+observationSpaceInfo "Acrobot-v1"     = ["cos(theta1)", "sin(theta1)", "cos(theta2)", "sin(theta2)", "thetaDot1", "thetaDot2"]
+observationSpaceInfo _                = ["unkown observation space description"]

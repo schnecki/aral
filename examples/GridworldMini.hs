@@ -17,7 +17,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.BORL                  as B
+import           ML.ARAL                  as B
 import           SolveLp
 
 import           Experimenter

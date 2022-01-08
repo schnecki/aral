@@ -40,7 +40,7 @@ import           GHC.Generics
 import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
-import           ML.BORL              hiding (actionFilter)
+import           ML.ARAL              hiding (actionFilter)
 import           SolveLp
 
 import           Helper

@@ -30,7 +30,6 @@ module Main where
 
 import           Control.Arrow        (first, second)
 import           Control.DeepSeq      (NFData)
-import           Control.DeepSeq      (NFData)
 import           Control.Lens         (set, (^.))
 import           Control.Monad        (foldM, unless, when)
 import           Data.Default
@@ -40,7 +39,7 @@ import           GHC.Generics
 import           System.IO
 import           System.Random
 
-import           ML.BORL
+import           ML.ARAL
 
 import           Helper
 

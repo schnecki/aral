@@ -38,7 +38,7 @@ import           System.IO
 import           System.Random
 
 import           Experimenter
-import           ML.BORL                as B
+import           ML.ARAL                as B
 
 import           Helper
 import           SolveLp
@@ -407,7 +407,7 @@ actions = [Reject, Admit]
 actionFun :: ActionFunction St Act
 actionFun tp st [Reject]            = appendQueueLenFile reject tp st
 actionFun tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
-actionFun _ st act = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
+actionFun _ st act                  = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
 
 
 appendQueueLenFile :: (AgentType -> St -> IO b) -> AgentType -> St -> IO b

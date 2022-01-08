@@ -14,7 +14,7 @@
 -- simply used to test the minimisation objective.
 module Main where
 
-import           ML.BORL                  as B
+import           ML.ARAL                  as B
 
 import           Experimenter
 

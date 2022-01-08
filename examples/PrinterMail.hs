@@ -25,7 +25,7 @@
 
 module Main where
 
-import           ML.BORL              hiding (actionFilter)
+import           ML.ARAL              hiding (actionFilter)
 
 import           Helper
 

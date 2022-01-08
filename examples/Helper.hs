@@ -9,8 +9,8 @@ module Helper
     ) where
 
 import           Grenade
-import           ML.BORL
-import           ML.BORL.InftyVector
+import           ML.ARAL
+import           ML.ARAL.InftyVector
 
 import           Control.Arrow
 import           Control.DeepSeq        (NFData, force)

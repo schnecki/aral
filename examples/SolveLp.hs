@@ -17,7 +17,7 @@ module SolveLp
     , LpResult (..)
     ) where
 
-import           ML.BORL
+import           ML.ARAL
 
 import           Control.Arrow
 import           Control.Monad
@@ -264,4 +264,4 @@ makeReward repetitionsReward s = do
         trues = filter id xs
         false = filter not xs
     fromReward (Reward x) = x
-    fromReward _ = error "Non materialised reward in makeReward. You must specify a scalar reward!"
+    fromReward _          = error "Non materialised reward in makeReward. You must specify a scalar reward!"
