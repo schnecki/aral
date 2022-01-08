@@ -119,11 +119,11 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
+        -- AlgARAL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
         -- AlgDQNAvgRewAdjusted 0.8 0.999 (Fixed 1)
-        -- AlgBORLVOnly (Fixed 1) Nothing
+        -- AlgARALVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
 
@@ -175,7 +175,7 @@ modelBuilderGrenade acts initSt cols =
 initState :: St
 initState = A
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters

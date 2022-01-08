@@ -47,7 +47,7 @@ import           Helper
 import           Debug.Trace
 
 
-expSetup :: BORL St Act -> ExperimentSetting
+expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "gridworld"
@@ -82,19 +82,19 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
-instance ExperimentDef (BORL St Act) where
-  type ExpM (BORL St Act) = IO
-  -- type ExpM (BORL St Act) = IO
-  type InputValue (BORL St Act) = ()
-  type InputState (BORL St Act) = ()
-  type Serializable (BORL St Act) = BORLSerialisable St Act
+instance ExperimentDef (ARAL St Act) where
+  type ExpM (ARAL St Act) = IO
+  -- type ExpM (ARAL St Act) = IO
+  type InputValue (ARAL St Act) = ()
+  type InputState (ARAL St Act) = ()
+  type Serializable (ARAL St Act) = ARALSerialisable St Act
   serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
+  deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
   deserialisable = fromSerialisable actionFun actFilter netInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True mInverseSt rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True mInverseSt rl' >>= print
       let (eNr, eStart) = rl ^. episodeNrStart
           eLength = fromIntegral eStart / fromIntegral eNr
           val l = realToFrac $ head $ fromValue (rl' ^?! l)
@@ -114,9 +114,9 @@ instance ExperimentDef (BORL St Act) where
         (view algorithm)
         (Just $ const $
          return
-           [ AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
-           , AlgBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
-           , AlgBORLVOnly (ByMovAvg 3000) Nothing
+           [ AlgARAL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
+           , AlgARAL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
+           , AlgARALVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
         Nothing
@@ -168,7 +168,7 @@ borlSettings =
 --     }
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -222,7 +222,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular algARAL (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -248,12 +248,12 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-       -- AlgBORLVOnly ByStateValues Nothing
+       -- AlgARALVOnly ByStateValues Nothing
         -- AlgDQN 0.99 Exact            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
   AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-  -- AlgBORL 0.5 0.8 ByStateValues mRefState
+  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 
 usermode :: IO ()

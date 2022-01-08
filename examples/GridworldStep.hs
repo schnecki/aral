@@ -81,7 +81,7 @@ borlSettings = def {_workersMinExploration = [] -- replicate 7 0.01
                    , _nStep = 1}
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -170,12 +170,12 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
 
-  -- AlgBORLVOnly ByStateValues Nothing
+  -- AlgARALVOnly ByStateValues Nothing
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-  -- AlgBORL 0.5 0.8 ByStateValues mRefState
+  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do

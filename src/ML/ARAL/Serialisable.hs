@@ -52,7 +52,7 @@ import           ML.ARAL.Workers.Type
 import           Debug.Trace
 
 
-data BORLSerialisable s as = BORLSerialisable
+data ARALSerialisable s as = ARALSerialisable
   { serActionList        :: ![as]
   , serS                 :: !s                    -- ^ Current state.
   , serWorkers           :: !(Workers s)          -- ^ Workers
@@ -75,14 +75,14 @@ data BORLSerialisable s as = BORLSerialisable
   , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
-toSerialisable :: (MonadIO m, RewardFuture s) => BORL s as -> m (BORLSerialisable s as)
+toSerialisable :: (MonadIO m, RewardFuture s) => ARAL s as -> m (ARALSerialisable s as)
 toSerialisable = toSerialisableWith id id
 
 
-toSerialisableWith :: (MonadIO m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> BORL s as -> m (BORLSerialisable s' as)
-toSerialisableWith f g (BORL as _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) =
+toSerialisableWith :: (MonadIO m, RewardFuture s') => (s -> s') -> (StoreType s -> StoreType s') -> ARAL s as -> m (ARALSerialisable s' as)
+toSerialisableWith f g (ARAL as _ _ state workers' _ time eNr par dec setts future alg obj expSmthRew v rew psis prS) =
   return $
-  BORLSerialisable
+  ARALSerialisable
     (VB.toList as)
     (f state)
     (mapWorkers f g workers')
@@ -100,7 +100,7 @@ toSerialisableWith f g (BORL as _ _ state workers' _ time eNr par dec setts futu
     psis
     prS
 
-fromSerialisable :: (MonadIO m, RewardFuture s) => ActionFunction s as -> ActionFilter s -> FeatureExtractor s -> BORLSerialisable s as -> m (BORL s as)
+fromSerialisable :: (MonadIO m, RewardFuture s) => ActionFunction s as -> ActionFilter s -> FeatureExtractor s -> ARALSerialisable s as -> m (ARAL s as)
 fromSerialisable = fromSerialisableWith id id
 
 fromSerialisableWith ::
@@ -110,11 +110,11 @@ fromSerialisableWith ::
   -> ActionFunction s as
   -> ActionFilter s
   -> FeatureExtractor s
-  -> BORLSerialisable s' as
-  -> m (BORL s as)
-fromSerialisableWith f g asFun aF ftExt (BORLSerialisable as st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) =
+  -> ARALSerialisable s' as
+  -> m (ARAL s as)
+fromSerialisableWith f g asFun aF ftExt (ARALSerialisable as st workers' t e par dec setts future alg obj expSmthRew lastV rew psis prS) =
   return $
-  BORL
+  ARAL
     (VB.fromList as)
     asFun
     aF

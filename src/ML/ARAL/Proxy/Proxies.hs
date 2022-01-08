@@ -23,7 +23,7 @@ import           ML.ARAL.NeuralNetwork
 
 
 data Proxies =
-  Proxies -- ^ This data type holds all data for BORL.
+  Proxies -- ^ This data type holds all data for ARAL.
     { _rhoMinimum   :: !Proxy
     , _rho          :: !Proxy
     , _psiV         :: !Proxy

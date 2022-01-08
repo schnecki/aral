@@ -107,10 +107,10 @@ alg =
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
-        -- AlgBORLVOnly ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.8 ByStateValues mRefStateAct
+        -- AlgARALVOnly ByStateValues mRefStateAct
+        -- AlgARAL 0.5 0.8 ByStateValues mRefStateAct
 
-        -- AlgBORL 0.5 0.8 ByStateValues  (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
+        -- AlgARAL 0.5 0.8 ByStateValues  (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 mRefStateAct :: Maybe (St, ActionIndex)
 -- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
@@ -141,7 +141,7 @@ main = do
 initState :: St
 initState = One
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params = Parameters
   { _alpha            = 0.01

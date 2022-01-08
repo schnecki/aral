@@ -35,8 +35,8 @@ askUser ::
   -> Bool
   -> [(String, String)]
   -> [(String, [ActionIndex])]
-  -> [(String, String, BORL s as -> BORL s as)]
-  -> BORL s as
+  -> [(String, String, ARAL s as -> ARAL s as)]
+  -> ARAL s as
   -> IO ()
 askUser mInverse showHelp addUsage cmds qlCmds ql = do
   let usage =
@@ -80,7 +80,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                       (\q _ -> do
                          q' <- stepsM q nr
                          let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (borl ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
-                         output <- prettyBORLMWithStInverse mInverse qPP
+                         output <- prettyARALMWithStInverse mInverse qPP
                          liftIO $ print output >> hFlush stdout
                          return q')
                       borl
@@ -92,7 +92,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
              --      (\q _ -> do
              --         q' <- time (steps q nr)
              --         let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (ql ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
-             --         liftIO $ prettyBORLWithStInverse mInverse qPP >>= print >> hFlush stdout
+             --         liftIO $ prettyARALWithStInverse mInverse qPP >>= print >> hFlush stdout
              --         return q')
              --      ql
              --      [1 .. often]
@@ -103,10 +103,10 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
           askUser mInverse False addUsage cmds qlCmds ql
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
-      prettyBORLWithStInverse mInverse ql' >>= print >> hFlush stdout
+      prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds qlCmds ql
     "v" -> do
-      liftIO $ prettyBORLTables mInverse True False False ql >>= print
+      liftIO $ prettyARALTables mInverse True False False ql >>= print
       askUser mInverse False addUsage cmds qlCmds ql
     "param" -> do
       e <-
@@ -166,7 +166,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                 (c == "q")
                 (step ql >>= \x -> do
                    let ppQl = setAllProxies (proxyNNConfig . prettyPrintElems) [(ql ^. featureExtractor) (ql ^. s)] x
-                   liftIO $ prettyBORLTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x)
+                   liftIO $ prettyARALTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x)
             Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
         Just (_, cmd) ->
           liftIO $ stepExecute ql (VB.map (False,) (VB.fromList cmd), []) >>= askUser mInverse False addUsage cmds qlCmds

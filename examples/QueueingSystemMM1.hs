@@ -89,7 +89,7 @@ instance Bounded St where
 
 -- Experiment Setup
 
-expSetup :: BORL St Act -> ExperimentSetting
+expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
@@ -166,18 +166,18 @@ policy maxAdmit (St s incoming) act
     admitAct = actions !! 1
     rejectAct = head actions
 
-instance ExperimentDef (BORL St Act) where
-  type ExpM (BORL St Act) = IO
-  type InputValue (BORL St Act) = ()
-  type InputState (BORL St Act) = ()
-  type Serializable (BORL St Act) = BORLSerialisable St Act
+instance ExperimentDef (ARAL St Act) where
+  type ExpM (ARAL St Act) = IO
+  type InputValue (ARAL St Act) = ()
+  type InputState (ARAL St Act) = ()
+  type Serializable (ARAL St Act) = ARALSerialisable St Act
   serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
+  deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
   deserialisable = fromSerialisable actionFun actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
       rl' <- stepM rl
-      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True (Just mInverseSt) rl' >>= print
+      when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True (Just mInverseSt) rl' >>= print
       let p = Just $ fromIntegral $ rl' ^. t
           -- val l = realToFrac $ head $ fromValue (rl' ^?! l)
           val' l = realToFrac (rl' ^?! l)
@@ -247,7 +247,7 @@ borlSettings = def {_workersMinExploration = []
                    }
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -299,7 +299,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
+  rl <- mkUnichainTabular algARAL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -336,12 +336,12 @@ alg =
         -- AlgDQN 0.99 EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive
   AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                -- AlgBORLVOnly ByStateValues mRefStateAct
+                -- AlgARALVOnly ByStateValues mRefStateAct
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
         -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
         -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
-        -- AlgBORL 0.5 0.65 ByStateValues mRefStateAct
-        -- AlgBORL 0.5 0.65 (Fixed 30) mRefStateAct
+        -- AlgARAL 0.5 0.65 ByStateValues mRefStateAct
+        -- AlgARAL 0.5 0.65 (Fixed 30) mRefStateAct
 
 usermode :: IO ()
 usermode = do

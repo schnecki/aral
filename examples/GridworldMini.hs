@@ -57,7 +57,7 @@ goalX = 0
 goalY = 0
 
 
-expSetup :: BORL St Act -> ExperimentSetting
+expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "gridworld-mini 28.1."
@@ -156,28 +156,28 @@ policy s a
     mkDistance (r, c) = r + abs (c - goalY)
     mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
 
-fakeEpisodes :: BORL St Act -> BORL St Act -> BORL St Act
+fakeEpisodes :: ARAL St Act -> ARAL St Act -> ARAL St Act
 fakeEpisodes rl rl'
   | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
   | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
 
 
-instance ExperimentDef (BORL St Act)
-  -- type ExpM (BORL St Act) = TF.SessionT IO
+instance ExperimentDef (ARAL St Act)
+  -- type ExpM (ARAL St Act) = TF.SessionT IO
                                           where
-  type ExpM (BORL St Act) = IO
-  type InputValue (BORL St Act) = ()
-  type InputState (BORL St Act) = ()
-  type Serializable (BORL St Act) = BORLSerialisable St Act
+  type ExpM (ARAL St Act) = IO
+  type InputValue (ARAL St Act) = ()
+  type InputState (ARAL St Act) = ()
+  type Serializable (ARAL St Act) = ARALSerialisable St Act
   serialisable = toSerialisable
-  deserialisable :: Serializable (BORL St Act) -> ExpM (BORL St Act) (BORL St Act)
+  deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
   deserialisable = fromSerialisable actionFun actFilter tblInp
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
     let inverseSt | isAnn rl = Just mInverseSt
                   | otherwise = Nothing
-    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyBORLHead True inverseSt rl' >>= print
+    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
@@ -241,7 +241,7 @@ borlSettings = def
   }
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -294,7 +294,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algBORL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular algARAL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -322,12 +322,12 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
 
-  -- AlgBORLVOnly ByStateValues Nothing
+  -- AlgARALVOnly ByStateValues Nothing
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-  -- AlgBORL 0.5 0.8 ByStateValues mRefState
+  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do

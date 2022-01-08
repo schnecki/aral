@@ -71,7 +71,7 @@ data LookupType = Target | Worker
 --   | MultiAgent (V.Vector (V.Vector Double))
 --   deriving (Eq, Ord, Show, Read)
 
-mkStateActs :: BORL s as -> s -> s -> (StateFeatures, (StateFeatures, DisallowedActionIndicies), (StateNextFeatures, DisallowedActionIndicies))
+mkStateActs :: ARAL s as -> s -> s -> (StateFeatures, (StateFeatures, DisallowedActionIndicies), (StateNextFeatures, DisallowedActionIndicies))
 mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
   where
     -- !sActIdxes = actionIndicesFiltered borl state
@@ -89,7 +89,7 @@ mkStateActs borl state stateNext = (stateFeat, stateActs, stateNextActs)
 -- | Insert (or update) a value.
 insert ::
      forall m s as. (MonadIO m)
-  => BORL s as                     -- ^ Latest BORL
+  => ARAL s as                     -- ^ Latest ARAL
   -> AgentType
   -> Period                     -- ^ Period when action was taken
   -> State s                    -- ^ State when action was taken
@@ -523,7 +523,7 @@ getMinMaxVal !p =
 
 
 -- | This function retrieves the data and builds a table like return value.
-mkNNList :: (MonadIO m) => BORL s as -> Bool -> Proxy -> m [(NetInputWoAction, ([(ActionIndex, Value)], [(ActionIndex, Value)]))]
+mkNNList :: (MonadIO m) => ARAL s as -> Bool -> Proxy -> m [(NetInputWoAction, ([(ActionIndex, Value)], [(ActionIndex, Value)]))]
 mkNNList !borl !scaled !pr =
   mapM
     (\st -> do

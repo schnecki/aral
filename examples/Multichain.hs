@@ -46,7 +46,7 @@ import           Helper
 alg :: Algorithm St
 alg =
   AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-  -- AlgBORL 0.5 0.8 ByStateValues Nothing
+  -- AlgARAL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
 main = do
@@ -68,7 +68,7 @@ borlSettings = def
 initState :: St
 initState = St 5
 
--- -- | BORL Parameters.
+-- -- | ARAL Parameters.
 -- params :: ParameterInitValues
 -- params =
 --   Parameters
@@ -103,7 +103,7 @@ initState = St 5
 --       , _learnRandomAbove = NoDecay
 --       }
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters

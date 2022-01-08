@@ -327,7 +327,7 @@ main = do
     qlCmds = [("f", "flip rendering", s %~ (\(St r xs) -> St (not r) xs))]
 
 
- -- | BORL Parameters.
+ -- | ARAL Parameters.
 params :: Gym -> Double -> ParameterInitValues
 params gym maxRew =
   Parameters

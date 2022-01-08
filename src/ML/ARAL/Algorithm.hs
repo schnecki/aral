@@ -38,24 +38,24 @@ type EpsilonMiddle = Double
 
 
 data Algorithm s
-  = AlgBORL !GammaLow
+  = AlgARAL !GammaLow
             !GammaHigh
             !AvgReward
             !(Maybe (s, [ActionIndex]))
-  | AlgBORLVOnly !AvgReward !(Maybe (s, [ActionIndex])) -- ^ DQN algorithm but subtracts average reward in every state
+  | AlgARALVOnly !AvgReward !(Maybe (s, [ActionIndex])) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN !Gamma !Comparison
   | AlgDQNAvgRewAdjusted !GammaMiddle !GammaHigh !AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'
-mapAlgorithmState f (AlgBORL gl gh avg mSt)          = AlgBORL gl gh avg (first f <$> mSt)
-mapAlgorithmState f (AlgBORLVOnly avg mSt)           = AlgBORLVOnly avg (first f <$> mSt)
+mapAlgorithmState f (AlgARAL gl gh avg mSt)          = AlgARAL gl gh avg (first f <$> mSt)
+mapAlgorithmState f (AlgARALVOnly avg mSt)           = AlgARALVOnly avg (first f <$> mSt)
 mapAlgorithmState _ (AlgDQN g c)                     = AlgDQN g c
 mapAlgorithmState _ (AlgDQNAvgRewAdjusted gm gh avg) = AlgDQNAvgRewAdjusted gm gh avg
 
 
 isAlgBorl :: Algorithm s -> Bool
-isAlgBorl AlgBORL{} = True
+isAlgBorl AlgARAL{} = True
 isAlgBorl _         = False
 
 
@@ -69,11 +69,11 @@ isAlgDqnAvgRewardAdjusted _                      = False
 
 -- blackwellOptimalVersion :: Algorithm s -> Bool
 -- blackwellOptimalVersion (AlgDQNAvgRewAdjusted Just{} _ _ _) = True
--- blackwellOptimalVersion AlgBORL{}                           = True
+-- blackwellOptimalVersion AlgARAL{}                           = True
 -- blackwellOptimalVersion _                                   = False
 
 isAlgBorlVOnly :: Algorithm s -> Bool
-isAlgBorlVOnly AlgBORLVOnly{} = True
+isAlgBorlVOnly AlgARALVOnly{} = True
 isAlgBorlVOnly _              = False
 
 
@@ -83,9 +83,9 @@ defaultGamma1 = 0.80
 defaultGammaDQN = 0.99
 
 
--- ^ Use BORL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
-algBORL :: Algorithm s
-algBORL = AlgBORL defaultGamma0 defaultGamma1 ByStateValues Nothing
+-- ^ Use ARAL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
+algARAL :: Algorithm s
+algARAL = AlgARAL defaultGamma0 defaultGamma1 ByStateValues Nothing
 
   -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 

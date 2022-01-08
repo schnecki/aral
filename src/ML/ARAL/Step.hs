@@ -101,23 +101,23 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> Integer -> IO (BORL s as)
+steps :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> IO (ARAL s as)
 steps !borl nr =
   fmap force $!
   liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) borl [0 .. nr - 1]
 
 
-step :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> IO (BORL s as)
+step :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> IO (ARAL s as)
 step !borl =
   fmap force $!
   nextAction borl >>= stepExecute borl
 
 -- | This keeps the MonadIO alive.
-stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> m (BORL s as)
-stepM !borl = nextAction borl >>= stepExecute borl >>= \(b@BORL{}) -> return (force b)
+stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
+stepM !borl = nextAction borl >>= stepExecute borl >>= \(b@ARAL{}) -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 100 periods.
-stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> Integer -> m (BORL s as)
+stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
 stepsM borl nr = do
   borl' <- foldM (\b _ -> stepM b) borl [1 .. min maxNr nr]
   if nr > maxNr
@@ -125,7 +125,7 @@ stepsM borl nr = do
     else return borl'
   where maxNr = 100
 
-stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> NextActions -> m (BORL s as)
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
 stepExecute borl (as, workerActions) = do
   let state = borl ^. s
       period = borl ^. t + length (borl ^. futureRewards)
@@ -155,7 +155,7 @@ stepExecute borl (as, workerActions) = do
 
 -- | This functions takes one step for all workers, and returns the new worker replay memories and future reward data
 -- lists.
-runWorkerActions :: (NFData s) => BORL s as -> [WorkerActionChoice] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
+runWorkerActions :: (NFData s) => ARAL s as -> [WorkerActionChoice] -> IO (Either (Workers s) [IORef (ThreadState (WorkerState s))])
 runWorkerActions _ [] = return (Left [])
 runWorkerActions borl _ | borl ^. settings . disableAllLearning = return (Left $ borl ^. workers)
 runWorkerActions borl acts = Right <$> zipWithM (\act worker -> doFork' $ runWorkerAction borl worker act) acts (borl ^. workers)
@@ -172,7 +172,7 @@ applyStateToRewardFutureData state = VB.map (over futureReward applyToReward)
     applyToReward r                      = r
 
 -- | Run one worker.
-runWorkerAction :: (NFData s) => BORL s as -> WorkerState s -> WorkerActionChoice -> IO (WorkerState s)
+runWorkerAction :: (NFData s) => ARAL s as -> WorkerState s -> WorkerActionChoice -> IO (WorkerState s)
 runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = do
   let action agTp s as = (borl ^. actionFunction) agTp s (VB.toList as)
       actList = borl ^. actionList
@@ -199,9 +199,9 @@ runWorkerAction borl (WorkerState wNr state replMem oldFutureRewards rew) as = d
 stepExecuteMaterialisedFutures ::
      forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as)
   => AgentType
-  -> (Int, Bool, BORL s as)
+  -> (Int, Bool, ARAL s as)
   -> RewardFutureData s
-  -> m (Int, Bool, BORL s as)
+  -> m (Int, Bool, ARAL s as)
 stepExecuteMaterialisedFutures _ (nr, True, borl) _ = return (nr, True, borl)
 stepExecuteMaterialisedFutures agent (nr, _, borl) dt =
   case view futureReward dt of
@@ -221,7 +221,7 @@ hasLocked msg action =
   , Handler $ \exc@BlockedIndefinitelyOnSTM -> sayString ("[STM]: " ++ msg) >> throwIO exc
   ]
 
-updateMinMax :: BORL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
+updateMinMax :: ARAL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
 updateMinMax borl as calc = do
   mMinMax <- hasLocked "updateMinMax tryReadMVar" $ tryReadMVar minMaxStates
   let minMax' =
@@ -256,7 +256,7 @@ updateMinMax borl as calc = do
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => BORL s as -> AgentType -> RewardFutureData s -> m (BORL s as)
+execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> AgentType -> RewardFutureData s -> m (ARAL s as)
 execute borl agent (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   borl <- if isMainAgent agent
@@ -314,7 +314,7 @@ execute borl agent (RewardFutureData period state as (Reward reward) stateNext e
 execute _ _ _ = error "Exectue on invalid data structure. This is a bug!"
 
 -- | Flip the dropout active/inactive state.
-maybeFlipDropout :: BORL s as -> BORL s as
+maybeFlipDropout :: ARAL s as -> ARAL s as
 maybeFlipDropout borl =
   case borl ^? proxies . v . proxyNNConfig <|> borl ^? proxies . r1 . proxyNNConfig of
     Just cfg@NNConfig {}
@@ -328,7 +328,7 @@ maybeFlipDropout borl =
          in setDropoutValue value borl
     _ -> borl
   where
-    setDropoutValue :: Bool -> BORL s as -> BORL s as
+    setDropoutValue :: Bool -> ARAL s as -> ARAL s as
     setDropoutValue val =
       overAllProxies
         (filtered isGrenade)
@@ -348,7 +348,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ hasLocked "getStateFeatures" $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => BORL s as -> m (BORL s as)
+writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => ARAL s as -> m (ARAL s as)
 writeDebugFiles borl = do
   let isDqn = isAlgDqn (borl ^. algorithm) || isAlgDqnAvgRewardAdjusted (borl ^. algorithm)
   let isAnn

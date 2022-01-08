@@ -45,7 +45,7 @@ goal = 0              -- goal is at [goal, goal, ...]
 goalSt :: St
 goalSt = St $ replicate dim goal
 
-expSetup :: BORL St Act -> ExperimentSetting
+expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName         = "gridworld-multi 28.1."
@@ -128,7 +128,7 @@ borlSettings = def
   }
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters
@@ -195,12 +195,12 @@ mRefState = Nothing
 alg :: Algorithm St
 alg =
 
-  -- AlgBORLVOnly ByStateValues Nothing
+  -- AlgARALVOnly ByStateValues Nothing
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-  -- AlgBORL 0.5 0.8 ByStateValues mRefState
+  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do

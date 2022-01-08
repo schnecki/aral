@@ -97,12 +97,12 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-        -- AlgBORL defaultGamma0 defaultGamma1 ByStateValues mRefState
+        -- AlgARAL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
         AlgDQNAvgRewAdjusted 0.9 0.99 ByStateValues
         -- AlgDQNAvgRewAdjusted 0.84837 0.99 ByStateValues
 
-        -- AlgBORLVOnly (Fixed 1) Nothing
+        -- AlgARALVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
 
@@ -154,7 +154,7 @@ borlSettings :: Settings
 borlSettings = def {_workersMinExploration = [], _nStep = 1}
 
 
--- | BORL Parameters.
+-- | ARAL Parameters.
 params :: ParameterInitValues
 params =
   Parameters

@@ -29,8 +29,8 @@ module ML.ARAL.Type
   , futureEpisodeEnd
   , mapRewardFutureData
   , idxStart
-    -- BORL
-  , BORL (..)
+    -- ARAL
+  , ARAL (..)
   , NrFeatures
   , NrRows
   , NrCols
@@ -129,7 +129,7 @@ type ModelBuilderFun = NrFeatures -> (NrRows, NrCols) -> IO SpecConcreteNetwork
 -------------------- Main RL Datatype --------------------
 
 
-data BORL s as = BORL
+data ARAL s as = ARAL
   { _actionList        :: !(VB.Vector (Action as)) -- ^ List of possible actions each agent. All agents can do the same actions!
   , _actionFunction    :: !(ActionFunction s as)   -- ^ Action function that traverses the system from s to s' using a list of actions, one for each agent.
   , _actionFilter      :: !(ActionFilter s)        -- ^ Function to filter actions in state s.
@@ -155,16 +155,16 @@ data BORL s as = BORL
   , _psis              :: !(Value, Value, Value)  -- ^ Exponentially smoothed psi values.
   , _proxies           :: !Proxies                -- ^ Scalar, Tables and Neural Networks
   }
-makeLenses ''BORL
+makeLenses ''ARAL
 
-instance (NFData as, NFData s) => NFData (BORL s as) where
-  rnf (BORL as _ af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
+instance (NFData as, NFData s) => NFData (ARAL s as) where
+  rnf (ARAL as _ af st ws ftExt time epNr par setts dec fut alg ph expSmth lastVs lastRews psis' proxies') =
     rnf as `seq` rnf af `seq` rnf st `seq` rnf ws `seq` rnf ftExt `seq` rnf time `seq`
     rnf epNr `seq` rnf par `seq` rnf dec `seq` rnf setts `seq` rnf1 fut `seq` rnf alg `seq` rnf ph `seq` rnf expSmth `seq`
     rnf lastVs `seq` rnf lastRews  `seq` rnf psis' `seq` rnf proxies'
 
 
-decayedParameters :: BORL s as -> ParameterDecayedValues
+decayedParameters :: ARAL s as -> ParameterDecayedValues
 decayedParameters borl
   | borl ^. t < repMemSize = mkStaticDecayedParams decayedParams
   | otherwise = decayedParams
@@ -174,8 +174,8 @@ decayedParameters borl
 
 ------------------------------ Indexed Action ------------------------------
 
--- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
-actionIndicesFiltered :: BORL s as -> s -> FilteredActionIndices
+-- | Get the filtered actions of the current given state and with the ActionFilter set in ARAL.
+actionIndicesFiltered :: ARAL s as -> s -> FilteredActionIndices
 actionIndicesFiltered borl state = VB.map (\fil -> V.ifilter (\idx _ -> fil V.! idx) actionIndices) (VB.fromList filterVals)
   where
     filterVals :: [V.Vector Bool]
@@ -183,8 +183,8 @@ actionIndicesFiltered borl state = VB.map (\fil -> V.ifilter (\idx _ -> fil V.! 
     -- actionIndices = V.fromList [0 .. length (actionLengthCheck filterVals $ borl ^. actionList) - 1]
     actionIndices = V.generate (length (actionLengthCheck filterVals $ borl ^. actionList)) id
 
--- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
-actionIndicesDisallowed :: BORL s as -> s -> DisallowedActionIndicies
+-- | Get the filtered actions of the current given state and with the ActionFilter set in ARAL.
+actionIndicesDisallowed :: ARAL s as -> s -> DisallowedActionIndicies
 actionIndicesDisallowed borl state = DisallowedActionIndicies $ VB.map (\fil -> V.ifilter (\idx _ -> not (fil V.! idx)) actionIndices) (VB.fromList filterVals)
   where
     filterVals :: [V.Vector Bool]
@@ -193,8 +193,8 @@ actionIndicesDisallowed borl state = DisallowedActionIndicies $ VB.map (\fil -> 
     actionIndices = V.generate (length (actionLengthCheck filterVals $ borl ^. actionList)) id
 
 
--- | Get the filtered actions of the current given state and with the ActionFilter set in BORL.
-actionsFiltered :: BORL s as -> s -> FilteredActions as
+-- | Get the filtered actions of the current given state and with the ActionFilter set in ARAL.
+actionsFiltered :: ARAL s as -> s -> FilteredActions as
 actionsFiltered borl state = VB.map (\fil -> VB.ifilter (\idx _ -> fil V.! idx) (actionLengthCheck filterVals $ borl ^. actionList)) (VB.fromList filterVals)
   where
     filterVals :: [V.Vector Bool]
@@ -240,11 +240,11 @@ defInitValues = InitValues 0 0 0 0 0 0
 
 -------------------- Objective --------------------
 
-setObjective :: Objective -> BORL s as -> BORL s as
+setObjective :: Objective -> ARAL s as -> ARAL s as
 setObjective obj = objective .~ obj
 
 -- | Default objective is Maximise.
-flipObjective :: BORL s as -> BORL s as
+flipObjective :: ARAL s as -> ARAL s as
 flipObjective borl = case borl ^. objective of
   Minimise -> objective .~ Maximise $ borl
   Maximise -> objective .~ Minimise $ borl
@@ -255,10 +255,10 @@ flipObjective borl = case borl ^. objective of
 -- Tabular representations
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm StateFeatures
-convertAlgorithm ftExt (AlgBORL g0 g1 avgRew (Just (s, a))) = AlgBORL g0 g1 avgRew (Just (ftExt s, a))
-convertAlgorithm ftExt (AlgBORLVOnly avgRew (Just (s, a)))  = AlgBORLVOnly avgRew (Just (ftExt s, a))
-convertAlgorithm _ (AlgBORL g0 g1 avgRew Nothing)           = AlgBORL g0 g1 avgRew Nothing
-convertAlgorithm _ (AlgBORLVOnly avgRew Nothing)            = AlgBORLVOnly avgRew Nothing
+convertAlgorithm ftExt (AlgARAL g0 g1 avgRew (Just (s, a))) = AlgARAL g0 g1 avgRew (Just (ftExt s, a))
+convertAlgorithm ftExt (AlgARALVOnly avgRew (Just (s, a)))  = AlgARALVOnly avgRew (Just (ftExt s, a))
+convertAlgorithm _ (AlgARAL g0 g1 avgRew Nothing)           = AlgARAL g0 g1 avgRew Nothing
+convertAlgorithm _ (AlgARALVOnly avgRew Nothing)            = AlgARALVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga cmp)                          = AlgDQN ga cmp
 convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew)    = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
@@ -273,7 +273,7 @@ mkUnichainTabular ::
   -> ParameterDecaySetting
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   $(logPrintDebugText) "Creating tabular unichain ARAL"
   st <- initialStateFun MainAgent
@@ -290,7 +290,7 @@ mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun setti
           Nothing
   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
   return $
-    BORL
+    ARAL
       (VB.fromList as)
       asFun
       asFilter
@@ -332,11 +332,11 @@ mkMultichainTabular ::
   -> ParameterDecaySetting
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkMultichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initValues = do
   initialState <- initialStateFun MainAgent
   return $
-    BORL
+    ARAL
       (VB.fromList as)
       asFun
       asFilter
@@ -382,7 +382,7 @@ mkUnichainGrenade ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Grenade"
   initialState <- initialStateFun MainAgent
@@ -394,7 +394,7 @@ mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun modelBui
     SpecConcreteNetwork1D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    _ -> error "BORL currently requieres a 1D input and either 1D, 2D or 3D output"
+    _ -> error "ARAL currently requieres a 1D input and either 1D, 2D or 3D output"
     -- also fix in Serialisable if enabled!!!
     -- SpecConcreteNetwork2D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
@@ -418,7 +418,7 @@ mkUnichainGrenadeCombinedNet ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig settings initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardAdjusted alg = 2
@@ -432,7 +432,7 @@ mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayF
     SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
     SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    _ -> error "BORL currently requieres a 1D input and either 1D, 2D or 3D output"
+    _ -> error "ARAL currently requieres a 1D input and either 1D, 2D or 3D output"
     -- SpecConcreteNetwork2D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
     -- SpecConcreteNetwork2D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
@@ -473,7 +473,7 @@ mkUnichainGrenadeHelper ::
   -> Settings
   -> Maybe InitValues
   -> Network layers shapes
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net = do
   putStrLn "Using following Greande Specification: "
   print $ networkToSpecification net
@@ -506,10 +506,10 @@ mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter pa
               nnSAR1Table
               repMem
           D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
-          _ -> error "3D output is not supported by BORL!"
+          _ -> error "3D output is not supported by ARAL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $! force $
-    BORL
+    ARAL
       (VB.fromList as)
       asFun
       asFilter
@@ -566,7 +566,7 @@ mkMultichainGrenade ::
   -> NNConfig
   -> Settings
   -> Maybe InitValues
-  -> IO (BORL s as)
+  -> IO (ARAL s as)
 mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net nnConfig settings initVals = do
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
@@ -583,7 +583,7 @@ mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net
   let proxies' = Proxies nnSAMinRhoTable nnSARhoTable nnPsiV nnSAVTable nnPsiW nnSAWTable nnSAR0Table nnSAR1Table repMem
   workers <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $! force $ checkNetworkOutput False $
-    BORL
+    ARAL
       (VB.fromList as)
       asFun
       asFilter
@@ -672,7 +672,7 @@ mkWorkers state as mNNConfig setts = do
 
 -------------------- Helpers --------------------
 
-checkNetworkOutput :: Bool -> BORL s as -> BORL s as
+checkNetworkOutput :: Bool -> ARAL s as -> ARAL s as
 checkNetworkOutput combined borl
   | not isAnn = borl
   | (reqX, reqY, reqZ) /= (x, y, z) = error $ "Expected ANN output: " ++ show (reqX, reqY, reqZ) ++ ". Actual ANN output: " ++ show (x, y, z)
@@ -691,8 +691,8 @@ checkNetworkOutput combined borl
     px =
       case borl ^. algorithm of
         AlgDQNAvgRewAdjusted {} -> borl ^. proxies . r1
-        AlgBORL {}              -> borl ^. proxies . v
-        AlgBORLVOnly {}         -> borl ^. proxies . v
+        AlgARAL {}              -> borl ^. proxies . v
+        AlgARALVOnly {}         -> borl ^. proxies . v
         AlgDQN {}               -> borl ^. proxies . r1
     reqY :: Integer
     reqY
@@ -705,10 +705,10 @@ checkNetworkOutput combined borl
 
 
 -- | Perform an action over all proxies (combined proxies are seen once only).
-overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> BORL s as -> BORL s as
+overAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> (a -> b) -> ARAL s as -> ARAL s as
 overAllProxies l f borl = foldl' (\b p -> over (proxies . p . l) f b) borl (allProxiesLenses (borl ^. proxies))
 
-setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> BORL s as -> BORL s as
+setAllProxies :: ((a -> Identity b) -> Proxy -> Identity Proxy) -> b -> ARAL s as -> ARAL s as
 setAllProxies l = overAllProxies l . const
 
 allProxies :: Proxies -> [Proxy]

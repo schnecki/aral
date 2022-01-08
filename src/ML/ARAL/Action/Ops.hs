@@ -50,7 +50,7 @@ data SelectedActions s = SelectedActions
 
 
 -- | This function chooses the next action from the current state s and all possible actions.
-nextAction :: (MonadIO m) => BORL s as -> m NextActions
+nextAction :: (MonadIO m) => ARAL s as -> m NextActions
 nextAction !borl = do
   mainAgent <- nextActionFor borl mainAgentStrategy (borl ^. s) (params' ^. exploration) `using` rparWith rpar
   ws <- zipWithM (nextActionFor borl (borl ^. settings . explorationStrategy)) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
@@ -61,7 +61,7 @@ nextAction !borl = do
     mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
                       | otherwise = borl ^. settings . explorationStrategy
 
-nextActionFor :: (MonadIO m) => BORL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
+nextActionFor :: (MonadIO m) => ARAL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
 nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate agents id)
   where
     agents = VB.length acts
@@ -109,7 +109,7 @@ data ActionPickingConfig s =
     , actPickActions    :: [ActionIndex]
     }
 
-chooseAction :: (MonadIO m) => BORL s as -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndex)
+chooseAction :: (MonadIO m) => ARAL s as -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndex)
 chooseAction borl useRand selFromList = do
   rand <- liftIO $ randomRIO (0, 1)
   state <- asks actPickState
@@ -122,7 +122,7 @@ chooseAction borl useRand selFromList = do
         r <- liftIO $ randomRIO (0, length as - 1)
         return (True, as !! r)
       else case borl ^. algorithm of
-             AlgBORL ga0 ga1 _ _ -> do
+             AlgARAL ga0 ga1 _ _ -> do
                bestRho <-
                  if isUnichain borl
                    then return as
@@ -172,7 +172,7 @@ chooseAction borl useRand selFromList = do
                      else do
                        r <- liftIO $ randomRIO (0, length bestR0 - 1) --  3. Uniform selection of leftover actions
                        return (False, bestR0 !! r)
-             AlgBORLVOnly {} -> singleValueNextAction as EpsilonSensitive (vValueAgentWith Worker borl agent state)
+             AlgARALVOnly {} -> singleValueNextAction as EpsilonSensitive (vValueAgentWith Worker borl agent state)
              AlgDQN _ cmp -> singleValueNextAction as cmp (rValueAgentWith Worker borl RBig agent state)
   where
     maxOrMin =

@@ -4,12 +4,12 @@
 {-# LANGUAGE TupleSections     #-}
 module ML.ARAL.Pretty
     ( prettyTable
-    , prettyBORL
-    , prettyBORLM
-    , prettyBORLMWithStInverse
-    , prettyBORLWithStInverse
-    , prettyBORLHead
-    , prettyBORLTables
+    , prettyARAL
+    , prettyARALM
+    , prettyARALMWithStInverse
+    , prettyARALWithStInverse
+    , prettyARALHead
+    , prettyARALTables
     , wideStyle
     , showDouble
     , showDoubleList
@@ -93,16 +93,16 @@ type Modifier m = LookupType -> (NetInputWoAction, ActionIndex) -> Value -> m Va
 noMod :: (Monad m) => Modifier m
 noMod _ _ = return
 
-modifierSubtract :: (MonadIO m) => BORL s as -> P.Proxy -> Modifier m
+modifierSubtract :: (MonadIO m) => ARAL s as -> P.Proxy -> Modifier m
 modifierSubtract borl px lk k v0 = do
   vS <- P.lookupProxy (borl ^. t) lk (second (VB.replicate agents) k) px
   return (v0 - vS)
   where agents = px ^?! proxyNrAgents
 
-prettyTable :: (MonadIO m, Show s, Show as, Ord s) => BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
-prettyTableRows :: (MonadIO m, Show s, Show as, Ord s) => BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
+prettyTableRows :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ _ ->
@@ -120,7 +120,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
 
 mkListFromNeuralNetwork ::
      (MonadIO m)
-  => BORL s as
+  => ARAL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
   -> Bool
@@ -135,7 +135,7 @@ mkListFromNeuralNetwork borl prettyState prettyActionIdx scaled modifier pr = fi
       xsW' <- mapM (\(idx, val) -> (idx, ) <$> modifier Worker (inp, idx) val) xsW
       return (inp, (xsT', xsW'))
 
-prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
+prettyStateActionEntry :: ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> NetInputWoAction -> ActionIndex -> Doc
 prettyStateActionEntry borl pState pActIdx stInp actIdx =
   case pState stInp of
     Nothing -> mempty
@@ -151,7 +151,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx =
     Just (Nothing, stRep) -> text stRep <> colon <+> pActIdx actIdx
 
 
--- prettyStateActionEntry :: BORL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> AgentNumber -> NetInputWoAction -> ActionIndex -> Doc
+-- prettyStateActionEntry :: ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> AgentNumber -> NetInputWoAction -> ActionIndex -> Doc
 -- prettyStateActionEntry borl pState pActIdx agentNr stInp actIdx = case pState stInp of
 --   Nothing               -> mempty
 --   Just (Just st, stRep) | and (zipWith (!!) bools actIdx) -> text stRep <> colon <+> printActionIndices pActIdx actIdx
@@ -162,7 +162,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx =
 
 prettyTablesState ::
      (MonadIO m, Show s, Show as, Ord s)
-  => BORL s as
+  => ARAL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
   -> P.Proxy
@@ -175,9 +175,9 @@ prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
   rows2 <- prettyTableRows borl p2 pIdx modifier2 m2
   return $ vcat $ zipWith (\x y -> x $$ nest nestCols y) rows1 rows2
 
-prettyAlgorithm ::  BORL s as -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
-prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRefState) =
-  text "BORL with gammas " <+>
+prettyAlgorithm ::  ARAL s as -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
+prettyAlgorithm borl prettyState prettyActionIdx (AlgARAL ga0 ga1 avgRewType mRefState) =
+  text "ARAL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType (borl ^. t) avgRewType <+>
   text "for rho" <> text ";" <+>
@@ -185,8 +185,8 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgBORL ga0 ga1 avgRewType mRe
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
 prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
   text "Average reward adjusted DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
-prettyAlgorithm borl prettyState prettyAction (AlgBORLVOnly avgRewType mRefState) =
-  text "BORL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
+prettyAlgorithm borl prettyState prettyAction (AlgARALVOnly avgRewType mRefState) =
+  text "ARAL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
 
 prettyComparison :: Comparison -> Doc
 prettyComparison EpsilonSensitive = "optimising by epsilon-sensitive comparison"
@@ -209,8 +209,8 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
-prettyBORLTables :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> BORL s as -> m Doc
-prettyBORLTables mStInverse t1 t2 t3 borl = do
+prettyARALTables :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> ARAL s as -> m Doc
+prettyARALTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
         | otherwise = empty
@@ -227,14 +227,14 @@ prettyBORLTables mStInverse t1 t2 t3 borl = do
       (m,_) -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
-  docHead <- prettyBORLHead' False prettyState borl
+  docHead <- prettyARALHead' False prettyState borl
   case borl ^. algorithm of
-    AlgBORL {} -> do
+    AlgARAL {} -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
       prWs <- prBoolTblsStateAction t2 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
       prR0R1 <- prBoolTblsStateAction t3 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prVs $+$ prWs $+$ prR0R1
-    AlgBORLVOnly {} -> do
+    AlgARALVOnly {} -> do
       prV <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
     AlgDQN {} -> do
@@ -256,12 +256,12 @@ mkPrettyState mStInverse netinp =
   where fromEither (Left str) = (Nothing, str)
         fromEither (Right st) = (Just st, show st)
 
-prettyBORLHead ::  (MonadIO m, Show s, Show as) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> m Doc
-prettyBORLHead printRho mInverseSt = prettyBORLHead' printRho (mkPrettyState mInverseSt)
+prettyARALHead ::  (MonadIO m, Show s, Show as) => Bool -> Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
+prettyARALHead printRho mInverseSt = prettyARALHead' printRho (mkPrettyState mInverseSt)
 
 
-prettyBORLHead' :: (MonadIO m, Show s, Show as) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> BORL s as -> m Doc
-prettyBORLHead' printRho prettyStateFun borl = do
+prettyARALHead' :: (MonadIO m, Show s, Show as) => Bool -> (NetInputWoAction -> Maybe (Maybe s, String)) -> ARAL s as -> m Doc
+prettyARALHead' printRho prettyStateFun borl = do
   let prettyState st = maybe ("unkown state: " ++ show st) snd (prettyStateFun st)
       prettyActionIdx aIdx = text (show ((borl ^. actionList) VB.! (aIdx `mod` actionNrs)))
       actionNrs = length (borl ^. actionList)
@@ -327,8 +327,8 @@ prettyBORLHead' printRho prettyStateFun borl = do
       (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
-       AlgBORL {}              -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-       AlgBORLVOnly {}         -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgARAL {}              -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+       AlgARALVOnly {}         -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {}               -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
        AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
@@ -444,19 +444,19 @@ prettyBORLHead' printRho prettyStateFun borl = do
                       , printDoubleWith 8 (realToFrac lambda))))
 
 
-prettyBORL :: (Ord s, Show s, Show as) => BORL s as -> IO Doc
-prettyBORL = prettyBORLWithStInverse Nothing
+prettyARAL :: (Ord s, Show s, Show as) => ARAL s as -> IO Doc
+prettyARAL = prettyARALWithStInverse Nothing
 
-prettyBORLM :: (MonadIO m, Ord s, Show s, Show as) => BORL s as -> m Doc
-prettyBORLM = prettyBORLTables Nothing True True True
+prettyARALM :: (MonadIO m, Ord s, Show s, Show as) => ARAL s as -> m Doc
+prettyARALM = prettyARALTables Nothing True True True
 
-prettyBORLMWithStInverse :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> m Doc
-prettyBORLMWithStInverse mStInverse = prettyBORLTables mStInverse True True True
+prettyARALMWithStInverse :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
+prettyARALMWithStInverse mStInverse = prettyARALTables mStInverse True True True
 
 
-prettyBORLWithStInverse :: (Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> BORL s as -> IO Doc
-prettyBORLWithStInverse mStInverse borl =
-  prettyBORLTables mStInverse True True True borl
+prettyARALWithStInverse :: (Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> IO Doc
+prettyARALWithStInverse mStInverse borl =
+  prettyARALTables mStInverse True True True borl
 
-instance (Ord s, Show s, Show as) => Show (BORL s as) where
-  show borl = renderStyle wideStyle $ unsafePerformIO $ prettyBORL borl
+instance (Ord s, Show s, Show as) => Show (ARAL s as) where
+  show borl = renderStyle wideStyle $ unsafePerformIO $ prettyARAL borl
