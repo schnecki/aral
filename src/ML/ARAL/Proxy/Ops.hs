@@ -283,11 +283,11 @@ insertCombinedProxies !agent !setts !period !pxs = set proxyType (head pxs ^?! p
     combineProxyExpectedOuts = concatMap getAndScaleExpectedOutput (sortBy (compare `on` (^?! proxyOutCol)) pxs)
     nrAs = head pxs ^?! proxyNrActions
     nrAgents = VB.generate (pxLearn ^?! proxyNrAgents) id
-    mMinMaxs = mapM (getMinMaxValPeriod (Just period)) pxs
+    mMinMaxs = mapM getMinMaxVal pxs
     scaleAlg = pxLearn ^?! proxyNNConfig . scaleOutputAlgorithm
     convertData px pxNr ((ft, curIdx), out) =
       -- ((ft, VB.zipWith (\agNr idx -> columnMajorModeIndex nrPxs (agNr * nrAs + idx) pxNr) nrAgents curIdx), scaleValue scaleAlg (getMinMaxVal px) out)
-      ((ft, VB.zipWith (\agNr idx -> pxNr * len + agNr * nrAs + idx) nrAgents curIdx), scaleValue scaleAlg (getMinMaxValPeriod (Just period) px) out)
+      ((ft, VB.zipWith (\agNr idx -> pxNr * len + agNr * nrAs + idx) nrAgents curIdx), scaleValue scaleAlg (getMinMaxVal px) out)
     getAndScaleExpectedOutput px@(CombinedProxy _ col outs) = map (map (convertData px col)) outs
     getAndScaleExpectedOutput px                            = error $ "unexpected proxy in insertCombinedProxies" ++ show px
     nrPxs = length pxs
@@ -321,13 +321,12 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
         NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
           where minV = minimum $ map fst minMaxVals
                 maxV = maximum $ map snd minMaxVals
-        _ -> getMinMaxValPeriod (Just period) px
+        _ -> getMinMaxVal px
     convertTrainingInstances :: (Int -> Int -> Int) -> ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Double)]
-    convertTrainingInstances idxFun ((ft, as), AgentValue vs) =
-      zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
+    convertTrainingInstances idxFun ((ft, as), AgentValue vs) = zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
     trainingInstances' =
       case px ^?! proxyType of
-        NoScaling CombinedUnichain _ -> concatMap (map (convertTrainingInstances (\_ idx -> idx))) trainingInstances -- combined proxies (idx already calulated)
+        NoScaling CombinedUnichain _ -> concatMap (map (convertTrainingInstances (\_ idx -> idx))) trainingInstances -- combined proxies (idx already calculated)
         NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
         _                            -> concatMap (map (convertTrainingInstances mkIdx . second (scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
     mkIdx agNr aIdx = agNr * nrActs + aIdx
@@ -502,12 +501,8 @@ cached st ~f = do
 
 -- | Finds the correct value for scaling.
 getMinMaxVal :: Proxy -> Maybe (MinValue Double, MaxValue Double)
-getMinMaxVal = getMinMaxValPeriod Nothing
-
--- | Only for insterts call this function directly. Oterhwise use `getMinMaxVal`. This function keeps the values within (-1, 1) for the first 500 steps of training.
-getMinMaxValPeriod :: Maybe Period -> Proxy -> Maybe (MinValue Double, MaxValue Double)
-getMinMaxValPeriod _ Table{} = error "getMinMaxVal called for Table"
-getMinMaxValPeriod mPeriod !p = clipStartup $
+getMinMaxVal Table{} = error "getMinMaxVal called for Table"
+getMinMaxVal !p =
   case unCombine (p ^?! proxyType) of
     VTable           -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     WTable           -> Just (p ^?! proxyNNConfig . scaleParameters . scaleMinWValue, p ^?! proxyNNConfig . scaleParameters . scaleMaxWValue)
@@ -517,15 +512,12 @@ getMinMaxValPeriod mPeriod !p = clipStartup $
     PsiWTable        -> Just (1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMinVValue, 1.0 * p ^?! proxyNNConfig . scaleParameters . scaleMaxVValue)
     NoScaling {}     -> Nothing
     CombinedUnichain -> error "should not happend"
+    -- CombinedUnichainScaleAs {} -> error "should not happend"
   where
-    clipPeriod period x@(Just (minV, maxV))
-      | period - 500 <= p ^?! proxyNNConfig . replayMemoryMaxSize =  Just (sc * minV, sc * maxV)
-      | otherwise = x
-      where sc = 10 - 10 * (fromIntegral period / 500)
-    clipPeriod _ Nothing = Nothing
-    clipStartup = maybe id clipPeriod mPeriod
     unCombine CombinedUnichain
       | isCombinedProxy p = fromCombinedIndex (p ^?! proxyOutCol)
+    -- unCombine (CombinedUnichainScaleAs x)
+    --   | isCombinedProxy p = x
     unCombine x = x
 
 
