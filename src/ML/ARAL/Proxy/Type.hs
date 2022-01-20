@@ -63,7 +63,6 @@ data ProxyType
   | PsiVTable
   | PsiWTable
   | CombinedUnichain
---  | CombinedUnichainScaleAs ProxyType
   | NoScaling !ProxyType (Maybe [(MinValue Double, MaxValue Double)] )
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
@@ -75,7 +74,6 @@ proxyTypeName R1Table          = "r1"
 proxyTypeName PsiVTable        = "psiV"
 proxyTypeName PsiWTable        = "psiW"
 proxyTypeName CombinedUnichain = "combinedUnichain"
--- proxyTypeName (CombinedUnichainScaleAs p) = "combinedUnichainScaleAs" <> proxyTypeName p
 proxyTypeName (NoScaling p _)  = "noscaling-" <> proxyTypeName p
 
 
