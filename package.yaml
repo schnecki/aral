@@ -63,6 +63,7 @@ dependencies:
   - experimenter >= 0.1.0.10
   - say
   - easy-logger
+  - hasktorch
 
 library:
   source-dirs: src

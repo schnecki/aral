@@ -9,6 +9,7 @@ module ML.ARAL.NeuralNetwork.Conversion
     , toLastShapes
     , fromLastShapes
     , fromLastShapesVector
+    , toAgents
     , NrActions
     , NrAgents
     ) where

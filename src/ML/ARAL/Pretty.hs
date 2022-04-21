@@ -419,6 +419,7 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {}                                     -> empty
         P.Grenade _ _ _ conf _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.Hasktorch _ _ _ conf _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _                                              -> error "nnLearningParams in Pretty.hs"
       where
@@ -434,14 +435,15 @@ prettyARALHead' printRho prettyStateFun borl = do
            in text "NN Learning Rate/Momentum/L2" <> colon $$
               nest
                 nestCols
-                (text "Adam Optimizer with" <+>
-                 text
-                   (show
-                      ( printDoubleWith 8 (realToFrac l)
-                      , printDoubleWith 8 (realToFrac beta1)
-                      , printDoubleWith 8 (realToFrac beta2)
-                      , printDoubleWith 8 (realToFrac epsilon)
-                      , printDoubleWith 8 (realToFrac lambda))))
+                (text "Adam Optimizer with TODO" <+>
+                 text ""
+                   -- (show
+                   --    ( printDoubleWith 8 (realToFrac l)
+                   --    , printDoubleWith 8 (realToFrac beta1)
+                   --    , printDoubleWith 8 (realToFrac beta2)
+                   --    , printDoubleWith 8 (realToFrac epsilon)
+                   --    , printDoubleWith 8 (realToFrac lambda)))
+                )
 
 
 prettyARAL :: (Ord s, Show s, Show as) => ARAL s as -> IO Doc

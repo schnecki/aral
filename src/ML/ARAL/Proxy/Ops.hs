@@ -29,7 +29,7 @@ module ML.ARAL.Proxy.Ops
     , AgentNumber
     ) where
 
-import           Control.Applicative         ((<|>))
+import           Control.Applicative             ((<|>))
 import           Control.Arrow
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
@@ -37,27 +37,30 @@ import           Control.Exception
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
-import           Control.Parallel.Strategies hiding (r0)
-import           Data.Function               (on)
-import           Data.List                   (foldl', sortBy, transpose)
-import qualified Data.Map.Strict             as M
-import           Data.Maybe                  (fromMaybe, isNothing)
-import qualified Data.Text                   as T
-import qualified Data.Vector                 as VB
-import qualified Data.Vector.Storable        as V
+import           Control.Parallel.Strategies     hiding (r0)
+import           Data.Function                   (on)
+import           Data.List                       (foldl', sortBy, transpose)
+import qualified Data.Map.Strict                 as M
+import           Data.Maybe                      (fromMaybe, isNothing)
+import qualified Data.Text                       as T
+import qualified Data.Vector                     as VB
+import qualified Data.Vector.Storable            as V
 import           EasyLogger
 import           Grenade
 import           Say
-import           System.IO.Unsafe            (unsafePerformIO)
+import           System.IO.Unsafe                (unsafePerformIO)
+import qualified Torch                           as Torch
+import qualified Torch.Optim                     as Torch
 
 import           ML.ARAL.Calculation.Type
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
+import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.Proxy.Proxies
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
-import           ML.ARAL.Types               as T
+import           ML.ARAL.Types                   as T
 import           ML.ARAL.Workers.Type
 
 import           Debug.Trace
@@ -307,6 +310,27 @@ updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agen
     smoothUpd = config ^. grenadeSmoothTargetUpdate
     smoothUpdPer = config ^. grenadeSmoothTargetUpdatePeriod
     updatePeriod = (period - memSize - 1) `mod` smoothUpdPer < setts ^. nStep
+updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents adam mdl)
+  | period <= memSize = return px
+  | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod =
+    -- trace ("netT: " ++ show netT)
+    -- trace ("netW: " ++ show netW)
+    -- trace ("(Torch.flattenParameters netT): " ++ show (Torch.flattenParameters netT))
+    -- trace ("(Torch.flattenParameters netW): " ++ show (Torch.flattenParameters netW)) $
+    let netT' = Torch.replaceParameters netT (Torch.flattenParameters netW)
+    in return $ Hasktorch netT' netW tp config nrActs agents adam mdl
+  | updatePeriod = -- trace ("ASDFASDFASDF") $
+                   do
+    let smoothUpdTensor = Torch.asTensor (realToFrac smoothUpd :: Float)
+    params' <- liftIO $ zipWithM (\t w -> Torch.makeIndependent $ (1 - smoothUpdTensor) * Torch.toDependent t + smoothUpdTensor * Torch.toDependent w) (Torch.flattenParameters netT) (Torch.flattenParameters netW)
+    let netT' = Torch.replaceParameters netT params'
+    return $ Hasktorch netT' netW tp config nrActs agents adam mdl
+  | otherwise = return px
+  where
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
+    smoothUpd = config ^. grenadeSmoothTargetUpdate
+    smoothUpdPer = config ^. grenadeSmoothTargetUpdatePeriod
+    updatePeriod = (period - memSize - 1) `mod` smoothUpdPer < setts ^. nStep
 updateNNTargetNet _ _ _ px = error $ show px ++ " proxy in updateNNTargetNet. Should not happen!"
 
 
@@ -334,6 +358,26 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     scaleAlg = config ^. scaleOutputAlgorithm
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
+trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam !mdl) = do
+  (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances'
+  return $! Hasktorch netT netW' tp config nrActs agents adam' mdl
+  where
+    minMaxVal =
+      case px ^?! proxyType of
+        NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
+          where minV = minimum $ map fst minMaxVals
+                maxV = maximum $ map snd minMaxVals
+        _ -> getMinMaxVal px
+    convertTrainingInstances :: (Int -> Int -> Int) -> ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Double)]
+    convertTrainingInstances idxFun ((ft, as), AgentValue vs) = zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
+    trainingInstances' =
+      case px ^?! proxyType of
+        NoScaling CombinedUnichain _ -> concatMap (map (convertTrainingInstances (\_ idx -> idx))) trainingInstances -- combined proxies (idx already calculated)
+        NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
+        _                            -> concatMap (map (convertTrainingInstances mkIdx . second (scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
+    mkIdx agNr aIdx = agNr * nrActs + aIdx
+    lRate = getLearningRate (config ^. grenadeLearningParams)
+    scaleAlg = config ^. scaleOutputAlgorithm
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
@@ -411,6 +455,7 @@ lookupActionsNeuralNetwork !tp !k !px = unscaleVal <$> lookupActionsNeuralNetwor
 -- | Retrieve a value from a neural network proxy. The output is *not* scaled to the original range. For other proxies an error is thrown.
 lookupNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
 lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Grenade{}           = selectIndices actIdx <$> lookupActionsNeuralNetworkUnscaled tp st px
+lookupNeuralNetworkUnscaled !tp (!st, !actIdx) px@Hasktorch{}         = selectIndices actIdx <$> lookupActionsNeuralNetworkUnscaled tp st px
 lookupNeuralNetworkUnscaled !tp (!st, !actIdx) (CombinedProxy px _ _) = lookupNeuralNetworkUnscaled tp (st, actIdx) px
 lookupNeuralNetworkUnscaled _ _ _                                     = error "lookupNeuralNetworkUnscaled called on non-neural network proxy"
 
@@ -418,6 +463,9 @@ lookupNeuralNetworkUnscaled _ _ _                                     = error "l
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m Values
 lookupActionsNeuralNetworkUnscaled tp st px@(Grenade _ _ pxTp config _ _) = head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
+  where
+    tp' = mkLookupType config tp
+lookupActionsNeuralNetworkUnscaled tp st px@(Hasktorch _ _ pxTp config _ _ _ _) = head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
   where
     tp' = mkLookupType config tp
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> cached (tp', CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
@@ -428,10 +476,12 @@ lookupActionsNeuralNetworkUnscaled _ _ _ = error "lookupNeuralNetworkUnscaled ca
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
-lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ _ nrAs agents) = return $ runGrenade netW nrAs agents st
-lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ _ nrAs agents) = return $ runGrenade netT nrAs agents st
-lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                        = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
-lookupActionsNeuralNetworkUnscaledFull _ _ _                                      = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
+lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ _ nrAs agents)         = return $ runGrenade netW nrAs agents st
+lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ _ nrAs agents)         = return $ runGrenade netT nrAs agents st
+lookupActionsNeuralNetworkUnscaledFull Worker st (Hasktorch _ netW _ _ nrAs agents _ mdl) = return $ runHasktorch netW nrAs agents st
+lookupActionsNeuralNetworkUnscaledFull Target st (Hasktorch netT _ _ _ nrAs agents _ mdl) = return $ runHasktorch netT nrAs agents st
+lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                                = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
+lookupActionsNeuralNetworkUnscaledFull _ _ _                                              = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 
 mkLookupType :: NNConfig -> LookupType -> LookupType

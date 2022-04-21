@@ -35,6 +35,7 @@ module ML.ARAL.Type
   , NrRows
   , NrCols
   , ModelBuilderFun
+  , ModelBuilderFunHT
   , actionList
   , actionFilter
   , actionFunction
@@ -65,6 +66,8 @@ module ML.ARAL.Type
     -- constructors
   , mkUnichainTabular
   , mkMultichainTabular
+
+  , mkUnichainHasktorch
 
   , mkUnichainGrenade
   , mkUnichainGrenadeCombinedNet
@@ -100,6 +103,8 @@ import           EasyLogger
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import qualified Torch
+import qualified Torch.NN                     as Torch
 
 
 import           ML.ARAL.Action.Type
@@ -124,6 +129,7 @@ type NrFeatures = Integer
 type NrRows = Integer
 type NrCols = Integer
 type ModelBuilderFun = NrFeatures -> (NrRows, NrCols) -> IO SpecConcreteNetwork
+type ModelBuilderFunHT = NrFeatures -> (NrRows, NrCols) -> MLPSpec
 
 
 -------------------- Main RL Datatype --------------------
@@ -368,6 +374,89 @@ mkMultichainTabular alg initialStateFun ftExt asFun asFilter params decayFun set
     agents = settings ^. independentAgents
 
 -- Neural network approximations
+
+mkUnichainHasktorch ::
+  forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as, NFData s) =>
+     Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFunHT
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainHasktorch alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
+  $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
+  initialState <- initialStateFun MainAgent
+  let feats = fromIntegral $ V.length (ftExt initialState)
+      rows = genericLength ([minBound .. maxBound] :: [as]) * fromIntegral (settings ^. independentAgents)
+      netFun cols = modelBuilderHT feats (rows, cols)
+  let model = netFun 1
+  putStrLn "Net: "
+  print model
+  repMem <- mkReplayMemories as settings nnConfig
+  let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
+  let opt w = Torch.mkAdam 0 0.9 0.999 (Torch.flattenParameters w)
+  let nnSA tp = do
+        modelT <- Torch.sample model
+        modelW <- Torch.sample model
+        return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model
+  nnSAVTable <- nnSA VTable
+  nnSAWTable <- nnSA WTable
+  nnSAR0Table <- nnSA R0Table
+  nnSAR1Table <- nnSA R1Table
+  nnPsiV <- nnSA PsiVTable
+  nnPsiW <- nnSA PsiWTable
+  let nnType
+        | isAlgDqnAvgRewardAdjusted alg = CombinedUnichain -- ScaleAs VTable
+        | otherwise = CombinedUnichain
+  let nnComb = nnSA nnType
+  let proxies' =
+            Proxies
+              (Scalar (V.replicate agents defRhoMin) (length as))
+              (Scalar (V.replicate agents defRho) (length as))
+              nnPsiV
+              nnSAVTable
+              nnPsiW
+              nnSAWTable
+              nnSAR0Table
+              nnSAR1Table
+              repMem
+          -- D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
+          -- _ -> error "3D output is not supported by ARAL!"
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
+  return $!
+    force $
+    ARAL
+      (VB.fromList as)
+      asFun
+      asFilter
+      initialState
+      workers'
+      ftExt
+      0
+      (0, 0)
+      params
+      decayFun
+      settings
+      VB.empty
+      (convertAlgorithm ftExt alg)
+      Maximise
+      defRhoMin
+      mempty
+      mempty
+      (toValue agents 0, toValue agents 0, toValue agents 0)
+      proxies'
+  where
+    as = [minBound .. maxBound] :: [Action as]
+    defRho = defaultRho (fromMaybe defInitValues initValues)
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
+    agents = settings ^. independentAgents
+
 
 mkUnichainGrenade ::
   forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as, NFData s) =>

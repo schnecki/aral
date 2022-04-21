@@ -222,7 +222,7 @@ nnConfig =
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
-    , _grenadeSmoothTargetUpdatePeriod = 1
+    , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
@@ -237,7 +237,7 @@ borlSettings :: Settings
 borlSettings = def
   { _workersMinExploration = [0.3, 0.2, 0.1]
   , _nStep = 2
-  , _independentAgents = 2
+  , _independentAgents = 1
   }
 
 
@@ -334,6 +334,7 @@ usermode = do
 
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -344,6 +345,12 @@ usermode = do
   where
     cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
+
+
+modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
+modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] HasktorchRelu (Just HasktorchTanh)
+  where
+    lenOut = lenActs * cols
 
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
