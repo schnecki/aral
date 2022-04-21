@@ -33,6 +33,7 @@ import           Data.Default
 import           Data.Int             (Int64)
 import           Data.List            (genericLength)
 import qualified Data.Map.Strict      as M
+import           Data.Serialize
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
@@ -212,12 +213,17 @@ decay =
 
 
 -- State
-data St = B | A | C
-  deriving (Ord, Eq, Show, Enum, Bounded,NFData,Generic)
+data St
+  = B
+  | A
+  | C
+  deriving (Ord, Eq, Show, Enum, Bounded, NFData, Generic, Serialize)
 
 -- Actions
-data Act = Left | Right
-  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
+data Act
+  = Left
+  | Right
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
 instance Show Act where
   show Left  = "left  "

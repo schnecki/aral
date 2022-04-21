@@ -31,6 +31,7 @@ import           Control.Monad           (join, when)
 import           Data.Default
 import           Data.List               (genericLength, sort)
 import           Data.Maybe              (fromMaybe)
+import           Data.Serialize
 import qualified Data.Text               as T
 import qualified Data.Vector.Storable    as V
 import           GHC.Generics
@@ -49,7 +50,7 @@ import           Debug.Trace
 type Render = Bool
 
 data St = St Render [Double]
-  deriving (Generic, NFData)
+  deriving (Generic, NFData, Serialize)
 
 instance Eq St where
   (St _ xs1) == (St _ xs2) = xs1 == xs2
@@ -155,7 +156,7 @@ getActionNrVar = fromMaybe (error "empty actionNrVar in getActionNrVar") <$> try
 
 -- Actions
 data Act = Act Int
-  deriving (Show, Eq, Ord, NFData, Generic)
+  deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 
 instance Enum Act where
   fromEnum (Act n) = n

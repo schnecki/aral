@@ -18,8 +18,10 @@ import           Control.Lens
 import           Control.Lens           (over, set, traversed, (^.))
 import           Control.Monad          (foldM, unless, when)
 import           Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString        as BS
 import           Data.Function          (on)
 import           Data.List              (find, sortBy)
+import           Data.Serialize         as S
 import           Data.Time.Clock
 import qualified Data.Vector            as VB
 import           System.CPUTime
@@ -30,7 +32,7 @@ import           Text.Printf
 import           Debug.Trace
 
 askUser ::
-     (NFData s, Ord s, Show s, NFData as, Show as, RewardFuture s, Eq as)
+     (NFData s, Ord s, Show s, Serialize s, NFData as, Serialize as, Show as, RewardFuture s, Eq as)
   => Maybe (NetInputWoAction -> Maybe (Either String s))
   -> Bool
   -> [(String, String)]
@@ -46,8 +48,8 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
         , ("param", "Change parameters")
-        -- , ("s" "Save to file save.dat (overwrites the file if it exists)")
-        -- , ("l" "Load from file save.dat")
+        , ("s", "Save to file save.dat (overwrites the file if it exists)")
+        , ("l", "Load from file save.dat")
         , ("_", "Any other input starts another learning round\n")
         ] ++
         addUsage ++
@@ -59,13 +61,22 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
   case c of
     "h" -> askUser mInverse True addUsage cmds qlCmds ql
     "?" -> askUser mInverse True addUsage cmds qlCmds ql
-    -- "s" -> do
-    --   saveQL ql "save.dat"
-    --   askUser ql addUsage cmds
-    -- "l" -> do
-    --   ql' <- loadQL ql "save.dat"
-    --   print (prettyQLearner prettyState (text . show) ql')
-    --   askUser ql addUsage cmds'
+    "s" -> do
+      let path = "save.dat"
+      res <- toSerialisableWith id id ql
+      BS.writeFile path (runPut $ put res)
+      putStrLn $ "Saved to " ++ path
+      askUser mInverse True addUsage cmds qlCmds ql
+    "l" -> do
+      let path = "save.dat"
+      bs <- liftIO $ BS.readFile path
+      ql' <- case S.runGet S.get bs of
+        Left err  -> error ("Could not deserialize to Serializable ARAL. Error: " ++ err)
+        Right ser -> fromSerialisableWith id id (ql ^. actionFunction) (ql ^. actionFilter) (ql ^. featureExtractor) ser
+      let ql'' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql' ^. featureExtractor) (ql' ^. s)]) ql'
+      prettyARALWithStInverse mInverse ql'' >>= print >> hFlush stdout
+      putStrLn $ "Loaded from " ++ path
+      askUser mInverse True addUsage cmds qlCmds ql''
     "r" -> do
       putStr "How many learning rounds should I execute: " >> hFlush stdout
       l <- getLine

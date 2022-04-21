@@ -1,14 +1,16 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveAnyClass      #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE Strict              #-}
-{-# LANGUAGE Unsafe              #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE KindSignatures       #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE Strict               #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE Unsafe               #-}
 
 
 module ML.ARAL.Serialisable where
@@ -19,6 +21,7 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad                (foldM_, zipWithM_)
 import           Control.Monad.IO.Class
+import qualified Data.ByteString              as BS
 import           Data.Constraint              (Dict (..))
 import           Data.Int
 import           Data.List                    (foldl')
@@ -34,7 +37,11 @@ import           Data.Word
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import           System.IO
 import           System.IO.Unsafe
+import qualified Torch                        as Torch
+import qualified Torch.Optim                  as Torch
+import qualified Torch.Serialize              as Torch
 import           Unsafe.Coerce                (unsafeCoerce)
 
 import           ML.ARAL.Action.Type
@@ -187,32 +194,78 @@ instance Serialize NNConfig where
     return $ NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip
 
 
+instance Serialize Torch.Parameter where
+  put p = put (Torch.toDependent p)
+  get = unsafePerformIO . Torch.makeIndependent <$> get
+
+instance Serialize Torch.Tensor where
+  put p = put (show $ Torch.dtype p) >> put (Torch.shape p) >> put p'
+    where p' :: [Double]
+          p' = Torch.asValue $ Torch.toDType Torch.Double $ Torch.reshape [nr] p
+          nr = product (Torch.shape p)
+  get = do
+    (dtype :: Torch.DType) <- read <$> get
+    (shape :: [Int]) <- get
+    (values :: [Double]) <- get
+    return $ Torch.reshape shape $ Torch.toDType dtype $ Torch.asTensor values
+
+
+deriving instance Serialize Torch.Linear
+
+deriving instance Generic Torch.LinearSpec
+
+deriving instance Serialize Torch.LinearSpec
+
+
+instance Serialize Torch.Adam where
+  put (Torch.Adam b1 b2 m1 m2 iter) = put b1 >> put b2 >> put m1 >> put m2 >> put iter
+  get = Torch.Adam <$> get <*> get <*> get <*> get <*> get
+
 instance Serialize Proxy where
-  put (Scalar x nrAs)                 = put (0 :: Int) >> put (V.toList x) >> put nrAs
-  put (Table m d acts)                = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
+  put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
+  put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
-  -- put (Hasktorch t w tp conf nr agents adam mdl) = put (3 :: Int) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl
-  get = fmap force $! do
-    (c :: Int) <- get
-    case c of
-      0 -> Scalar <$> fmap V.fromList get <*> get
-      1 -> do
-        m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
-        d <- V.fromList <$> get
-        Table m d <$> get
-      2 -> do
-        (specT :: SpecNet) <- get
-        case unsafePerformIO (networkFromSpecificationWith (NetworkInitSettings UniformInit HMatrix Nothing) specT) of
-          SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
-            (t :: Network tLayers tShapes) <- get
-            (w :: Network tLayers tShapes) <- get
-            Grenade t w <$> get <*> get <*> get <*> get
-          SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
-            (t :: Network tLayers tShapes) <- get
-            (w :: Network tLayers tShapes) <- get
-            Grenade t w <$> get <*> get <*> get <*> get
-          _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.ARAL.Serialisable")
-      _ -> error "Unknown constructor for proxy"
+  put (Hasktorch t w tp conf nr agents adam mdl) =
+    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl
+  get =
+    fmap force $! do
+      (c :: Int) <- get
+      case c of
+        0 -> Scalar <$> fmap V.fromList get <*> get
+        1 -> do
+          m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
+          d <- V.fromList <$> get
+          Table m d <$> get
+        2 -> do
+          (specT :: SpecNet) <- get
+          case unsafePerformIO (networkFromSpecificationWith (NetworkInitSettings UniformInit HMatrix Nothing) specT) of
+            SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
+              (t :: Network tLayers tShapes) <- get
+              (w :: Network tLayers tShapes) <- get
+              Grenade t w <$> get <*> get <*> get <*> get
+            SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
+              (t :: Network tLayers tShapes) <- get
+              (w :: Network tLayers tShapes) <- get
+              Grenade t w <$> get <*> get <*> get <*> get
+            _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.ARAL.Serialisable")
+        3 -> do
+          (paramsT :: [Torch.Parameter]) <- get
+          (paramsW :: [Torch.Parameter]) <- get
+          tp <- get
+          conf <- get
+          nr <- get
+          agents <- get
+          adam <- get
+          mdl <- get
+          return $
+            unsafePerformIO $ do
+              t <- Torch.sample mdl
+              w <- Torch.sample mdl
+              return $
+                if null paramsT
+                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl
+                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl
+        _ -> error "Unknown constructor for proxy"
 
 
 -- ^ Replay Memory

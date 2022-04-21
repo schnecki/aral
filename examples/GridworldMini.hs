@@ -334,8 +334,8 @@ usermode = do
 
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -355,7 +355,7 @@ modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut
 
 
 -- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) ->IO SpecConcreteNetwork
+modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
 modelBuilderGrenade lenIn (lenActs, cols) =
   buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
   inputLayer1D lenIn >>

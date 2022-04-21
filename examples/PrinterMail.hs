@@ -34,6 +34,7 @@ import           Control.Lens
 import           Data.Default
 import           Data.Int             (Int64)
 import           Data.List            (elemIndex)
+import           Data.Serialize
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
@@ -182,7 +183,7 @@ data St
   = One
   | Left Int
   | Right Int
-  deriving (Ord, Eq, Show, NFData, Generic)
+  deriving (Ord, Eq, Show, NFData, Generic, Serialize)
 
 instance Enum St where
   toEnum 1 = One
@@ -200,7 +201,7 @@ instance Bounded St where
 -- Actions
 
 data Act = GoLeft | GoRight
-  deriving (Eq, Ord, Show, NFData, Enum, Bounded, Generic)
+  deriving (Eq, Ord, Show, NFData, Enum, Bounded, Generic, Serialize)
 
 actions :: [Action Act]
 actions = [GoLeft, GoRight]

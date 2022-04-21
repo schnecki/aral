@@ -34,6 +34,7 @@ import           Control.Lens         (set, (^.))
 import           Control.Monad        (foldM, unless, when)
 import           Data.Default
 import           Data.List            (foldl')
+import           Data.Serialize
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
 import           System.IO
@@ -141,7 +142,7 @@ decay =
 
 
 -- State
-newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic)
+newtype St = St Integer deriving (Ord, Eq, Show, NFData, Generic, Serialize)
 
 instance RewardFuture St where
   type StoreType St = ()
@@ -149,7 +150,7 @@ instance RewardFuture St where
 
 -- Actions
 data Act = Move
-  deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData)
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
 actions :: [Action Act]
 actions = [Move]

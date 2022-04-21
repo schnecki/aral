@@ -20,6 +20,7 @@ import           Control.Lens
 import           Data.Default
 import           Data.Int             (Int64)
 import           Data.List            (genericLength)
+import           Data.Serialize
 import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
@@ -28,8 +29,12 @@ import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
 -- State
-data St = Start | Top Int | Bottom Int | End
-  deriving (Ord, Eq, Show,NFData,Generic)
+data St
+  = Start
+  | Top Int
+  | Bottom Int
+  | End
+  deriving (Ord, Eq, Show, NFData, Generic, Serialize)
 
 instance Bounded St where
   minBound = Start
@@ -191,8 +196,10 @@ decay =
 
 
 -- Actions
-data Act = Up | Down
-  deriving (Eq, Ord, Enum, Bounded, Generic, NFData)
+data Act
+  = Up
+  | Down
+  deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
 
 instance Show Act where
   show Up   = "up  "

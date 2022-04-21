@@ -66,3 +66,4 @@ queueLength
 /stateValuesAgents
 /examples/stack.yaml.lock
 /examples/stateValuesAgents
+/examples/save.dat

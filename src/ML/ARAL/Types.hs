@@ -18,7 +18,7 @@ import qualified Data.Vector          as VB
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
 
-import           Grenade.Utils.Vector
+import           Grenade.Utils.Vector 
 
 
 data Objective

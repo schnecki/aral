@@ -33,12 +33,14 @@ import           Debug.Trace
 
 data HasktorchActivation
   = HasktorchRelu
+  | HasktorchLeakyRelu (Maybe Float)
   | HasktorchTanh
   deriving (Show, Eq, Generic, Serialize, NFData)
 
 mkHasktorchActivation :: HasktorchActivation -> Torch.Tensor -> Torch.Tensor
-mkHasktorchActivation HasktorchRelu = Torch.relu
-mkHasktorchActivation HasktorchTanh = Torch.tanh
+mkHasktorchActivation HasktorchRelu               = Torch.relu
+mkHasktorchActivation (HasktorchLeakyRelu mAlpha) = Torch.leakyRelu (fromMaybe 0.02 mAlpha)
+mkHasktorchActivation HasktorchTanh               = Torch.tanh
 
 data MLPSpec = MLPSpec
   { hasktorchFeatureCounts    :: [Integer]
@@ -124,9 +126,10 @@ trainHasktorch period lRate optimizer nnConfig model chs = do
         foldl1 (zipWith (+)) $
         map (\l -> Torch.grad l (Torch.flattenParameters model)) $
         zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
-      lossFun t o = Torch.smoothL1Loss Torch.ReduceMean o t
+      lossFun t o = Torch.mseLoss t o
+      -- lossFun t o = Torch.smoothL1Loss Torch.ReduceMean o t
       -- mkLossDirect t o = Torch.mseLoss t o
-      mkLossDirect t o = Torch.smoothL1Loss Torch.ReduceMean o t
+      -- mkLossDirect t o = Torch.smoothL1Loss Torch.ReduceMean o t
       lRateTensor = Torch.asTensor lRate
   Torch.runStep' model optimizer grads lRateTensor
 
