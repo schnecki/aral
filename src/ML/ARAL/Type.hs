@@ -401,10 +401,13 @@ mkUnichainHasktorch alg initialStateFun ftExt asFun asFilter params decayFun mod
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let opt w = Torch.mkAdam 0 0.9 0.999 (Torch.flattenParameters w)
-  let nnSA tp = do
-        modelT <- Torch.sample model
-        modelW <- Torch.sample model
-        return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model
+  let nnSA tp = case alg of
+        AlgDQNAvgRewAdjusted{} | tp /= R0Table && tp /= R1Table -> nnEmpty tp
+        _ -> do
+          modelT <- Torch.sample model
+          modelW <- Torch.sample model
+          return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model
+      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing) (MLP [] Torch.relu Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table

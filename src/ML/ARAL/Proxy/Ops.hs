@@ -313,18 +313,24 @@ updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agen
 updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents adam mdl)
   | period <= memSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod =
-    -- trace ("netT: " ++ show netT)
-    -- trace ("netW: " ++ show netW)
-    -- trace ("(Torch.flattenParameters netT): " ++ show (Torch.flattenParameters netT))
-    -- trace ("(Torch.flattenParameters netW): " ++ show (Torch.flattenParameters netW)) $
     let netT' = Torch.replaceParameters netT (Torch.flattenParameters netW)
-    in return $ Hasktorch netT' netW tp config nrActs agents adam mdl
-  | updatePeriod = -- trace ("ASDFASDFASDF") $
-                   do
-    let smoothUpdTensor = Torch.asTensor (realToFrac smoothUpd :: Float)
-    params' <- liftIO $ zipWithM (\t w -> Torch.makeIndependent $ (1 - smoothUpdTensor) * Torch.toDependent t + smoothUpdTensor * Torch.toDependent w) (Torch.flattenParameters netT) (Torch.flattenParameters netW)
+     in return $ Hasktorch netT' netW tp config nrActs agents adam mdl
+  | updatePeriod = do
+    params' <-
+      liftIO $
+      zipWithM
+        (\t w -> do
+           let t' = Torch.toDependent t
+           let w' = Torch.toDependent w
+           Torch.makeIndependent $ Torch.mulScalar (1 - smoothUpd) t' `Torch.add` Torch.mulScalar smoothUpd w')
+        (Torch.flattenParameters netT)
+        (Torch.flattenParameters netW)
     let netT' = Torch.replaceParameters netT params'
-    return $ Hasktorch netT' netW tp config nrActs agents adam mdl
+    return $
+      -- trace ("netT: " ++ show (Torch.flattenParameters netT))
+      -- trace ("netW: " ++ show (Torch.flattenParameters netW))
+      -- trace ("update: " ++ show params')
+      Hasktorch netT' netW tp config nrActs agents adam mdl
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -359,7 +365,7 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
 trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam !mdl) = do
-  (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances'
+  (netW', adam') <- liftIO $ trainHasktorch period lRate0 adam config netW trainingInstances'
   return $! Hasktorch netT netW' tp config nrActs agents adam' mdl
   where
     minMaxVal =
@@ -376,8 +382,10 @@ trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrA
         NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
         _                            -> concatMap (map (convertTrainingInstances mkIdx . second (scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
     mkIdx agNr aIdx = agNr * nrActs + aIdx
-    lRate = getLearningRate (config ^. grenadeLearningParams)
+    lRate0 = getLearningRate (config ^. grenadeLearningParams)
+    lRate = realToFrac $ dec $ realToFrac lRate0
     scaleAlg = config ^. scaleOutputAlgorithm
+    dec = decaySetup (config ^. learningParamsDecay) period
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 

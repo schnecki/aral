@@ -130,8 +130,8 @@ data Proxy
       , _proxyNNConfig    :: !NNConfig
       , _proxyNrActions   :: !Int
       , _proxyNrAgents    :: !Int
-      , _proxyHTAdam      :: Torch.Adam
-      , _proxyHTModelSpec :: MLPSpec
+      , _proxyHTAdam      :: !Torch.Adam
+      , _proxyHTModelSpec :: !MLPSpec
       }
 
 proxyScalar :: Traversal' Proxy (V.Vector Double)

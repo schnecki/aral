@@ -17,6 +17,8 @@ import qualified Data.Vector.Storable             as V
 import           GHC.Generics
 import qualified Torch                            as Torch
 import qualified Torch.Functional.Internal        as Torch (gather)
+import qualified Torch.HList                      as Torch
+import qualified Torch.Initializers               as Torch
 import qualified Torch.Serialize                  as Torch
 import qualified Torch.Tensor                     as Torch
 import qualified Torch.Typed.Vision               as Torch (initMnist)
@@ -58,7 +60,7 @@ instance Show MLP where
 
 
 hasktorchModel :: MLP -> Torch.Tensor -> Torch.Tensor
-hasktorchModel (MLP layers hiddenAct outputAct) input = foldl' revApply input $ intersperse hiddenAct $ map Torch.linear layers ++ maybe [] pure outputAct
+hasktorchModel (MLP layers hiddenAct outputAct) input = foldl' revApply input $ (++ maybe [] pure outputAct) $ intersperse hiddenAct $ map Torch.linear layers
   where
     revApply x f = f x
 
@@ -66,52 +68,70 @@ hasktorchModel (MLP layers hiddenAct outputAct) input = foldl' revApply input $ 
 instance Torch.Randomizable MLPSpec MLP where
   sample (MLPSpec featCounts hiddenActivation outputActivation) = do
     let layerSizes = mkLayerSizes (map fromInteger featCounts)
-    linears <- mapM (Torch.sample . uncurry Torch.LinearSpec) layerSizes
+    linears <- mapM sampleDouble layerSizes
     return $ MLP {mlpLayers = linears, mlpHiddenActivation = mkHasktorchActivation hiddenActivation, mlpOutputActivation = mkHasktorchActivation <$> outputActivation}
     where
       mkLayerSizes (a:(b:t)) = scanl shift (a, b) t
         where
           shift (a, b) c = (b, c)
       mkLayerSizes _ = error "Need at least 2 layers in MLPSpec"
+      sampleDouble (in_features, out_features) = do
+        w <- Torch.makeIndependent . mkDbl =<< -- Torch.kaimingUniform Torch.FanIn (Torch.LeakyRelu $ Prelude.sqrt (5.0 :: Float)) [out_features, in_features]
+             Torch.xavierUniform 1.0 [out_features, in_features]
+        init <- Torch.randIO' [out_features]
+        let bound = (1 :: Double) / Prelude.sqrt (fromIntegral (Torch.getter Torch.FanIn $ Torch.calculateFan [out_features, in_features]) :: Double)
+        b <- Torch.makeIndependent . mkDbl  =<< pure (Torch.subScalar bound $ Torch.mulScalar (bound * 2.0 :: Double) init)
+        return $ Torch.Linear w b
+      mkDbl = Torch.toDType Torch.Double
 
-
-toFloat :: Double -> Float
-toFloat = realToFrac
-
-toDouble :: Float -> Double
-toDouble = realToFrac
-
-toFloatList :: V.Vector Double -> [Float]
-toFloatList = V.toList . V.map realToFrac
-
-toDoubleList :: [Float] -> V.Vector Double
-toDoubleList = V.map realToFrac . V.fromList
 
 runHasktorch :: MLP -> NrActions -> NrAgents -> StateFeatures -> [Values]
 runHasktorch mlp nrAs nrAgents st =
-  let input = Torch.asTensor $ map toFloat $ V.toList st
-      output = V.map toDouble $ V.fromList $ Torch.asValue $ hasktorchModel mlp input
+  -- trace ("mlp: " ++ show mlp) $
+  let input = Torch.asTensor $ V.toList st
+      output = -- V.map toDouble $
+        V.fromList $ Torch.asValue $ hasktorchModel mlp input
    in [toAgents nrAs nrAgents output]
 
 trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
 trainHasktorch period lRate optimizer nnConfig model chs = do
   -- map (makeLoss model) chs
 
-  let loss :: Torch.Tensor
-      loss =
-        -- trace ("inputs: " ++ show (Torch.asTensor $ map (map (map toFloat . V.toList . fst . fst)) chs))
+  let grads :: Torch.Gradients
+      grads =
+        -- trace ("inputs: " ++ show (Torch.asTensor $ map (map (V.toList . fst . fst)) chs))
         -- trace ("actions: " ++ show actions)
-        -- trace ("outputs: " ++ show (hasktorchModel model inputs) ) $
-        -- trace ("gather outputs: " ++ show (gather (hasktorchModel model inputs)) ) $
+        -- trace ("outputs: " ++ show outputs ) $
+        -- trace ("gather outputs: " ++ show (gather outputs)) $
         -- trace ("targets: " ++ show targets)
         -- trace ("loss: " ++ show (mkLoss targets $ gather $ hasktorchModel model inputs) ) $
         -- (`Torch.div` (1 / sum (map genericLength chs))) $
-        mkLoss targets $ gather $ hasktorchModel model inputs
-      inputs = Torch.asTensor $ map (map (map toFloat . V.toList . fst . fst)) chs
+        -- computeGrads $ mkLossDirect
+        mkIndepLossAndGrads
+        targets $ gather outputs
+      outputs = hasktorchModel model inputs
+      inputs = Torch.asTensor $ map (map (V.toList . fst . fst)) chs
       actions = Torch.asTensor $ map ((: []) . map (snd . fst)) chs
-      targets = Torch.asTensor $ map (map (toFloat . snd)) chs
-      gather x = Torch.reshape [Torch.size 0 targets, Torch.size 1 targets] $ Torch.gather x 0 actions False
-      -- mkLoss t o = Torch.mseLoss t o
-      mkLoss t o = Torch.smoothL1Loss Torch.ReduceMean o t
-      lRateTensor = Torch.asTensor (toFloat lRate)
-  Torch.runStep model optimizer loss lRateTensor
+      targets = Torch.asTensor $ map (map snd) chs
+      -- zeros = Torch.zerosLike targets
+      nrRows = Torch.size 0 targets
+      nrNStep = Torch.size 1 targets
+      nrAs = Torch.size 2 targets
+      gather x = Torch.reshape [nrRows, nrNStep] $ Torch.gather x 2 actions False
+      computeGrads l = Torch.Gradients $ Torch.grad l (Torch.flattenParameters model)
+      mkIndepLossAndGrads t o =
+        Torch.Gradients $
+        foldl1 (zipWith (+)) $
+        map (\l -> Torch.grad l (Torch.flattenParameters model)) $
+        zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
+      lossFun t o = Torch.smoothL1Loss Torch.ReduceMean o t
+      -- mkLossDirect t o = Torch.mseLoss t o
+      mkLossDirect t o = Torch.smoothL1Loss Torch.ReduceMean o t
+      lRateTensor = Torch.asTensor lRate
+  Torch.runStep' model optimizer grads lRateTensor
+
+
+mkSqrdLoss :: Double -> Double -> Double
+mkSqrdLoss t o =
+  let l = o - t
+   in signum l * l ^ (2 :: Int)

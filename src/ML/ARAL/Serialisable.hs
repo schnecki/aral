@@ -191,6 +191,7 @@ instance Serialize Proxy where
   put (Scalar x nrAs)                 = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts)                = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
+  -- put (Hasktorch t w tp conf nr agents adam mdl) = put (3 :: Int) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl
   get = fmap force $! do
     (c :: Int) <- get
     case c of

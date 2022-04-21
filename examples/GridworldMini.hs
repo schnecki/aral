@@ -216,7 +216,7 @@ instance ExperimentDef (ARAL St Act)
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
-    { _replayMemoryMaxSize = 10000
+    { _replayMemoryMaxSize = 1000
     , _replayMemoryStrategy = ReplayMemorySingle
     , _trainBatchSize = 8
     , _trainingIterations = 1
@@ -333,8 +333,9 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -343,7 +344,7 @@ usermode = do
 
   askUser inverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
   where
-    cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
+    cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
 
 
@@ -358,7 +359,7 @@ modelBuilderGrenade :: Integer -> (Integer, Integer) ->IO SpecConcreteNetwork
 modelBuilderGrenade lenIn (lenActs, cols) =
   buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
   inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> dropout 0.90 >>
+  fullyConnected 20 >> relu >> -- dropout 0.90 >>
   fullyConnected 10 >> relu >>
   fullyConnected 10 >> relu >>
   fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
