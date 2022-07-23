@@ -5,7 +5,9 @@
 {-# LANGUAGE TupleSections       #-}
 module Helper
     ( askUser
-
+    , getIOMWithDefault
+    , getIOWithDefault
+    , chooseAlg
     ) where
 
 import           Grenade
@@ -21,6 +23,7 @@ import           Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString        as BS
 import           Data.Function          (on)
 import           Data.List              (find, sortBy)
+import           Data.Maybe             (fromMaybe)
 import           Data.Serialize         as S
 import           Data.Time.Clock
 import qualified Data.Vector            as VB
@@ -45,6 +48,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         sortBy (compare `on` fst) $
         [ ("v", "Print V+W tables")
         , ("p", "Print everything")
+        , ("i", "Print info head only")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
         , ("param", "Change parameters")
@@ -115,6 +119,9 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
+      askUser mInverse False addUsage cmds qlCmds ql
+    "i" -> do
+      prettyARALHead True mInverse ql >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds qlCmds ql
     "v" -> do
       liftIO $ prettyARALTables mInverse True False False ql >>= print
@@ -197,3 +204,25 @@ getIOMWithDefault def = do
   case reads line :: [(a, String)] of
     [(x, _)] -> return $ return x
     _        -> return def
+
+
+getIOWithDefault :: forall a . (Read a) => a -> IO a
+getIOWithDefault def = fromMaybe def <$> getIOMWithDefault (Just def)
+
+
+chooseAlg :: Maybe (s, ActionIndex) -> IO (Algorithm s)
+chooseAlg mRefState = do
+  putStrLn $ unlines
+    [ "0: AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues (DEFAULT)"
+    , "1: AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues"
+    , "2: AlgDQN 0.99 Exact"
+    , "3: AlgRLearning"
+    ]
+  hFlush stdout
+  nr <- getIOWithDefault 0
+  return $
+    case nr of
+      1 -> AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+      2 -> AlgDQN 0.99 Exact
+      3 -> AlgRLearning
+      _ -> AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues

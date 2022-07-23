@@ -45,6 +45,8 @@ gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=$START:$E
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:3] 'costs' using 0:col with points; pause mouse close; " &
 gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=2:2] 'reward' using 0:col with points; pause mouse close; " &
 
+gnuplot -e "$INIT_GNUPLOT; set key autotitle columnhead; plot for [col=1:3] 'demand_forecast' using 0:col with points; pause mouse close; " &
+
 # if [[ $(age "$file") < 300 ]];
 # then
 NR="`head -n1 stateValuesAllStatesCount`"

@@ -176,7 +176,7 @@ prettyTablesState borl p1 pIdx m1 p2 modifier2 m2 = do
   return $ vcat $ zipWith (\x y -> x $$ nest nestCols y) rows1 rows2
 
 prettyAlgorithm ::  ARAL s as -> (NetInputWoAction -> String) -> (ActionIndex -> Doc) -> Algorithm NetInputWoAction -> Doc
-prettyAlgorithm borl prettyState prettyActionIdx (AlgARAL ga0 ga1 avgRewType mRefState) =
+prettyAlgorithm borl prettyState prettyActionIdx (AlgNBORL ga0 ga1 avgRewType mRefState) =
   text "ARAL with gammas " <+>
   text (show (ga0, ga1)) <> text ";" <+>
   prettyAvgRewardType (borl ^. t) avgRewType <+>
@@ -187,6 +187,8 @@ prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
   text "Average reward adjusted DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgARALVOnly avgRewType mRefState) =
   text "ARAL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
+prettyAlgorithm borl prettyState prettyAction AlgRLearning =
+  text "R-Learning"
 
 prettyComparison :: Comparison -> Doc
 prettyComparison EpsilonSensitive = "optimising by epsilon-sensitive comparison"
@@ -229,7 +231,7 @@ prettyARALTables mStInverse t1 t2 t3 borl = do
         return $ text "Rho" $+$ prAct
   docHead <- prettyARALHead' False prettyState borl
   case borl ^. algorithm of
-    AlgARAL {} -> do
+    AlgNBORL {} -> do
       prVs <- prBoolTblsStateAction t1 (text "V" $$ nest nestCols (text "PsiV")) (borl ^. proxies . v) (borl ^. proxies . psiV)
       prWs <- prBoolTblsStateAction t2 (text "W" $$ nest nestCols (text "PsiW")) (borl ^. proxies . w) (borl ^. proxies . psiW)
       prR0R1 <- prBoolTblsStateAction t3 (text "R0" $$ nest nestCols (text "R1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
@@ -237,6 +239,9 @@ prettyARALTables mStInverse t1 t2 t3 borl = do
     AlgARALVOnly {} -> do
       prV <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . v)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "V" $+$ vcat prV
+    AlgRLearning -> do
+      prV <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . v)
+      return $ docHead $$ algDocRho prettyRhoVal $$ text "R" $+$ vcat prV
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
@@ -327,8 +332,9 @@ prettyARALHead' printRho prettyStateFun borl = do
       (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
-       AlgARAL {}              -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+       AlgNBORL {}             -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
        AlgARALVOnly {}         -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgRLearning            -> text "Scaling ROnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
        AlgDQN {}               -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
        AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc

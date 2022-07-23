@@ -122,7 +122,7 @@ chooseAction borl useRand selFromList = do
         r <- liftIO $ randomRIO (0, length as - 1)
         return (True, as !! r)
       else case borl ^. algorithm of
-             AlgARAL ga0 ga1 _ _ -> do
+             AlgNBORL ga0 ga1 _ _ -> do
                bestRho <-
                  if isUnichain borl
                    then return as
@@ -173,6 +173,7 @@ chooseAction borl useRand selFromList = do
                        r <- liftIO $ randomRIO (0, length bestR0 - 1) --  3. Uniform selection of leftover actions
                        return (False, bestR0 !! r)
              AlgARALVOnly {} -> singleValueNextAction as EpsilonSensitive (vValueAgentWith Worker borl agent state)
+             AlgRLearning {} -> singleValueNextAction as Exact (vValueAgentWith Worker borl agent state)
              AlgDQN _ cmp -> singleValueNextAction as cmp (rValueAgentWith Worker borl RBig agent state)
   where
     maxOrMin =

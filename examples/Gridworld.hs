@@ -252,8 +252,9 @@ alg =
         -- AlgDQN 0.99 Exact            -- does not work
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  -- AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
   -- AlgARAL 0.5 0.8 ByStateValues mRefState
+  AlgRLearning
 
 
 usermode :: IO ()
@@ -267,7 +268,7 @@ usermode = do
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   let invSt | isAnn rl = mInverseSt
             | otherwise = Nothing

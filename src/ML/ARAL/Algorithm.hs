@@ -38,25 +38,27 @@ type EpsilonMiddle = Double
 
 
 data Algorithm s
-  = AlgARAL !GammaLow
+  = AlgNBORL !GammaLow
             !GammaHigh
             !AvgReward
             !(Maybe (s, [ActionIndex]))
   | AlgARALVOnly !AvgReward !(Maybe (s, [ActionIndex])) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN !Gamma !Comparison
+  | AlgRLearning
   | AlgDQNAvgRewAdjusted !GammaMiddle !GammaHigh !AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'
-mapAlgorithmState f (AlgARAL gl gh avg mSt)          = AlgARAL gl gh avg (first f <$> mSt)
+mapAlgorithmState f (AlgNBORL gl gh avg mSt)         = AlgNBORL gl gh avg (first f <$> mSt)
 mapAlgorithmState f (AlgARALVOnly avg mSt)           = AlgARALVOnly avg (first f <$> mSt)
 mapAlgorithmState _ (AlgDQN g c)                     = AlgDQN g c
+mapAlgorithmState _ AlgRLearning                     = AlgRLearning
 mapAlgorithmState _ (AlgDQNAvgRewAdjusted gm gh avg) = AlgDQNAvgRewAdjusted gm gh avg
 
 
 isAlgBorl :: Algorithm s -> Bool
-isAlgBorl AlgARAL{} = True
-isAlgBorl _         = False
+isAlgBorl AlgNBORL{} = True
+isAlgBorl _          = False
 
 
 isAlgDqn :: Algorithm s -> Bool
@@ -69,7 +71,7 @@ isAlgDqnAvgRewardAdjusted _                      = False
 
 -- blackwellOptimalVersion :: Algorithm s -> Bool
 -- blackwellOptimalVersion (AlgDQNAvgRewAdjusted Just{} _ _ _) = True
--- blackwellOptimalVersion AlgARAL{}                           = True
+-- blackwellOptimalVersion AlgNBORL{}                           = True
 -- blackwellOptimalVersion _                                   = False
 
 isAlgBorlVOnly :: Algorithm s -> Bool
@@ -84,8 +86,8 @@ defaultGammaDQN = 0.99
 
 
 -- ^ Use ARAL as algorithm with gamma values `defaultGamma0` and `defaultGamma1` for low and high gamma values.
-algARAL :: Algorithm s
-algARAL = AlgARAL defaultGamma0 defaultGamma1 ByStateValues Nothing
+algNBORL :: Algorithm s
+algNBORL = AlgNBORL defaultGamma0 defaultGamma1 ByStateValues Nothing
 
   -- (ByMovAvg 100) Normal False -- (DivideValuesAfterGrowth 1000 70000) False
 

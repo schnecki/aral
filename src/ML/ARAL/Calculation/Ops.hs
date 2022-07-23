@@ -160,7 +160,7 @@ mkCalculation' ::
   -> Algorithm NetInputWoAction
   -> ExpectedValuationNext
   -> m (Calculation, ExpectedValuationNext)
-mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgARAL ga0 ga1 avgRewardType mRefState) expValStateNext = do
+mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgNBORL ga0 ga1 avgRewardType mRefState) expValStateNext = do
   let params' = decayedParameters borl
   let aNr = VB.map snd as
       randomAction = any fst as
@@ -280,7 +280,7 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
-        , getExpectedValStateNextV = error "N-Step not implemented in AlgARAL"
+        , getExpectedValStateNextV = error "N-Step not implemented in AlgNBORL"
         , getExpectedValStateNextW = Nothing
         , getExpectedValStateNextR0 = Nothing
         , getExpectedValStateNextR1 = Nothing
@@ -453,6 +453,66 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
         , getLastRews' = lastRews'
         , getEpisodeEnd = episodeEnd
         , getExpSmoothedReward' = ite (randomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - alp) * borl ^. expSmoothedReward + alp * reward)
+        }
+    , ExpectedValuationNext
+        { getExpectedValStateNextRho = Nothing
+        , getExpectedValStateNextV = Just expStateValV
+        , getExpectedValStateNextW = Nothing
+        , getExpectedValStateNextR0 = Nothing
+        , getExpectedValStateNextR1 = Nothing
+        })
+mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd AlgRLearning expValStateNext = do
+  let aNr = VB.map snd as
+      isRandomAction = any fst as
+  let alp = getExpSmthParam borl rho alpha
+      alpRhoMin = getExpSmthParam borl rhoMinimum alphaRhoMin
+      bta = getExpSmthParam borl v beta
+  let epsEnd
+        | episodeEnd = 0
+        | otherwise = 1
+  let learnFromRandom = params' ^. exploration > params' ^. learnRandomAbove
+      params' = decayedParameters borl
+  rhoVal <- rhoValueWith Worker borl state aNr `using` rpar
+  vValState <- vValueWith Worker borl state aNr `using` rpar
+  vValStateNext <- vStateValueWith Target borl (stateNext, stateNextActIdxes) `using` rpar
+  rhoMinimumState <- rhoMinimumValueFeat borl state aNr `using` rpar
+  let rhoState = reward .+ vValStateNext - vValState -- r_imm + U_R(s') - U_R(s)
+  let maxOrMin =
+        case borl ^. objective of
+          Maximise -> max
+          Minimise -> min
+  let rhoVal'
+        | isRandomAction = rhoVal -- shareRhoVal borl rhoVal
+        | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alp) .* rhoVal + alp .* rhoState
+      rhoValOverEstimated
+        | borl ^. settings . overEstimateRho = shareRhoVal borl $ mapValue (overEstimateRhoCalc borl) rhoVal'
+        | otherwise = shareRhoVal borl rhoVal'
+  let rhoMinimumVal'
+        | isRandomAction = shareRhoVal borl rhoMinimumState
+        | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'
+  let expStateNextValV
+        | isRandomAction = epsEnd .* vValStateNext
+        | otherwise = fromMaybe (epsEnd .* vValStateNext) (getExpectedValStateNextV expValStateNext)
+      expStateValV = reward .- rhoValOverEstimated + expStateNextValV
+  let vValState' = (1 - bta) .* vValState + bta .* (reward .- rhoValOverEstimated + expStateValV)
+  let lastVs' = VB.take keepXLastValues $ vValState' `VB.cons` (borl ^. lastVValues)
+  return $
+    ( Calculation
+        { getRhoMinimumVal' = Just rhoMinimumVal'
+        , getRhoVal' = Just rhoVal'
+        , getPsiVValState' = Nothing
+        , getVValState' = Just vValState'
+        , getPsiWValState' = Nothing
+        , getWValState' = Nothing
+        , getR0ValState' = Nothing
+        , getR1ValState' = Nothing
+        , getPsiValRho' = Nothing
+        , getPsiValV' = Nothing
+        , getPsiValW' = Nothing
+        , getLastVs' = Just $ lastVs'
+        , getLastRews' = V.take keepXLastValues $ reward `V.cons` (borl ^. lastRewards)
+        , getEpisodeEnd = episodeEnd
+        , getExpSmoothedReward' = ite (isRandomAction && not learnFromRandom) (borl ^. expSmoothedReward) ((1 - alp) * borl ^. expSmoothedReward + alp * reward)
         }
     , ExpectedValuationNext
         { getExpectedValStateNextRho = Nothing
@@ -648,9 +708,9 @@ eValueFeat borl (stateFeat, act) = do
 eValueAvgCleanedFeat :: (MonadIO m) => ARAL s as -> StateFeatures -> AgentActionIndices -> m Value
 eValueAvgCleanedFeat borl state act =
   case borl ^. algorithm of
-    AlgARAL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
+    AlgNBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
     AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
-    _ -> error "eValueAvgCleaned can only be used with AlgARAL in Calculation.Ops"
+    _ -> error "eValueAvgCleaned can only be used with AlgNBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do
       rBig <- rValueWith Target borl RBig state act
@@ -670,9 +730,9 @@ eValueAvgCleaned borl state = eValueAvgCleanedFeat borl sFeat
 eValueAvgCleanedAgent :: (MonadIO m) => ARAL s as -> AgentNumber -> s -> ActionIndex -> m Double
 eValueAvgCleanedAgent borl agent state act =
   case borl ^. algorithm of
-    AlgARAL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
+    AlgNBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
     AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
-    _ -> error "eValueAvgCleaned can only be used with AlgARAL in Calculation.Ops"
+    _ -> error "eValueAvgCleaned can only be used with AlgNBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do
       rBig <- rValueAgentWith Target borl RBig agent state act

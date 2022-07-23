@@ -196,11 +196,43 @@ executables:
     - experimenter
     - hmatrix-glpk
 
+  demand-forecast:
+    main:                DemandForecast.hs
+    other-modules:
+    - Helper
+    - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - aral
+    - experimenter
+    - hmatrix-glpk
+
   parallel:
     main:                Parallel.hs
     other-modules:
     - Helper
     - SolveLp
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - aral
+    - experimenter
+    - hmatrix-glpk
+
+  newsvendor:
+    main:                NewsvendorModel.hs
+    other-modules:
+      - Helper
+      - SolveLp
     source-dirs:         .
     default-extensions: CPP
     ghc-options:

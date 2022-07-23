@@ -67,3 +67,5 @@ queueLength
 /examples/stack.yaml.lock
 /examples/stateValuesAgents
 /examples/save.dat
+/emacs.desktop
+/examples/demand_forecast

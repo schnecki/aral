@@ -261,12 +261,13 @@ flipObjective borl = case borl ^. objective of
 -- Tabular representations
 
 convertAlgorithm :: FeatureExtractor s -> Algorithm s -> Algorithm StateFeatures
-convertAlgorithm ftExt (AlgARAL g0 g1 avgRew (Just (s, a))) = AlgARAL g0 g1 avgRew (Just (ftExt s, a))
-convertAlgorithm ftExt (AlgARALVOnly avgRew (Just (s, a)))  = AlgARALVOnly avgRew (Just (ftExt s, a))
-convertAlgorithm _ (AlgARAL g0 g1 avgRew Nothing)           = AlgARAL g0 g1 avgRew Nothing
-convertAlgorithm _ (AlgARALVOnly avgRew Nothing)            = AlgARALVOnly avgRew Nothing
-convertAlgorithm _ (AlgDQN ga cmp)                          = AlgDQN ga cmp
-convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew)    = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
+convertAlgorithm ftExt (AlgNBORL g0 g1 avgRew (Just (s, a))) = AlgNBORL g0 g1 avgRew (Just (ftExt s, a))
+convertAlgorithm ftExt (AlgARALVOnly avgRew (Just (s, a)))   = AlgARALVOnly avgRew (Just (ftExt s, a))
+convertAlgorithm _ (AlgNBORL g0 g1 avgRew Nothing)           = AlgNBORL g0 g1 avgRew Nothing
+convertAlgorithm _ (AlgARALVOnly avgRew Nothing)             = AlgARALVOnly avgRew Nothing
+convertAlgorithm _ (AlgDQN ga cmp)                           = AlgDQN ga cmp
+convertAlgorithm _ AlgRLearning                              = AlgRLearning
+convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew)     = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
 
 mkUnichainTabular ::
      forall s as. (Enum as, Bounded as, Eq as, Ord as, NFData as)
@@ -783,8 +784,9 @@ checkNetworkOutput combined borl
     px =
       case borl ^. algorithm of
         AlgDQNAvgRewAdjusted {} -> borl ^. proxies . r1
-        AlgARAL {}              -> borl ^. proxies . v
+        AlgNBORL {}             -> borl ^. proxies . v
         AlgARALVOnly {}         -> borl ^. proxies . v
+        AlgRLearning            -> borl ^. proxies . v
         AlgDQN {}               -> borl ^. proxies . r1
     reqY :: Integer
     reqY
@@ -793,6 +795,7 @@ checkNetworkOutput combined borl
         case borl ^. algorithm of
           AlgDQNAvgRewAdjusted {} -> 2
           AlgDQN {}               -> 1
+          AlgRLearning {}         -> 1
           _                       -> 6
 
 
