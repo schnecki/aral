@@ -199,7 +199,7 @@ alg =
         -- AlgDQN 0.99  EpsilonSensitive
         -- AlgDQN 0.50  EpsilonSensitive            -- does work
         -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+        AlgARAL 0.8 1.0 ByStateValues
   -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()

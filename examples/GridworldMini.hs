@@ -202,9 +202,9 @@ instance ExperimentDef (ARAL St Act)
     return (results, fakeEpisodes rl rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                                                                  , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                                                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                                                  , AlgARAL 0.8 0.999 ByStateValues
+                                                                  , AlgARAL 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
                                                                   , AlgDQN 0.999 Exact
@@ -225,7 +225,7 @@ nnConfig =
     , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleParameters = scalingByMaxAbsRewardAlg (AlgARAL 0.8 1.0 ByStateValues) False 6
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
@@ -294,7 +294,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algARAL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -319,19 +319,11 @@ mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (goalX, goalY), 0)
 
-alg :: Algorithm St
-alg =
-
-  -- AlgARALVOnly ByStateValues Nothing
-        -- AlgDQN 0.99  EpsilonSensitive
-        -- AlgDQN 0.50  EpsilonSensitive            -- does work
-        -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do
 
+  alg <- chooseAlg mRefState
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)

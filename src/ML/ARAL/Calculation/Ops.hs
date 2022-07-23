@@ -286,7 +286,7 @@ mkCalculation' borl (state, _) as reward (stateNext, stateNextActIdxes) episodeE
         , getExpectedValStateNextR1 = Nothing
         })
 
-mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgDQNAvgRewAdjusted ga0 ga1 avgRewardType) expValStateNext = do
+mkCalculation' borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgARAL ga0 ga1 avgRewardType) expValStateNext = do
   let aNr = VB.map snd as
       randomAction = any fst as
   rhoMinimumState <- rhoMinimumValueFeat borl state aNr
@@ -709,7 +709,7 @@ eValueAvgCleanedFeat :: (MonadIO m) => ARAL s as -> StateFeatures -> AgentAction
 eValueAvgCleanedFeat borl state act =
   case borl ^. algorithm of
     AlgNBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
-    AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
+    AlgARAL gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
     _ -> error "eValueAvgCleaned can only be used with AlgNBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do
@@ -731,7 +731,7 @@ eValueAvgCleanedAgent :: (MonadIO m) => ARAL s as -> AgentNumber -> s -> ActionI
 eValueAvgCleanedAgent borl agent state act =
   case borl ^. algorithm of
     AlgNBORL gamma0 gamma1 _ _ -> avgRewardClean gamma0 gamma1
-    AlgDQNAvgRewAdjusted gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
+    AlgARAL gamma0 gamma1 _ -> avgRewardClean gamma0 gamma1
     _ -> error "eValueAvgCleaned can only be used with AlgNBORL in Calculation.Ops"
   where
     avgRewardClean gamma0 gamma1 = do

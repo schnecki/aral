@@ -45,15 +45,15 @@ data Algorithm s
   | AlgARALVOnly !AvgReward !(Maybe (s, [ActionIndex])) -- ^ DQN algorithm but subtracts average reward in every state
   | AlgDQN !Gamma !Comparison
   | AlgRLearning
-  | AlgDQNAvgRewAdjusted !GammaMiddle !GammaHigh !AvgReward
+  | AlgARAL !GammaMiddle !GammaHigh !AvgReward
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'
-mapAlgorithmState f (AlgNBORL gl gh avg mSt)         = AlgNBORL gl gh avg (first f <$> mSt)
-mapAlgorithmState f (AlgARALVOnly avg mSt)           = AlgARALVOnly avg (first f <$> mSt)
-mapAlgorithmState _ (AlgDQN g c)                     = AlgDQN g c
-mapAlgorithmState _ AlgRLearning                     = AlgRLearning
-mapAlgorithmState _ (AlgDQNAvgRewAdjusted gm gh avg) = AlgDQNAvgRewAdjusted gm gh avg
+mapAlgorithmState f (AlgNBORL gl gh avg mSt) = AlgNBORL gl gh avg (first f <$> mSt)
+mapAlgorithmState f (AlgARALVOnly avg mSt)   = AlgARALVOnly avg (first f <$> mSt)
+mapAlgorithmState _ (AlgDQN g c)             = AlgDQN g c
+mapAlgorithmState _ AlgRLearning             = AlgRLearning
+mapAlgorithmState _ (AlgARAL gm gh avg)      = AlgARAL gm gh avg
 
 
 isAlgBorl :: Algorithm s -> Bool
@@ -66,11 +66,11 @@ isAlgDqn AlgDQN{} = True
 isAlgDqn _        = False
 
 isAlgDqnAvgRewardAdjusted :: Algorithm s -> Bool
-isAlgDqnAvgRewardAdjusted AlgDQNAvgRewAdjusted{} = True
-isAlgDqnAvgRewardAdjusted _                      = False
+isAlgDqnAvgRewardAdjusted AlgARAL{} = True
+isAlgDqnAvgRewardAdjusted _         = False
 
 -- blackwellOptimalVersion :: Algorithm s -> Bool
--- blackwellOptimalVersion (AlgDQNAvgRewAdjusted Just{} _ _ _) = True
+-- blackwellOptimalVersion (AlgARAL Just{} _ _ _) = True
 -- blackwellOptimalVersion AlgNBORL{}                           = True
 -- blackwellOptimalVersion _                                   = False
 
@@ -99,4 +99,4 @@ algDQN = AlgDQN defaultGammaDQN Exact
 
 
 algDQNAvgRewardFree :: Algorithm s
-algDQNAvgRewardFree = AlgDQNAvgRewAdjusted defaultGamma1 1.0 ByStateValues
+algDQNAvgRewardFree = AlgARAL defaultGamma1 1.0 ByStateValues

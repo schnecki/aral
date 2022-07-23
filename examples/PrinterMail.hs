@@ -105,8 +105,8 @@ alg =
         -- AlgDQN 0.5  Exact
         AlgDQN 0.8027  Exact
         -- AlgDQN 0.50  EpsilonSensitive
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 (Fixed 2.5)
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+        -- AlgARAL 0.8 0.99 (Fixed 2.5)
+        -- AlgARAL 0.8 0.99 ByStateValues
         -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
         -- AlgARALVOnly ByStateValues mRefStateAct
         -- AlgARAL 0.5 0.8 ByStateValues mRefStateAct

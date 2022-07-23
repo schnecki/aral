@@ -182,13 +182,13 @@ rewardFunction :: Gym -> St -> ActionIndex -> GymResult -> IO (Reward St)
 rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
   case alg of
     AlgDQN {} -> return $ Reward $ realToFrac rew
-    AlgDQNAvgRewAdjusted  {}
+    AlgARAL  {}
       | name gym == "CartPole-v1" -> do
         epsStep <- getElapsedSteps gym
         let rad = xs !! 3 -- (-0.418879, 0.418879) .. 24 degrees in rad
             pos = xs !! 1 -- (-4.8, 4.8)
         return $ Reward $ realToFrac $ (100 *) $ 0.41887903213500977 - abs rad - 0.418879 / 4.8 * abs pos - ite (eps && epsStep /= Just maxEpsSteps) 1.0 0
-    AlgDQNAvgRewAdjusted {}
+    AlgARAL {}
       | name gym == "MountainCar-v0" -> do
         let pos = head xs
             height = sin (3 * pos) * 0.45 + 0.55
@@ -200,14 +200,14 @@ rewardFunction gym (St _ oldSt) actIdx (GymResult obs rew eps) =
         let movGoal = min 0.5 (5e-6 * step - 0.3)
         epsStep <- getElapsedSteps gym
         return $ Reward $ realToFrac $ (20 *) $ ite (eps && epsStep < Just maxEpsSteps) (* 1.2) (* 1) $ ite (pos > (-0.3) && velocity >= 0 || pos < (-0.3) && velocity <= 0) height 0
-    AlgDQNAvgRewAdjusted  {}
+    AlgARAL  {}
       | name gym == "Acrobot-v1" ->
         let [cosS0, sinS0, cosS1, sinS1, thetaDot1, thetaDot2] = xs -- cos(theta1) sin(theta1) cos(theta2) sin(theta2) thetaDot1 thetaDot2
          in return $ Reward $ realToFrac $ (* 20) $ -cosS0 - cos (acos cosS0 + acos cosS1)
                            -- -cos(s[0]) - cos(s[1] + s[0])
-    AlgDQNAvgRewAdjusted {}
+    AlgARAL {}
       | name gym == "Copy-v0" -> return $ Reward $ realToFrac rew
-    AlgDQNAvgRewAdjusted {}
+    AlgARAL {}
       | name gym == "Pong-ram-v0" -> return $ Reward $ realToFrac rew
   where
     xs = gymObservationToDoubleList obs
@@ -259,8 +259,8 @@ instance RewardFuture St where
 alg :: Algorithm St
 alg =
   -- algDQN
-  -- AlgDQNAvgRewAdjusted Nothing 0.85 0.99 ByStateValues
-  AlgDQNAvgRewAdjusted 0.85 1.0 ByStateValues
+  -- AlgARAL Nothing 0.85 0.99 ByStateValues
+  AlgARAL 0.85 1.0 ByStateValues
 
 -- | Gyms.
 gymsMVar :: MVar [Gym]

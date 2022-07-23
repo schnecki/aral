@@ -244,14 +244,14 @@ updateMinMax borl as calc = do
     AgentValue value =
       fromMaybe (error "unexpected empty value in updateMinMax") $
       case borl ^. algorithm of
-        AlgDQNAvgRewAdjusted {} -> getR1ValState' calc
-        AlgDQN {}               -> getR1ValState' calc
-        _                       -> getVValState' calc
+        AlgARAL {} -> getR1ValState' calc
+        AlgDQN {}  -> getR1ValState' calc
+        _          -> getVValState' calc
     valueFunction =
       case borl ^. algorithm of
-        AlgDQNAvgRewAdjusted {} -> rValue borl RBig
-        AlgDQN {}               -> rValue borl RBig
-        _                       -> vValue borl
+        AlgARAL {} -> rValue borl RBig
+        AlgDQN {}  -> rValue borl RBig
+        _          -> vValue borl
 
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the

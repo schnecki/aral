@@ -204,16 +204,16 @@ instance ExperimentDef (ARAL St Act) where
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ -- AlgDQNAvgRewAdjusted 0.8 0.99  ByStateValues
+        (Just $ const $ return [ -- AlgARAL 0.8 0.99  ByStateValues
                                -- ,
-                               --   AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
-                               -- , AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+                               --   AlgARAL 0.8 0.999 ByStateValues
+                               -- , AlgARAL 0.8 1.0 ByStateValues
                                -- , AlgDQN 0.99 EpsilonSensitive
                                -- , AlgDQN 0.99 Exact
                                -- , AlgDQN 0.5  EpsilonSensitive
                                 AlgDQN 0.5  Exact
                                , AlgDQN 0.999  Exact
-                               , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+                               , AlgARAL 0.8 0.99 ByStateValues
                                ])
         Nothing
         Nothing
@@ -299,7 +299,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
-  rl <- mkUnichainTabular algARAL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
+  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -330,23 +330,12 @@ mRefStateAct :: Maybe (St, ActionIndex)
 -- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actFilter initState))
 mRefStateAct = Nothing
 
-alg :: Algorithm St
-alg =
-        -- AlgDQN 0.99  Exact -- EpsilonSensitive
-        -- AlgDQN 0.99 EpsilonSensitive
-        -- AlgDQN 0.50  EpsilonSensitive
-  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-                -- AlgARALVOnly ByStateValues mRefStateAct
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByReward
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted 0.8 0.99 (ByStateValuesAndReward 1.0 (ExponentialDecay (Just 0.6) 0.9 100000))
-        -- AlgARAL 0.5 0.65 ByStateValues mRefStateAct
-        -- AlgARAL 0.5 0.65 (Fixed 30) mRefStateAct
 
 usermode :: IO ()
 usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
+  alg <- chooseAlg mRefStateAct
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
   rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
 

@@ -183,7 +183,7 @@ prettyAlgorithm borl prettyState prettyActionIdx (AlgNBORL ga0 ga1 avgRewType mR
   text "for rho" <> text ";" <+>
   prettyRefState prettyState prettyActionIdx mRefState
 prettyAlgorithm _ _ _ (AlgDQN ga1 cmp)      = text "DQN with gamma" <+> text (show ga1) <> colon <+> prettyComparison cmp
-prettyAlgorithm borl _ _ (AlgDQNAvgRewAdjusted ga0 ga1 avgRewType) =
+prettyAlgorithm borl _ _ (AlgARAL ga0 ga1 avgRewType) =
   text "Average reward adjusted DQN with gammas" <+> text (show (ga0, ga1)) <> ". Rho by" <+> prettyAvgRewardType (borl ^. t) avgRewType
 prettyAlgorithm borl prettyState prettyAction (AlgARALVOnly avgRewType mRefState) =
   text "ARAL with V ONLY" <> text ";" <+> prettyAvgRewardType (borl ^. t) avgRewType <> prettyRefState prettyState prettyAction mRefState
@@ -245,7 +245,7 @@ prettyARALTables mStInverse t1 t2 t3 borl = do
     AlgDQN {} -> do
       prR1 <- prettyTableRows borl prettyState prettyActionIdx noMod (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ text "Q" $+$ vcat prR1
-    AlgDQNAvgRewAdjusted{} -> do
+    AlgARAL{} -> do
       prR0R1 <- prBoolTblsStateAction t1 (text "V+e with gamma0" $$ nest nestCols (text "V+e with gamma1")) (borl ^. proxies . r0) (borl ^. proxies . r1)
       return $ docHead $$ algDocRho prettyRhoVal $$ prR0R1
   where
@@ -332,11 +332,11 @@ prettyARALHead' printRho prettyStateFun borl = do
       (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
-       AlgNBORL {}             -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-       AlgARALVOnly {}         -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgRLearning            -> text "Scaling ROnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgDQN {}               -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgDQNAvgRewAdjusted {} -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
+       AlgNBORL {}     -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
+       AlgARALVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgRLearning    -> text "Scaling ROnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
+       AlgDQN {}       -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
+       AlgARAL {}      -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printDoubleListWith 8 $ fromValue $ borl ^. psis . _1, printDoubleListWith 8 $ fromValue $ borl ^. psis . _2, printDoubleListWith 8 $ fromValue $ borl ^. psis . _3)))) $+$

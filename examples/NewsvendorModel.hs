@@ -239,9 +239,9 @@ instance RewardFuture St where
 --     return (results, fakeEpisodes rl rl')
 --   parameters _ =
 --     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
---                                                                   [ AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
---                                                                   , AlgDQNAvgRewAdjusted 0.8 0.999 ByStateValues
---                                                                   , AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+--                                                                   [ AlgARAL 0.8 1.0 ByStateValues
+--                                                                   , AlgARAL 0.8 0.999 ByStateValues
+--                                                                   , AlgARAL 0.8 0.99 ByStateValues
 --                                                                   -- , AlgDQN 0.99 EpsilonSensitive
 --                                                                   -- , AlgDQN 0.5 EpsilonSensitive
 --                                                                   , AlgDQN 0.999 Exact
@@ -364,7 +364,7 @@ mRefState = Nothing
 
 alg :: Algorithm St
 alg =
-  -- AlgDQNAvgRewAdjusted 0.8 0.995 ByStateValues
+  -- AlgARAL 0.8 0.995 ByStateValues
   AlgDQN 0.99  Exact
 
   -- AlgARALVOnly ByStateValues Nothing

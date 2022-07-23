@@ -267,7 +267,7 @@ convertAlgorithm _ (AlgNBORL g0 g1 avgRew Nothing)           = AlgNBORL g0 g1 av
 convertAlgorithm _ (AlgARALVOnly avgRew Nothing)             = AlgARALVOnly avgRew Nothing
 convertAlgorithm _ (AlgDQN ga cmp)                           = AlgDQN ga cmp
 convertAlgorithm _ AlgRLearning                              = AlgRLearning
-convertAlgorithm _ (AlgDQNAvgRewAdjusted ga1 ga2 avgRew)     = AlgDQNAvgRewAdjusted ga1 ga2 avgRew
+convertAlgorithm _ (AlgARAL ga1 ga2 avgRew)                  = AlgARAL ga1 ga2 avgRew
 
 mkUnichainTabular ::
      forall s as. (Enum as, Bounded as, Eq as, Ord as, NFData as)
@@ -403,7 +403,7 @@ mkUnichainHasktorch alg initialStateFun ftExt asFun asFilter params decayFun mod
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let opt w = Torch.mkAdam 0 0.9 0.999 (Torch.flattenParameters w)
   let nnSA tp = case alg of
-        AlgDQNAvgRewAdjusted{} | tp /= R0Table && tp /= R1Table -> nnEmpty tp
+        AlgARAL{} | tp /= R0Table && tp /= R1Table -> nnEmpty tp
         _ -> do
           modelT <- Torch.sample model
           modelW <- Torch.sample model
@@ -742,8 +742,8 @@ scalingByMaxAbsReward onlyPositive maxR = ScalingNetOutParameters (-maxV) maxV (
 scalingByMaxAbsRewardAlg :: Algorithm s -> Bool -> Double -> ScalingNetOutParameters
 scalingByMaxAbsRewardAlg alg onlyPositive maxR =
   case alg of
-    AlgDQNAvgRewAdjusted{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
-    _                      -> scalingByMaxAbsReward onlyPositive maxR
+    AlgARAL{} -> ScalingNetOutParameters (-maxR1) maxR1 (-maxW) maxW (-maxR1) maxR1 (-maxR1) maxR1
+    _         -> scalingByMaxAbsReward onlyPositive maxR
   where
     maxW = 50 * maxR
     maxR1 = 1.0 * maxR
@@ -783,20 +783,20 @@ checkNetworkOutput combined borl
     mkDims _ = tripleFromSomeShape (SomeSing (sing :: Sing (Last shapes)))
     px =
       case borl ^. algorithm of
-        AlgDQNAvgRewAdjusted {} -> borl ^. proxies . r1
-        AlgNBORL {}             -> borl ^. proxies . v
-        AlgARALVOnly {}         -> borl ^. proxies . v
-        AlgRLearning            -> borl ^. proxies . v
-        AlgDQN {}               -> borl ^. proxies . r1
+        AlgARAL {}      -> borl ^. proxies . r1
+        AlgNBORL {}     -> borl ^. proxies . v
+        AlgARALVOnly {} -> borl ^. proxies . v
+        AlgRLearning    -> borl ^. proxies . v
+        AlgDQN {}       -> borl ^. proxies . r1
     reqY :: Integer
     reqY
       | not combined = 1
       | otherwise =
         case borl ^. algorithm of
-          AlgDQNAvgRewAdjusted {} -> 2
-          AlgDQN {}               -> 1
-          AlgRLearning {}         -> 1
-          _                       -> 6
+          AlgARAL {}      -> 2
+          AlgDQN {}       -> 1
+          AlgRLearning {} -> 1
+          _               -> 6
 
 
 -- | Perform an action over all proxies (combined proxies are seen once only).

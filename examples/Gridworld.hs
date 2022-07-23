@@ -114,8 +114,8 @@ instance ExperimentDef (ARAL St Act) where
         (view algorithm)
         (Just $ const $
          return
-           [ AlgARAL defaultGamma0 defaultGamma1 (ByMovAvg 3000)  Nothing
-           , AlgARAL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
+           [ AlgNBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
+           , AlgNBORL defaultGamma0 defaultGamma1 (ByMovAvg 3000) Nothing
            , AlgARALVOnly (ByMovAvg 3000) Nothing
            ])
         Nothing
@@ -136,7 +136,7 @@ nnConfig =
     , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay             = ExponentialDecay (Just 1e-6) 0.75 10000
     , _prettyPrintElems                = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters                 = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleParameters                 = scalingByMaxAbsRewardAlg (AlgARAL 0.8 1.0 ByStateValues) False 6
     , _scaleOutputAlgorithm            = ScaleMinMax
     , _cropTrainMaxValScaled           = Nothing -- Just 0.98. Implemented using LeakyTanh Layer
     , _grenadeDropoutFlipActivePeriod  = 10000
@@ -222,7 +222,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
   ---
-  rl <- mkUnichainTabular algARAL (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -246,19 +246,11 @@ mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (0,2), 0)
 
-alg :: Algorithm St
-alg =
-       -- AlgARALVOnly ByStateValues Nothing
-        -- AlgDQN 0.99 Exact            -- does not work
-        -- AlgDQN 0.50  EpsilonSensitive            -- does work
-        -- algDQNAvgRewardFree
-  -- AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
-  -- AlgARAL 0.5 0.8 ByStateValues mRefState
-  AlgRLearning
-
 
 usermode :: IO ()
 usermode = do
+
+  alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)

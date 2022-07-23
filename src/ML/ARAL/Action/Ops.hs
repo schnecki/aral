@@ -83,8 +83,8 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
         -- avg xs = V.sum xs / fromIntegral (V.length xs)
         -- minExplore =
         --   case (borl ^. objective, borl ^. algorithm) of
-        --     (Minimise, AlgDQNAvgRewAdjusted {}) -> (borl ^. expSmoothedReward - avg (borl ^?! proxies . rho . proxyScalar)) / borl ^. expSmoothedReward
-        --     (Maximise, AlgDQNAvgRewAdjusted {}) -> (avg (borl ^?! proxies . rho . proxyScalar) - borl ^. expSmoothedReward) / borl ^. expSmoothedReward
+        --     (Minimise, AlgARAL {}) -> (borl ^. expSmoothedReward - avg (borl ^?! proxies . rho . proxyScalar)) / borl ^. expSmoothedReward
+        --     (Maximise, AlgARAL {}) -> (avg (borl ^?! proxies . rho . proxyScalar) - borl ^. expSmoothedReward) / borl ^. expSmoothedReward
         --     _ -> explore
 
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
@@ -157,7 +157,7 @@ chooseAction borl useRand selFromList = do
                      else do
                        r <- liftIO $ randomRIO (0, length bestE - 1)
                        return (False, bestE !! r)
-             AlgDQNAvgRewAdjusted {} -> do
+             AlgARAL {} -> do
                bestR1 <-
                  do r1Values <- mapM (rValueAgentWith Worker borl RBig agent state) as -- 1. choose highest bias values
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))

@@ -212,17 +212,22 @@ getIOWithDefault def = fromMaybe def <$> getIOMWithDefault (Just def)
 
 chooseAlg :: Maybe (s, ActionIndex) -> IO (Algorithm s)
 chooseAlg mRefState = do
+  putStrLn "\nChoose Algorithm:"
+  putStrLn "------------------------------"
   putStrLn $ unlines
-    [ "0: AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues (DEFAULT)"
-    , "1: AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues"
+    [ "0: AlgARAL 0.8 1.0 ByStateValues (DEFAULT)"
+    , "1: AlgARAL 0.8 0.99 ByStateValues"
     , "2: AlgDQN 0.99 Exact"
     , "3: AlgRLearning"
+    , "4: AlgARAL 0.9 0.99 ByStateValues"
     ]
+  putStrLn "Enter number [0]: "
   hFlush stdout
   nr <- getIOWithDefault 0
   return $
     case nr of
-      1 -> AlgDQNAvgRewAdjusted 0.8 0.99 ByStateValues
+      1 -> AlgARAL 0.8 0.99 ByStateValues
       2 -> AlgDQN 0.99 Exact
       3 -> AlgRLearning
-      _ -> AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+      4 -> AlgARAL 0.9 0.99 ByStateValues
+      _ -> AlgARAL 0.8 1.0 ByStateValues

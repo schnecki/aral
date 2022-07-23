@@ -100,16 +100,16 @@ mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 
 
-alg :: Algorithm St
-alg =
-        -- AlgARAL defaultGamma0 defaultGamma1 ByStateValues mRefState
-        -- algDQNAvgRewardFree
-        AlgDQNAvgRewAdjusted 0.9 0.99 ByStateValues
-        -- AlgDQNAvgRewAdjusted 0.84837 0.99 ByStateValues
+-- alg :: Algorithm St
+-- alg =
+--         -- AlgARAL defaultGamma0 defaultGamma1 ByStateValues mRefState
+--         -- algDQNAvgRewardFree
+--         AlgARAL 0.9 0.99 ByStateValues
+--         -- AlgARAL 0.84837 0.99 ByStateValues
 
-        -- AlgARALVOnly (Fixed 1) Nothing
-        -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
-        -- AlgDQN 0.99 Exact
+--         -- AlgARALVOnly (Fixed 1) Nothing
+--         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
+--         -- AlgDQN 0.99 Exact
 
 main :: IO ()
 main = do
@@ -123,6 +123,7 @@ main = do
 
   nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix Nothing) :: IO NN
 
+  alg <- chooseAlg mRefState
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ _ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho

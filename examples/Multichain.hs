@@ -46,7 +46,7 @@ import           Helper
 
 alg :: Algorithm St
 alg =
-  AlgDQNAvgRewAdjusted 0.8 1.0 ByStateValues
+  AlgARAL 0.8 1.0 ByStateValues
   -- AlgARAL 0.5 0.8 ByStateValues Nothing
 
 main :: IO ()
