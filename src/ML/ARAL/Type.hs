@@ -29,7 +29,7 @@ module ML.ARAL.Type
   , futureEpisodeEnd
   , mapRewardFutureData
   , idxStart
-    -- ARAL
+  -- * ARAL
   , ARAL (..)
   , NrFeatures
   , NrRows
@@ -56,27 +56,29 @@ module ML.ARAL.Type
   , lastRewards
   , psis
   , proxies
-    -- actions
+  -- * actions
   , actionIndicesFiltered
   , actionIndicesDisallowed
   , actionsFiltered
     -- initial values
   , InitValues (..)
   , defInitValues
-    -- constructors
+  -- * Constructors
+  -- ** Tabular
   , mkUnichainTabular
   , mkMultichainTabular
-
+  -- ** Hasktorch
   , mkUnichainHasktorch
-
+  , mkUnichainHasktorchAs
+  -- ** Grenade
   , mkUnichainGrenade
   , mkUnichainGrenadeCombinedNet
   , mkMultichainGrenade
 
-    -- scaling
+  -- ** Scaling
   , scalingByMaxAbsReward
   , scalingByMaxAbsRewardAlg
-    -- proxy/proxies helpers
+  -- * Proxy/Proxies helpers
   , overAllProxies
   , setAllProxies
   , allProxies
@@ -390,11 +392,29 @@ mkUnichainHasktorch ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainHasktorch alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
+mkUnichainHasktorch = mkUnichainHasktorchAs [minBound .. maxBound]
+
+
+mkUnichainHasktorchAs ::
+  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+     [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFunHT
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
-      rows = genericLength ([minBound .. maxBound] :: [as]) * fromIntegral (settings ^. independentAgents)
+      rows = genericLength as * fromIntegral (settings ^. independentAgents)
       netFun cols = modelBuilderHT feats (rows, cols)
   let model = netFun 1
   putStrLn "Net: "
@@ -456,7 +476,6 @@ mkUnichainHasktorch alg initialStateFun ftExt asFun asFilter params decayFun mod
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    as = [minBound .. maxBound] :: [Action as]
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
