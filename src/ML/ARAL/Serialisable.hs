@@ -68,18 +68,18 @@ data ARALSerialisable s as = ARALSerialisable
   , serParameters        :: !ParameterInitValues  -- ^ Parameter setup.
   , serParameterSetting  :: !ParameterDecaySetting
   , serSettings          :: !Settings  -- ^ Parameter setup.
-  , serRewardFutures     :: [RewardFutureData s]
+  , serRewardFutures     :: ![RewardFutureData s]
 
   -- define algorithm to use
   , serAlgorithm         :: !(Algorithm [Double])
   , serObjective         :: !Objective
 
   -- Values:
-  , serExpSmoothedReward :: Double                  -- ^ Exponentially smoothed reward
+  , serExpSmoothedReward :: !Double                  -- ^ Exponentially smoothed reward
   , serLastVValues       :: ![Value]               -- ^ List of X last V values
   , serLastRewards       :: ![Double]               -- ^ List of X last rewards
   , serPsis              :: !(Value, Value, Value) -- ^ Exponentially smoothed psi values.
-  , serProxies           :: Proxies                -- ^ Scalar, Tables and Neural Networks
+  , serProxies           :: !Proxies                -- ^ Scalar, Tables and Neural Networks
   } deriving (Generic, Serialize)
 
 toSerialisable :: (MonadIO m, RewardFuture s) => ARAL s as -> m (ARALSerialisable s as)
@@ -259,6 +259,8 @@ instance Serialize Proxy where
           mdl <- get
           return $
             unsafePerformIO $ do
+              putStrLn "ANN model: "
+              putStrLn $ show mdl
               t <- Torch.sample mdl
               w <- Torch.sample mdl
               return $

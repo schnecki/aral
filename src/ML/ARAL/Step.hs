@@ -53,6 +53,7 @@ import           ML.ARAL.Action
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Calculation
 import           ML.ARAL.Fork
+import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.NeuralNetwork.NNConfig
 import           ML.ARAL.NeuralNetwork.ReplayMemory
 import           ML.ARAL.NeuralNetwork.Scaling
@@ -112,18 +113,19 @@ step !aral =
   fmap force $!
   nextAction aral >>= stepExecute aral
 
--- | This keeps the MonadIO alive.
+-- | This keeps the MonadIO alive and force evaluation of ARAL in every step.
 stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
 stepM !aral = nextAction aral >>= stepExecute aral >>= \(b@ARAL{}) -> return (force b)
 
--- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 100 periods.
+-- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 1000 steps.
 stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
-stepsM aral nr = do
-  aral' <- foldM (\b _ -> stepM b) aral [1 .. min maxNr nr]
+stepsM !aral !nr = do
+  aral' <- foldM (\b _ -> nextAction b >>= stepExecute b) aral [1 .. min maxNr nr]
   if nr > maxNr
-    then stepsM aral' (nr - maxNr)
-    else return aral'
-  where maxNr = 100
+    then stepsM (force aral') (nr - maxNr)
+    else return $! force aral'
+  where
+    maxNr = 1000
 
 stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
 stepExecute aral (as, workerActions) = do
@@ -184,7 +186,7 @@ runWorkerAction aral (WorkerState wNr state replMem oldFutureRewards rew) as = d
   let addNewRewardToExp currentExpSmthRew (RewardFutureData _ _ _ (Reward rew') _ _) = (1 - expSmthPsi) * currentExpSmthRew + expSmthPsi * rew'
       addNewRewardToExp _ _                                                          = error "unexpected RewardFutureData in runWorkerAction"
   newReplMem <- foldM addExperience replMem materialisedFutures
-  return $! force $ WorkerState wNr stateNext newReplMem newFutures (foldl' addNewRewardToExp rew materialisedFutures)
+  return $! WorkerState wNr stateNext newReplMem newFutures (foldl' addNewRewardToExp rew materialisedFutures)
   where
     splitMaterialisedFutures fs =
       let (futures, finished) = VB.partition (isRewardFuture . view futureReward) fs
@@ -329,10 +331,12 @@ maybeFlipDropout aral =
     _ -> aral
   where
     setDropoutValue :: Bool -> ARAL s as -> ARAL s as
-    setDropoutValue val =
-      overAllProxies
-        (filtered isGrenade)
-        (\(Grenade tar wor tp cfg act agents) -> Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents)
+    setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) flipDropout
+      where flipDropout (Grenade tar wor tp cfg act agents)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents
+            flipDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp) = Hasktorch tar wo tp cfg nrAct nrAg adam (flipMLPSpec mlp)
+            flipMLPSpec x@MLPSpec{}                                       = x
+            flipMLPSpec x@(MLPSpecWDroput lin act Nothing outAct)         = x
+            flipMLPSpec (MLPSpecWDroput lin act (Just (_, drVal)) outAct) = MLPSpecWDroput lin act (Just (val, drVal)) outAct
 
 
 #ifdef DEBUG

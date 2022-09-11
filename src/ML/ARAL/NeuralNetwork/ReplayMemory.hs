@@ -147,7 +147,6 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is reached.
 addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
--- addToReplayMemory nrAs (force -> !e) (ReplayMemory vec sz idx maxIdx) = do
 addToReplayMemory nrAs !e (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) e
   return $! ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))

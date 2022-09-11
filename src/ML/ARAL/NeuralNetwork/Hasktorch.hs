@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TupleSections         #-}
 module ML.ARAL.NeuralNetwork.Hasktorch
     ( MLP (..)
     , MLPSpec (..)
@@ -9,14 +10,15 @@ module ML.ARAL.NeuralNetwork.Hasktorch
     , trainHasktorch
     ) where
 
+import           Control.Applicative              ((<|>))
 import           Control.DeepSeq
 import           Data.List                        (foldl', genericLength, intersperse)
 import           Data.Maybe
 import           Data.Serialize
 import qualified Data.Vector.Storable             as V
 import           GHC.Generics
-import qualified Torch                            as Torch
-import qualified Torch.Functional.Internal        as Torch (gather)
+import qualified Torch                            as Torch hiding (dropout)
+import qualified Torch.Functional.Internal        as Torch (dropout, gather)
 import qualified Torch.HList                      as Torch
 import qualified Torch.Initializers               as Torch
 import qualified Torch.Serialize                  as Torch
@@ -42,47 +44,74 @@ mkHasktorchActivation HasktorchRelu               = Torch.relu
 mkHasktorchActivation (HasktorchLeakyRelu mAlpha) = Torch.leakyRelu (fromMaybe 0.02 mAlpha)
 mkHasktorchActivation HasktorchTanh               = Torch.tanh
 
-data MLPSpec = MLPSpec
-  { hasktorchFeatureCounts    :: [Integer]
-  , hasktorchHiddenActivation :: HasktorchActivation
-  , hasktorchOutputActivation :: Maybe HasktorchActivation
-  } deriving (Show, Eq, Generic, Serialize, NFData)
+data MLPSpec
+  = MLPSpec
+      { hasktorchFeatureCounts    :: [Integer]
+      , hasktorchHiddenActivation :: HasktorchActivation
+      , hasktorchOutputActivation :: Maybe HasktorchActivation
+      }
+  | MLPSpecWDroput
+      { hasktorchFeatureCounts      :: [Integer]
+      , hasktorchHiddenActivation   :: HasktorchActivation
+      , hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Droput later after every hidden layer with given probability, e.g. 0.5
+      , hasktorchOutputActivation   :: Maybe HasktorchActivation
+      }
+  deriving (Show, Eq, Generic, Serialize, NFData)
+
+-- instance Serialize MLPSpec where
+--   get = force <$> ((MLPSpec <$> get <*> get <*> get) <|> (MLPSpecWDroput <$> get <*> get <*> get <*> get))
+
 
 -- Actual model fuction
 
-data MLP = MLP
-  { mlpLayers           :: [Torch.Linear]
-  , mlpHiddenActivation :: Torch.Tensor -> Torch.Tensor
-  , mlpOutputActivation :: Maybe (Torch.Tensor -> Torch.Tensor)
-  }
+data MLP =
+  MLP
+    { mlpLayers             :: [Torch.Linear]
+    , mlpHiddenActivation   :: Torch.Tensor -> Torch.Tensor
+    , mlpHiddenDropoutAlpha :: Maybe (Bool, Double) -- Nothing: no droput, Just: (active, alpha)
+    , mlpOutputActivation   :: Maybe (Torch.Tensor -> Torch.Tensor)
+    }
   deriving (Generic, Torch.Parameterized)
 
 instance Show MLP where
-  show (MLP layers _ _) = show layers
+  show (MLP layers _ Just{} _)  = show layers <> " with dropout"
+  show (MLP layers _ Nothing _) = show layers <> " without dropout"
 
 
 hasktorchModel :: MLP -> Torch.Tensor -> Torch.Tensor
-hasktorchModel (MLP layers hiddenAct outputAct) input = foldl' revApply input $ (++ maybe [] pure outputAct) $ intersperse hiddenAct $ map Torch.linear layers
+hasktorchModel (MLP layers hiddenAct Nothing outputAct) input = foldl' revApply input $ (++ maybe [] pure outputAct) $ intersperse hiddenAct $ map Torch.linear layers
+  where
+    revApply x f = f x
+hasktorchModel (MLP layers hiddenAct (Just (active, dropoutAlpha)) outputAct) input =
+  foldl' revApply input $ (++ maybe [] pure outputAct) $ intersperse ((\t -> Torch.dropout t dropoutAlpha active) . hiddenAct) $ map Torch.linear layers
   where
     revApply x f = f x
 
 
 instance Torch.Randomizable MLPSpec MLP where
-  sample (MLPSpec featCounts hiddenActivation outputActivation) = do
+  sample (MLPSpec featCounts hiddenActivation outputActivation) = Torch.sample (MLPSpecWDroput featCounts hiddenActivation Nothing outputActivation)
+  sample (MLPSpecWDroput featCounts hiddenActivation mDropout outputActivation) = do
     let layerSizes = mkLayerSizes (map fromInteger featCounts)
     linears <- mapM sampleDouble layerSizes
-    return $ MLP {mlpLayers = linears, mlpHiddenActivation = mkHasktorchActivation hiddenActivation, mlpOutputActivation = mkHasktorchActivation <$> outputActivation}
+    return $
+      MLP
+        { mlpLayers = linears
+        , mlpHiddenActivation = mkHasktorchActivation hiddenActivation
+        , mlpHiddenDropoutAlpha = mDropout
+        , mlpOutputActivation = mkHasktorchActivation <$> outputActivation
+        }
     where
       mkLayerSizes (a:(b:t)) = scanl shift (a, b) t
         where
           shift (a, b) c = (b, c)
       mkLayerSizes _ = error "Need at least 2 layers in MLPSpec"
       sampleDouble (in_features, out_features) = do
-        w <- Torch.makeIndependent . mkDbl =<< -- Torch.kaimingUniform Torch.FanIn (Torch.LeakyRelu $ Prelude.sqrt (5.0 :: Float)) [out_features, in_features]
-             Torch.xavierUniform 1.0 [out_features, in_features]
+        w <-
+          Torch.makeIndependent . mkDbl =<< -- Torch.kaimingUniform Torch.FanIn (Torch.LeakyRelu $ Prelude.sqrt (5.0 :: Float)) [out_features, in_features]
+          Torch.xavierUniform 1.0 [out_features, in_features]
         init <- Torch.randIO' [out_features]
         let bound = (1 :: Double) / Prelude.sqrt (fromIntegral (Torch.getter Torch.FanIn $ Torch.calculateFan [out_features, in_features]) :: Double)
-        b <- Torch.makeIndependent . mkDbl  =<< pure (Torch.subScalar bound $ Torch.mulScalar (bound * 2.0 :: Double) init)
+        b <- Torch.makeIndependent . mkDbl =<< pure (Torch.subScalar bound $ Torch.mulScalar (bound * 2.0 :: Double) init)
         return $ Torch.Linear w b
       mkDbl = Torch.toDType Torch.Double
 

@@ -108,13 +108,14 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
     P.Table m _ _ ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
-      in mapM (\((k,idx),val) -> modifier Target (k,idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-      sortBy (compare `on`  fst.fst) $ map ((\((st,a), v) -> ((st,a), AgentValue v))) (M.toList m)
+       in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
-      let printFun (kDoc, (valT, valW)) | isEmpty kDoc = []
-                                        | otherwise = [kDoc <> colon <+> printValue valT <+> text "  " <+> printValue valW]
-          unfoldActs = concatMap (\(f,(ts,ws)) -> zipWith (\(nr,t) (_,w) -> (f nr, (t, w))) ts ws)
+      let printFun (kDoc, (valT, valW))
+            | isEmpty kDoc = []
+            | otherwise = [kDoc <> colon <+> printValue valT <+> text "  " <+> printValue valW]
+          unfoldActs = concatMap (\(f, (ts, ws)) -> zipWith (\(nr, t) (_, w) -> (f nr, (t, w))) ts ws)
       return $ concatMap printFun (unfoldActs mtrue)
 
 
@@ -225,7 +226,8 @@ prettyARALTables mStInverse t1 t2 t3 borl = do
   prettyRhoVal <-
     case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
       (Scalar val _, Scalar valRhoMin _) ->
-        return $ text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
+        return $ text "Rho/RhoMinimum/Exp.Smth" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin)) <>
+                 text "/" <> printDoubleWith 8 (borl ^. expSmoothedReward)
       (m,_) -> do
         prAct <- prettyTable borl prettyState prettyActionIdx m
         return $ text "Rho" $+$ prAct
@@ -272,7 +274,8 @@ prettyARALHead' printRho prettyStateFun borl = do
       actionNrs = length (borl ^. actionList)
       prettyRhoVal =
         case (borl ^. proxies . rho, borl ^. proxies . rhoMinimum) of
-          (Scalar val _, Scalar valRhoMin _) -> text "Rho/RhoMinimum" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin))
+          (Scalar val _, Scalar valRhoMin _) -> text "Rho/RhoMinimum/Exp.Smth Rho" <> colon $$ nest nestCols (printDoubleListWith 8 (V.toList val) <> text "/" <> printDoubleListWith 8 (V.toList valRhoMin)) <>
+                                                text "/" <> printDoubleWith 8 (borl ^. expSmoothedReward)
           _                                  -> empty
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc

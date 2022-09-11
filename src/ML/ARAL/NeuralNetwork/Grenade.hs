@@ -56,7 +56,6 @@ trainGrenade period opt nnConfig net chs = do
         clipGrads $
         (1 / sum (map genericLength chs)) |* -- avg prevents divergance on huge networks
         sumG batchGradients
-  -- let !net' = force $ applyUpdate opt net res
   let !net' = applyUpdate opt net res
   if trainIter <= 1
     then return net'

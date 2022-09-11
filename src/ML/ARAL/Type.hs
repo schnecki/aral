@@ -428,7 +428,7 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
           modelT <- Torch.sample model
           modelW <- Torch.sample model
           return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model
-      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing) (MLP [] Torch.relu Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model
+      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing Nothing) (MLP [] Torch.relu Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table

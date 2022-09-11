@@ -365,7 +365,8 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
 trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam !mdl) = do
-  (netW', adam') <- liftIO $ trainHasktorch period lRate0 adam config netW trainingInstances'
+  -- (netW', adam') <- liftIO $ trainHasktorch period lRate0 adam config netW trainingInstances'
+  (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances'
   return $! Hasktorch netT netW' tp config nrActs agents adam' mdl
   where
     minMaxVal =

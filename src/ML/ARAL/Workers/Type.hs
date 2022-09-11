@@ -34,11 +34,11 @@ type Workers s = [WorkerState s]
 
 data WorkerState s =
   WorkerState
-    { _workerNumber        :: Int                   -- ^ Worker nr.
-    , _workerS             :: !s                    -- ^ Current state.
-    , _workerReplayMemory  :: !ReplayMemories       -- ^ Replay Memories of worker.
+    { _workerNumber        :: !Int                              -- ^ Worker nr.
+    , _workerS             :: !s                                -- ^ Current state.
+    , _workerReplayMemory  :: !ReplayMemories                   -- ^ Replay Memories of worker.
     , _workerFutureRewards :: !(VB.Vector (RewardFutureData s)) -- ^ Future reward data.
-    , _workerExpSmthReward :: Double                 -- ^ Exponentially smoothed reward with rate 0.0001
+    , _workerExpSmthReward :: !Double                           -- ^ Exponentially smoothed reward with rate 0.0001
     }
   deriving (Generic)
 makeLenses ''WorkerState
