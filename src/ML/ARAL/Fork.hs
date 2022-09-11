@@ -10,17 +10,17 @@ module ML.ARAL.Fork
 import           Control.Concurrent          (forkIO, yield)
 import           Control.DeepSeq
 import           Control.Monad               (void)
-import           Control.Parallel.Strategies
+import           Control.Parallel.Strategies hiding (rwhnf)
 import           Data.IORef
 
 
 doFork :: NFData a => IO a -> IO (IORef (ThreadState a))
 doFork ~f = do
   ref <- newIORef NotReady
-  -- void $ forkIO (f >>= writeIORef ref . Ready . whnf)
-  void $ forkIO (f >>= writeIORef ref . Ready . force)
+  void $ forkIO (f >>= writeIORef ref . Ready . whnf)
+  -- void $ forkIO (f >>= writeIORef ref . Ready . force)
   return ref
-  where whnf !a = a
+  where whnf !a = rwhnf a `seq` a
 
 -- | Does not actually fork, thus runs sequentially, but does not force the result!
 doForkFake :: IO a -> IO (IORef (ThreadState a))

@@ -115,7 +115,7 @@ step !aral =
 
 -- | This keeps the MonadIO alive and force evaluation of ARAL in every step.
 stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
-stepM !aral = nextAction aral >>= stepExecute aral >>= \(b@ARAL{}) -> return (force b)
+stepM !aral = nextAction aral >>= stepExecute aral >>= \b@ARAL{} -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 1000 steps.
 stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
