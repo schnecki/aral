@@ -55,14 +55,15 @@ data NNConfig =
     , _grenadeDropoutFlipActivePeriod  :: !Int                     -- ^ Flip dropout active/inactive state every X periods.
     , _grenadeDropoutOnlyInactiveAfter :: !Int                     -- ^ Keep dropout inactive when reaching the given number of periods. Set to 0 to inactive dropout active state flipping!
     , _clipGradients                   :: !Clipping                -- ^ Clip the gradients (takes time, but is a safer update).
+    , _autoNormaliseInput              :: !Bool                    -- ^ Automatically normalize the input
     } deriving (Show)
 makeLenses ''NNConfig
 
 
 instance NFData NNConfig where
-  rnf (NNConfig rep repStrat batchsize tr !lp smooth smoothPer dec pp sc scalg crop dropFlip dropInactive clip) =
-    rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq`
-    rnf tr `seq` rnf lp `seq` rnf smooth `seq` rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip `seq` rnf dropInactive `seq` rnf clip
+  rnf (NNConfig rep repStrat batchsize tr !lp smooth smoothPer dec pp sc scalg crop dropFlip dropInactive clip autoNorm) =
+    rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq` rnf tr `seq` rnf lp `seq` rnf smooth `seq`
+    rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip `seq` rnf dropInactive `seq` rnf clip `seq` rnf autoNorm
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

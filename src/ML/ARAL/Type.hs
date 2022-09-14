@@ -86,27 +86,28 @@ module ML.ARAL.Type
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (join, replicateM)
-import           Control.Monad.IO.Class       (liftIO)
-import           Data.Default                 (def)
-import           Data.List                    (foldl', genericLength, zipWith3)
-import           Data.Maybe                   (catMaybes, fromMaybe)
-import qualified Data.Proxy                   as Type
+import           Control.Monad                               (join, replicateM)
+import           Control.Monad.IO.Class                      (liftIO)
+import           Data.Default                                (def)
+import           Data.List                                   (foldl', genericLength, zipWith3)
+import           Data.Maybe                                  (catMaybes, fromMaybe)
+import qualified Data.Proxy                                  as Type
 import           Data.Serialize
-import           Data.Singletons              (Sing, SingI, SomeSing (..), sing)
+import           Data.Singletons                             (Sing, SingI, SomeSing (..), sing)
 import           Data.Singletons.Prelude.List
 import           Data.Singletons.TypeLits
-import qualified Data.Text                    as T
-import           Data.Typeable                (Typeable)
-import qualified Data.Vector                  as VB
-import qualified Data.Vector.Mutable          as VM
-import qualified Data.Vector.Storable         as V
+import qualified Data.Text                                   as T
+import           Data.Typeable                               (Typeable)
+import qualified Data.Vector                                 as VB
+import qualified Data.Vector.Mutable                         as VM
+import qualified Data.Vector.Storable                        as V
 import           EasyLogger
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
+import           Statistics.Sample.WelfordOnlineMeanVariance
 import qualified Torch
-import qualified Torch.NN                     as Torch
+import qualified Torch.NN                                    as Torch
 
 
 import           ML.ARAL.Action.Type
@@ -427,8 +428,8 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
         _ -> do
           modelT <- Torch.sample model
           modelW <- Torch.sample model
-          return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model
-      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing Nothing) (MLP [] Torch.relu Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model
+          return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
+      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing Nothing) (MLP [] Torch.relu Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model WelfordExistingAggregateEmpty
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table
@@ -593,7 +594,7 @@ mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter pa
   print net
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents)
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) WelfordExistingAggregateEmpty
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -682,7 +683,7 @@ mkMultichainGrenade ::
 mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net nnConfig settings initVals = do
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents)
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) WelfordExistingAggregateEmpty
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable
@@ -795,9 +796,9 @@ checkNetworkOutput combined borl
     reqZ = 1 :: Integer
     reqX = fromIntegral $ length (borl ^. actionList) * (borl ^. settings . independentAgents) :: Integer
     (x, y, z) = case px of
-      Grenade t _ _ _ _ _                     -> mkDims t
-      CombinedProxy (Grenade t _ _ _ _ _) _ _ -> mkDims t
-      px'                                     -> error $ "Error in checkNetworkOutput. This should not have happend. Proxy is: "++ show px'
+      Grenade t _ _ _ _ _ _                     -> mkDims t
+      CombinedProxy (Grenade t _ _ _ _ _ _) _ _ -> mkDims t
+      px'                                       -> error $ "Error in checkNetworkOutput. This should not have happend. Proxy is: "++ show px'
     mkDims :: forall layers shapes . (SingI (Last shapes)) => Network layers shapes -> (Integer,Integer,Integer)
     mkDims _ = tripleFromSomeShape (SomeSing (sing :: Sing (Last shapes)))
     px =

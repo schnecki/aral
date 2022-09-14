@@ -332,8 +332,8 @@ maybeFlipDropout aral =
   where
     setDropoutValue :: Bool -> ARAL s as -> ARAL s as
     setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) flipDropout
-      where flipDropout (Grenade tar wor tp cfg act agents)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents
-            flipDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp) = Hasktorch tar wo tp cfg nrAct nrAg adam (flipMLPSpec mlp)
+      where flipDropout (Grenade tar wor tp cfg act agents wel)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
+            flipDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel) = Hasktorch tar wo tp cfg nrAct nrAg adam (flipMLPSpec mlp) wel
             flipMLPSpec x@MLPSpec{}                                       = x
             flipMLPSpec x@(MLPSpecWDroput lin act Nothing outAct)         = x
             flipMLPSpec (MLPSpecWDroput lin act (Just (_, drVal)) outAct) = MLPSpecWDroput lin act (Just (val, drVal)) outAct

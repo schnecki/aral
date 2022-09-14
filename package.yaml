@@ -64,6 +64,7 @@ dependencies:
   - say
   - easy-logger
   - hasktorch
+  - welford-online-mean-variance
 
 library:
   source-dirs: src

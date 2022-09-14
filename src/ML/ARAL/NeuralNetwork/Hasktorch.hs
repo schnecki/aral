@@ -10,24 +10,26 @@ module ML.ARAL.NeuralNetwork.Hasktorch
     , trainHasktorch
     ) where
 
-import           Control.Applicative              ((<|>))
+import           Control.Applicative                         ((<|>))
 import           Control.DeepSeq
-import           Data.List                        (foldl', genericLength, intersperse)
+import           Data.List                                   (foldl', genericLength, intersperse)
 import           Data.Maybe
 import           Data.Serialize
-import qualified Data.Vector.Storable             as V
+import qualified Data.Vector.Storable                        as V
 import           GHC.Generics
-import qualified Torch                            as Torch hiding (dropout)
-import qualified Torch.Functional.Internal        as Torch (dropout, gather)
-import qualified Torch.HList                      as Torch
-import qualified Torch.Initializers               as Torch
-import qualified Torch.Serialize                  as Torch
-import qualified Torch.Tensor                     as Torch
-import qualified Torch.Typed.Vision               as Torch (initMnist)
-import qualified Torch.Vision                     as Torch.V
+import           Statistics.Sample.WelfordOnlineMeanVariance
+import qualified Torch                                       as Torch hiding (dropout)
+import qualified Torch.Functional.Internal                   as Torch (dropout, gather)
+import qualified Torch.HList                                 as Torch
+import qualified Torch.Initializers                          as Torch
+import qualified Torch.Serialize                             as Torch
+import qualified Torch.Tensor                                as Torch
+import qualified Torch.Typed.Vision                          as Torch (initMnist)
+import qualified Torch.Vision                                as Torch.V
 
 import           ML.ARAL.NeuralNetwork.Conversion
 import           ML.ARAL.NeuralNetwork.NNConfig
+import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Types
 
 import           Debug.Trace
@@ -116,10 +118,10 @@ instance Torch.Randomizable MLPSpec MLP where
       mkDbl = Torch.toDType Torch.Double
 
 
-runHasktorch :: MLP -> NrActions -> NrAgents -> StateFeatures -> [Values]
-runHasktorch mlp nrAs nrAgents st =
+runHasktorch :: MLP -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> [Values]
+runHasktorch mlp nrAs nrAgents mWel st =
   -- trace ("mlp: " ++ show mlp) $
-  let input = Torch.asTensor $ V.toList st
+  let input = Torch.asTensor $ V.toList $ maybe id normaliseStateFeature mWel $ st
       output = -- V.map toDouble $
         V.fromList $ Torch.asValue $ hasktorchModel mlp input
    in [toAgents nrAs nrAgents output]

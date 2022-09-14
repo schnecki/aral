@@ -171,10 +171,10 @@ instance (Serialize s, RewardFuture s) => Serialize (WorkerState s) where
 
 
 instance Serialize NNConfig where
-  put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip) =
+  put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip autoScale) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec >> put clip
-      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec >> put clip
+      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec >> put clip >> put autoScale
+      o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec >> put clip >> put autoScale
   get = do
     memSz <- get
     memStrat <- get
@@ -191,7 +191,8 @@ instance Serialize NNConfig where
     stab <- get
     stabDec <- get
     clip <- get
-    return $ NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip
+    autoScale <- get
+    return $ NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip autoScale
 
 
 instance Serialize Torch.Parameter where
@@ -224,9 +225,9 @@ instance Serialize Torch.Adam where
 instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
-  put (Grenade t w tp conf nr agents) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents
-  put (Hasktorch t w tp conf nr agents adam mdl) =
-    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl
+  put (Grenade t w tp conf nr agents wel) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put wel
+  put (Hasktorch t w tp conf nr agents adam mdl wel) =
+    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl >> put wel
   get =
     fmap force $! do
       (c :: Int) <- get
@@ -242,11 +243,11 @@ instance Serialize Proxy where
             SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
               (t :: Network tLayers tShapes) <- get
               (w :: Network tLayers tShapes) <- get
-              Grenade t w <$> get <*> get <*> get <*> get
+              Grenade t w <$> get <*> get <*> get <*> get <*> get
             SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
               (t :: Network tLayers tShapes) <- get
               (w :: Network tLayers tShapes) <- get
-              Grenade t w <$> get <*> get <*> get <*> get
+              Grenade t w <$> get <*> get <*> get <*> get <*> get
             _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.ARAL.Serialisable")
         3 -> do
           (paramsT :: [Torch.Parameter]) <- get
@@ -257,6 +258,7 @@ instance Serialize Proxy where
           agents <- get
           adam <- get
           mdl <- get
+          wel <- get
           return $
             unsafePerformIO $ do
               putStrLn "ANN model: "
@@ -265,9 +267,18 @@ instance Serialize Proxy where
               w <- Torch.sample mdl
               return $
                 if null paramsT
-                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl
-                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl
+                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel
+                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel
         _ -> error "Unknown constructor for proxy"
+
+
+instance (V.Storable a, Serialize a) => Serialize (V.Vector a) where
+  put = put . V.toList
+  get = V.fromList <$> get
+
+-- instance (Serialize a) => Serialize (VB.Vector a) where
+--   put = put . VB.toList
+--   get = VB.fromList <$> get
 
 
 -- ^ Replay Memory

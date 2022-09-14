@@ -9,6 +9,7 @@ packages:
 - ../../hasktorch/hasktorch
 - ../../hasktorch/libtorch-ffi
 - ../../hasktorch/libtorch-ffi-helper
+- ../../welford-online-mean-variance
 
 extra-include-dirs:
 - ../../hasktorch/deps/libtorch/include/torch/csrc/api/include

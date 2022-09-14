@@ -335,11 +335,11 @@ prettyARALHead' printRho prettyStateFun borl = do
       (text "Xi (ratio of W error forcing to V)" <> colon $$ nest nestCols (printDoubleWith 8 $ params' ^. xi) <+>
        parens (text "Period 0" <> colon <+> printDoubleWith 8 (params ^. xi))) $+$
     (case borl ^. algorithm of
-       AlgNBORL {}     -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText
-       AlgARALVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgRLearning    -> text "Scaling ROnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly
-       AlgDQN {}       -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn
-       AlgARAL {}      -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn) $+$
+       AlgNBORL {}     -> text "Scaling (V,W,R0,R1) by V config" <> colon $$ nest nestCols scalingText <>                  comma <+> text "Auto input scaling: " <> autoInpScale
+       AlgARALVOnly {} -> text "Scaling BorlVOnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly <>           comma <+> text "Auto input scaling: " <> autoInpScale
+       AlgRLearning    -> text "Scaling ROnly by V config" <> colon $$ nest nestCols scalingTextBorlVOnly <>               comma <+> text "Auto input scaling: " <> autoInpScale
+       AlgDQN {}       -> text "Scaling (R1) by R1 Config" <> colon $$ nest nestCols scalingTextDqn <>                     comma <+> text "Auto input scaling: " <> autoInpScale
+       AlgARAL {}      -> text "Scaling (R0,R1) by R1 Config" <> colon $$ nest nestCols scalingTextAvgRewardAdjustedDqn <> comma <+> text "Auto input scaling: " <> autoInpScale) $+$
     algDoc
       (text "Psi Rho/Psi V/Psi W" <> colon $$
        nest nestCols (text (show (printDoubleListWith 8 $ fromValue $ borl ^. psis . _1, printDoubleListWith 8 $ fromValue $ borl ^. psis . _2, printDoubleListWith 8 $ fromValue $ borl ^. psis . _3)))) $+$
@@ -360,6 +360,10 @@ prettyARALHead' printRho prettyStateFun borl = do
         px ->
           text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showDoubleList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
+    autoInpScale =
+      case borl ^. proxies . r1 of
+        P.Table {} -> mempty
+        px         -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
     scalingText =
       case borl ^. proxies . v of
         P.Table {} -> text "Tabular representation (no scaling needed)"
@@ -426,11 +430,11 @@ prettyARALHead' printRho prettyStateFun borl = do
     textReplayMemoryType mem@ReplayMemoriesPerActions {} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
       case borl ^. proxies . v of
-        P.Table {}                                     -> empty
-        P.Grenade _ _ _ conf _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        P.Hasktorch _ _ _ conf _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        P.CombinedProxy (P.Grenade _ _ _ conf _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        _                                              -> error "nnLearningParams in Pretty.hs"
+        P.Table {}                                       -> empty
+        P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.Hasktorch _ _ _ conf _ _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        _                                                -> error "nnLearningParams in Pretty.hs"
       where
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =

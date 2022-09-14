@@ -11,17 +11,19 @@ module ML.ARAL.NeuralNetwork.Grenade
     ) where
 
 import           Control.DeepSeq
-import           Control.Lens                     (set, (^.))
+import           Control.Lens                                (set, (^.))
 import           Control.Parallel.Strategies
-import           Data.List                        (genericLength)
+import           Data.List                                   (genericLength)
 import           Data.Singletons
 import           Data.Singletons.Prelude.List
-import qualified Data.Vector.Storable             as V
+import qualified Data.Vector.Storable                        as V
 import           GHC.TypeLits
 import           Grenade
+import           Statistics.Sample.WelfordOnlineMeanVariance
 
 import           ML.ARAL.NeuralNetwork.Conversion
 import           ML.ARAL.NeuralNetwork.NNConfig
+import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Types
 
 
@@ -79,8 +81,9 @@ makeGradients cropFun net chs
     (tapes, outputs) = unzip $ parMap (rparWith rdeepseq) (fromLastShapesVector net . runNetwork net . toHeadShapes net) inputs
     labels = zipWith (V.//) outputs (map (\((_, act), out) -> [(act, cropFun out)]) chs)
 
-runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrActions -> NrAgents -> StateFeatures -> [Values]
-runGrenade net nrAs nrAgents st = snd $ fromLastShapes net nrAs nrAgents $ runNetwork net (toHeadShapes net st)
+runGrenade :: (KnownNat nr, Head shapes ~ 'D1 nr) => Network layers shapes -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> [Values]
+runGrenade net nrAs nrAgents mWel st = snd $ fromLastShapes net nrAs nrAgents $ runNetwork net (toHeadShapes net $ maybe id normaliseStateFeature mWel $ st)
+-- runGrenade net nrAs nrAgents Nothing st = snd $ fromLastShapes net nrAs nrAgents $ runNetwork net (toHeadShapes net st)
 
 mkLoss :: (Fractional a) => a -> a -> a
 mkLoss o t =
