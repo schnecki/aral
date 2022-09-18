@@ -114,7 +114,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   -- forkMv' <- liftIO $ doFork $ P.insert period label vValStateNew mv
   -- mv' <- liftIO $ collectForkResult forkMv'
   let aNr = VB.map snd as
-  let mInsertProxy mVal px = maybe (return px) (\val ->  insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+  let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
   pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
   pRho' <-  mInsertProxy   (getRhoVal' calc) pRho             `using` rpar
   pV' <-    mInsertProxy   (getVValState' calc) pV            `using` rpar
@@ -132,11 +132,19 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let aNr = VB.map snd as
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
+        mInsertWelford mVal px = maybe (return px) (\val -> return $ addWelford period [[((stateFeat, aNr), val)]] px) mVal
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-    !pRho' <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    !pRho'    <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+    !pV'      <- mInsertWelford (getVValState' calc) (pxs ^. v) `using` rpar
+    !pW'      <- mInsertWelford (getWValState' calc) (pxs ^. w) `using` rpar
+    !pPsiV'   <- mInsertWelford (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
+    !pPsiW'   <- mInsertWelford (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
+    !pR0'     <- mInsertWelford (getR0ValState' calc) (pxs ^. r0) `using` rpar
+    !pR1'     <- mInsertWelford (getR1ValState' calc) (pxs ^. r1) `using` rpar
     when (period == fromIntegral (replayMemoriesSize replMems) - 1) $ $(logPrintInfoText) (T.pack $ "Starting to learn. Period: " <> show period)
     emptyCache
-    return (replayMemory ?~ replMem' $ pxs { _rhoMinimum = pRhoMin', _rho = pRho' }, calc)
+    let addWel = addWelford
+    return $ (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' (Just replMem'), calc)
   | otherwise = do
     !replMems' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (~calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
@@ -174,14 +182,14 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
   let aNr = VB.map snd as
   let mInsertProxy !mVal !px = maybe (return (px, False)) (\val -> (, True) <$> insertProxy agent (borl ^. settings) period stateFeat aNr val px) mVal
-  (!pRhoMin', _) <-        mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
-  (!pRho', _) <-           mInsertProxy (getRhoVal' calc) pRho `using` rpar
-  (!pV', vActive) <-       mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
-  (!pW', wActive) <-       mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
+  (!pRhoMin', _)        <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+  (!pRho', _)           <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
+  (!pV', vActive)       <- mInsertProxy (getVValState' calc) (pxs ^. v) `using` rpar
+  (!pW', wActive)       <- mInsertProxy (getWValState' calc) (pxs ^. w) `using` rpar
   (!pPsiV', psiVActive) <- mInsertProxy (getPsiVValState' calc) (pxs ^. psiV) `using` rpar
   (!pPsiW', psiWActive) <- mInsertProxy (getPsiWValState' calc) (pxs ^. psiW) `using` rpar
-  (!pR0', r0Active) <-     mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
-  (!pR1', r1Active) <-     mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
+  (!pR0', r0Active)     <- mInsertProxy (getR0ValState' calc) (pxs ^. r0) `using` rpar
+  (!pR1', r1Active)     <- mInsertProxy (getR1ValState' calc) (pxs ^. r1) `using` rpar
   let combinedProxies = [pR0' | r0Active] ++ [pR1' | r1Active] ++ [pPsiV' | psiVActive] ++ [pV' | vActive] ++ [pPsiW' | psiWActive] ++  [pW' | wActive]
   !proxy' <- insertCombinedProxies agent (borl ^. settings) period combinedProxies
   return (ProxiesCombinedUnichain pRhoMin' pRho' proxy' Nothing, calc)
@@ -276,8 +284,19 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
   | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
   | otherwise = return px
+insertProxyMany _ setts period xs px
+  | period < memSize = return $ addWelford period xs px
+  where config = px ^?! proxyNNConfig
+        memSize = config ^. replayMemoryMaxSize
 insertProxyMany agent setts !period !xs !px
-  | period < memSize = return $ proxyWelford .~ wel' $ px
+  | (1 + period) `mod` (setts ^. nStep) /= 0 || period < px ^?! proxyNNConfig . replayMemoryMaxSize = emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+insertProxyMany agent setts !period !xs !px = emptyCache >> trainBatch period xs (addWelford period xs px) >>= updateNNTargetNet agent setts period
+
+addWelford :: Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> Proxy
+addWelford period xs px
+  | otherwise = proxyWelford .~ wel' $ px
+  | period < max 20000 (2 * memSize) = proxyWelford .~ wel' $ px
+  | otherwise = px
   where
     config = px ^?! proxyNNConfig
     memSize = config ^. replayMemoryMaxSize
@@ -285,8 +304,6 @@ insertProxyMany agent setts !period !xs !px
     wel'
       | config ^. autoNormaliseInput = foldl' addValue wel (concatMap (map (fst . fst)) xs)
       | otherwise = wel
-insertProxyMany agent setts !period _ !px | (1+period) `mod` (setts ^. nStep) /= 0 = emptyCache >> updateNNTargetNet agent setts period px -- skip ANN learning if not nStep or terminal
-insertProxyMany agent setts !period !xs !px = emptyCache >> trainBatch period xs px >>= updateNNTargetNet agent setts period
 
 
 insertCombinedProxies :: (MonadIO m) => AgentType -> Settings -> Period -> [Proxy] -> m Proxy
@@ -355,11 +372,8 @@ updateNNTargetNet _ _ _ px = error $ show px ++ " proxy in updateNNTargetNet. Sh
 trainBatch :: forall m . (MonadIO m) => Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> m Proxy
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs !agents !wel) = do
   netW' <- liftIO $ trainGrenade period opt config netW trainingInstances'
-  return $! Grenade netT netW' tp config nrActs agents wel'
+  return $! Grenade netT netW' tp config nrActs agents wel
   where
-    wel'
-      | config ^. autoNormaliseInput = foldl' addValue wel (concatMap (map (fst . fst)) trainingInstances)
-      | otherwise = wel
     minMaxVal =
       case px ^?! proxyType of
         NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
@@ -368,7 +382,7 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
         _ -> getMinMaxVal px
     convertTrainingInstances :: (Int -> Int -> Int) -> ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Double)]
     convertTrainingInstances idxFun ((ft, as), AgentValue vs)
-      | config ^. autoNormaliseInput = zipWith3 (\agNr aIdx val -> ((normaliseStateFeature wel' ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
+      | config ^. autoNormaliseInput = zipWith3 (\agNr aIdx val -> ((normaliseStateFeature wel ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
       | otherwise = zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
     trainingInstances' =
       case px ^?! proxyType of
@@ -383,11 +397,8 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
 trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam !mdl !wel) = do
   -- (netW', adam') <- liftIO $ trainHasktorch period lRate0 adam config netW trainingInstances'
   (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances'
-  return $! Hasktorch netT netW' tp config nrActs agents adam' mdl wel'
+  return $! Hasktorch netT netW' tp config nrActs agents adam' mdl wel
   where
-    wel'
-      | config ^. autoNormaliseInput = foldl' addValue wel (concatMap (map (fst . fst)) trainingInstances)
-      | otherwise = wel
     minMaxVal =
       case px ^?! proxyType of
         NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
@@ -396,7 +407,7 @@ trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrA
         _ -> getMinMaxVal px
     convertTrainingInstances :: (Int -> Int -> Int) -> ((StateFeatures, VB.Vector ActionIndex), Value) -> [((StateFeatures, ActionIndex), Double)]
     convertTrainingInstances idxFun ((ft, as), AgentValue vs)
-      | config ^. autoNormaliseInput = zipWith3 (\agNr aIdx val -> ((normaliseStateFeature wel' ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
+      | config ^. autoNormaliseInput = zipWith3 (\agNr aIdx val -> ((normaliseStateFeature wel ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
       | otherwise = zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
     trainingInstances' =
       case px ^?! proxyType of

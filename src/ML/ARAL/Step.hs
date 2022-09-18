@@ -297,7 +297,8 @@ execute aral agent (RewardFutureData period state as (Reward reward) stateNext e
   then do
     (minVal, maxVal) <- liftIO $ updateMinMax aral (VB.map snd as) calc
     let minMaxValTxt = "\t" ++ show minVal ++ "\t" ++ show maxVal
-    liftIO $ appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ minMaxValTxt ++ "\n" )
+    liftIO $ unless (period < 10) $
+      appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ minMaxValTxt ++ "\n" )
     let (eNr, eStart) = aral ^. episodeNrStart
         eLength = aral ^. t - eStart
     when (getEpisodeEnd calc) $ liftIO $ appendFile fileEpisodeLength (show eNr ++ "\t" ++ show eLength ++ "\n")
