@@ -294,7 +294,7 @@ insertProxyMany agent setts !period !xs !px = emptyCache >> trainBatch period xs
 
 addWelford :: Period -> [[((StateFeatures, AgentActionIndices), Value)]] -> Proxy -> Proxy
 addWelford period xs px
-  | otherwise = proxyWelford .~ wel' $ px
+  --  | otherwise = proxyWelford .~ wel' $ px MAY LEAD TO NaN values!
   | period < max 20000 (2 * memSize) = proxyWelford .~ wel' $ px
   | otherwise = px
   where
