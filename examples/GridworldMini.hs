@@ -60,14 +60,14 @@ goalY = 0
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini 28.1."
+    { _experimentBaseName = "gridworld-mini"
     , _experimentInfoParameters = [isNN]
-    , _experimentRepetitions = 40
-    , _preparationSteps = 500000
+    , _experimentRepetitions = 30
+    , _preparationSteps = 1000000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
     , _evaluationReplications = 1
-    , _evaluationMaxStepsBetweenSaves = Nothing
+    , _evaluationMaxStepsBetweenSaves = Just 20000
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
@@ -231,6 +231,7 @@ nnConfig =
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _clipGradients = ClipByGlobalNorm 0.01
+    , _autoNormaliseInput = True
     }
 
 borlSettings :: Settings
@@ -292,7 +293,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl

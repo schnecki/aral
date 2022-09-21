@@ -1,7 +1,8 @@
 {-# LANGUAGE DataKinds             #-}
+
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedLists       #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -10,23 +11,117 @@
 
 module Main where
 
-import           ML.ARAL              hiding (actionFilter)
+import           Control.Monad
+import           Control.Monad.IO.Class
+import qualified Data.Map.Strict        as M
+import           Experimenter
+import           ML.ARAL                as B hiding (actionFilter)
 import           SolveLp
+import           System.IO
 
 import           Helper
 
-import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Data.Default
-import           Data.Int             (Int64)
-import           Data.List            (genericLength)
+import           Data.Int               (Int64)
+import           Data.List              (genericLength)
 import           Data.Serialize
-import           Data.Text            (Text)
-import qualified Data.Vector.Storable as V
-import           GHC.Exts             (fromList)
+import           Data.Text              (Text)
+import qualified Data.Vector.Storable   as V
+import           GHC.Exts               (fromList)
 import           GHC.Generics
-import           Grenade              hiding (train)
-import           Prelude              hiding (Left, Right)
+import           Grenade                hiding (train)
+import           Prelude                hiding (Left, Right)
+
+expSetup :: ARAL St Act -> ExperimentSetting
+expSetup borl =
+  ExperimentSetting
+    { _experimentBaseName = "gridworld-mini"
+    , _experimentInfoParameters = [isNN]
+    , _experimentRepetitions = 30
+    , _preparationSteps = 1000000
+    , _evaluationWarmUpSteps = 0
+    , _evaluationSteps = 10000
+    , _evaluationReplications = 1
+    , _evaluationMaxStepsBetweenSaves = Just 20000
+    }
+  where
+    isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
+
+evals :: [StatsDef s]
+evals =
+  [
+    Name "Exp Mean of Repl. Mean Reward" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Repl. Mean Reward" $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
+  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Exp Mean of Repl. Mean Steps to Goal" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Repl. Mean Steps to Goal" $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  , Name "Exp StdDev of Repl. Mean Steps to Goal" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
+  ]
+
+mInverseSt :: NetInputWoAction -> Maybe (Either String St)
+mInverseSt xs = return <$> M.lookup xs allStateInputs
+
+allStateInputs :: M.Map NetInputWoAction St
+allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
+
+
+instance ExperimentDef (ARAL St Act)
+  -- type ExpM (ARAL St Act) = TF.SessionT IO
+                                          where
+  type ExpM (ARAL St Act) = IO
+  type InputValue (ARAL St Act) = ()
+  type InputState (ARAL St Act) = ()
+  type Serializable (ARAL St Act) = ARALSerialisable St Act
+  serialisable = toSerialisable
+  -- deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
+  deserialisable = fromSerialisable actionFun actionFilter tblInp
+  generateInput _ _ _ _ = return ((), ())
+  runStep phase rl _ _ = do
+    rl' <- stepM rl
+    let inverseSt | isAnn rl = Just mInverseSt
+                  | otherwise = Nothing
+    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
+    let (eNr, eSteps) = rl ^. episodeNrStart
+        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
+        p = Just $ fromIntegral $ rl' ^. t
+        val l = realToFrac $ head $ fromValue (rl' ^?! l)
+        results | phase /= EvaluationPhase =
+                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  , StepResult "avgEpisodeLength" p eLength
+                  ]
+                | otherwise =
+                  [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
+                  , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
+                  , StepResult "psiRho" p (val $ psis . _1)
+                  , StepResult "psiV" p (val $ psis . _2)
+                  , StepResult "psiW" p (val $ psis . _3)
+                  , StepResult "avgEpisodeLength" p eLength
+                  , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
+                  ] -- ++
+                  -- concatMap
+                  --   (\s ->
+                  --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+                  --   (sort [(minBound :: St) .. maxBound])
+    return (results, rl')
+  parameters _ =
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
+                                                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                                                  , AlgARAL 0.8 0.999 ByStateValues
+                                                                  , AlgARAL 0.8 0.99 ByStateValues
+                                                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  , AlgDQN 0.999 Exact
+                                                                  , AlgDQN 0.99 Exact
+                                                                  , AlgDQN 0.50 Exact
+                                                                  ]) Nothing Nothing Nothing]
+  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+
 
 -- State
 data St
@@ -113,6 +208,39 @@ mRefState = Nothing
 
 main :: IO ()
 main = do
+  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
+  l <- getLine
+  case l of
+    "l"   -> do
+      putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
+      lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
+      print lpRes
+      mkStateFile 0.65 False True lpRes
+      mkStateFile 0.65 False False lpRes
+      putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
+    "e"   -> experimentMode
+    "exp" -> experimentMode
+    _     -> usermode
+
+tblInp = fromIntegral . fromEnum
+
+experimentMode :: IO ()
+experimentMode = do
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
+  ---
+  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
+  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
+  let runner = liftIO
+  ---
+  putStrLn $ "Any change: " ++ show changed
+  evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
+     -- print (view evalsResults evalRes)
+  writeAndCompileLatex databaseSetup evalRes
+  writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
+
+
+usermode :: IO ()
+usermode = do
 
 
   lpRes <- runBorlLpInferWithRewardRepetWMax 3 1 policy mRefState
@@ -154,6 +282,7 @@ nnConfig =
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
     , _clipGradients = ClipByGlobalNorm 0.01
+    , _autoNormaliseInput = True
     }
 
 borlSettings :: Settings

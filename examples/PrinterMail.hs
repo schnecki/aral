@@ -60,6 +60,7 @@ nnConfig =
     , _grenadeDropoutFlipActivePeriod = 0
     , _grenadeDropoutOnlyInactiveAfter = 0
     , _clipGradients = ClipByGlobalNorm 0.01
+    , _autoNormaliseInput = True
     }
 
 borlSettings :: Settings

@@ -14,11 +14,12 @@ module ML.ARAL.Types where
 import           Control.DeepSeq
 import           Data.List            (transpose)
 import           Data.Serialize
+import           Data.Vector.Serialize ()
 import qualified Data.Vector          as VB
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
 
-import           Grenade.Utils.Vector 
+import           Grenade.Utils.Vector
 
 
 data Objective
@@ -58,10 +59,6 @@ allActions nr = DisallowedActionIndicies $ VB.replicate nr V.empty
 
 type ActionChoice = VB.Vector (IsRandomAction, ActionIndex)                       -- ^ One action per agent
 
-
-instance Serialize ActionChoice where
-  put xs = put (VB.toList xs)
-  get = VB.fromList <$> get
 
 type NextActions = (ActionChoice, [WorkerActionChoice])
 type RandomNormValue = Double

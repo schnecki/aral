@@ -225,6 +225,7 @@ nnConfig =
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
     , _clipGradients = ClipByGlobalNorm 0.01
+    , _autoNormaliseInput = True
     }
 
 borlSettings :: Settings
@@ -413,7 +414,7 @@ actionFun tp s [x, y] = do
   return ((r1 + r2) / 2, s2, e1 || e2)
 actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
-replaceIndex :: Int -> a -> V.Vector a -> V.Vector a
+replaceIndex :: (V.Storable a) => Int -> a -> V.Vector a -> V.Vector a
 replaceIndex nr x xs = V.take nr xs V.++ (x `V.cons` V.drop (nr+1) xs)
 
 actFilter :: St -> [V.Vector Bool]

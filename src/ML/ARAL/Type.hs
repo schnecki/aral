@@ -66,6 +66,7 @@ module ML.ARAL.Type
   -- * Constructors
   -- ** Tabular
   , mkUnichainTabular
+  , mkUnichainTabularAs
   , mkMultichainTabular
   -- ** Hasktorch
   , mkUnichainHasktorch
@@ -74,7 +75,6 @@ module ML.ARAL.Type
   , mkUnichainGrenade
   , mkUnichainGrenadeCombinedNet
   , mkMultichainGrenade
-
   -- ** Scaling
   , scalingByMaxAbsReward
   , scalingByMaxAbsRewardAlg
@@ -284,7 +284,22 @@ mkUnichainTabular ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
+mkUnichainTabular = mkUnichainTabularAs [minBound .. maxBound]
+
+mkUnichainTabularAs ::
+     forall s as. (Eq as, Ord as, NFData as)
+  => [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainTabularAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   $(logPrintDebugText) "Creating tabular unichain ARAL"
   st <- initialStateFun MainAgent
   let proxies' =
@@ -321,7 +336,6 @@ mkUnichainTabular alg initialStateFun ftExt asFun asFilter params decayFun setti
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    as = [minBound .. maxBound] :: [Action as]
     tabSA def = Table mempty def (length as)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
     defRho = defaultRho (fromMaybe defInitValues initVals)
@@ -429,7 +443,7 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
           modelT <- Torch.sample model
           modelW <- Torch.sample model
           return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
-      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing Nothing) (MLP [] Torch.relu Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model WelfordExistingAggregateEmpty
+      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu Nothing Nothing Nothing) (MLP [] Torch.relu Nothing Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (Torch.mkAdam 0 0.9 0.999 []) model WelfordExistingAggregateEmpty
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table

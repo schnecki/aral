@@ -151,7 +151,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                 (\(v' :: Bool) ->
                    overAllProxies
                      (filtered isGrenade)
-                     (\(Grenade tar wor tp cfg act agents) -> Grenade (runSettingsUpdate (NetworkSettings v') tar) (runSettingsUpdate (NetworkSettings v') wor) tp cfg act agents)
+                     (\(Grenade tar wor tp cfg act agents wel) -> Grenade (runSettingsUpdate (NetworkSettings v') tar) (runSettingsUpdate (NetworkSettings v') wor) tp cfg act agents wel)
                      ql) <$>
               getIOMWithDefault Nothing
           "alpha" -> do

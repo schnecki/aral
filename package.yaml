@@ -54,6 +54,7 @@ dependencies:
   - HUnit
   - cereal
   - cereal-text
+  - cereal-vector
   - unliftio-core
   - random
   - random-shuffle

@@ -32,6 +32,7 @@ import           Data.Singletons.Prelude.List
 import           Data.Typeable                (Typeable)
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Mutable          as VM
+import qualified Data.Vector.Serialize
 import qualified Data.Vector.Storable         as V
 import           Data.Word
 import           GHC.Generics
@@ -270,15 +271,6 @@ instance Serialize Proxy where
                   then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel
                   else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel
         _ -> error "Unknown constructor for proxy"
-
-
-instance (V.Storable a, Serialize a) => Serialize (V.Vector a) where
-  put = put . V.toList
-  get = V.fromList <$> get
-
--- instance (Serialize a) => Serialize (VB.Vector a) where
---   put = put . VB.toList
---   get = VB.fromList <$> get
 
 
 -- ^ Replay Memory
