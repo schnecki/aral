@@ -57,10 +57,10 @@ evals =
   , Name "Exp StdDev of Repl. Mean Reward" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Stats $ Sum OverPeriods (Of "reward")
   , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgRew")
-  , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , Name "Exp Mean of Repl. Mean Steps to Goal" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , Name "Repl. Mean Steps to Goal" $ Mean OverReplications $ Last (Of "avgEpisodeLength")
-  , Name "Exp StdDev of Repl. Mean Steps to Goal" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Name "Exp Mean of Repl. Mean Steps to Goal" $ Mean OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Name "Repl. Mean Steps to Goal" $ Mean OverReplications $ Last (Of "avgEpisodeLength")
+  -- , Name "Exp StdDev of Repl. Mean Steps to Goal" $ StdDev OverExperimentRepetitions $ Stats $ Mean OverReplications $ Last (Of "avgEpisodeLength")
   -- , Mean OverExperimentRepetitions $ Stats $ StdDev OverReplications $ Last (Of "avgEpisodeLength")
   ]
 
@@ -93,7 +93,7 @@ instance ExperimentDef (ARAL St Act)
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
                   [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  , StepResult "avgEpisodeLength" p eLength
+                  -- , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
@@ -101,8 +101,8 @@ instance ExperimentDef (ARAL St Act)
                   , StepResult "psiRho" p (val $ psis . _1)
                   , StepResult "psiV" p (val $ psis . _2)
                   , StepResult "psiW" p (val $ psis . _3)
-                  , StepResult "avgEpisodeLength" p eLength
-                  , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
+                  -- , StepResult "avgEpisodeLength" p eLength
+                  -- , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
                   ] -- ++
                   -- concatMap
                   --   (\s ->
@@ -236,7 +236,7 @@ experimentMode = do
   evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
-  writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
+  writeCsvMeasure databaseSetup res NoSmoothing ["reward"] -- , "avgEpisodeLength"]
 
 
 usermode :: IO ()

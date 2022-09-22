@@ -4,6 +4,7 @@ packages:
 - ../
 - ../../easy-logger
 - ../../grenade
+- ../../experimenter
 - ../../haskell-cpython
 - ../../gym-haskell
 - ../../hasktorch/hasktorch

@@ -15,6 +15,7 @@ module ML.ARAL.Step
     , nextAction
     , epsCompareWith
     , sortBy
+    , setDropoutValue
     ) where
 
 #ifdef DEBUG
@@ -331,13 +332,14 @@ maybeFlipDropout aral =
          in setDropoutValue value aral
     _ -> aral
   where
-    setDropoutValue :: Bool -> ARAL s as -> ARAL s as
-    setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) flipDropout
-      where flipDropout (Grenade tar wor tp cfg act agents wel)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
-            flipDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel) = Hasktorch tar wo tp cfg nrAct nrAg adam (flipMLPSpec mlp) wel
-            flipMLPSpec x@MLPSpec{}                                                  = x
-            flipMLPSpec x@(MLPSpecWDropoutLSTM lin act Nothing _ outAct)             = x
-            flipMLPSpec (MLPSpecWDropoutLSTM lin act (Just (_, drVal)) mLSTM outAct) = MLPSpecWDropoutLSTM lin act (Just (val, drVal)) mLSTM outAct
+
+setDropoutValue :: Bool -> ARAL s as -> ARAL s as
+setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) setDropout
+  where setDropout (Grenade tar wor tp cfg act agents wel)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
+        setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel) = Hasktorch tar wo tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel
+        setDropoutMLPSpec x@MLPSpec{}                                                  = x
+        setDropoutMLPSpec x@(MLPSpecWDropoutLSTM lin act Nothing _ outAct)             = x
+        setDropoutMLPSpec (MLPSpecWDropoutLSTM lin act (Just (_, drVal)) mLSTM outAct) = MLPSpecWDropoutLSTM lin act (Just (val, drVal)) mLSTM outAct
 
 
 #ifdef DEBUG

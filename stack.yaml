@@ -2,6 +2,7 @@ flags: {}
 packages:
 - .
 - ../grenade
+- ../experimenter
 - ../easy-logger
 - ../hasktorch/hasktorch
 - ../hasktorch/libtorch-ffi

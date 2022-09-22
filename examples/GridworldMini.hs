@@ -33,12 +33,14 @@ import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Default
 import           Data.Function            (on)
+import           Data.IORef
 import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import qualified Data.Text                as T
 import           Data.Text.Encoding       as E
+import qualified Data.Vector              as VB
 import qualified Data.Vector.Storable     as V
 import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
@@ -46,7 +48,9 @@ import           GHC.TypeLits
 import           Grenade
 import           Prelude                  hiding (Left, Right)
 import           System.IO
+import           System.IO.Unsafe
 import           System.Random
+import           Text.Printf
 
 import           Debug.Trace
 
@@ -325,21 +329,23 @@ usermode :: IO ()
 usermode = do
 
   alg <- chooseAlg mRefState
+
+  chooseRandomReward
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
 
-  askUser inverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
+  askUser inverseSt True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
-
+    cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] HasktorchRelu (Just HasktorchTanh)
@@ -374,7 +380,7 @@ goal :: St
 goal = fromIdx (goalX, goalY)
 
 -- State
-newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
+data St = St Int Int deriving (Eq, NFData, Generic, Serialize)
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
@@ -433,17 +439,21 @@ actFilter _ = error "Unexpected setup in actFilter in GridworldMini.hs"
 moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 moveRand = moveUp
 
+ioRefMaxR :: IORef Double
+ioRefMaxR = unsafePerformIO $ newIORef 8
+{-# NOINLINE ioRefMaxR  #-}
+
 
 goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 goalState f tp st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
-  r <- randomRIO (0, 8 :: Double)
+  maxRand <- readIORef ioRefMaxR
+  r <- if maxRand <= 0 then return 0 else randomRIO (0, maxRand)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
-      | x' == goalX && y' == goalY ->
-                                   return (Reward 10, fromIdx (x, y), True)
+      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), True)
                                    -- return (Reward 10, fromIdx (x, y), False)
     _ -> stepRew <$> f tp st
 
@@ -476,8 +486,9 @@ moveRight _ st
 -- Conversion from/to index for state
 
 fromIdx :: (Int, Int) -> St
-fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
-  where base = replicate 5 [0,0,0,0,0]
+fromIdx (m,n) = St m n
+  --  $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
+  -- where base = replicate 5 [0,0,0,0,0]
 
 
 allStateInputs :: M.Map NetInputWoAction St
@@ -487,7 +498,41 @@ mInverseSt :: NetInputWoAction -> Maybe (Either String St)
 mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
-getCurrentIdx (St st) =
-  second (fst . head . filter ((==1) . snd)) $
-  head $ filter ((1 `elem`) . map snd . snd) $
-  zip [0..] $ map (zip [0..]) st
+getCurrentIdx (St x y ) = (x, y)
+  -- second (fst . head . filter ((==1) . snd)) $
+  -- head $ filter ((1 `elem`) . map snd . snd) $
+  -- zip [0..] $ map (zip [0..]) st
+
+
+drawGrid :: ARAL St Act -> IO ()
+drawGrid aral = do
+  putStr "\n    "
+  mapM_ (putStr . printf "%2d ") ([0 .. maxY] :: [Int])
+  putStr "\n"
+  mapM_
+    (\x -> do
+       putStr (printf "%2d: " x)
+       mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
+       putStr "\n")
+    ([0 .. maxX] :: [Int])
+
+
+drawField :: ARAL St Act -> St -> IO ()
+drawField aral s = do
+  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  putStr $
+    case acts of
+      [0] -> " * "
+      [1] -> " ^ "
+      [2] -> " v "
+      [3] -> " < "
+      [4] -> " > "
+      _   -> error "unexpected action"
+
+
+chooseRandomReward :: IO ()
+chooseRandomReward = do
+  putStr "Enter random reward per step (Default: 0): "
+  hFlush stdout
+  nr <- getIOWithDefault 0
+  writeIORef ioRefMaxR nr

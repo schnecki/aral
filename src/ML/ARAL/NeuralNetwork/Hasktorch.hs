@@ -43,12 +43,16 @@ data HasktorchActivation
   = HasktorchRelu
   | HasktorchLeakyRelu (Maybe Float)
   | HasktorchTanh
+  | HasktorchSigmoid
+  | HasktorchLogSigmoid
   deriving (Show, Eq, Generic, Serialize, NFData)
 
 mkHasktorchActivation :: HasktorchActivation -> Torch.Tensor -> Torch.Tensor
 mkHasktorchActivation HasktorchRelu               = Torch.relu
 mkHasktorchActivation (HasktorchLeakyRelu mAlpha) = Torch.leakyRelu (fromMaybe 0.02 mAlpha)
 mkHasktorchActivation HasktorchTanh               = Torch.tanh
+mkHasktorchActivation HasktorchSigmoid            = Torch.sigmoid
+mkHasktorchActivation HasktorchLogSigmoid         = Torch.logSigmoid
 
 data MLPSpec
   = MLPSpec
@@ -60,7 +64,7 @@ data MLPSpec
       { hasktorchFeatureCounts      :: [Integer]
       , hasktorchHiddenActivation   :: HasktorchActivation
       , hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Dropout later after every hidden layer with given probability, e.g. 0.5
-      , hasktorchLSTM               :: Maybe (Int, Int)      -- After first FF layer. Number of layers and hidden nr.
+      , hasktorchLSTM               :: Maybe (Int, Int)     -- After first FF layer. Number of layers and hidden nr.
       , hasktorchOutputActivation   :: Maybe HasktorchActivation
       }
   deriving (Show, Eq, Generic, Serialize, NFData)

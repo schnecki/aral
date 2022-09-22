@@ -326,7 +326,7 @@ main = do
   where
     cmds = []
     usage = []
-    qlCmds = [("f", "flip rendering", s %~ (\(St r xs) -> St (not r) xs))]
+    qlCmds = [("f", "flip rendering", return . (s %~ (\(St r xs) -> St (not r) xs)))]
 
 
  -- | ARAL Parameters.

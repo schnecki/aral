@@ -6,6 +6,7 @@ module ML.ARAL.Action.Ops
   , ActionChoice
   , WorkerActionChoice
   , nextAction
+  , nextActionFor
   , epsCompareWith
   ) where
 

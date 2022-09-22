@@ -40,7 +40,7 @@ askUser ::
   -> Bool
   -> [(String, String)]
   -> [(String, [ActionIndex])]
-  -> [(String, String, ARAL s as -> ARAL s as)]
+  -> [(String, String, ARAL s as -> IO (ARAL s as))]
   -> ARAL s as
   -> IO ()
 askUser mInverse showHelp addUsage cmds qlCmds ql = do
@@ -48,6 +48,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         sortBy (compare `on` fst) $
         [ ("v", "Print V+W tables")
         , ("p", "Print everything")
+        , ("h", "Print head")
         , ("i", "Print info head only")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
@@ -60,10 +61,10 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         map (\(c, h, _) -> (c, h)) qlCmds
   putStrLn ""
   when showHelp $ putStrLn $ unlines $ map (\(c, h) -> c ++ ": " ++ h) usage
-  putStr "Enter value (h for help): " >> hFlush stdout
+  putStr "Enter value ('help' for help): " >> hFlush stdout
   c <- getLine
   case c of
-    "h" -> askUser mInverse True addUsage cmds qlCmds ql
+    "help" -> askUser mInverse True addUsage cmds qlCmds ql
     "?" -> askUser mInverse True addUsage cmds qlCmds ql
     "s" -> do
       let path = "save.dat"
@@ -119,6 +120,9 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
+      askUser mInverse False addUsage cmds qlCmds ql
+    "h" -> do
+      prettyARALHead True mInverse ql >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds qlCmds ql
     "i" -> do
       prettyARALHead True mInverse ql >>= print >> hFlush stdout
@@ -185,7 +189,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                 (step ql >>= \x -> do
                    let ppQl = setAllProxies (proxyNNConfig . prettyPrintElems) [(ql ^. featureExtractor) (ql ^. s)] x
                    liftIO $ prettyARALTables mInverse True False False ppQl >>= print >> askUser mInverse False addUsage cmds qlCmds x)
-            Just (_, f) -> askUser mInverse False addUsage cmds qlCmds (f ql)
+            Just (_, f) -> f ql >>= askUser mInverse False addUsage cmds qlCmds
         Just (_, cmd) ->
           liftIO $ stepExecute ql (VB.map (False,) (VB.fromList cmd), []) >>= askUser mInverse False addUsage cmds qlCmds
 
@@ -220,8 +224,9 @@ chooseAlg mRefState = do
     , "2: AlgDQN 0.99 Exact"
     , "3: AlgRLearning"
     , "4: AlgARAL 0.9 0.99 ByStateValues"
+    , "5: Q-Learning with gamma=0.99"
     ]
-  putStrLn "Enter number [0]: "
+  putStr "Enter number [0]: "
   hFlush stdout
   nr <- getIOWithDefault 0
   return $
@@ -230,4 +235,5 @@ chooseAlg mRefState = do
       2 -> AlgDQN 0.99 Exact
       3 -> AlgRLearning
       4 -> AlgARAL 0.9 0.99 ByStateValues
+      5 -> AlgDQN 0.99 Exact
       _ -> AlgARAL 0.8 1.0 ByStateValues

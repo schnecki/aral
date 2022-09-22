@@ -11,13 +11,12 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.ARAL                  as B
-import           SolveLp
-
 import           Experimenter
-
-import           Data.Default
 import           Helper
+import           ML.ARAL                  as B
+import           ML.ARAL.Action.Ops
+import           ML.ARAL.Exploration
+import           SolveLp
 
 import           Control.Arrow            (first, second, (***))
 import           Control.DeepSeq          (NFData)
@@ -27,12 +26,14 @@ import           Control.Monad            (foldM, liftM, unless, when)
 import           Control.Monad.IO.Class   (liftIO)
 import           Data.Default
 import           Data.Function            (on)
+import           Data.IORef
 import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
 import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
 import qualified Data.Text                as T
 import           Data.Text.Encoding       as E
+import qualified Data.Vector              as VB
 import qualified Data.Vector.Storable     as V
 import           GHC.Generics
 import           GHC.Int                  (Int32, Int64)
@@ -40,15 +41,17 @@ import           GHC.TypeLits
 import           Grenade
 import           Prelude                  hiding (Left, Right)
 import           System.IO
+import           System.IO.Unsafe
 import           System.Random
+import           Text.Printf
 
 import           Debug.Trace
 
 maxX, maxY, goalX, goalY :: Int
-maxX = 19                        -- [0..maxX]
-maxY = 19                        -- [0..maxY]
-goalX = 5
-goalY = 1
+maxX = 10 -- 19                        -- [0..maxX]
+maxY = 10 -- 19                       -- [0..maxY]
+goalX = 1
+goalY = 5
 
 
 expSetup :: ARAL St Act -> ExperimentSetting
@@ -230,7 +233,7 @@ nnConfig =
 
 borlSettings :: Settings
 borlSettings = def
-  { _workersMinExploration = [0.3, 0.2, 0.1]
+  { _workersMinExploration = [0.1, 0.2, 0.3]
   , _nStep = 2
   , _independentAgents = 1
   }
@@ -245,7 +248,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 0.25
+    , _epsilon             = 0.01
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -317,22 +320,22 @@ mRefState = Nothing
 
 usermode :: IO ()
 usermode = do
-
   alg <- chooseAlg mRefState
+  chooseRandomReward
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
-
+  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  let inverseSt | isAnn rl = Just mInverseSt
-                | otherwise = Nothing
-
-  askUser inverseSt True usage cmds [] rl -- maybe increase learning by setting estimate of rho
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  let inverseSt
+        | isAnn rl = Just mInverseSt
+        | otherwise = Nothing
+  askUser inverseSt True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
+    cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
 
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
@@ -368,7 +371,7 @@ goal :: St
 goal = fromIdx (goalX, goalY)
 
 -- State
-newtype St = St [[Integer]] deriving (Eq, NFData, Generic, Serialize)
+data St = St Int Int deriving (Eq, NFData, Generic, Serialize)
 
 instance Ord St where
   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
@@ -420,11 +423,10 @@ replaceIndex nr x xs = V.take nr xs V.++ (x `V.cons` V.drop (nr+1) xs)
 actFilter :: St -> [V.Vector Bool]
 actFilter st = addMembran $ actFilterWoMembran st
   where addMembran xs
-          | st `elem` map (\x -> fromIdx (x,7)) [3..11] = map (replaceIndex 1 False) xs
+          | st `elem` map (\y -> fromIdx (7, y)) [3..11] = map (replaceIndex 1 False) xs
           | otherwise = xs
-
         actFilterWoMembran :: St -> [V.Vector Bool]
-        actFilterWoMembran st
+        actFilterWoMembran st@(St x y)
           | st == fromIdx (goalX, goalY) = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
         actFilterWoMembran _
           | borlSettings ^. independentAgents == 1 = [False `V.cons` V.replicate (length actions - 1) True]
@@ -441,7 +443,8 @@ goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType ->
 goalState f tp st = do
   x <- randomRIO (0, maxX :: Int)
   y <- randomRIO (0, maxY :: Int)
-  r <- randomRIO (0, 8 :: Double)
+  maxRand <- readIORef ioRefMaxR
+  r <- if maxRand <= 0 then return 0 else randomRIO (0, maxRand)
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
@@ -479,8 +482,8 @@ moveRight _ st
 -- Conversion from/to index for state
 
 fromIdx :: (Int, Int) -> St
-fromIdx (m,n) = St $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
-  where base = replicate 5 [0,0,0,0,0]
+fromIdx (m,n) = St m n --  $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
+  where base = replicate (1 + maxX) (replicate (1 + maxY) 0)
 
 
 allStateInputs :: M.Map NetInputWoAction St
@@ -489,8 +492,46 @@ allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..m
 mInverseSt :: NetInputWoAction -> Maybe (Either String St)
 mInverseSt xs = return <$> M.lookup xs allStateInputs
 
-getCurrentIdx :: St -> (Int,Int)
-getCurrentIdx (St st) =
-  second (fst . head . filter ((==1) . snd)) $
-  head $ filter ((1 `elem`) . map snd . snd) $
-  zip [0..] $ map (zip [0..]) st
+getCurrentIdx :: St -> (Int, Int)
+getCurrentIdx (St x y) = (x, y)
+  -- second (fst . head . filter ((==1) . snd)) $
+  -- head $ filter ((1 `elem`) . map snd . snd) $
+  -- zip [0..] $ map (zip [0..]) st
+
+
+drawGrid :: ARAL St Act -> IO ()
+drawGrid aral = do
+  putStr "\n    "
+  mapM_ (putStr . printf "%2d ") ([0 .. maxY] :: [Int])
+  putStr "\n"
+  mapM_
+    (\x -> do
+       putStr (printf "%2d: " x)
+       mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
+       putStr "\n")
+    ([0 .. maxX] :: [Int])
+
+
+drawField :: ARAL St Act -> St -> IO ()
+drawField aral s@(St x y) = do
+  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  putStr $
+    case acts of
+      [0] -> " * "
+      [1] -> " ^ "
+      [2] -> " v "
+      [3] -> " < "
+      [4] -> " > "
+      _   -> error "unexpected action"
+
+
+chooseRandomReward :: IO ()
+chooseRandomReward = do
+  putStr "Enter random reward per step (Default: 0): "
+  hFlush stdout
+  nr <- getIOWithDefault 0
+  writeIORef ioRefMaxR nr
+
+ioRefMaxR :: IORef Double
+ioRefMaxR = unsafePerformIO $ newIORef 8
+{-# NOINLINE ioRefMaxR  #-}
