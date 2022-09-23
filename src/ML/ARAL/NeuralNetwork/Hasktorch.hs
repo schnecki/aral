@@ -6,11 +6,13 @@ module ML.ARAL.NeuralNetwork.Hasktorch
     ( MLP (..)
     , MLPSpec (..)
     , HasktorchActivation (..)
+    , HasktorchActivationFun (..)
     , runHasktorch
     , trainHasktorch
     ) where
 
 import           Control.Applicative                         ((<|>))
+import           Control.Arrow                               (second)
 import           Control.DeepSeq
 import           Control.Monad                               (when)
 import           Data.List                                   (foldl', genericLength, intersperse)
@@ -19,6 +21,7 @@ import           Data.Serialize
 import qualified Data.Vector.Storable                        as V
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
+import           Text.Printf
 import qualified Torch                                       as Torch hiding (dropout)
 import qualified Torch.Autograd                              as Torch (toDependent)
 import qualified Torch.Functional                            as Torch hiding (dropout)
@@ -39,15 +42,28 @@ import           ML.ARAL.Types
 import           Debug.Trace
 
 
-data HasktorchActivation
+data HasktorchActivation = HasktorchActivation HasktorchActivationFun [(Int, HasktorchActivationFun)]
+  deriving (Show, Eq, Generic, Serialize, NFData)
+
+
+data HasktorchActivationFun
   = HasktorchRelu
   | HasktorchLeakyRelu (Maybe Float)
   | HasktorchTanh
   | HasktorchSigmoid
   | HasktorchLogSigmoid
+  | HasktorchId
   deriving (Show, Eq, Generic, Serialize, NFData)
 
-mkHasktorchActivation :: HasktorchActivation -> Torch.Tensor -> Torch.Tensor
+mkHasktorchDefActivation :: HasktorchActivation -> Torch.Tensor -> Torch.Tensor
+mkHasktorchDefActivation (HasktorchActivation def spec) = mkHasktorchActivation def
+
+mkHasktorchSpecActivation :: HasktorchActivation -> [(Int, Torch.Tensor -> Torch.Tensor)]
+mkHasktorchSpecActivation (HasktorchActivation _ spec) = map (second mkHasktorchActivation) spec
+
+
+mkHasktorchActivation :: HasktorchActivationFun -> Torch.Tensor -> Torch.Tensor
+mkHasktorchActivation HasktorchId                 = id
 mkHasktorchActivation HasktorchRelu               = Torch.relu
 mkHasktorchActivation (HasktorchLeakyRelu mAlpha) = Torch.leakyRelu (fromMaybe 0.02 mAlpha)
 mkHasktorchActivation HasktorchTanh               = Torch.tanh
@@ -58,14 +74,15 @@ data MLPSpec
   = MLPSpec
       { hasktorchFeatureCounts    :: [Integer]
       , hasktorchHiddenActivation :: HasktorchActivation
-      , hasktorchOutputActivation :: Maybe HasktorchActivation
+      , hasktorchOutputActivation :: Maybe HasktorchActivationFun
       }
   | MLPSpecWDropoutLSTM
       { hasktorchFeatureCounts      :: [Integer]
       , hasktorchHiddenActivation   :: HasktorchActivation
-      , hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Dropout later after every hidden layer with given probability, e.g. 0.5
+      , hasktorchInputDropoutAlpha  :: Maybe (Bool, Double) -- Dropout layer for input layer with given probability, e.g. 0.2
+      , hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Dropout layer after every hidden layer with given probability, e.g. 0.5
       , hasktorchLSTM               :: Maybe (Int, Int)     -- After first FF layer. Number of layers and hidden nr.
-      , hasktorchOutputActivation   :: Maybe HasktorchActivation
+      , hasktorchOutputActivation   :: Maybe HasktorchActivationFun
       }
   deriving (Show, Eq, Generic, Serialize, NFData)
 
@@ -91,30 +108,78 @@ data MLP_LSTM =
 
 data MLP =
   MLP
-    { mlpLayers             :: [Torch.Linear]
-    , mlpHiddenActivation   :: Torch.Tensor -> Torch.Tensor
-    , mlpHiddenDropoutAlpha :: Maybe (Bool, Double) -- Nothing: no dropout, Just: (active, alpha)
-    , mlpLSTM               :: Maybe MLP_LSTM -- Nothing: no LSTM, Just: numLayers, h0, c0, LSTM weights and biases
-    , mlpOutputActivation   :: Maybe (Torch.Tensor -> Torch.Tensor)
+    { mlpLayers                   :: [Torch.Linear]
+    , mlpHiddenActivation         :: Torch.Tensor -> Torch.Tensor -- Default activation
+    , mlpSpecificHiddenActivation :: [(Int, Torch.Tensor -> Torch.Tensor)] -- possible specific activations at specified index
+    , mlpInputDropoutAlpha        :: Maybe (Bool, Double) -- Nothing: no dropout, Just: (active, alpha)
+    , mlpHiddenDropoutAlpha       :: Maybe (Bool, Double) -- Nothing: no dropout, Just: (active, alpha)
+    , mlpLSTM                     :: Maybe MLP_LSTM -- Nothing: no LSTM, Just: numLayers, h0, c0, LSTM weights and biases
+    , mlpOutputActivation         :: Maybe (Torch.Tensor -> Torch.Tensor)
     }
   deriving (Generic, Torch.Parameterized)
 
 instance Show MLP where
-  show (MLP layers _ mDr mLSTM _)  = show layers <> maybe "" (const " with dropout") mDr <> maybe "" (const " with LSTM") mLSTM
+  show (MLP layers _ _ mDrI mDr mLSTM _) =
+    show layers <>
+    maybe "" (\(_, x) -> " w/ Inp Dropout(" ++ printf "%.3f" x ++ ")") mDrI <> maybe "" (\(_, x) -> " w/ Dropout" ++ printf "%.3f" x) mDr <> maybe "" (const " w/ LSTM") mLSTM
+
+replaceIdx :: [a] -> (Int, a) -> [a]
+replaceIdx xs (idx, x)
+  | idx < length xs = take idx xs ++ (x : drop (idx + 1) xs)
+  | otherwise = xs
+
+mergeLayers :: [a] -> [a] -> [a] -> [a]
+mergeLayers (l:ls) (h:hs) (d:ds) = l : h : d : mergeLayers ls hs ds
+mergeLayers (l:ls) (h:hs) []     = l : h : mergeLayers ls hs []
+mergeLayers [] [] []             = []
+mergeLayers ls hs ds             = error $ "mergeLayers: Unexpected number of layers: " ++ show (length ls, length hs, length ds)
 
 hasktorchModel :: Bool -> MLP -> Torch.Tensor -> (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
-hasktorchModel _ (MLP layers hiddenAct mDropout Nothing outputAct) input =
-  (, Nothing) $ foldl' revApply input $ (++ maybe [] pure outputAct) $ intersperse hiddenLayer $ map Torch.linear layers
+hasktorchModel _ (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct) input =
+  (, Nothing) $
+  foldl' revApply input $ inputDropoutLayer ++ mergeLayers (map Torch.linear inpAndHiddenLayers) hiddenActs hiddenDropout ++ [Torch.linear outputLayer] ++ maybe [] pure outputAct
   where
-    hiddenLayer = case mDropout of
-      (Just (active, dropoutAlpha)) -> ((\t -> Torch.dropout t dropoutAlpha active) . hiddenAct)
-      Nothing                       -> hiddenAct
+    inpAndHiddenLayers = init layers
+    outputLayer = last layers
+    inputDropoutLayer :: [Torch.Tensor -> Torch.Tensor]
+    inputDropoutLayer =
+      case mDropoutInput of
+        (Just (active, dropoutAlpha)) -> [(\t -> Torch.dropout t dropoutAlpha active)]
+        Nothing                       -> []
+    hiddenActs :: [Torch.Tensor -> Torch.Tensor]
+    hiddenActs
+      | null hiddenActSpec = replicate (length inpAndHiddenLayers) hiddenActDef
+      | otherwise = foldl' replaceIdx (replicate (length inpAndHiddenLayers) hiddenActDef) hiddenActSpec
+    hiddenDropout :: [Torch.Tensor -> Torch.Tensor]
+    hiddenDropout =
+      case mDropoutHidden of
+        (Just (active, dropoutAlpha)) -> replicate (length inpAndHiddenLayers) (\t -> Torch.dropout t dropoutAlpha active)
+        Nothing                       -> []
+    revApply :: Torch.Tensor -> (Torch.Tensor -> Torch.Tensor) -> Torch.Tensor
     revApply x f = f x
-hasktorchModel train (MLP layers hiddenAct mDropout (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct) input =
+hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct) input =
   runLstmAndRest $ revApply input layer1
   where
+    inpAndHiddenLayers = init layers
+    outputLayer = last layers
+    inputDropoutLayer :: [Torch.Tensor -> Torch.Tensor]
+    inputDropoutLayer =
+      case mDropoutInput of
+        (Just (active, dropoutAlpha)) -> [(\t -> Torch.dropout t dropoutAlpha active)]
+        Nothing                       -> []
+    hiddenActs :: [Torch.Tensor -> Torch.Tensor]
+    hiddenActs
+      | null hiddenActSpec = replicate (length inpAndHiddenLayers) hiddenActDef
+      | otherwise = foldl' replaceIdx (replicate (length inpAndHiddenLayers) hiddenActDef) hiddenActSpec
+    hiddenDropout :: [Torch.Tensor -> Torch.Tensor]
+    hiddenDropout =
+      case mDropoutHidden of
+        (Just (active, dropoutAlpha)) -> replicate (length inpAndHiddenLayers) (\t -> Torch.dropout t dropoutAlpha active)
+        Nothing                       -> []
+    revApply :: Torch.Tensor -> (Torch.Tensor -> Torch.Tensor) -> Torch.Tensor
+    revApply x f = f x
     dropout = 0 :: Double
-    (layer1:layerRest) = (++ maybe [] pure outputAct) $ intersperse hiddenLayer $ map Torch.linear layers
+    (layer1:layerRest) = inputDropoutLayer ++ mergeLayers (map Torch.linear inpAndHiddenLayers) hiddenActs hiddenDropout ++ [Torch.linear outputLayer] ++ maybe [] pure outputAct
     toDep = Torch.toDependent
     runLstmAndRest x = trace ("dim: " ++ show (Torch.dim x)) $
           -- (toDep inpW) (toDep hiddenW) (toDep inpBias) (toDep hiddenBias) (h0, c0) x
@@ -127,11 +192,6 @@ hasktorchModel train (MLP layers hiddenAct mDropout (Just (MLP_LSTM numLayers nr
            -- cx = torch.randn(numLayers, miniBatch, hiddenSize, device=device)
            -- lstm = torch.nn.LSTM(inputSize, hiddenSize, numLayers).to(device)
        in (foldl' revApply out layerRest, Just (hn, cn))
-    hiddenLayer =
-      case mDropout of
-        (Just (active, dropoutAlpha)) -> ((\t -> Torch.dropout t dropoutAlpha active) . hiddenAct)
-        Nothing                       -> hiddenAct
-    revApply x f = f x
 
 randLSTMCell :: Int -> Int -> IO LSTM.LSTMCell
 randLSTMCell inputSize hiddenSize = do
@@ -153,8 +213,8 @@ randLSTMCell inputSize hiddenSize = do
 
 
 instance Torch.Randomizable MLPSpec MLP where
-  sample (MLPSpec featCounts hiddenActivation outputActivation) = Torch.sample (MLPSpecWDropoutLSTM featCounts hiddenActivation Nothing Nothing outputActivation)
-  sample (MLPSpecWDropoutLSTM featCounts hiddenActivation mDropout mLSTM outputActivation) = do
+  sample (MLPSpec featCounts activations outputActivation) = Torch.sample (MLPSpecWDropoutLSTM featCounts activations Nothing Nothing Nothing outputActivation)
+  sample (MLPSpecWDropoutLSTM featCounts activations mDropoutInput mDropoutHidden mLSTM outputActivation) = do
     let layerSizes = mkLayerSizes (map fromInteger featCounts)
     linears <- mapM sampleDouble layerSizes
     when (length featCounts < 2) $ error "Need at least 1 layer (2 inputs) for ANN"
@@ -175,8 +235,10 @@ instance Torch.Randomizable MLPSpec MLP where
     return $
       MLP
         { mlpLayers = linears
-        , mlpHiddenActivation = mkHasktorchActivation hiddenActivation
-        , mlpHiddenDropoutAlpha = mDropout
+        , mlpHiddenActivation = mkHasktorchDefActivation activations
+        , mlpSpecificHiddenActivation = mkHasktorchSpecActivation activations
+        , mlpInputDropoutAlpha = mDropoutInput
+        , mlpHiddenDropoutAlpha = mDropoutHidden
         , mlpLSTM = mLSTMLayer
         , mlpOutputActivation = mkHasktorchActivation <$> outputActivation
         }
