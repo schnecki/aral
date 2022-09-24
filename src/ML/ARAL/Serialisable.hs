@@ -223,6 +223,11 @@ instance Serialize Torch.Adam where
   put (Torch.Adam b1 b2 m1 m2 iter) = put b1 >> put b2 >> put m1 >> put m2 >> put iter
   get = Torch.Adam <$> get <*> get <*> get <*> get <*> get
 
+instance Serialize AdamW where
+  put (AdamW b1 b2 m1 m2 iter l2 wD) = put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put l2 >> put wD
+  get = AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> get
+
+
 instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts

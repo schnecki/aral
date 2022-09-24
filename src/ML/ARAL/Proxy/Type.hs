@@ -61,6 +61,7 @@ import qualified Torch.Vision                                as Torch.V
 import           Unsafe.Coerce                               (unsafeCoerce)
 
 import           ML.ARAL.NeuralNetwork
+import           ML.ARAL.NeuralNetwork.AdamW
 import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.Types                               as T
 
@@ -135,7 +136,7 @@ data Proxy
       , _proxyNNConfig    :: !NNConfig
       , _proxyNrActions   :: !Int
       , _proxyNrAgents    :: !Int
-      , _proxyHTAdam      :: !Torch.Adam
+      , _proxyHTAdam      :: !AdamW
       , _proxyHTModelSpec :: !MLPSpec
       , _proxyHTWelford   :: !(WelfordExistingAggregate StateFeatures)
       }

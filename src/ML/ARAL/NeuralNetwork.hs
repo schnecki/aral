@@ -7,6 +7,7 @@ module ML.ARAL.NeuralNetwork
   ( module NN
   ) where
 
+import           ML.ARAL.NeuralNetwork.AdamW        as NN
 import           ML.ARAL.NeuralNetwork.Conversion   as NN
 import           ML.ARAL.NeuralNetwork.Grenade      as NN
 import           ML.ARAL.NeuralNetwork.Hasktorch    as NN
