@@ -66,8 +66,8 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "gridworld-mini"
     , _experimentInfoParameters = [isNN]
-    , _experimentRepetitions = 30
-    , _preparationSteps = 1000000
+    , _experimentRepetitions = 1
+    , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
     , _evaluationReplications = 1
@@ -348,7 +348,7 @@ usermode = do
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
-modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] HasktorchRelu (Just HasktorchTanh)
+modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
   where
     lenOut = lenActs * cols
 
@@ -453,8 +453,8 @@ goalState f tp st = do
   let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
   case getCurrentIdx st of
     (x', y')
-      | x' == goalX && y' == goalY -> return (Reward 10, fromIdx (x, y), True)
-                                   -- return (Reward 10, fromIdx (x, y), False)
+      | x' == goalX && y' == goalY -> -- return (Reward 10, fromIdx (x, y), True)
+                                   return (Reward 10, fromIdx (x, y), False)
     _ -> stepRew <$> f tp st
 
 
@@ -532,7 +532,7 @@ drawField aral s = do
 
 chooseRandomReward :: IO ()
 chooseRandomReward = do
-  putStr "Enter random reward per step (Default: 0): "
+  putStr "Enter x for random reward in U(0, x) per step (Default: 0): "
   hFlush stdout
   nr <- getIOWithDefault 0
   writeIORef ioRefMaxR nr

@@ -113,10 +113,14 @@ data MLP =
     , mlpSpecificHiddenActivation :: [(Int, Torch.Tensor -> Torch.Tensor)] -- possible specific activations at specified index
     , mlpInputDropoutAlpha        :: Maybe (Bool, Double) -- Nothing: no dropout, Just: (active, alpha)
     , mlpHiddenDropoutAlpha       :: Maybe (Bool, Double) -- Nothing: no dropout, Just: (active, alpha)
+    -- , mlpBatchNorm                :: [Torch.BatchNorm]    -- Batchnorm layers if they exist
     , mlpLSTM                     :: Maybe MLP_LSTM -- Nothing: no LSTM, Just: numLayers, h0, c0, LSTM weights and biases
     , mlpOutputActivation         :: Maybe (Torch.Tensor -> Torch.Tensor)
     }
   deriving (Generic, Torch.Parameterized)
+
+-- instance Torch.Scalar Torch.BatchNorm
+
 
 instance Show MLP where
   show (MLP layers _ _ mDrI mDr mLSTM _) =

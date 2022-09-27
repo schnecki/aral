@@ -223,7 +223,8 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter2 user=experimenter password= port=5432" 10
   ---
-  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -255,13 +256,13 @@ usermode = do
 
   -- Approximate all fucntions using a single neural network
   rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay borlSettings (Just initVals)
 
   -- Use an own neural network for every function to approximate
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   let invSt | isAnn rl = mInverseSt
             | otherwise = Nothing

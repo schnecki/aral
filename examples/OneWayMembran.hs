@@ -339,7 +339,7 @@ usermode = do
 
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
-modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] HasktorchRelu (Just HasktorchTanh)
+modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
   where
     lenOut = lenActs * cols
 

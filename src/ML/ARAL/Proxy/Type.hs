@@ -10,7 +10,7 @@
 
 module ML.ARAL.Proxy.Type
   ( ProxyType (..)
-  , Proxy (Scalar, Table, Grenade, Hasktorch, CombinedProxy)
+  , Proxy (Scalar, Table, Grenade, Hasktorch, CombinedProxy, RegressionProxy)
   , prettyProxyType
   , proxyScalar
   , proxyTable
@@ -63,6 +63,7 @@ import           Unsafe.Coerce                               (unsafeCoerce)
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.AdamW
 import           ML.ARAL.NeuralNetwork.Hasktorch
+import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Types                               as T
 
 
@@ -127,7 +128,7 @@ data Proxy
   | CombinedProxy
       { _proxySub            :: !Proxy -- ^ The actual proxy holding all combined values.
       , _proxyOutCol         :: !Int -- ^ Index of data
-      , _proxyExpectedOutput :: ![[((StateFeatures, AgentActionIndices), Value)]] -- ^ List of batches of list of n-step results. Used to save the data for learning.
+      , _proxyExpectedOutput :: ![[((StateFeatures, AgentActionIndices), Value)]] -- ^ List of batches of list of n-step results.g Used to save the data for learning.
       }
   | Hasktorch
       { _proxyHTTarget    :: !MLP
@@ -140,7 +141,11 @@ data Proxy
       , _proxyHTModelSpec :: !MLPSpec
       , _proxyHTWelford   :: !(WelfordExistingAggregate StateFeatures)
       }
+   | RegressionProxy
+     { _proxyRegressionNode :: !(M.Map Int RegressionNode) -- Action index, Reg model
 
+
+     }
 proxyScalar :: Traversal' Proxy (V.Vector Double)
 proxyScalar f (Scalar x nrAs) = flip Scalar nrAs <$> f x
 proxyScalar _ p               = pure p

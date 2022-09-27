@@ -59,6 +59,7 @@ import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Proxy.Proxies
+import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -281,6 +282,17 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     m' = foldl' (\m' ((st, as), AgentValue vs) -> update m' st as vs) m (concat xs)
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
+insertProxyMany _ _ _ !xs (RegressionProxy nodes) =
+  return $ RegressionProxy $ M.map trainRegressionNode (foldl' makeObs nodes (concat xs))
+  where
+    makeObs :: M.Map Int RegressionNode -> ((StateFeatures, AgentActionIndices), Value) -> M.Map Int RegressionNode
+    makeObs ns ((inps, aId), AgentValue y)
+      | VB.length aId > 1 = error "insertProxyMany: not yet implemented aId"
+      | otherwise = M.update (Just . addGroundTruthValue obs) (aId VB.! 0) ns
+      where obs
+              | V.length y  > 1 = error "insertProxyMany: not yet implemented for v>1"
+              | otherwise = Observation (VB.convert inps) (y V.! 0)
+
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
   | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
   | otherwise = return px
@@ -434,6 +446,7 @@ trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (program
 lookupProxyAgent :: (MonadIO m) => Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupProxyAgent _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
 lookupProxyAgent _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
+lookupProxyAgent _ _ agNr (k, a) (RegressionProxy m) = return $ applyRegrssionNode (fromMaybe (error $ "no regression node found for: " ++ show a) $ M.lookup a m) (VB.convert k)
 lookupProxyAgent _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
   where
     agents = px ^?! proxyNrAgents

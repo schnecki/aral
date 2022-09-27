@@ -68,11 +68,14 @@ module ML.ARAL.Type
   , mkUnichainTabular
   , mkUnichainTabularAs
   , mkMultichainTabular
+  -- ** Regression
+  , mkUnichainRegressionAs
   -- ** Hasktorch
   , mkUnichainHasktorch
   , mkUnichainHasktorchAs
   -- ** Grenade
   , mkUnichainGrenade
+  , mkUnichainGrenadeAs
   , mkUnichainGrenadeCombinedNet
   , mkMultichainGrenade
   -- ** Scaling
@@ -90,6 +93,7 @@ import           Control.Monad                               (join, replicateM)
 import           Control.Monad.IO.Class                      (liftIO)
 import           Data.Default                                (def)
 import           Data.List                                   (foldl', genericLength, zipWith3)
+import qualified Data.Map.Strict                             as M
 import           Data.Maybe                                  (catMaybes, fromMaybe)
 import qualified Data.Proxy                                  as Type
 import           Data.Serialize
@@ -116,6 +120,7 @@ import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
+import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
@@ -345,6 +350,66 @@ mkUnichainTabularAs as alg initialStateFun ftExt asFun asFilter params decayFun 
     defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
     agents = settings ^. independentAgents
 
+mkUnichainRegressionAs ::
+     forall s as. (Eq as, Ord as, NFData as)
+  => [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
+  $(logPrintDebugText) "Creating tabular unichain ARAL"
+  st <- initialStateFun MainAgent
+  let proxies' =
+        Proxies
+          (Scalar (V.replicate agents defRhoMin) (length as))
+          (Scalar (V.replicate agents defRho) (length as))
+          (tabSA 0)
+          (tabSA defV)
+          (tabSA 0)
+          (tabSA defW)
+          (tabSA defR0)
+          (tabSA defR1)
+          Nothing
+  workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+  return $
+    ARAL
+      (VB.fromList as)
+      asFun
+      asFilter
+      st
+      workers'
+      ftExt
+      0
+      (0, 0)
+      params
+      decayFun
+      settings
+      mempty
+      (convertAlgorithm ftExt alg)
+      Maximise
+      defRhoMin
+      mempty
+      mempty
+      (toValue agents 0, toValue agents 0, toValue agents 0)
+      proxies'
+  where
+    tabSA def = RegressionProxy (M.fromList $ map (\a -> (a, RegressionNode M.empty 0.1 100 VB.empty)) [0.. length as])
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
+    defRho = defaultRho (fromMaybe defInitValues initVals)
+    defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)
+    defW = V.replicate agents $ defaultW (fromMaybe defInitValues initVals)
+    defR0 = V.replicate agents $ defaultR0 (fromMaybe defInitValues initVals)
+    defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
+    agents = settings ^. independentAgents
+
+
 mkMultichainTabular ::
      forall s as. (Bounded as, Enum as, Eq as, Ord as, NFData as) =>
      Algorithm s
@@ -510,25 +575,42 @@ mkUnichainGrenade ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainGrenade alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig settings initValues = do
+mkUnichainGrenade = mkUnichainGrenadeAs ([minBound .. maxBound] :: [Action as])
+
+mkUnichainGrenadeAs ::
+  forall s as . (Eq as, NFData as, Ord as, Bounded as, Enum as, NFData s) =>
+     [as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFun
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainGrenadeAs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilder nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Grenade"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
-      rows = genericLength ([minBound .. maxBound] :: [as]) * fromIntegral (settings ^. independentAgents)
+      rows = genericLength as * fromIntegral (settings ^. independentAgents)
       netFun cols = modelBuilder feats (rows, cols)
   specNet <- netFun 1
   fmap (checkNetworkOutput False) $ case specNet of
-    SpecConcreteNetwork1D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
     _ -> error "ARAL currently requieres a 1D input and either 1D, 2D or 3D output"
     -- also fix in Serialisable if enabled!!!
-    -- SpecConcreteNetwork2D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork2D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork2D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D1D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D2D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D3D{} -> netFun 1 >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper as alg initialState ftExt as asFilter params decayFun nnConfig initValues net)
 
 
 -- | Modelbuilder takes the number of output columns, which determins if the ANN is 1D or 2D! (#actions, #columns, 1)
@@ -546,27 +628,28 @@ mkUnichainGrenadeCombinedNet ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainGrenadeCombinedNet alg initialStateFun ftExt as asFilter params decayFun modelBuilder nnConfig settings initValues = do
+mkUnichainGrenadeCombinedNet alg initialStateFun ftExt asFun asFilter params decayFun modelBuilder nnConfig settings initValues = do
   let nrNets | isAlgDqn alg = 1
              | isAlgDqnAvgRewardAdjusted alg = 2
              | otherwise = 6
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
-      rows = genericLength ([minBound .. maxBound] :: [as]) * fromIntegral (settings ^. independentAgents)
+      rows = genericLength as * fromIntegral (settings ^. independentAgents)
       netFun cols = modelBuilder feats (rows, cols)
   specNet <- netFun nrNets
   fmap (checkNetworkOutput True) $ case specNet of
-    SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
-    SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D1D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D2D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
+    SpecConcreteNetwork1D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork1D3D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net)
     _ -> error "ARAL currently requieres a 1D input and either 1D, 2D or 3D output"
-    -- SpecConcreteNetwork2D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork2D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork2D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
-    -- SpecConcreteNetwork3D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper alg initialState initialStateFun ftExt as asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D1D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D2D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork2D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork2D3D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D1D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D1D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D2D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D2D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
+    -- SpecConcreteNetwork3D3D{} -> netFun nrNets >>= (\(SpecConcreteNetwork3D3D net) -> mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig initValues net)
 
+  where as = [minBound .. maxBound] :: [as]
 
 mkUnichainGrenadeHelper ::
      forall as s layers shapes nrH.
@@ -588,7 +671,8 @@ mkUnichainGrenadeHelper ::
      , GNum (Network layers shapes)
      , NFData s
      )
-  => Algorithm s
+  => [as]
+  -> Algorithm s
   -> s
   -> InitialStateFun s
   -> FeatureExtractor s
@@ -601,7 +685,7 @@ mkUnichainGrenadeHelper ::
   -> Maybe InitValues
   -> Network layers shapes
   -> IO (ARAL s as)
-mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net = do
+mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues net = do
   putStrLn "Using following Greande Specification: "
   print $ networkToSpecification net
   putStrLn "Net: "
@@ -657,7 +741,6 @@ mkUnichainGrenadeHelper alg initialState initialStateFun ftExt asFun asFilter pa
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    as = [minBound .. maxBound] :: [Action as]
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
@@ -695,6 +778,7 @@ mkMultichainGrenade ::
   -> Maybe InitValues
   -> IO (ARAL s as)
 mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net nnConfig settings initVals = do
+  let as = [minBound .. maxBound] :: [as]
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) WelfordExistingAggregateEmpty
@@ -732,7 +816,6 @@ mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net
       proxies'
   where
     agents = settings ^. independentAgents
-    as = [minBound..maxBound] :: [Action as]
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
 
 ------------------------------ Replay Memory/Memories ------------------------------
