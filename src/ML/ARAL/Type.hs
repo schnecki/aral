@@ -110,6 +110,7 @@ import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import           Statistics.Sample.WelfordOnlineMeanVariance
+import           System.IO.Unsafe                            (unsafePerformIO)
 import qualified Torch
 import qualified Torch.NN                                    as Torch
 
@@ -366,6 +367,8 @@ mkUnichainRegressionAs ::
 mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
   $(logPrintDebugText) "Creating tabular unichain ARAL"
   st <- initialStateFun MainAgent
+  let inp = ftExt st
+  let tabSA def = (\xs -> RegressionProxy (VB.fromList xs) (length as)) $ unsafePerformIO $ mapM (const $ randRegressionNode (V.length inp)) [0.. length as - 1]
   let proxies' =
         Proxies
           (Scalar (V.replicate agents defRhoMin) (length as))
@@ -400,7 +403,6 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    tabSA def = RegressionProxy (M.fromList $ map (\a -> (a, RegressionNode M.empty 0.1 100 VB.empty)) [0.. length as])
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
     defRho = defaultRho (fromMaybe defInitValues initVals)
     defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)

@@ -49,6 +49,7 @@ import           Data.Singletons                             (SingI)
 import           Data.Singletons.Prelude.List
 import qualified Data.Text                                   as Text
 import           Data.Typeable                               (Typeable, cast)
+import qualified Data.Vector                                 as VB
 import qualified Data.Vector.Storable                        as V
 import           GHC.Generics
 import           GHC.TypeLits
@@ -142,9 +143,8 @@ data Proxy
       , _proxyHTWelford   :: !(WelfordExistingAggregate StateFeatures)
       }
    | RegressionProxy
-     { _proxyRegressionNode :: !(M.Map Int RegressionNode) -- Action index, Reg model
-
-
+     { _proxyRegressionNode :: !RegressionLayer -- For each agent and action index
+     , _proxyNrActions      :: !Int
      }
 proxyScalar :: Traversal' Proxy (V.Vector Double)
 proxyScalar f (Scalar x nrAs) = flip Scalar nrAs <$> f x
@@ -213,6 +213,7 @@ instance Show Proxy where
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{}              = "Scalar"
 prettyProxyType Table{}               = "Tabular"
+prettyProxyType RegressionProxy{}     = "RegressionProxy"
 prettyProxyType Grenade{}             = "Grenade"
 prettyProxyType Hasktorch{}           = "Hasktorch"
 prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
@@ -220,6 +221,7 @@ prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProx
 
 instance NFData Proxy where
   rnf (Table x def acts)                           = rnf x `seq` rnf def `seq` rnf acts
+  rnf (RegressionProxy x nrActs)                   = rnf x `seq` rnf nrActs
   rnf (Grenade t w tp cfg nrActs agents wel)       = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents `seq` rnf wel
   rnf (Hasktorch t w tp cfg nrActs agents _ _ wel) = rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents `seq` rnf wel
   rnf (Scalar x nrAs)                              = rnf x `seq` rnf nrAs
