@@ -351,9 +351,10 @@ mkUnichainTabularAs as alg initialStateFun ftExt asFun asFilter params decayFun 
     defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
     agents = settings ^. independentAgents
 
+
 mkUnichainRegressionAs ::
-     forall s as. (Eq as, Ord as, NFData as)
-  => [Action as]
+  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+     [Action as]
   -> Algorithm s
   -> InitialStateFun s
   -> FeatureExtractor s
@@ -361,32 +362,42 @@ mkUnichainRegressionAs ::
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
+  -> NNConfig
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
-  $(logPrintDebugText) "Creating tabular unichain ARAL"
-  st <- initialStateFun MainAgent
-  let inp = ftExt st
-  let tabSA def = (\xs -> RegressionProxy (VB.fromList xs) (length as)) $ unsafePerformIO $ mapM (const $ randRegressionNode (V.length inp)) [0.. length as - 1]
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues = do
+  $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
+  initialState <- initialStateFun MainAgent
+  -- let feats = fromIntegral $ V.length (ftExt initialState)
+  --     rows = genericLength as * fromIntegral (settings ^. independentAgents)
+      -- netFun cols = modelBuilderHT feats (rows, cols)
+  -- let model = netFun 1
+  -- putStrLn "Net: "
+  -- print model
+  repMem <- mkReplayMemories as settings nnConfig
+  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig
+  let inp = ftExt initialState
+  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (V.length inp) (length as)
   let proxies' =
-        Proxies
-          (Scalar (V.replicate agents defRhoMin) (length as))
-          (Scalar (V.replicate agents defRho) (length as))
-          (tabSA 0)
-          (tabSA defV)
-          (tabSA 0)
-          (tabSA defW)
-          (tabSA defR0)
-          (tabSA defR1)
-          Nothing
-  workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
-  return $
+            Proxies
+              (Scalar (V.replicate agents defRhoMin) (length as))
+              (Scalar (V.replicate agents defRho) (length as))
+              tabSA
+              tabSA
+              tabSA
+              tabSA
+              tabSA
+              tabSA
+              Nothing -- repMem
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
+  return $!
+    force $
     ARAL
       (VB.fromList as)
       asFun
       asFilter
-      st
+      initialState
       workers'
       ftExt
       0
@@ -394,7 +405,7 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
       params
       decayFun
       settings
-      mempty
+      VB.empty
       (convertAlgorithm ftExt alg)
       Maximise
       defRhoMin
@@ -403,13 +414,71 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
       (toValue agents 0, toValue agents 0, toValue agents 0)
       proxies'
   where
-    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
-    defRho = defaultRho (fromMaybe defInitValues initVals)
-    defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)
-    defW = V.replicate agents $ defaultW (fromMaybe defInitValues initVals)
-    defR0 = V.replicate agents $ defaultR0 (fromMaybe defInitValues initVals)
-    defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
+    defRho = defaultRho (fromMaybe defInitValues initValues)
+    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
+
+
+-- mkUnichainRegressionAs ::
+--      forall s as. (Eq as, Ord as, NFData as)
+--   => [Action as]
+--   -> Algorithm s
+--   -> InitialStateFun s
+--   -> FeatureExtractor s
+--   -> ActionFunction s as
+--   -> ActionFilter s
+--   -> ParameterInitValues
+--   -> ParameterDecaySetting
+--   -> Settings
+--   -> Maybe InitValues
+--   -> IO (ARAL s as)
+-- mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
+--   $(logPrintDebugText) "Creating tabular unichain ARAL"
+--   st <- initialStateFun MainAgent
+--   let inp = ftExt st
+--   let mkRegressionProxy xs = RegressionProxy xs (length as) WelfordExistingAggregateEmpty
+--   tabSA <- mkRegressionProxy . RegressionLayer . VB.fromList <$> mapM (const $ randRegressionNode (V.length inp)) [0.. length as - 1]
+--   let proxies' =
+--         Proxies
+--           (Scalar (V.replicate agents defRhoMin) (length as))
+--           (Scalar (V.replicate agents defRho) (length as))
+--           tabSA
+--           tabSA
+--           tabSA
+--           tabSA
+--           tabSA
+--           tabSA
+--           Nothing
+--   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+--   return $
+--     ARAL
+--       (VB.fromList as)
+--       asFun
+--       asFilter
+--       st
+--       workers'
+--       ftExt
+--       0
+--       (0, 0)
+--       params
+--       decayFun
+--       settings
+--       mempty
+--       (convertAlgorithm ftExt alg)
+--       Maximise
+--       defRhoMin
+--       mempty
+--       mempty
+--       (toValue agents 0, toValue agents 0, toValue agents 0)
+--       proxies'
+--   where
+--     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
+--     defRho = defaultRho (fromMaybe defInitValues initVals)
+--     defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)
+--     defW = V.replicate agents $ defaultW (fromMaybe defInitValues initVals)
+--     defR0 = V.replicate agents $ defaultR0 (fromMaybe defInitValues initVals)
+--     defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
+--     agents = settings ^. independentAgents
 
 
 mkMultichainTabular ::

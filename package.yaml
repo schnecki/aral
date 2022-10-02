@@ -67,6 +67,8 @@ dependencies:
   - hasktorch
   - welford-online-mean-variance
   - regress >= 0.1.2
+  - ad
+  - vector-algorithms
 
 library:
   source-dirs: src
@@ -89,8 +91,8 @@ library:
       cpp-options: -DDEBUG
 
   extra-libraries: cblas
-  ld-options: -fopenmp
-  cc-options: -std=c99 -O4 -msse4.2 -Wall -Werror -DCABAL=1 -fopenmp
+  # ld-options: -fopenmp
+  # cc-options: -std=c99 -O4 -msse4.2 -Wall -Werror -DCABAL=1 -fopenmp
 
 tests:
   aral-test:

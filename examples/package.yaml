@@ -88,6 +88,7 @@ executables:
     - aral
     - experimenter
     - hmatrix-glpk
+    - easy-logger
 
   gridworld-step:
     main:                GridworldStep.hs

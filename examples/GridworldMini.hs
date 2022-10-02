@@ -13,13 +13,16 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
 import           ML.ARAL                  as B
+import           ML.ARAL.Logging
 import           SolveLp
 
+import           EasyLogger
 import           Experimenter
 
 import           Data.Default
@@ -245,7 +248,6 @@ borlSettings = def
   , _independentAgents = 1
   }
 
-
 -- | ARAL Parameters.
 params :: ParameterInitValues
 params =
@@ -255,7 +257,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 0.25
+    , _epsilon             = 0.025
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -286,6 +288,10 @@ initVals = InitValues 0 0 0 0 0 0
 
 main :: IO ()
 main = do
+  $(initLogger) (LogFile "package.log")
+  setMinLogLevel LogWarning
+  enableARALLogging (LogFile "package.log")
+
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
   case l of
@@ -337,7 +343,9 @@ usermode = do
   -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
+
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
 
