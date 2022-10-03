@@ -16,6 +16,7 @@ module ML.ARAL.Proxy.RegressionNode
     , prettyRegressionLayer
     ) where
 
+import           Control.Applicative
 import           Control.Arrow                               (first)
 import           Control.DeepSeq
 import           Control.Monad
@@ -59,10 +60,15 @@ data RegressionConfig = RegressionConfig
   { regConfigDataOutStepSize            :: !Double -- ^ Step size in terms of output value to group observation data.
   , regConfigDataMaxObservationsPerStep :: !Int    -- ^ Maximum number of data points per group.
   --  , regConfigFunction                   :: !RegFunction              -- ^ Regression function.
-  } deriving (Eq, Show, Generic, Serialize, NFData)
+  , regConfigVerbose                    :: !Bool   -- ^ Verbose output
+  } deriving (Eq, Show, Generic, NFData)
+
+instance Serialize RegressionConfig where
+  get = (RegressionConfig <$> get <*> get <*> get) <|> (RegressionConfig <$> get <*> get <*> pure False)
+
 
 instance Default RegressionConfig where
-  def = RegressionConfig 0.25 30
+  def = RegressionConfig 0.25 30 False
 
 -- | Regression node that is aware of recent observations and coefficients.
 data RegressionNode =
@@ -128,7 +134,7 @@ randRegressionLayer mCfg nrInput nrOutput = do
 
 -- | Add ground truth value to specific node.
 addGroundTruthValueNode :: Observation -> RegressionNode -> RegressionNode
-addGroundTruthValueNode obs@(Observation _ _ out) (RegressionNode idx m coefs welOut cfg@(RegressionConfig step maxObs)) = RegressionNode idx m' coefs welOut' cfg
+addGroundTruthValueNode obs@(Observation _ _ out) (RegressionNode idx m coefs welOut cfg@(RegressionConfig step maxObs _)) = RegressionNode idx m' coefs welOut' cfg
   where
     key = floor (out * transf)
     transf = 1 / step
@@ -160,10 +166,10 @@ trainRegressionNode welInp period old@(RegressionNode idx m coefs welOut cfg)
   -- trace ("period: " ++ show (period)) $
   -- trace ("allObs len: " ++ show (length allObs)) $
  =
-  if VB.length allObs < 3 || period `mod` ((VB.length coefs - 1) * regConfigDataMaxObservationsPerStep cfg `div` 10) /= 0 -- retrain every ~10% of change values
+  if M.null m || VB.length allObs < observationsToUse --  || period `mod` ((VB.length coefs - 1) * observationsToUse `div` 10) /= 0 -- retrain every ~10% of change values
     then old
     else let reg = regress ys xs coefs :: [Model VB.Vector Double]
-          in RegressionNode idx m (untilThreshold 0.0025 1 coefs reg) welOut cfg
+          in RegressionNode idx (periodicallyCleanObservations m) (untilThreshold (fromIntegral (VB.length coefs) * 5e-4) 1 coefs reg) welOut cfg
                 -- regressStochastic ys xs coefs :: [Model VB.Vector Double]
        -- let reg = regress ys xs coefs :: [Model VB.Vector Double]
        -- in RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) welOut cfg
@@ -174,34 +180,34 @@ trainRegressionNode welInp period old@(RegressionNode idx m coefs welOut cfg)
        -- trace ("cost: " ++ show (totalCost coefs (fmap auto ys) (fmap (fmap auto) xs)))
        -- RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) cfg
   where
+    observationsToUse = VS.length $ obsInputValues $ VB.head $ snd $ M.findMax m
     untilThreshold :: Double -> Int -> VB.Vector Double -> [VB.Vector Double] -> VB.Vector Double
     untilThreshold _ idx old [] = $(pureLogPrintWarning) ("Default after " ++ show idx) old
     untilThreshold thresh idx old (new:rest)
-      | VB.sum (VB.zipWith (\a b -> abs (a - b)) old new) <= thresh = -- $(pureLogPrintWarning) ("Threshold reached. Steps: " ++ show idx)
-        new
-      | null rest =                                                       $(pureLogPrintWarning) ("No more models, but threshold not reached. Steps: " ++ show idx) new
-      | idx >= 200 =                                                      $(pureLogPrintWarning) ("Threshold of " ++ show thresh ++ " never reached in 200 steps: " ++ show (VB.sum (VB.zipWith (\a b -> abs (a - b)) old new))) new
+      | VB.sum (VB.zipWith (\a b -> abs (a - b)) old new) <= thresh =
+        if regConfigVerbose cfg
+          then $(pureLogPrintWarning) ("Threshold reached. Steps: " ++ show idx) new
+          else new
+      | null rest = $(pureLogPrintWarning) ("No more models, but threshold not reached. Steps: " ++ show idx) new
+      | idx >= 200 = $(pureLogPrintWarning) ("Threshold of " ++ show thresh ++ " never reached in 200 steps: " ++ show (VB.sum (VB.zipWith (\a b -> abs (a - b)) old new))) new
       | otherwise = untilThreshold thresh (idx + 1) new rest
-    headWithDefault def []  = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
-    headWithDefault _ (x:_) = x
-    lastWithDefault def [] = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
-    lastWithDefault _ xs   = last xs
-    indexWithDefault idx def [] = def
-    indexWithDefault 0 _ (x:_) = x
-    indexWithDefault idx def (x:xs)
-      | null xs = x
-      | otherwise = indexWithDefault (idx - 1) def xs
     allObs :: VB.Vector Observation
     -- allObs = VB.filter ((>= maxPeriod - 3000) . obsPeriod) $ VB.concat (M.elems m)
-    allObs = VB.take 10 $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
+    allObs = VB.take observationsToUse $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
     xs :: VB.Vector (VB.Vector Double)
     xs = VB.map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs
     ys :: VB.Vector Double
     ys =
-      VB.map -- scaleMinMax (-5, 5) . --
-        (-- normaliseUnbounded welOut .
-          obsExpectedOutputValue)
+      VB.map
+      -- (scaleMinMax (-5, 5) .
+       -- normaliseUnbounded welOut .
+        (obsExpectedOutputValue)
         allObs
+    lastObsPeriod = obsPeriod $ VB.last allObs
+    periodicallyCleanObservations m'
+      | period `mod` 1000 == 0 = M.filter (not . VB.null) . M.map (VB.filter ((>= lastObsPeriod) . obsPeriod)) $ m'
+      | otherwise = m'
+
 
 -- | Train regression layger (= all nodes).
 trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
@@ -224,6 +230,15 @@ trainRegressionLayer period (RegressionLayer nodes wel step)
 --     xs = VB.fromList $ map (VB.convert . fst3) $ filter ((== idx) . snd3) (map fst batchAllActions)
 --     fst3 (x,_,_) = x
 --     snd3 (_,x,_) = x
+    -- headWithDefault def []  = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
+    -- headWithDefault _ (x:_) = x
+    -- lastWithDefault def [] = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
+    -- lastWithDefault _ xs   = last xs
+    -- indexWithDefault idx def [] = def
+    -- indexWithDefault 0 _ (x:_) = x
+    -- indexWithDefault idx def (x:xs)
+    --   | null xs = x
+    --   | otherwise = indexWithDefault (idx - 1) def xs
 --     headWithDefault def []  = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
 --     headWithDefault _ (x:_) = x
 --     lastWithDefault def [] = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def

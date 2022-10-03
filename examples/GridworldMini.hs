@@ -246,6 +246,7 @@ borlSettings = def
   { _workersMinExploration = [0.3, 0.2, 0.1]
   , _nStep = 2
   , _independentAgents = 1
+  , _overEstimateRho = False -- True
   }
 
 -- | ARAL Parameters.
