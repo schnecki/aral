@@ -66,7 +66,7 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "gridworld-mini"
     , _experimentInfoParameters = [isNN]
-    , _experimentRepetitions = 1
+    , _experimentRepetitions = 30
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
@@ -214,6 +214,7 @@ instance ExperimentDef (ARAL St Act)
                                                                   , AlgDQN 0.999 Exact
                                                                   , AlgDQN 0.99 Exact
                                                                   , AlgDQN 0.50 Exact
+								  , AlgRLearning
                                                                   ]) Nothing Nothing Nothing]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
@@ -288,6 +289,7 @@ main :: IO ()
 main = do
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
+  chooseRandomReward
   case l of
     "l"   -> lpMode
     "e"   -> experimentMode
@@ -330,7 +332,6 @@ usermode = do
 
   alg <- chooseAlg mRefState
 
-  chooseRandomReward
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
