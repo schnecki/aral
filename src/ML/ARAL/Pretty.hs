@@ -16,34 +16,35 @@ module ML.ARAL.Pretty
     ) where
 
 
-import           Control.Arrow          (first, second, (&&&), (***))
+import           Control.Arrow                       (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad          (join, when)
+import           Control.Monad                       (join, when)
 import           Control.Monad.IO.Class
-import           Data.Function          (on)
-import           Data.List              (find, foldl', intercalate, intersperse, sort, sortBy)
-import qualified Data.Map.Strict        as M
-import           Data.Maybe             (fromMaybe, isJust, listToMaybe)
-import qualified Data.Set               as S
-import qualified Data.Text              as T
-import qualified Data.Vector            as VB
-import qualified Data.Vector.Storable   as V
+import           Data.Function                       (on)
+import           Data.List                           (find, foldl', intercalate, intersperse, nub, sort, sortBy)
+import qualified Data.Map.Strict                     as M
+import           Data.Maybe                          (fromMaybe, isJust, listToMaybe)
+import qualified Data.Set                            as S
+import qualified Data.Text                           as T
+import qualified Data.Vector                         as VB
+import qualified Data.Vector.Storable                as V
 import           Grenade
-import           Prelude                hiding ((<>))
-import           System.IO.Unsafe       (unsafePerformIO)
-import           Text.PrettyPrint       as P
+import           Prelude                             hiding ((<>))
+import           System.IO.Unsafe                    (unsafePerformIO)
+import           Text.PrettyPrint                    as P
 import           Text.Printf
-
 
 import           ML.ARAL.Action
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Decay
 import           ML.ARAL.InftyVector
 import           ML.ARAL.NeuralNetwork
+import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Parameters
-import qualified ML.ARAL.Proxy          as P
-import           ML.ARAL.Proxy.Ops      (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
+import qualified ML.ARAL.Proxy                       as P
+import           ML.ARAL.Proxy.Ops                   (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
 import           ML.ARAL.Proxy.Proxies
+import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -110,6 +111,15 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
+    P.RegressionProxy (RegressionLayer ms wel step) aNr _ ->
+      let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
+          mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+          inputs :: [NetInputWoAction]
+          inputs = nub $ concatMap (concatMap (\obs -> map (VB.convert . obsInputValues) [VB.head obs, VB.last obs]) . M.elems . regNodeObservations) (VB.toList ms)
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (RegressionLayer ms wel step) aId inp)) [0..aNr-1]) inputs
+       in do
+        mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
@@ -357,17 +367,20 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
+        P.RegressionProxy {} -> mempty
         px ->
           text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showDoubleList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     autoInpScale =
       case borl ^. proxies . r1 of
-        P.Table {} -> mempty
-        px         -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
+        P.Table {}           -> mempty
+        P.RegressionProxy {} -> mempty
+        px                   -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
     scalingText =
       case borl ^. proxies . v of
-        P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        P.Table {}           -> text "Tabular representation (no scaling needed)"
+        P.RegressionProxy {} -> "Regression representation (no scaling needed/implemented!)"
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text
@@ -378,14 +391,16 @@ prettyARALHead' printRho prettyStateFun borl = do
                , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextDqn =
       case borl ^. proxies . r1 of
-        P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        P.Table {}           -> text "Tabular representation (no scaling needed)"
+        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
-        P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        P.Table {}           -> text "Tabular representation (no scaling needed)"
+        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text
@@ -394,34 +409,39 @@ prettyARALHead' printRho prettyStateFun borl = do
                , (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value)))
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
-        P.Table {} -> text "Tabular representation (no scaling needed)"
-        px         -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
+        P.Table {}           -> text "Tabular representation (no scaling needed)"
+        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =
       case borl ^. proxies . v of
-        P.Table {} -> empty
-        px         -> textTargetUpdate (px ^?! proxyNNConfig)
+        P.Table {}           -> empty
+        P.RegressionProxy {} -> empty
+        px                   -> textTargetUpdate (px ^?! proxyNNConfig)
       where
         textTargetUpdate conf =
             text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printDoubleWith 8 $ conf ^. grenadeSmoothTargetUpdate) <+>
             text "every" <+> int (conf ^. grenadeSmoothTargetUpdatePeriod) <+> text "periods"
     nnBatchSize =
       case borl ^. proxies . v of
-        P.Table {} -> empty
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        P.Table {}           -> empty
+        P.RegressionProxy {} -> empty
+        px                   -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text "NN Batchsize" <> colon $$ nest nestCols (int $ conf ^. trainBatchSize)
     nnNStep =
       case borl ^. proxies . v of
-        P.Table {} -> empty
-        px         -> textNNConf (borl ^. settings)
+        P.Table {}           -> empty
+        P.RegressionProxy {} -> empty
+        px                   -> textNNConf (borl ^. settings)
       where
         textNNConf conf = text "NStep" <> colon $$ nest nestCols (int $ conf ^. nStep)
     nnReplMemSize =
       case borl ^. proxies . v of
-        P.Table {} -> empty
-        px         -> textNNConf (px ^?! proxyNNConfig)
+        P.Table {}           -> empty
+        P.RegressionProxy {} -> empty
+        px                   -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+>
@@ -431,6 +451,7 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnLearningParams =
       case borl ^. proxies . v of
         P.Table {}                                       -> empty
+        P.RegressionProxy {}                             -> empty
         P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.Hasktorch _ _ _ conf _ _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)

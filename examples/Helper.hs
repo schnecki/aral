@@ -13,20 +13,21 @@ module Helper
 import           Grenade
 import           ML.ARAL
 import           ML.ARAL.InftyVector
+import           ML.ARAL.Proxy.RegressionNode
 
 import           Control.Arrow
-import           Control.DeepSeq        (NFData, force)
+import           Control.DeepSeq              (NFData, force)
 import           Control.Lens
-import           Control.Lens           (over, set, traversed, (^.))
-import           Control.Monad          (foldM, unless, when)
-import           Control.Monad.IO.Class (liftIO)
-import qualified Data.ByteString        as BS
-import           Data.Function          (on)
-import           Data.List              (find, sortBy)
-import           Data.Maybe             (fromMaybe)
-import           Data.Serialize         as S
+import           Control.Lens                 (over, set, traversed, (^.))
+import           Control.Monad                (foldM, unless, when)
+import           Control.Monad.IO.Class       (liftIO)
+import qualified Data.ByteString              as BS
+import           Data.Function                (on)
+import           Data.List                    (find, sortBy)
+import           Data.Maybe                   (fromMaybe)
+import           Data.Serialize               as S
 import           Data.Time.Clock
-import qualified Data.Vector            as VB
+import qualified Data.Vector                  as VB
 import           System.CPUTime
 import           System.IO
 import           System.Random
@@ -120,6 +121,10 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
+      askUser mInverse False addUsage cmds qlCmds ql
+    "rp" -> do
+      let doc = maybe mempty  prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
+      print doc
       askUser mInverse False addUsage cmds qlCmds ql
     "h" -> do
       prettyARALHead True mInverse ql >>= print >> hFlush stdout
