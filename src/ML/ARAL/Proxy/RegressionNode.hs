@@ -93,11 +93,12 @@ data RegressionLayer =
 
 prettyRegressionNode :: Maybe (WelfordExistingAggregate StateFeatures) -> RegressionNode -> Doc
 prettyRegressionNode mWel (RegressionNode idx m coefs welOut cfg) =
-  text "Node" <> nest nestCols (int idx) $+$
-  text "Coefficients" <> nest nestCols (hcat $ punctuate comma $ map (prettyFractional 3) (VB.toList coefs)) $+$
-  text "Observations" <> nest nestCols (int (M.size m) <> text " groups with " <> int (sum $ map VB.length (M.elems m))) $+$
+  text "Node"           $$ nest nestCols (int idx) $+$
+  text "Coefficients"   $$ nest nestCols (hcat $ punctuate comma $ map (prettyFractional 3) (VB.toList coefs)) $+$
+  text "Output scaling" $$ nest nestCols (text (show welOut)) $+$
+  text "Observations"   $$ nest nestCols (int (M.size m) <> text " groups with " <> int (sum $ map VB.length (M.elems m))) $+$
   nest (nestCols + 10) (vcat $ map prettyObservationVector (M.toList m))
-  where nestCols = 35
+  where nestCols = 40
         prettyFractional :: (PrintfArg n, Fractional n) => Int -> n -> Doc
         prettyFractional commas = text . printf ("%+." ++ show commas ++ "f")
         prettyObservationVector :: (Int, VB.Vector Observation) -> Doc
@@ -139,7 +140,9 @@ addGroundTruthValueNode obs@(Observation _ _ out) (RegressionNode idx m coefs we
     key = floor (out * transf)
     transf = 1 / step
     m' = M.alter (Just . maybe (VB.singleton obs) (VB.take maxObs . (obs `VB.cons`))) key m
-    welOut' = addValue welOut out
+    welOut'
+      | step < 30000 = addValue welOut out
+      | otherwise = welOut
 
 
 -- | Add ground truth values to the layer.
@@ -147,7 +150,9 @@ addGroundTruthValueLayer :: [(Observation, ActionIndex)] -> RegressionLayer -> R
 addGroundTruthValueLayer obs (RegressionLayer ms welInp step) =
   RegressionLayer (foldl' (\acc (ob, aId) -> replaceIndex aId (addGroundTruthValueNode ob (acc VB.! aId)) acc) ms obs) welInp' (step + 1)
   where
-    welInp' = foldl' addValue welInp (map (obsInputValues . fst) obs)
+    welInp'
+      | step < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
+      | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
       -- VB.take idx xs VB.++ (x `VB.cons` VB.drop (idx + 1) xs)
 
@@ -161,15 +166,18 @@ costFunction RegLinear coefs inps =
 
 
 -- | Train a Regression Node.
-trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Period -> RegressionNode -> RegressionNode
-trainRegressionNode welInp period old@(RegressionNode idx m coefs welOut cfg)
+trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Period -> RegressionNode -> RegressionNode
+trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut cfg)
   -- trace ("period: " ++ show (period)) $
   -- trace ("allObs len: " ++ show (length allObs)) $
  =
-  if M.null m || VB.length allObs < observationsToUse --  || period `mod` ((VB.length coefs - 1) * observationsToUse `div` 10) /= 0 -- retrain every ~10% of change values
+  if M.null m || VB.length allObs < observationsToUse || period `mod` max 1 ((VB.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
     then old
     else let reg = regress ys xs coefs :: [Model VB.Vector Double]
-          in RegressionNode idx (periodicallyCleanObservations m) (untilThreshold (fromIntegral (VB.length coefs) * 5e-4) 1 coefs reg) welOut cfg
+             alpha = min 0.9 (fromIntegral period / 100000) :: Double
+             coefs' = untilThreshold (fromIntegral (VB.length coefs) * 5e-4) 1 coefs reg :: VB.Vector Double
+          in RegressionNode idx (periodicallyCleanObservations m) (VB.zipWith (\old new -> alpha * old + (1-alpha) * new) coefs coefs') welOut cfg
+          -- in RegressionNode idx (periodicallyCleanObservations m) coefs' welOut cfg
                 -- regressStochastic ys xs coefs :: [Model VB.Vector Double]
        -- let reg = regress ys xs coefs :: [Model VB.Vector Double]
        -- in RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) welOut cfg
@@ -195,13 +203,14 @@ trainRegressionNode welInp period old@(RegressionNode idx m coefs welOut cfg)
     -- allObs = VB.filter ((>= maxPeriod - 3000) . obsPeriod) $ VB.concat (M.elems m)
     allObs = VB.take observationsToUse $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
     xs :: VB.Vector (VB.Vector Double)
-    xs = VB.map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs
+    xs = VB.map (VB.convert . -- normaliseStateFeatureUnbounded welInp .
+                 obsInputValues) allObs
     ys :: VB.Vector Double
     ys =
       VB.map
-      -- (scaleMinMax (-5, 5) .
-       -- normaliseUnbounded welOut .
-        (obsExpectedOutputValue)
+      -- (scaleMinMax (-5, 5) . obsExpectedOutputValue)
+        -- (normaliseUnbounded welOut . obsExpectedOutputValue)
+        obsExpectedOutputValue
         allObs
     lastObsPeriod = obsPeriod $ VB.last allObs
     periodicallyCleanObservations m'
@@ -213,7 +222,7 @@ trainRegressionNode welInp period old@(RegressionNode idx m coefs welOut cfg)
 trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
 trainRegressionLayer period (RegressionLayer nodes wel step)
   | period < 100 = RegressionLayer nodes wel step
-  | otherwise = RegressionLayer (VB.map (trainRegressionNode wel period) nodes) wel step
+  | otherwise = RegressionLayer (VB.map (trainRegressionNode wel (VB.length nodes) period) nodes) wel step
 
 
 -- trainBatchRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Period -> [((StateFeatures, ActionIndex, IsRandomAction), Double)] -> RegressionNode -> RegressionNode
@@ -266,7 +275,7 @@ applyRegressionNode (RegressionNode idx _ coefs welOut _) inps
     -- trace ("idx: " ++ show idx ++ ", " ++ show inps ++ " res: " ++ show res)
 
     -- unscaleMinMax (-5, 5) $
-    -- denormaliseUnbounded welOut $
+    -- denormaliseUnbounded welOut $  <- breaks algorithm
     (VS.sum (VS.zipWith (*) (VB.convert coefs) inps) + VB.last coefs)
 
 
@@ -274,7 +283,7 @@ applyRegressionNode (RegressionNode idx _ coefs welOut _) inps
 applyRegressionLayer :: RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
 applyRegressionLayer (RegressionLayer nodes wel _) actIdx stateFeat =
   -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
-  applyRegressionNode (nodes VB.! actIdx) (normaliseStateFeature wel stateFeat)
+  applyRegressionNode (nodes VB.! actIdx) stateFeat -- (normaliseStateFeature wel stateFeat)
   -- trace ("inps: " ++ show inps)
 
 
