@@ -40,7 +40,7 @@ expSetup borl =
     { _experimentBaseName = "gridworld-mini"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
-    , _preparationSteps = 1000000
+    , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
     , _evaluationReplications = 1
@@ -48,6 +48,7 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
+
 
 evals :: [StatsDef s]
 evals =
