@@ -1,6 +1,6 @@
-# BORL
+# ARAL
 
-Blackwell Optimal Reinforcement Learning
+Near-Blackwell Optimal *A*verage *R*eward *A*djusted Reinforcement *L*earning
 
 (c) Manuel Schneckenreither
 
@@ -21,8 +21,8 @@ For ArchLinux using `sudo` and `yay`:
 
 Ensure to *clone all submodules*:
 
-    git clone --recursive git@git.uibk.ac.at:c4371143/borl.git
-    cd borl
+    git clone --recursive git@github.com:schnecki/aral.git
+    cd aral
     stack build --install-ghc
 
 To build in debug mode use (this writes several files, thus use with care):
@@ -32,9 +32,10 @@ To build in debug mode use (this writes several files, thus use with care):
 
 ## Debug in GHCI
 
-    stack ghci --flag borl:debug borl borl-examples:exe:gridworld-step
+    stack ghci --flag aral:debug aral aral-examples:exe:gridworld-step
 
 ## Profiling
 
-    stack build --profile --library-profiling --flag borl:debug
-    stack exec --profile -- borl-releaser-exe +RTS -p
+    cd examples/
+    stack build --profile --library-profiling --flag aral:debug
+    stack exec --profile -- gridworld-mini +RTS -p
