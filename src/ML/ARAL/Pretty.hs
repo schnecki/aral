@@ -111,15 +111,17 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy (RegressionLayer ms wel step) aNr _ ->
+    P.RegressionProxy layer@(RegressionLayer ms wel step) aNr nnCfg ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           inputs :: [NetInputWoAction]
-          inputs = nub $ concatMap (concatMap (\obs -> map (VB.convert . obsInputValues) [VB.head obs, VB.last obs]) . M.elems . regNodeObservations) (VB.toList ms)
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (RegressionLayer ms wel step) aId inp)) [0..aNr-1]) inputs
-       in do
-        mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
+          -- inputs = nub $ concatMap (concatMap (\obs -> map (VB.convert . obsInputValues) [VB.head obs, VB.last obs]) . M.elems . regNodeObservations) (VB.toList ms)
+          inputs = nnCfg ^. prettyPrintElems
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0..aNr-1]) inputs
+       in
+        fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer]) $
+           mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+             sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
