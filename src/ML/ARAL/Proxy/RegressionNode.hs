@@ -122,10 +122,10 @@ prettyRegressionNode printObs mWel (RegressionNode idx m coefs heatMap welOut cf
 
 
 prettyRegressionLayer :: RegressionLayer -> Doc
-prettyRegressionLayer (RegressionLayer nodes wel _) = vcat (map (prettyRegressionNode True (Just wel)) (VB.toList nodes))
+prettyRegressionLayer (RegressionLayer nodes welInp _) = vcat (map (prettyRegressionNode True (Just welInp)) (VB.toList nodes))
 
 prettyRegressionLayerNoObs :: RegressionLayer -> Doc
-prettyRegressionLayerNoObs (RegressionLayer nodes wel _) = vcat (zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just wel) n) [0..] (VB.toList nodes))
+prettyRegressionLayerNoObs (RegressionLayer nodes welInp _) = vcat (zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0..] (VB.toList nodes))
 
 
 -- | Create new regression node with provided config and given number of input values.
@@ -165,7 +165,7 @@ addGroundTruthValueNode period obs@(Observation _ _ out) (RegressionNode idx m c
     transf = 1 / step
     m' = M.alter (Just . maybe (VB.singleton obs) (VB.take maxObs . (obs `VB.cons`))) key m
     welOut'
-      | period < 30000 = addValue welOut out
+      | True || period < 30000 = addValue welOut out
       | otherwise = welOut
 
 
@@ -175,7 +175,7 @@ addGroundTruthValueLayer period obs (RegressionLayer ms welInp step) =
   RegressionLayer (foldl' (\acc (ob, aId) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) ms obs) welInp' (step + 1)
   where
     welInp'
-      | period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
+      | True || period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
       -- VB.take idx xs VB.++ (x `VB.cons` VB.drop (idx + 1) xs)
@@ -241,7 +241,8 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
     ys =
       VB.map
       -- (scaleMinMax (-5, 5) . obsExpectedOutputValue)
-        ((10*) . normaliseUnbounded welOut . obsExpectedOutputValue)
+        (-- (*100) .
+         normaliseUnbounded welOut . obsExpectedOutputValue)
         -- obsExpectedOutputValue
         allObs
     lastObsPeriod = obsPeriod $ VB.last allObs
@@ -252,49 +253,9 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
 
 -- | Train regression layger (= all nodes).
 trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
-trainRegressionLayer period (RegressionLayer nodes wel step)
-  | period < 100 = RegressionLayer nodes wel step
-  | otherwise = RegressionLayer (VB.map (trainRegressionNode wel (VB.length nodes) period) nodes) wel step
-
-
--- trainBatchRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Period -> [((StateFeatures, ActionIndex, IsRandomAction), Double)] -> RegressionNode -> RegressionNode
--- trainBatchRegressionNode welInp period batchAllActions old@(RegressionNode idx m coefs welOut cfg) =
---   if VB.length xs < (3 + undefined)
---   then old
---   else
---     let reg = regressStochastic ys xs coefs :: [Model VB.Vector Double]
---     in RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) welOut cfg
---   where
---     ys :: VB.Vector Double
---     ys = VB.fromList $ map snd batchAllActions
---     xs :: VB.Vector (VB.Vector Double)
---     xs = VB.fromList $ map (VB.convert . fst3) $ filter ((== idx) . snd3) (map fst batchAllActions)
---     fst3 (x,_,_) = x
---     snd3 (_,x,_) = x
-    -- headWithDefault def []  = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
-    -- headWithDefault _ (x:_) = x
-    -- lastWithDefault def [] = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
-    -- lastWithDefault _ xs   = last xs
-    -- indexWithDefault idx def [] = def
-    -- indexWithDefault 0 _ (x:_) = x
-    -- indexWithDefault idx def (x:xs)
-    --   | null xs = x
-    --   | otherwise = indexWithDefault (idx - 1) def xs
---     headWithDefault def []  = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
---     headWithDefault _ (x:_) = x
---     lastWithDefault def [] = $(pureLogPrintWarning) ("Could not solve regression in period " ++ show period) def
---     lastWithDefault _ xs   = last xs
---     indexWithDefault idx def []     = def
---     indexWithDefault 0 _ (x:_)      = x
---     indexWithDefault idx def (x:xs)
---       | null xs = x
---       | otherwise = indexWithDefault (idx - 1) def xs
-
--- -- | Train regression layger (= all nodes).
--- trainBatchRegressionLayer :: Period  -> [((StateFeatures, ActionIndex, IsRandomAction), Double)] -> RegressionLayer -> RegressionLayer
--- trainBatchRegressionLayer period xs (RegressionLayer nodes wel step)
---   | period < 100 = RegressionLayer nodes wel step
---   | otherwise = RegressionLayer (VB.map (trainBatchRegressionNode wel period xs) nodes) wel step
+trainRegressionLayer period (RegressionLayer nodes welInp step)
+  | period < 1000 = RegressionLayer nodes welInp step -- only used for learning the normalization
+  | otherwise = RegressionLayer (VB.map (trainRegressionNode welInp (VB.length nodes) period) nodes) welInp step
 
 
 -- | Apply a regression node.
@@ -307,7 +268,7 @@ applyRegressionNode (RegressionNode idx _ coefs heatMap welOut _) inps
     -- trace ("idx: " ++ show idx ++ ", " ++ show inps ++ " res: " ++ show res)
 
     -- unscaleMinMax (-5, 5) $
-    denormaliseUnbounded welOut . (/10) $
+    denormaliseUnbounded welOut $ -- . (/100) $
     VS.sum (VS.zipWith3 (\act w i -> fromAct act * w * i) heatMap (VB.convert coefs) inps) + VS.last coefs
   where fromAct True  = 1
         fromAct False = 0
@@ -315,11 +276,7 @@ applyRegressionNode (RegressionNode idx _ coefs heatMap welOut _) inps
 
 -- | Apply regression layer to given inputs
 applyRegressionLayer :: RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
-applyRegressionLayer (RegressionLayer nodes wel _) actIdx stateFeat =
+applyRegressionLayer (RegressionLayer nodes welInp _) actIdx stateFeat =
   -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
-  applyRegressionNode (nodes VB.! actIdx) (normaliseStateFeatureUnbounded wel stateFeat) -- stateFeat
+  applyRegressionNode (nodes VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat) -- stateFeat
   -- trace ("inps: " ++ show inps)
-
-
-  -- -- let (RegressionNode _ _ _ coefs) = regNodes VB.! actIdx
-  --  error "TODO"
