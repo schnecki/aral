@@ -200,10 +200,10 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
     else
     let coefsFiltered = filterHeatMap heatMap coefs
         reg = map VS.convert $ regress ys xs (VB.convert coefsFiltered) :: [Model VS.Vector Double]
-        alpha = decaySetup (ExponentialDecay (Just 1e-3) 0.8 30000) period 1
+        learnRate = decaySetup (ExponentialDecay (Just 1e-5) 0.8 30000) period 1
         fittedCoefs :: VS.Vector Double
         fittedCoefs = untilThreshold (fromIntegral (VS.length coefsFiltered) * 5e-4) 1 coefsFiltered reg
-        coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - alpha) * oldVal + alpha * newVal) coefsFiltered fittedCoefs
+        coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefsFiltered fittedCoefs
         heatMap'
           | period > 10000 = VS.zipWith (\act v -> abs v >= 0.01 && act) heatMap coefs' VS.// [(VS.length heatMap - 1, True)]
           | otherwise = heatMap
