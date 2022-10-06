@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TupleSections     #-}
-module ML.ARAL.Proxy.RegressionNode
+module ML.ARAL.Proxy.Regression.RegressionLayer
     ( Observation (..)
     , RegressionNode (..)
     , RegressionLayer (..)
@@ -22,7 +22,7 @@ import           Control.Arrow                               (first)
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Default
-import           Data.List                                   (foldl', sortOn)
+import           Data.List                                   (foldl', intercalate, sortOn)
 import qualified Data.Map.Strict                             as M
 import           Data.Maybe                                  (fromMaybe)
 import           Data.Ord                                    (Down (..), comparing)
@@ -38,6 +38,7 @@ import           Numeric.Regression.Linear
 import           Prelude                                     hiding ((<>))
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.IO
+import           System.IO.Unsafe                            (unsafePerformIO)
 import           System.Random
 import           Text.PrettyPrint
 import           Text.Printf
@@ -45,6 +46,7 @@ import           Text.Printf
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.NeuralNetwork.Scaling
+import           ML.ARAL.Proxy.Regression.VolatilityRegime
 import           ML.ARAL.Types
 
 -- | One `Observation` holds one input and expected output.
@@ -52,7 +54,7 @@ data Observation =
   Observation
     { obsPeriod              :: !Period
     , obsInputValues         :: !(VS.Vector Double)
-    -- , obsReward      :: !Double
+    , obsVarianceRegimeValue :: !Double -- e.g. Reward in RL
     -- , obsAction      :: !Int
     , obsExpectedOutputValue :: !Double
     }
@@ -87,11 +89,13 @@ data RegressionNode =
 -- | A RegressionLayer holds one node for each action.
 data RegressionLayer =
   RegressionLayer
-    { regressionLayerActions :: !(VB.Vector RegressionNode)
-    , regressionInpWelford   :: !(WelfordExistingAggregate (VS.Vector Double))
-    , regressionStep         :: !Int
+    { regressionLayerActions        :: !(VB.Vector RegressionNode)
+    , regressionInpWelford          :: !(WelfordExistingAggregate (VS.Vector Double))
+    , regressionStep                :: !Int
+    , regressionRegime              :: !RegimeDetection -- Low or High variance regime
+    , regressionVarianceRegimeValue :: !(VS.Vector Double) -- TODO: make map? the distributions will be different!?!
     }
-  deriving (Eq, Show, Generic, Serialize, NFData)
+  deriving (Show, Generic, Serialize, NFData)
 
 
 prettyRegressionNode :: Bool -> Maybe (WelfordExistingAggregate StateFeatures) -> RegressionNode -> Doc
@@ -112,7 +116,7 @@ prettyRegressionNode printObs mWel (RegressionNode idx m coefs heatMap welOut cf
           | otherwise = vcat [headDoc <+> prettyObservation (VB.head vec), headDoc <+> prettyObservation (VB.last vec)]
           where headDoc = prettyFractional 4 (fromIntegral nr * stepSize) <+> parens (int nr) <> colon
         prettyObservation :: Observation -> Doc
-        prettyObservation (Observation step inpVec out) =
+        prettyObservation (Observation step inpVec _ out) =
           text "t=" <> int step <> comma <+>
           char '[' <> hcat (punctuate comma $ map (prettyFractional 3) (VS.toList inpVec)) <> char ']' <+>
           maybe mempty (\wel ->
@@ -122,10 +126,11 @@ prettyRegressionNode printObs mWel (RegressionNode idx m coefs heatMap welOut cf
 
 
 prettyRegressionLayer :: RegressionLayer -> Doc
-prettyRegressionLayer (RegressionLayer nodes welInp _) = vcat (map (prettyRegressionNode True (Just welInp)) (VB.toList nodes))
+prettyRegressionLayer (RegressionLayer nodes welInp _ hmm _) = vcat (map (prettyRegressionNode True (Just welInp)) (VB.toList nodes)) $+$ text (show hmm)
 
 prettyRegressionLayerNoObs :: RegressionLayer -> Doc
-prettyRegressionLayerNoObs (RegressionLayer nodes welInp _) = vcat (zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0..] (VB.toList nodes))
+prettyRegressionLayerNoObs (RegressionLayer nodes welInp _ hmm _) =
+  vcat (zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodes)) $+$ text (show hmm)
 
 
 -- | Create new regression node with provided config and given number of input values.
@@ -138,7 +143,7 @@ randRegressionNode cfg nrInpVals nodeIndex = do
 randRegressionLayer :: Maybe RegressionConfig -> Int -> Int -> IO RegressionLayer
 randRegressionLayer mCfg nrInput nrOutput = do
   nodes <- mapM (randRegressionNode (fromMaybe def mCfg) nrInput) [0 .. nrOutput - 1]
-  return $ RegressionLayer (VB.fromList nodes) WelfordExistingAggregateEmpty 0
+  return $ RegressionLayer (VB.fromList nodes) WelfordExistingAggregateEmpty 0 def VS.empty
 
 -- | Filter out elements using heat map.
 filterHeatMap :: VS.Vector Bool -> VS.Vector Double -> VS.Vector Double
@@ -159,7 +164,7 @@ toCoefficients heatMap vec
 
 -- | Add ground truth value to specific node.
 addGroundTruthValueNode :: Period -> Observation -> RegressionNode -> RegressionNode
-addGroundTruthValueNode period obs@(Observation _ _ out) (RegressionNode idx m coefs heatMap welOut cfg@(RegressionConfig step maxObs _)) = RegressionNode idx m' coefs heatMap welOut' cfg
+addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m coefs heatMap welOut cfg@(RegressionConfig step maxObs _)) = RegressionNode idx m' coefs heatMap welOut' cfg
   where
     key = floor (normaliseUnbounded welOut out * transf)
     transf = 1 / step
@@ -171,22 +176,40 @@ addGroundTruthValueNode period obs@(Observation _ _ out) (RegressionNode idx m c
 
 -- | Add ground truth values to the layer.
 addGroundTruthValueLayer :: Period -> [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
-addGroundTruthValueLayer period obs (RegressionLayer ms welInp step) =
-  RegressionLayer (foldl' (\acc (ob, aId) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) ms obs) welInp' (step + 1)
+addGroundTruthValueLayer period [] lay = lay
+addGroundTruthValueLayer period obs (RegressionLayer ms welInp step regime rewards) =
+  let reg = currentRegime regime rewards'
+  in writeRegimeFile reg (getStateMeans regime) `seq`
+  RegressionLayer
+    (foldl' (\acc (ob, aId) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) ms obs)
+    welInp'
+    (step + 1)
+    regime' -- only on first one (others are from different workers!)
+    rewards'
   where
+    reward = obsVarianceRegimeValue $ fst $ head obs
+    rewards' = VS.take 100 $ rewards VS.++ VS.singleton reward
+    regime' = addValueAndTrainHMM regime [reward]
+
     welInp'
       | True || period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
       -- VB.take idx xs VB.++ (x `VB.cons` VB.drop (idx + 1) xs)
+    writeRegimeFile reg means = unsafePerformIO $ do
+      let txt = show period ++ "\t" ++ show (obsVarianceRegimeValue $ fst $ head obs) ++ "\t" ++ show (fromEnum reg) ++ "\t" ++
+                intercalate "\t" (map show means) ++ "\n"
+      when (period == 0) $ do
+        writeFile "regime" $ "period\treward\tregime\t" ++ intercalate "\t" (map (("Mean" ++) . show) [1..length means]) ++ "\n"
+      appendFile "regime" txt
 
 
-data RegFunction = RegLinear
-  deriving (Eq, Ord, Show, Generic, Serialize, NFData)
-
-costFunction :: RegFunction -> VB.Vector Double -> VS.Vector Double -> Double
-costFunction RegLinear coefs inps =
-  VS.sum (VS.zipWith (*) (VB.convert coefs) inps) + VB.last coefs
+-- TODO
+-- data RegFunction = RegLinear
+--   deriving (Eq, Ord, Show, Generic, Serialize, NFData)
+-- costFunction :: RegFunction -> VB.Vector Double -> VS.Vector Double -> Double
+-- costFunction RegLinear coefs inps =
+--   VS.sum (VS.zipWith (*) (VB.convert coefs) inps) + VB.last coefs
 
 
 -- | Train a Regression Node.
@@ -231,7 +254,6 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
       | idx >= 200 = $(pureLogPrintWarning) ("Threshold of " ++ show thresh ++ " never reached in 200 steps: " ++ show (VS.sum (VS.zipWith (\a b -> abs (a - b)) old new))) new
       | otherwise = untilThreshold thresh (idx + 1) new rest
     allObs :: VB.Vector Observation
-    -- allObs = VB.filter ((>= maxPeriod - 3000) . obsPeriod) $ VB.concat (M.elems m)
     allObs = VB.take observationsToUse $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
     xs :: VB.Vector (VB.Vector Double)
     xs = VB.map (VB.convert . filterHeatMap (VS.init heatMap) .
@@ -253,9 +275,9 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
 
 -- | Train regression layger (= all nodes).
 trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
-trainRegressionLayer period (RegressionLayer nodes welInp step)
-  | period < 1000 = RegressionLayer nodes welInp step -- only used for learning the normalization
-  | otherwise = RegressionLayer (VB.map (trainRegressionNode welInp (VB.length nodes) period) nodes) welInp step
+trainRegressionLayer period (RegressionLayer nodes welInp step hmm rewards)
+  | period < 1000 = RegressionLayer nodes welInp step hmm rewards -- only used for learning the normalization
+  | otherwise = RegressionLayer (VB.map (trainRegressionNode welInp (VB.length nodes) period) nodes) welInp step hmm rewards
 
 
 -- | Apply a regression node.
@@ -276,7 +298,7 @@ applyRegressionNode (RegressionNode idx _ coefs heatMap welOut _) inps
 
 -- | Apply regression layer to given inputs
 applyRegressionLayer :: RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
-applyRegressionLayer (RegressionLayer nodes welInp _) actIdx stateFeat =
+applyRegressionLayer (RegressionLayer nodes welInp _ hmm rewards) actIdx stateFeat =
   -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
   applyRegressionNode (nodes VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat) -- stateFeat
   -- trace ("inps: " ++ show inps)

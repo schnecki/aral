@@ -16,22 +16,22 @@ module ML.ARAL.Pretty
     ) where
 
 
-import           Control.Arrow                       (first, second, (&&&), (***))
+import           Control.Arrow                            (first, second, (&&&), (***))
 import           Control.Lens
-import           Control.Monad                       (join, when)
+import           Control.Monad                            (join, when)
 import           Control.Monad.IO.Class
-import           Data.Function                       (on)
-import           Data.List                           (find, foldl', intercalate, intersperse, nub, sort, sortBy)
-import qualified Data.Map.Strict                     as M
-import           Data.Maybe                          (fromMaybe, isJust, listToMaybe)
-import qualified Data.Set                            as S
-import qualified Data.Text                           as T
-import qualified Data.Vector                         as VB
-import qualified Data.Vector.Storable                as V
+import           Data.Function                            (on)
+import           Data.List                                (find, foldl', intercalate, intersperse, nub, sort, sortBy)
+import qualified Data.Map.Strict                          as M
+import           Data.Maybe                               (fromMaybe, isJust, listToMaybe)
+import qualified Data.Set                                 as S
+import qualified Data.Text                                as T
+import qualified Data.Vector                              as VB
+import qualified Data.Vector.Storable                     as V
 import           Grenade
-import           Prelude                             hiding ((<>))
-import           System.IO.Unsafe                    (unsafePerformIO)
-import           Text.PrettyPrint                    as P
+import           Prelude                                  hiding ((<>))
+import           System.IO.Unsafe                         (unsafePerformIO)
+import           Text.PrettyPrint                         as P
 import           Text.Printf
 
 import           ML.ARAL.Action
@@ -41,10 +41,10 @@ import           ML.ARAL.InftyVector
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Parameters
-import qualified ML.ARAL.Proxy                       as P
-import           ML.ARAL.Proxy.Ops                   (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
+import qualified ML.ARAL.Proxy                            as P
+import           ML.ARAL.Proxy.Ops                        (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.RegressionNode
+import           ML.ARAL.Proxy.Regression.RegressionLayer
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -111,7 +111,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy layer@(RegressionLayer ms wel step) aNr nnCfg ->
+    P.RegressionProxy layer@(RegressionLayer ms wel step hmm _) aNr nnCfg ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           inputs :: [NetInputWoAction]
@@ -119,7 +119,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           inputs = nnCfg ^. prettyPrintElems
           inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0..aNr-1]) inputs
        in
-        fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer]) $
+        fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer, text "" $+$ text (show hmm)]) $
            mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
              sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
     pr -> do

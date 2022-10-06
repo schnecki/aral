@@ -65,7 +65,7 @@ import           Unsafe.Coerce                               (unsafeCoerce)
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.AdamW
 import           ML.ARAL.NeuralNetwork.Hasktorch
-import           ML.ARAL.Proxy.RegressionNode
+import           ML.ARAL.Proxy.Regression.RegressionLayer
 import           ML.ARAL.Types                               as T
 
 
@@ -130,7 +130,7 @@ data Proxy
   | CombinedProxy
       { _proxySub            :: !Proxy                                            -- ^ The actual proxy holding all combined values.
       , _proxyOutCol         :: !Int                                              -- ^ Index of data
-      , _proxyExpectedOutput :: ![[((StateFeatures, AgentActionIndices, IsRandomAction), Value)]] -- ^ List of batches of list of n-step results.g Used to save the data for learning.
+      , _proxyExpectedOutput :: ![[((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value)]] -- ^ List of batches of list of n-step results.g Used to save the data for learning.
       }
   | Hasktorch
       { _proxyHTTarget    :: !MLP
@@ -207,7 +207,7 @@ proxyOutCol :: Traversal' Proxy Int
 proxyOutCol f (CombinedProxy p c out) = (\c' -> CombinedProxy p c' out) <$> f c
 proxyOutCol _ p                       = pure p
 
-proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, AgentActionIndices, IsRandomAction), Value)]]
+proxyExpectedOutput :: Traversal' Proxy [[((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value)]]
 proxyExpectedOutput f (CombinedProxy p c out) = CombinedProxy p c <$> f out
 proxyExpectedOutput _ p                       = pure p
 

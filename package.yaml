@@ -69,6 +69,13 @@ dependencies:
   - regress >= 0.1.2
   - ad
   - vector-algorithms
+  - hmm-lapack
+  - lapack >= 0.5
+  - netlib-ffi
+  - comfort-array
+  - utility-ht
+  - non-empty
+  - explicit-exception
 
 library:
   source-dirs: src

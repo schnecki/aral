@@ -121,7 +121,7 @@ import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.RegressionNode
+import           ML.ARAL.Proxy.Regression.RegressionLayer
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
