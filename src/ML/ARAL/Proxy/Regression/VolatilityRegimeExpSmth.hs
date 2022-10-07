@@ -9,7 +9,7 @@ module ML.ARAL.Proxy.Regression.VolatilityRegimeExpSmth
     ( RegimeDetection (..)
     , addValueToRegime
     , currentRegimeExp
-    , State (..)
+    , Regime (..)
     ) where
 
 import           Control.DeepSeq
@@ -23,8 +23,8 @@ import           Debug.Trace
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
 
-data State = Low | High
--- data State = Rising | High | Falling | Low
+data Regime = Low | High
+-- data Regime = Rising | High | Falling | Low
    deriving (Eq, Ord, Enum, Bounded, NFData, Generic, Serialize, Show)
 
 data RegimeDetection =
@@ -32,7 +32,7 @@ data RegimeDetection =
     { regimeWelfordAll  :: WelfordExistingAggregate Double               -- ^ Welford for values.
     , regimeExpSmthFast :: Double
     , regimeExpSmthSlow :: Double
-    , regimeExpSmthSt   :: State
+    , regimeExpSmthSt   :: Regime
     }
   deriving (Show, NFData, Generic, Serialize)
 
@@ -43,7 +43,7 @@ instance Default RegimeDetection where
   def = RegimeDetection WelfordExistingAggregateEmpty 0 0 Low
 
 
-updateExp :: WelfordExistingAggregate Double -> (Double, Double, State) -> Double -> (Double, Double, State)
+updateExp :: WelfordExistingAggregate Double -> (Double, Double, Regime) -> Double -> (Double, Double, Regime)
 updateExp wel (fastExp, slowExp, curSt) x = (fastExp', slowExp', curSt')
   where
     (mean, _, variance) =
@@ -71,5 +71,5 @@ addValueToRegime (RegimeDetection welAll expFast expSlow st) x = RegimeDetection
     welAll' = addValue welAll x
 
 
-currentRegimeExp :: RegimeDetection -> State
+currentRegimeExp :: RegimeDetection -> Regime
 currentRegimeExp (RegimeDetection _ _ _ st) = st
