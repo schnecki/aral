@@ -125,13 +125,13 @@ prettyRegressionNode printObs mWel (RegressionNode idx m coefs heatMap welOut cf
 
 
 prettyRegressionLayer :: RegressionLayer -> Doc
-prettyRegressionLayer (RegressionLayer (nodesLow, nodesHigh) welInp _ regime) =
-  vcat (text "Low Regime" : map (prettyRegressionNode True (Just welInp)) (VB.toList nodesLow)) $+$
+prettyRegressionLayer (RegressionLayer (nodesLow, nodesHigh) welInp _ _) =
+  vcat (text "Low Regime" : map (prettyRegressionNode True (Just welInp)) (VB.toList nodesLow)) $+$ mempty $+$
   vcat (text "High Regime" : map (prettyRegressionNode True (Just welInp)) (VB.toList nodesHigh))
 
 prettyRegressionLayerNoObs :: RegressionLayer -> Doc
-prettyRegressionLayerNoObs (RegressionLayer (nodesLow, nodesHigh) welInp _ regime) =
-  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$
+prettyRegressionLayerNoObs (RegressionLayer (nodesLow, nodesHigh) welInp _ _) =
+  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$ mempty $+$
   vcat (text "High Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesHigh))
 
 
