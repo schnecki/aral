@@ -9,7 +9,6 @@ packages:
 - ../hasktorch/libtorch-ffi-helper
 - ../welford-online-mean-variance
 - ../regress
-- ../hmm-lapack
 
 extra-include-dirs:
 - ../hasktorch/deps/libtorch/include/torch/csrc/api/include
@@ -24,11 +23,6 @@ extra-lib-dirs:
 extra-deps:
 - cuda-0.11.0.0@sha256:4e572a36f9ed3d2f8b40d6ce582b98b9ee0f499ed4ef1e88a33bb691e5be28c7,5654
 - hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
-- lapack-0.5
-- hmm-lapack-0.5
-- comfort-array-0.5.1.1@sha256:77f75e3b1511288db3ea7cac41eb960af6761518a4f48d173120ccf738afa5fa,5572
-- comfort-array-shape-0.0@sha256:95b0d6272a89223ce054c4fb9eef9e858d30dd7b3a7c30b8442dfbc2472f7076,2497
-
 
 allow-newer: false
 resolver: lts-18.18

@@ -18,27 +18,27 @@ module ML.ARAL.Proxy.Regression.RegressionLayer
     ) where
 
 import           Control.Applicative
-import           Control.Arrow                               (first)
+import           Control.Arrow                                    (first)
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Default
-import           Data.List                                   (foldl', intercalate, sortOn)
-import qualified Data.Map.Strict                             as M
-import           Data.Maybe                                  (fromMaybe)
-import           Data.Ord                                    (Down (..), comparing)
+import           Data.List                                        (foldl', intercalate, sortOn)
+import qualified Data.Map.Strict                                  as M
+import           Data.Maybe                                       (fromMaybe)
+import           Data.Ord                                         (Down (..), comparing)
 import           Data.Serialize
-import qualified Data.Vector                                 as VB
-import           Data.Vector.Algorithms.Intro                as VB
-import qualified Data.Vector.Storable                        as VS
+import qualified Data.Vector                                      as VB
+import           Data.Vector.Algorithms.Intro                     as VB
+import qualified Data.Vector.Storable                             as VS
 import           Debug.Trace
 import           EasyLogger
 import           GHC.Generics
 import           Numeric.AD
 import           Numeric.Regression.Linear
-import           Prelude                                     hiding ((<>))
+import           Prelude                                          hiding ((<>))
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.IO
-import           System.IO.Unsafe                            (unsafePerformIO)
+import           System.IO.Unsafe                                 (unsafePerformIO)
 import           System.Random
 import           Text.PrettyPrint
 import           Text.Printf
@@ -46,7 +46,7 @@ import           Text.Printf
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.NeuralNetwork.Scaling
-import           ML.ARAL.Proxy.Regression.VolatilityRegime
+import           ML.ARAL.Proxy.Regression.VolatilityRegimeExpSmth
 import           ML.ARAL.Types
 
 -- | One `Observation` holds one input and expected output.
@@ -92,7 +92,7 @@ data RegressionLayer =
     { regressionLayerActions        :: !(VB.Vector RegressionNode)
     , regressionInpWelford          :: !(WelfordExistingAggregate (VS.Vector Double))
     , regressionStep                :: !Int
-    , regressionRegime              :: !RegimeDetection -- Low or High variance regime
+    , regressionRegime              :: !RegimeDetection    -- Low or High variance regime
     , regressionVarianceRegimeValue :: !(VS.Vector Double) -- TODO: make map? the distributions will be different!?!
     }
   deriving (Show, Generic, Serialize, NFData)
@@ -178,8 +178,8 @@ addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m
 addGroundTruthValueLayer :: Period -> [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
 addGroundTruthValueLayer period [] lay = lay
 addGroundTruthValueLayer period obs (RegressionLayer ms welInp step regime rewards) =
-  let reg = currentRegime regime rewards'
-  in writeRegimeFile reg (getStateMeans regime) `seq`
+  let regExp = currentRegimeExp regime'
+  in writeRegimeFile regExp `seq`
   RegressionLayer
     (foldl' (\acc (ob, aId) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) ms obs)
     welInp'
@@ -189,18 +189,20 @@ addGroundTruthValueLayer period obs (RegressionLayer ms welInp step regime rewar
   where
     reward = obsVarianceRegimeValue $ fst $ head obs
     rewards' = VS.take 100 $ rewards VS.++ VS.singleton reward
-    regime' = addValueAndTrainHMM regime [reward]
-
+    regime' = addValueToRegime regime reward
     welInp'
       | True || period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
       -- VB.take idx xs VB.++ (x `VB.cons` VB.drop (idx + 1) xs)
-    writeRegimeFile reg means = unsafePerformIO $ do
+    getBorder
+      | period < 10 = const 0
+      | otherwise = (\(mean,_,x) -> mean + sqrt x) . finalize
+    writeRegimeFile reg = unsafePerformIO $ do
       let txt = show period ++ "\t" ++ show (obsVarianceRegimeValue $ fst $ head obs) ++ "\t" ++ show (fromEnum reg) ++ "\t" ++
-                intercalate "\t" (map show means) ++ "\n"
+                show (regimeExpSmthFast regime) ++ "\t" ++ show (regimeExpSmthSlow regime) ++ "\t" ++ show (getBorder $ regimeWelfordAll regime) ++ "\n"
       when (period == 0) $ do
-        writeFile "regime" $ "period\treward\tregime\t" ++ intercalate "\t" (map (("Mean" ++) . show) [1..length means]) ++ "\n"
+        writeFile "regime" $ "period\treward\tregime\tExpFast\tExpSlow\tBorder\n"
       appendFile "regime" txt
 
 
@@ -214,22 +216,18 @@ addGroundTruthValueLayer period obs (RegressionLayer ms welInp step regime rewar
 
 -- | Train a Regression Node.
 trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Period -> RegressionNode -> RegressionNode
-trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMap welOut cfg)
-  -- trace ("period: " ++ show (period)) $
-  -- trace ("allObs len: " ++ show (length allObs)) $
- =
+trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMap welOut cfg) =
   if M.null m || VB.length allObs < observationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
     then old
-    else
-    let coefsFiltered = filterHeatMap heatMap coefs
-        reg = map VS.convert $ regress ys xs (VB.convert coefsFiltered) :: [Model VS.Vector Double]
-        learnRate = decaySetup (ExponentialDecay (Just 1e-5) 0.8 30000) period 1
-        fittedCoefs :: VS.Vector Double
-        fittedCoefs = untilThreshold (fromIntegral (VS.length coefsFiltered) * 5e-4) 1 coefsFiltered reg
-        coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefsFiltered fittedCoefs
-        heatMap'
-          | period > 10000 = VS.zipWith (\act v -> abs v >= 0.01 && act) heatMap coefs' VS.// [(VS.length heatMap - 1, True)]
-          | otherwise = heatMap
+    else let coefsFiltered = filterHeatMap heatMap coefs
+             reg = map VS.convert $ regress ys xs (VB.convert coefsFiltered) :: [Model VS.Vector Double]
+             learnRate = decaySetup (ExponentialDecay (Just 1e-5) 0.8 30000) period 1
+             fittedCoefs :: VS.Vector Double
+             fittedCoefs = untilThreshold (fromIntegral (VS.length coefsFiltered) * 5e-4) 1 coefsFiltered reg
+             coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefsFiltered fittedCoefs
+             heatMap'
+               | period > 10000 = VS.zipWith (\act v -> abs v >= 0.01 && act) heatMap coefs' VS.// [(VS.length heatMap - 1, True)]
+               | otherwise = heatMap
           in RegressionNode idx (periodicallyCleanObservations m) coefs' heatMap' welOut cfg
           -- in RegressionNode idx (periodicallyCleanObservations m) coefs' welOut cfg
                 -- regressStochastic ys xs coefs :: [Model VB.Vector Double]
@@ -256,15 +254,19 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
     allObs :: VB.Vector Observation
     allObs = VB.take observationsToUse $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
     xs :: VB.Vector (VB.Vector Double)
-    xs = VB.map (VB.convert . filterHeatMap (VS.init heatMap) .
-                 normaliseStateFeatureUnbounded welInp .  -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
-                 obsInputValues) allObs
+    xs =
+      VB.map
+        (VB.convert .
+         filterHeatMap (VS.init heatMap) .
+         normaliseStateFeatureUnbounded welInp . -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
+         obsInputValues)
+        allObs
     ys :: VB.Vector Double
     ys =
       VB.map
       -- (scaleMinMax (-5, 5) . obsExpectedOutputValue)
-        (-- (*100) .
-         normaliseUnbounded welOut . obsExpectedOutputValue)
+         -- (*100) .
+        (normaliseUnbounded welOut . obsExpectedOutputValue)
         -- obsExpectedOutputValue
         allObs
     lastObsPeriod = obsPeriod $ VB.last allObs
