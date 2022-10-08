@@ -224,8 +224,8 @@ hasLocked msg action =
   , Handler $ \exc@BlockedIndefinitelyOnSTM -> sayString ("[STM]: " ++ msg) >> throwIO exc
   ]
 
-updateMinMax :: ARAL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
-updateMinMax aral as calc = do
+updateMinMax :: AgentType -> ARAL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
+updateMinMax agTp aral as calc = do
   mMinMax <- hasLocked "updateMinMax tryReadMVar" $ tryReadMVar minMaxStates
   let minMax' =
         case mMinMax of
@@ -252,24 +252,24 @@ updateMinMax aral as calc = do
         _          -> getVValState' calc
     valueFunction =
       case aral ^. algorithm of
-        AlgARAL {} -> rValue aral RBig
-        AlgDQN {}  -> rValue aral RBig
-        _          -> vValue aral
+        AlgARAL {} -> rValue agTp aral RBig
+        AlgDQN {}  -> rValue agTp aral RBig
+        _          -> vValue agTp aral
 
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
 execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> AgentType -> RewardFutureData s -> m (ARAL s as)
-execute aral agent (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
+execute aral agTp (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
-  aral <- if isMainAgent agent
+  aral <- if isMainAgent agTp
           then do
             when (aral ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
               liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
             writeDebugFiles aral
           else return aral
 #endif
-  (proxies', calc) <- P.insert aral agent period state as reward stateNext episodeEnd (mkCalculation aral) (aral ^. proxies)
+  (proxies', calc) <- P.insert aral agTp period state as reward stateNext episodeEnd (mkCalculation agTp aral) (aral ^. proxies)
   let lastVsLst = fromMaybe (VB.singleton $ toValue agents 0) (getLastVs' calc)
       strVAvg = map (show . avg) $ transpose $ VB.toList $ VB.map fromValue lastVsLst
       rhoVal = fromMaybe (toValue agents 0) (getRhoVal' calc)
@@ -294,9 +294,9 @@ execute aral agent (RewardFutureData period state as (Reward reward) stateNext e
       agents = aral ^. settings . independentAgents
       list = concatMap ("\t" <>)
       zero = toValue agents 0
-  if isMainAgent agent
+  if isMainAgent agTp
   then do
-    (minVal, maxVal) <- liftIO $ updateMinMax aral (VB.map snd as) calc
+    (minVal, maxVal) <- liftIO $ updateMinMax agTp aral (VB.map snd as) calc
     let minMaxValTxt = "\t" ++ show minVal ++ "\t" ++ show maxVal
     liftIO $ unless (period < 10) $
       appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ minMaxValTxt ++ "\n" )

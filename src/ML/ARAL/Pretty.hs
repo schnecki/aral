@@ -96,7 +96,7 @@ noMod _ _ = return
 
 modifierSubtract :: (MonadIO m) => ARAL s as -> P.Proxy -> Modifier m
 modifierSubtract borl px lk k v0 = do
-  vS <- P.lookupProxy (borl ^. t) lk (second (VB.replicate agents) k) px
+  vS <- P.lookupProxy MainAgent (borl ^. t) lk (second (VB.replicate agents) k) px
   return (v0 - vS)
   where agents = px ^?! proxyNrAgents
 
@@ -117,7 +117,7 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           inputs :: [NetInputWoAction]
           -- inputs = nub $ concatMap (concatMap (\obs -> map (VB.convert . obsInputValues) [VB.head obs, VB.last obs]) . M.elems . regNodeObservations) (VB.toList ms)
           inputs = nnCfg ^. prettyPrintElems
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0..aNr-1]) inputs
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (agentIndex MainAgent) layer aId inp)) [0..aNr-1]) inputs
        in
         fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer, text "" $+$ text (show regime)]) $
            mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $

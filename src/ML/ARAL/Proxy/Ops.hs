@@ -476,54 +476,54 @@ trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (program
 
 ------------------------------ lookup ------------------------------
 
-lookupProxyAgent :: (MonadIO m) => Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
-lookupProxyAgent _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
-lookupProxyAgent _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
-lookupProxyAgent _ _ 0 (k, a) (RegressionProxy ms _ _) = return $
+lookupProxyAgent :: (MonadIO m) => AgentType -> Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
+lookupProxyAgent _ _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
+lookupProxyAgent _ _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
+lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _ _) = return $
   -- trace ("lookupProxyAgent as: " ++ show a)
-  applyRegressionLayer ms a (VB.convert k)
-lookupProxyAgent _ _ agNr (k, a) (RegressionProxy ms _ _) = error "RegressionProx ydoes not work with multiple agents"
-lookupProxyAgent _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
+  applyRegressionLayer (agentIndex agTp) ms a (VB.convert k)
+lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _ _) = error "RegressionProx ydoes not work with multiple agents"
+lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
   where
     agents = px ^?! proxyNrAgents
 
 
 -- | Retrieve a value.
-lookupProxy :: (MonadIO m) => Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
-lookupProxy _ _ _ (Scalar x _)           = return $ AgentValue x
-lookupProxy _ _ (k, ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k, a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxy _ _ (k, ass) (RegressionProxy ms _ _)
+lookupProxy :: (MonadIO m) => AgentType -> Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
+lookupProxy _ _ _ _ (Scalar x _)           = return $ AgentValue x
+lookupProxy _ _ _ (k, ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k, a) m V.! agNr) ass (VB.generate (VB.length ass) id)
+lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _ _)
   | length ass > 1 = error "RegressionProxy does not work with multiple agents"
   | otherwise = return $ AgentValue $ V.convert $ VB.map (\a ->
                                                             -- trace ("lookupProxy (a, ass): " ++ show (a, ass))
-                                                            applyRegressionLayer ms a (VB.convert k)) ass
-lookupProxy _ lkType k px                = lookupNeuralNetwork lkType k px
+                                                            applyRegressionLayer (agentIndex agTp) ms a (VB.convert k)) ass
+lookupProxy _ _ lkType k px                = lookupNeuralNetwork lkType k px
 
 
 -- | Retrieve a value, but do not unscale! For DEBUGGING only!
-lookupProxyNoUnscale :: (MonadIO m) => Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
-lookupProxyNoUnscale _ _ _ (Scalar x _)             = return $ AgentValue x
-lookupProxyNoUnscale _ _ (k,ass) (Table m def _)    = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k,a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxyNoUnscale p lkType k l@RegressionProxy{} = lookupProxy p lkType k l
-lookupProxyNoUnscale _ lkType k px                  = lookupNeuralNetworkUnscaled lkType k px
+lookupProxyNoUnscale :: (MonadIO m) => AgentType -> Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
+lookupProxyNoUnscale _ _ _ _ (Scalar x _)                = return $ AgentValue x
+lookupProxyNoUnscale _ _ _ (k,ass) (Table m def _)       = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k,a) m V.! agNr) ass (VB.generate (VB.length ass) id)
+lookupProxyNoUnscale agTp p lkType k l@RegressionProxy{} = lookupProxy agTp p lkType k l
+lookupProxyNoUnscale _ _ lkType k px                     = lookupNeuralNetworkUnscaled lkType k px
 
 
 -- | Retrieves all action values for the state but filters to the provided actions.
-lookupState :: (MonadIO m) => LookupType -> (StateFeatures, DisallowedActionIndicies) -> Proxy -> m Values
-lookupState _ (_, nass) (Scalar x nrAs) = return $ AgentValues $ VB.zipWith (\agentValue as -> V.replicate (V.length as) agentValue) (V.convert x) ass
+lookupState :: (MonadIO m) => AgentType -> LookupType -> (StateFeatures, DisallowedActionIndicies) -> Proxy -> m Values
+lookupState _ _ (_, nass) (Scalar x nrAs) = return $ AgentValues $ VB.zipWith (\agentValue as -> V.replicate (V.length as) agentValue) (V.convert x) ass
   where
     ass = toPositiveActionList nrAs nass
-lookupState _ (k, nass) (Table m def nrAs) =
+lookupState _ _ (k, nass) (Table m def nrAs) =
   return $ AgentValues $ VB.zipWith (\as agNr -> V.map (\a -> M.findWithDefault def (k, a) m V.! agNr) as) ass (VB.fromList [0 .. VB.length ass - 1])
   where
     ass = toPositiveActionList nrAs nass
-lookupState _ (k, nass) (RegressionProxy ms nrAs _) =
+lookupState agTp _ (k, nass) (RegressionProxy ms nrAs _) =
   return $ AgentValues $ VB.zipWith (\as agNr ->
                                        -- trace ("lookupState as: " ++ show as)
-                                       V.map (\a -> applyRegressionLayer ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
+                                       V.map (\a -> applyRegressionLayer (agentIndex agTp) ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
   where
     ass = toPositiveActionList nrAs nass
-lookupState tp (k, DisallowedActionIndicies ass) px = do
+lookupState _ tp (k, DisallowedActionIndicies ass) px = do
   AgentValues vals <- lookupActionsNeuralNetwork tp k px
   return $ AgentValues $ VB.zipWith filterActions ass vals
   where

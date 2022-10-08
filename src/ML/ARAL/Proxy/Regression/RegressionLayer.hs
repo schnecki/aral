@@ -92,7 +92,7 @@ data RegressionLayer =
     { regressionLayerActions :: !(VB.Vector RegressionNode, VB.Vector RegressionNode) -- ^ On set of actions for each regime.
     , regressionInpWelford   :: !(WelfordExistingAggregate (VS.Vector Double))
     , regressionStep         :: !Int
-    , regressionRegime       :: !RegimeDetection    -- Low or High variance regime
+    , regressionRegime       :: !(VB.Vector RegimeDetection)    -- Low or High variance regime
     }
   deriving (Show, Generic, Serialize, NFData)
 
@@ -159,7 +159,7 @@ randRegressionNode cfg nrInpVals nodeIndex = do
 randRegressionLayer :: Maybe RegressionConfig -> Int -> Int -> IO RegressionLayer
 randRegressionLayer mCfg nrInput nrOutput = do
   nodes <- mapM (randRegressionNode (fromMaybe def mCfg) nrInput) [0 .. nrOutput - 1]
-  return $ RegressionLayer (VB.fromList nodes, VB.fromList nodes) WelfordExistingAggregateEmpty 0 def
+  return $ RegressionLayer (VB.fromList nodes, VB.fromList nodes) WelfordExistingAggregateEmpty 0 (VB.singleton def)
 
 -- | Filter out elements using heat map.
 filterHeatMap :: VS.Vector Bool -> VS.Vector Double -> VS.Vector Double
@@ -194,18 +194,19 @@ addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m
 addGroundTruthValueLayer :: Period -> [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
 addGroundTruthValueLayer period [] lay = lay
 addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime) =
-  let regExp = currentRegimeExp regime'
+  let regExp = currentRegimeExp (VB.head regime')
    in writeRegimeFile regExp `seq`
       RegressionLayer
     -- (foldl' (\acc (workerId, (ob, aId)) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) nodes (zip [0..] obs))
-        ((if period < 1000 then trace ("TODO: multiple regime detections!") else id) $ foldl' updateNodes nodes obs)
+        (foldl' updateNodes nodes $ zip [0 ..] obs)
         welInp'
         (step + 1)
         regime' -- only on first one (others are from different workers!)
   where
-    updateNodes nodes (ob, aId) = overRegime (currentRegimeExp regime) (\ns -> replaceIndex aId (addGroundTruthValueNode period ob (ns VB.! aId)) ns) nodes
+    updateNodes nodes (regIdx, (ob, aId)) = overRegime (currentRegimeExp $ regime' VB.! regIdx) (\ns -> replaceIndex aId (addGroundTruthValueNode period ob (ns VB.! aId)) ns) nodes
     reward = obsVarianceRegimeValue $ fst $ head obs
-    regime' = addValueToRegime regime reward
+    regime0 = regime VB.++ VB.replicate (length obs - VB.length regime) (VB.head regime)
+    regime' = VB.zipWith (\reg -> addValueToRegime reg . obsVarianceRegimeValue . fst) regime0 (VB.fromList obs)
     welInp'
       | True || period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
@@ -217,12 +218,8 @@ addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime) =
     writeRegimeFile reg =
       unsafePerformIO $ do
         let txt =
-              show period ++
-              "\t" ++
-              show (obsVarianceRegimeValue $ fst $ head obs) ++
-              "\t" ++
-              show (fromEnum reg) ++
-              "\t" ++ show (regimeExpSmthFast regime) ++ "\t" ++ show (regimeExpSmthSlow regime) ++ "\t" ++ show (getBorder $ regimeWelfordAll regime) ++ "\n"
+              show period ++ "\t" ++ show (obsVarianceRegimeValue $ fst $ head obs) ++ "\t" ++ show (fromEnum reg) ++ "\t" ++ show (regimeExpSmthFast $ VB.head regime') ++
+              "\t" ++ show (regimeExpSmthSlow $ VB.head regime') ++ "\t" ++ show (getBorder $ regimeWelfordAll $ VB.head regime') ++ "\n"
         when (period == 0) $ do writeFile "regime" $ "period\treward\tregime\tExpFast\tExpSlow\tBorder\n"
         appendFile "regime" txt
 
@@ -318,11 +315,13 @@ applyRegressionNode (RegressionNode idx _ coefs heatMap welOut _) inps
   where fromAct True  = 1
         fromAct False = 0
 
+type WorkerNr = Int
 
 -- | Apply regression layer to given inputs
-applyRegressionLayer :: RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
-applyRegressionLayer (RegressionLayer nodes welInp _ regime) actIdx stateFeat =
+applyRegressionLayer :: WorkerNr -> RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
+applyRegressionLayer wIdx (RegressionLayer nodes welInp _ regime) actIdx stateFeat =
   -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
-  withRegime (currentRegimeExp regime) (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
-
-
+  withRegime (currentRegimeExp $ regime VB.! wIdx') (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
+  where wIdx'
+          | wIdx >= VB.length regime = 0
+          | otherwise = wIdx

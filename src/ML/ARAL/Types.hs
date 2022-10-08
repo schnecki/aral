@@ -83,6 +83,12 @@ isWorkerAgent :: AgentType -> Bool
 isWorkerAgent MainAgent = False
 isWorkerAgent _         = True
 
+agentIndex :: AgentType -> Int
+agentIndex MainAgent = 0
+agentIndex (WorkerAgent idx)
+  | idx == 0 = error "agentIdx: Worker agent may not have index 0"
+  | otherwise = idx
+
 
 instance Enum AgentType where
   fromEnum MainAgent        = 0
