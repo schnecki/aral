@@ -375,7 +375,7 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
   -- let model = netFun 1
   -- putStrLn "Net: "
   -- print model
-  repMem <- mkReplayMemories as settings nnConfig
+  -- repMem <- mkReplayMemories as settings nnConfig
   let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig
   let inp = ftExt initialState
   tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (V.length inp) (length as)
@@ -389,7 +389,7 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
               tabSA
               tabSA
               tabSA
-              Nothing -- repMem
+              Nothing
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
   return $!
     force $

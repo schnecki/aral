@@ -118,7 +118,7 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   let aNr = VB.map snd as
   let aRand = or $ VB.map fst as
   let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr rew aRand val px) mVal
-  pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
+  pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin   `using` rpar
   pRho' <-  mInsertProxy   (getRhoVal' calc) pRho             `using` rpar
   pV' <-    mInsertProxy   (getVValState' calc) pV            `using` rpar
   pW' <-    mInsertProxy   (getWValState' calc) pW            `using` rpar

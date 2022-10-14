@@ -1,10 +1,8 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 module ML.ARAL.Proxy.Regression.VolatilityRegimeExpSmth
     ( RegimeDetection (..)
     , addValueToRegime
@@ -14,12 +12,7 @@ module ML.ARAL.Proxy.Regression.VolatilityRegimeExpSmth
 
 import           Control.DeepSeq
 import           Data.Default
-import           Data.List                                   (foldl')
-import qualified Data.Map.Strict                             as M
-import           Data.Maybe                                  (fromMaybe)
-import           Data.Monoid
 import           Data.Serialize
-import           Debug.Trace
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
 
@@ -29,10 +22,10 @@ data Regime = Low | High
 
 data RegimeDetection =
   RegimeDetection
-    { regimeWelfordAll  :: WelfordExistingAggregate Double               -- ^ Welford for values.
-    , regimeExpSmthFast :: Double
-    , regimeExpSmthSlow :: Double
-    , regimeExpSmthSt   :: Regime
+    { regimeWelfordAll  :: !(WelfordExistingAggregate Double)               -- ^ Welford for values.
+    , regimeExpSmthFast :: !Double
+    , regimeExpSmthSlow :: !Double
+    , regimeExpSmthSt   :: !Regime
     }
   deriving (Show, NFData, Generic, Serialize)
 
@@ -52,15 +45,17 @@ updateExp wel (fastExp, slowExp, curSt) x = (fastExp', slowExp', curSt')
         WelfordExistingAggregateEmpty -> (0, 0, 0)
     fastExp' = (1 - alphaFast) * fastExp + alphaFast * abs x
     slowExp' = (1 - alphaSlow) * slowExp + alphaSlow * abs x
-    alphaFast = 0.05
-    alphaSlow = 0.01
+    alphaFast = 0.01
+    alphaSlow = 0.001
     border = mean + sqrt variance
+    borderUp = 0.612 * border
+    borderDown = 0.5 * border
     curSt' =
       case curSt of
         Low
-          | fastExp' > border && slowExp' > 0.612 * border -> High
+          | fastExp' > borderUp && slowExp' > borderDown -> High
         High
-          | fastExp' <= 0.612 * border && slowExp' <= 0.612 * border -> Low
+          | fastExp' <= borderDown && slowExp' <= borderUp -> Low
         st -> st
 
 

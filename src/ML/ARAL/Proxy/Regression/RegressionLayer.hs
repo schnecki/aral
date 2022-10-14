@@ -137,13 +137,17 @@ prettyRegressionLayerNoObs (RegressionLayer (nodesLow, nodesHigh) welInp _ _) =
 
 -- Regime helpers
 
-overRegime :: Regime -> (VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode)
-overRegime Low f (nodesLow, nodesHigh)  = (f nodesLow, nodesHigh)
-overRegime High f (nodesLow, nodesHigh) = (nodesLow, f nodesHigh)
+overRegime :: Int -> Regime -> (VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode)
+overRegime step _ f (nodesLow, nodesHigh)
+  | step < periodsSharedRegime = (f nodesLow, f nodesHigh)
+overRegime _ Low f (nodesLow, nodesHigh)  = (f nodesLow, nodesHigh)
+overRegime _ High f (nodesLow, nodesHigh) = (nodesLow, f nodesHigh)
 
-withRegime :: Regime -> (VB.Vector RegressionNode -> a) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> a
-withRegime Low f (nodesLow, _)   = f nodesLow
-withRegime High f (_, nodesHigh) = f nodesHigh
+withRegime :: Int -> Regime -> (VB.Vector RegressionNode -> a) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> a
+withRegime step _ f (nodesLow, _)
+  | step < periodsSharedRegime = f nodesLow
+withRegime _ Low f (nodesLow, _)   = f nodesLow
+withRegime _ High f (_, nodesHigh) = f nodesHigh
 
 overBothRegimes ::(VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode)
 overBothRegimes f (nodesLow, nodesHigh) = (f nodesLow, f nodesHigh)
@@ -164,16 +168,14 @@ randRegressionLayer mCfg nrInput nrOutput = do
 -- | Filter out elements using heat map.
 filterHeatMap :: VS.Vector Bool -> VS.Vector Double -> VS.Vector Double
 filterHeatMap heatMap vec
-  | VS.length heatMap /= VS.length vec = error $ "Length of heat map and vector do not coincide: " ++ show (VS.length heatMap, VS.length vec)
-  | otherwise = VS.filter (/= 0) $ VS.zipWith (\act x -> fromAct act * x) heatMap vec
-  where fromAct True  = 1
-        fromAct False = 0
+  | VS.length heatMap /= VS.length vec = error $ "filterHeatMap: Lengths of heat map and vector do not coincide: " ++ show (VS.length heatMap, VS.length vec)
+  | otherwise = VS.imapMaybe (\idx x -> if heatMap VS.! idx then Just x else Nothing) vec
 
 -- | Recreate original length of coefficients from heat map.
 toCoefficients :: VS.Vector Bool -> VS.Vector Double -> VS.Vector Double
 toCoefficients heatMap vec
   | VS.null vec && VS.null heatMap = VS.empty
-  | VS.null heatMap || VS.null vec = error $ "Lengths of heat map and vector do not match: " ++ show (VS.length heatMap, VS.length vec)
+  | VS.null heatMap || VS.null vec = error $ "toCoefficients: Lengths of heat map and vector do not match: " ++ show (VS.length heatMap, VS.length vec)
   | VS.head heatMap = VS.head vec `VS.cons` toCoefficients (VS.tail heatMap) (VS.tail vec)
   | otherwise = 0 `VS.cons` toCoefficients (VS.tail heatMap) vec
 
@@ -193,34 +195,39 @@ addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m
 -- | Add ground truth values from different workers to the layer.
 addGroundTruthValueLayer :: Period -> [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
 addGroundTruthValueLayer period [] lay = lay
-addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime) =
-  let regExp = currentRegimeExp (VB.head regime')
-   in writeRegimeFile regExp `seq`
-      RegressionLayer
-    -- (foldl' (\acc (workerId, (ob, aId)) -> replaceIndex aId (addGroundTruthValueNode period ob (acc VB.! aId)) acc) nodes (zip [0..] obs))
-        (foldl' updateNodes nodes $ zip [0 ..] obs)
-        welInp'
-        (step + 1)
-        regime' -- only on first one (others are from different workers!)
+addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime)
+  | step > 0 && length obs /= VB.length regime =
+    error $ "Regime length does ot fit number of observations: " ++ show (VB.length regime, length obs) ++ ". Number of parallel observations must be constant!"
+  | otherwise =
+    let regExp = currentRegimeExp (VB.head regime')
+     in writeRegimeFile regExp `seq` RegressionLayer (foldl' updateNodes nodes (zip [0 ..] obs)) welInp' (step + 1) regime'
   where
-    updateNodes nodes (regIdx, (ob, aId)) = overRegime (currentRegimeExp $ regime' VB.! regIdx) (\ns -> replaceIndex aId (addGroundTruthValueNode period ob (ns VB.! aId)) ns) nodes
-    reward = obsVarianceRegimeValue $ fst $ head obs
-    regime0 = regime VB.++ VB.replicate (length obs - VB.length regime) (VB.head regime)
+    updateNodes nds (regId, (ob, aId)) = overRegime step (currentRegimeExp (regime' VB.! regId)) (\ns -> replaceIndex aId (addGroundTruthValueNode period ob (ns VB.! aId)) ns) nds
+    -- reward = obsVarianceRegimeValue $ fst $ head obs
+    regime0
+      | VB.length regime == length obs = regime
+      | step == 0 = regime VB.++ VB.replicate (length obs - VB.length regime) (VB.head regime)
+      | otherwise = error "addGroundTruthValueNode: Should not happen!"
     regime' = VB.zipWith (\reg -> addValueToRegime reg . obsVarianceRegimeValue . fst) regime0 (VB.fromList obs)
     welInp'
-      | True || period < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
+      | True || step < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
-      -- VB.take idx xs VB.++ (x `VB.cons` VB.drop (idx + 1) xs)
     getBorder
-      | period < 10 = const 0
+      | step < 10 = const 0
       | otherwise = (\(mean, _, x) -> mean + sqrt x) . finalize
     writeRegimeFile reg =
       unsafePerformIO $ do
         let txt =
-              show period ++ "\t" ++ show (obsVarianceRegimeValue $ fst $ head obs) ++ "\t" ++ show (fromEnum reg) ++ "\t" ++ show (regimeExpSmthFast $ VB.head regime') ++
+              show step ++
+              "\t" ++
+              show (obsVarianceRegimeValue $ fst $ head obs) ++
+              "\t" ++
+              show (fromEnum reg) ++
+              "\t" ++
+              show (regimeExpSmthFast $ VB.head regime') ++
               "\t" ++ show (regimeExpSmthSlow $ VB.head regime') ++ "\t" ++ show (getBorder $ regimeWelfordAll $ VB.head regime') ++ "\n"
-        when (period == 0) $ do writeFile "regime" $ "period\treward\tregime\tExpFast\tExpSlow\tBorder\n"
+        when (step == 0) $ do writeFile "regime" $ "period\treward\tregime\tExpFast\tExpSlow\tBorder\n"
         appendFile "regime" txt
 
 
@@ -231,6 +238,20 @@ addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime) =
 -- costFunction RegLinear coefs inps =
 --   VS.sum (VS.zipWith (*) (VB.convert coefs) inps) + VB.last coefs
 
+-- | Periods after which the heat map will be activated and, hence, unimportant features automatically turned off.
+periodsHeatMapActive :: Int
+periodsHeatMapActive = 10000
+
+-- | Starting periods in which the there is no regime seperation. To prevent divergence the same regime is used until the specified number of data points are collected per regime.
+periodsSharedRegime :: Int
+periodsSharedRegime = 10000
+
+-- | Earliest possible training period when training starts.
+periodsTrainStart :: Int
+periodsTrainStart = 1000
+
+gradDecentMaxIterations :: Int
+gradDecentMaxIterations = 500
 
 -- | Train a Regression Node.
 trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Period -> RegressionNode -> RegressionNode
@@ -238,55 +259,47 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
   if M.null m || VB.length allObs < observationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
     then old
     else let coefsFiltered = filterHeatMap heatMap coefs
-             reg = map VS.convert $ regress ys xs (VB.convert coefsFiltered) :: [Model VS.Vector Double]
+             models = map VS.convert $ regress ys xs (VB.convert coefsFiltered) :: [Model VS.Vector Double]
              learnRate = decaySetup (ExponentialDecay (Just 1e-5) 0.8 30000) period 1
-             fittedCoefs :: VS.Vector Double
-             fittedCoefs = untilThreshold (fromIntegral (VS.length coefsFiltered) * 5e-4) 1 coefsFiltered reg
-             coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefsFiltered fittedCoefs
-             heatMap'
-               | period > 10000 = VS.zipWith (\act v -> abs v >= 0.01 && act) heatMap coefs' VS.// [(VS.length heatMap - 1, True)]
-               | otherwise = heatMap
-          in RegressionNode idx (periodicallyCleanObservations m) coefs' heatMap' welOut cfg
-          -- in RegressionNode idx (periodicallyCleanObservations m) coefs' welOut cfg
-                -- regressStochastic ys xs coefs :: [Model VB.Vector Double]
-       -- let reg = regress ys xs coefs :: [Model VB.Vector Double]
-       -- in RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) welOut cfg
-       -- trace ("trainRegressionNode\n" ++ show (prettyRegressionNode old))
-       -- trace ("ys: " ++ show ys)
-       -- trace ("auto: " ++ show (VB.map auto ys :: VB.Vector Double) )
-       -- trace ("xs: " ++ show (zip (VB.toList xs) (VB.toList ys))) $
-       -- trace ("cost: " ++ show (totalCost coefs (fmap auto ys) (fmap (fmap auto) xs)))
-       -- RegressionNode idx m (indexWithDefault (VB.length ys) coefs reg) cfg
+             eiFittedCoefs :: Either RegressionNode (VS.Vector Double)
+             eiFittedCoefs = untilThreshold (fromIntegral (VS.length coefsFiltered) * 5e-4) 1 coefsFiltered models
+          in case eiFittedCoefs of
+               Left regNode -> regNode -- in case we reanable previously disabled features
+               Right fittedCoefs ->
+                 let coefs' = toCoefficients heatMap $ VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefsFiltered fittedCoefs
+                     heatMap'
+                       | period > periodsHeatMapActive = VS.zipWith (\act v -> abs v >= 0.01 && act) heatMap coefs' VS.// [(VS.length heatMap - 1, True)]
+                       | otherwise = heatMap
+                  in RegressionNode idx (periodicallyCleanObservations m) coefs' heatMap' welOut cfg
   where
     observationsToUse = VS.length $ obsInputValues $ VB.head $ snd $ M.findMax m
-    untilThreshold :: Double -> Int -> VS.Vector Double -> [VS.Vector Double] -> VS.Vector Double
-    untilThreshold _ idx old [] = $(pureLogPrintWarning) ("Default after " ++ show idx) old
-    untilThreshold thresh idx old (new:rest)
-      | VS.sum (VS.zipWith (\a b -> abs (a - b)) old new) <= thresh =
+    modelError oldModel newModel = VS.sum $ VS.zipWith (\a b -> abs (a - b)) oldModel newModel
+    nonZero x
+      | x == 0 = 0.01
+      | otherwise = x
+    untilThreshold :: Double -> Int -> VS.Vector Double -> [VS.Vector Double] -> Either RegressionNode (VS.Vector Double)
+    untilThreshold _ iter lastModel [] = $(pureLogPrintWarning) ("No more models. Default after " ++ show iter) (Right lastModel)
+    untilThreshold thresh iter lastModel (new:rest)
+      | modelError lastModel new <= thresh =
         if regConfigVerbose cfg
-          then $(pureLogPrintWarning) ("Threshold reached. Steps: " ++ show idx) new
-          else new
-      | null rest = $(pureLogPrintWarning) ("No more models, but threshold not reached. Steps: " ++ show idx) new
-      | idx >= 200 = $(pureLogPrintWarning) ("Threshold of " ++ show thresh ++ " never reached in 200 steps: " ++ show (VS.sum (VS.zipWith (\a b -> abs (a - b)) old new))) new
-      | otherwise = untilThreshold thresh (idx + 1) new rest
+          then $(pureLogPrintWarning) ("ThresholdModel reached. Steps: " ++ show iter) (Right new)
+          else Right new
+      | null rest = $(pureLogPrintWarning) ("No more models, but threshlastModel not reached. Steps: " ++ show iter) (Right new)
+      | iter >= gradDecentMaxIterations =
+        if period > 2 * periodsHeatMapActive && VS.any (== False) heatMap
+          then $(pureLogPrintWarning)
+                 ("Reactivating all features. ThresholdModel of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
+                 (Left $ trainRegressionNode welInp nrNodes period (RegressionNode idx m (VS.map nonZero coefs) (VS.map (const True) heatMap) welOut cfg))
+          else $(pureLogPrintWarning)
+                 ("Period " ++ show period ++ ": ThresholdModel of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
+                 (Right new)
+      | otherwise = untilThreshold thresh (iter + 1) new rest
     allObs :: VB.Vector Observation
     allObs = VB.take observationsToUse $ VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m)
     xs :: VB.Vector (VB.Vector Double)
-    xs =
-      VB.map
-        (VB.convert .
-         filterHeatMap (VS.init heatMap) .
-         normaliseStateFeatureUnbounded welInp . -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
-         obsInputValues)
-        allObs
+    xs = VB.map (VB.convert . filterHeatMap (VS.init heatMap) . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
     ys :: VB.Vector Double
-    ys =
-      VB.map
-      -- (scaleMinMax (-5, 5) . obsExpectedOutputValue)
-         -- (*100) .
-        (normaliseUnbounded welOut . obsExpectedOutputValue)
-        -- obsExpectedOutputValue
-        allObs
+    ys = VB.map (normaliseUnbounded welOut . obsExpectedOutputValue) allObs
     lastObsPeriod = obsPeriod $ VB.last allObs
     periodicallyCleanObservations m'
       | period `mod` 1000 == 0 = M.filter (not . VB.null) . M.map (VB.filter ((>= lastObsPeriod) . obsPeriod)) $ m'
@@ -296,7 +309,7 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs heatMa
 -- | Train regression layger (= all nodes).
 trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
 trainRegressionLayer period (RegressionLayer nodes welInp step regime)
-  | period < 1000 = RegressionLayer nodes welInp step regime -- only used for learning the normalization
+  | step < periodsTrainStart = RegressionLayer nodes welInp step regime -- only used for learning the normalization
   | otherwise = RegressionLayer (overBothRegimes (\ns -> VB.map (trainRegressionNode welInp (VB.length ns) period) ns) nodes) welInp step regime
 
 
@@ -304,24 +317,17 @@ trainRegressionLayer period (RegressionLayer nodes welInp step regime)
 applyRegressionNode :: RegressionNode -> VS.Vector Double -> Double
 applyRegressionNode (RegressionNode idx _ coefs heatMap welOut _) inps
   | VS.length coefs - 1 /= VS.length inps = error $ "applyRegressionNode: Expected number of coefficients is not correct: " ++ show (VS.length coefs, VS.length inps)
-  | otherwise = -- compute coefs (VB.convert inps)
-    -- let res = VS.sum (VS.zipWith3 (\act coef inp -> act * coef * inp) heatMap (VB.convert coefs) inps) + VS.last coefs
-    -- in
-    -- trace ("idx: " ++ show idx ++ ", " ++ show inps ++ " res: " ++ show res)
+  | otherwise = denormaliseUnbounded welOut $ VS.sum (VS.zipWith3 (\act w i -> fromAct act * w * i) heatMap (VB.convert coefs) inps) + VS.last coefs
+  where
+    fromAct True  = 1
+    fromAct False = 0
 
-    -- unscaleMinMax (-5, 5) $
-    denormaliseUnbounded welOut $ -- . (/100) $
-    VS.sum (VS.zipWith3 (\act w i -> fromAct act * w * i) heatMap (VB.convert coefs) inps) + VS.last coefs
-  where fromAct True  = 1
-        fromAct False = 0
-
-type WorkerNr = Int
 
 -- | Apply regression layer to given inputs
-applyRegressionLayer :: WorkerNr -> RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
-applyRegressionLayer wIdx (RegressionLayer nodes welInp _ regime) actIdx stateFeat =
+applyRegressionLayer :: Int -> RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
+applyRegressionLayer regId (RegressionLayer nodes welInp step regime) actIdx stateFeat =
   -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
-  withRegime (currentRegimeExp $ regime VB.! wIdx') (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
-  where wIdx'
-          | wIdx >= VB.length regime = 0
-          | otherwise = wIdx
+  withRegime step (currentRegimeExp (regime VB.! regId') ) (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
+  where regId'
+          | regId < VB.length regime = regId -- might no be available on first iteration(s)
+          | otherwise = 0

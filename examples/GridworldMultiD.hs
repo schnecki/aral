@@ -15,26 +15,26 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.ARAL              as B
+import           ML.ARAL                as B
 
 import           Experimenter
 
 import           Helper
 
-import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
-
-import           Control.Monad        (when)
+import           Control.Monad          (when)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
-import           Control.Monad.IO.Class   (liftIO)
-import           Data.List            (elemIndex, genericLength)
-import qualified Data.Map.Strict      as M
+import           Data.List              (elemIndex, genericLength)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
-import qualified Data.Vector.Storable as V
+import qualified Data.Text              as T
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           Grenade
-import           Prelude              hiding (Left, Right)
-import System.IO
+import           Prelude                hiding (Left, Right)
+import           System.IO
 import           System.Random
 
 import           Debug.Trace
@@ -50,7 +50,7 @@ goalSt = St $ replicate dim goal
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-multi-d 2"
+    { _experimentBaseName = "gridworld-multi-d " <> T.pack (show dim)
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -156,7 +156,6 @@ fakeEpisodes :: ARAL St Act -> ARAL St Act -> ARAL St Act
 fakeEpisodes rl rl'
   | rl ^. s == goalSt && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
   | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
-
 
 
 nnConfig :: NNConfig
@@ -443,8 +442,6 @@ actionFun tp s@(St st) acts
     moveX Inc    = moveInc tp s
     moveX Dec    = moveDec tp s
     moveX Random = error "Unexpected Random in actionFun.moveX. Check the actionFilter!"
-
-
 
 
 actFilter :: St -> [V.Vector Bool]

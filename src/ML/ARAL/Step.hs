@@ -210,7 +210,7 @@ stepExecuteMaterialisedFutures agent (nr, _, aral) dt =
   case view futureReward dt of
     RewardEmpty     -> return (nr, False, aral)
     RewardFuture {} -> return (nr, True, aral)
-    Reward {}       -> (nr+1, False, ) <$> execute aral agent dt
+    Reward {}       -> (nr+1, False, ) <$> execute agent aral dt
 
 
 minMaxStates :: MVar ((Double, (s, AgentActionIndices)), (Double, (s, AgentActionIndices)))
@@ -259,8 +259,8 @@ updateMinMax agTp aral as calc = do
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> AgentType -> RewardFutureData s -> m (ARAL s as)
-execute aral agTp (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
+execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => AgentType -> ARAL s as -> RewardFutureData s -> m (ARAL s as)
+execute agTp aral (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   aral <- if isMainAgent agTp
           then do
