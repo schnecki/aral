@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -fno-cse #-}
