@@ -24,7 +24,6 @@ data Observation =
     { obsPeriod              :: !Period
     , obsInputValues         :: !(VS.Vector Double)
     , obsVarianceRegimeValue :: !Double -- e.g. Reward in RL
-    -- , obsAction      :: !Int
     , obsExpectedOutputValue :: !Double
     }
   deriving (Eq, Show, Generic, Serialize, NFData)

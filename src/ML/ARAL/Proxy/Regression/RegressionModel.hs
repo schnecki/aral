@@ -51,13 +51,19 @@ nrCoefsRegressionModel (RegModelIndices idxs fun) n = nrCoefsRegressionFunction 
 -- | Number of required coefficients for a specific @RegressionFunction@ and specified input vector length..
 nrCoefsRegressionFunction :: RegressionFunction -> Int -> Int
 nrCoefsRegressionFunction RegLinear n    = n + 1
-nrCoefsRegressionFunction RegQuadratic n = 2 * n + 1
+nrCoefsRegressionFunction RegQuadratic n = n + 1
+nrCoefsRegressionFunction RegNonLinear n = (n * (n-1)) `div` 2 + 1
 
+-- over :: Int -> Int -> Int
+-- over n k = fac n / (fac k * fac (n - k))
+
+--
 
 -- | Function to apply to the input.
 data RegressionFunction
   = RegLinear    -- ^ Linear model
-  | RegQuadratic -- ^ Quadratic input: f((x1,x2,...)) = a1 * x1^2 + a2 * x2 * 2.
+  | RegQuadratic -- ^ Quadratic input: f((x1,x2,x3)) = a1 * x1^2 + a2 * x2^2 + a3 * x2^3.
+  | RegNonLinear -- ^ Non-linear terms wo self-multiplication: f((x1,x2,x3)) = a1 * x1 * x2 + a2 * x1 * x3 + a3 * x2 * x3
   deriving (Show, Eq, Ord, NFData, Generic, Serialize, Enum, Bounded)
 
 
@@ -68,7 +74,7 @@ computeModels :: (ModelVector v, Foldable v, Floating a)
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
 computeModels mdls _ _ | VB.null mdls = error "computeModels: Empty models. Cannot compute regression!"
-computeModels mdls theta inp = (/ fromIntegral (VB.length mdls)) . VB.sum $ VB.zipWith3 (\nrBefs nrCofs  mdl -> computeModel mdl (fTake nrCofs . fDrop nrBefs $ theta) inp) nrBefCoefs nrCoefs mdls
+computeModels mdls theta inp = VB.sum $ VB.zipWith3 (\nrBefs nrCofs  mdl -> computeModel mdl (fTake nrCofs . fDrop nrBefs $ theta) inp) nrBefCoefs nrCoefs mdls
   where nrCoefs = VB.map (\mdl -> nrCoefsRegressionModel mdl (fLength inp)) mdls
         nrBefCoefs = VB.scanl' (+) 0 nrCoefs
 
@@ -78,7 +84,8 @@ computeModel ::
   -> Model v a          -- ^ theta vector, the model's parameters
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
-computeModel (RegModelAll fun) theta inp = compute fun theta inp
+computeModel (RegModelAll fun) theta inp             = compute fun theta inp
+computeModel (RegModelIndices indices fun) theta inp = compute fun theta (fFromList $ map (inp `fIdx`) (VB.toList indices))
 
 
 -- | Compute the predicted value for the given model on the given observation.
@@ -89,5 +96,7 @@ compute ::
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
 compute RegLinear theta x    = theta `dot` x
-compute RegQuadratic theta x = theta `dot` (x `fAppend` fMap (^2) x) -- TODO: all x1*x2 combinations + theta * x
-{-# INLINE compute #-}
+compute RegQuadratic theta x = theta `dot` fMap (^2) x
+compute RegNonLinear theta x = theta `dot` fFromList (map (\(xIdx, yIdx) -> x `fIdx` xIdx * x `fIdx` yIdx) xs)
+  where xs = [(xIdx, yIdx) | xIdx <- [0..n-1], yIdx <- [0..n-1], xIdx < yIdx ]
+        n = fLength x

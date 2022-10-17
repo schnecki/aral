@@ -102,14 +102,7 @@ addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime)
       | otherwise = (\(mean, _, x) -> mean + sqrt x) . finalize
     writeRegimeFile reg =
       unsafePerformIO $ do
-        let txt =
-              show step ++
-              "\t" ++
-              show (obsVarianceRegimeValue $ fst $ head obs) ++
-              "\t" ++
-              show (fromEnum reg) ++
-              "\t" ++
-              show (regimeExpSmthFast $ VB.head regime') ++
+        let txt = show step ++ "\t" ++ show (obsVarianceRegimeValue $ fst $ head obs) ++ "\t" ++ show (fromEnum reg) ++ "\t" ++ show (regimeExpSmthFast $ VB.head regime') ++
               "\t" ++ show (regimeExpSmthSlow $ VB.head regime') ++ "\t" ++ show (getBorder $ regimeWelfordAll $ VB.head regime') ++ "\n"
         when (step == 0) $ do writeFile "regime" $ "period\treward\tregime\tExpFast\tExpSlow\tBorder\n"
         appendFile "regime" txt
@@ -133,11 +126,14 @@ trainRegressionLayer period (RegressionLayer nodes welInp step regime)
 -- | Apply regression layer to given inputs
 applyRegressionLayer :: Int -> RegressionLayer -> ActionIndex -> VS.Vector Double -> Double
 applyRegressionLayer regId (RegressionLayer nodes welInp step regime) actIdx stateFeat =
-  -- trace ("applyRegressionLayer: " ++ show (VB.length regNodes, actIdx))
-  withRegime step (currentRegimeExp (regime VB.! regId') ) (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
-  where regId'
-          | regId < VB.length regime = regId -- might no be available on first iteration(s)
-          | otherwise = 0
+  preventDivergence $ withRegime step (currentRegimeExp (regime VB.! regId')) (\ns -> applyRegressionNode (ns VB.! actIdx) (normaliseStateFeatureUnbounded welInp stateFeat)) nodes
+  where
+    regId'
+      | regId < VB.length regime = regId -- might no be available on first iteration(s)
+      | otherwise = 0
+    preventDivergence
+      | step < periodsSharedRegime = min 10 . max (-10)
+      | otherwise = id
 
 
 -- Regime helpers
