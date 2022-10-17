@@ -69,6 +69,7 @@ dependencies:
   - regress >= 0.1.2
   - ad
   - vector-algorithms
+  - reflection
 
 library:
   source-dirs: src

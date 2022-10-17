@@ -9,22 +9,25 @@ import           Control.Applicative
 import           Control.DeepSeq
 import           Data.Default
 import           Data.Serialize
+import qualified Data.Vector                              as VB
 import           GHC.Generics
-import           Prelude             hiding ((<>))
+import           Prelude                                  hiding ((<>))
+
+import           ML.ARAL.Proxy.Regression.RegressionModel
 
 
 -- | Regression Configuration for each node.
 data RegressionConfig = RegressionConfig
   { regConfigDataOutStepSize            :: !Double -- ^ Step size in terms of output value to group observation data.
   , regConfigDataMaxObservationsPerStep :: !Int    -- ^ Maximum number of data points per group.
-  --  , regConfigFunction                   :: !RegFunction              -- ^ Regression function.
   , regConfigVerbose                    :: !Bool   -- ^ Verbose output
-  } deriving (Eq, Show, Generic, NFData)
+  , regConfigModel                      :: !RegressionFunction -- (VB.Vector RegressionModel)
+  } deriving (Eq, Show, Generic, NFData, Serialize)
 
 
-instance Serialize RegressionConfig where
-  get = (RegressionConfig <$> get <*> get <*> get) <|> (RegressionConfig <$> get <*> get <*> pure False)
+-- instance Serialize RegressionConfig where
+--   get = RegressionConfig <$> get <*> get <*> get <*> get
 
 
 instance Default RegressionConfig where
-  def = RegressionConfig 0.1 30 False
+  def = RegressionConfig 0.1 30 False RegQuadratic
