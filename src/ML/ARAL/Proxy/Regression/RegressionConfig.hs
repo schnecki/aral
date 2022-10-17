@@ -30,4 +30,4 @@ data RegressionConfig = RegressionConfig
 
 
 instance Default RegressionConfig where
-  def = RegressionConfig 0.1 30 False RegQuadratic
+  def = RegressionConfig 0.1 30 False RegQuadratic -- RegLinear
