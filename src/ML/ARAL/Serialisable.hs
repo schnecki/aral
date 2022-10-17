@@ -234,7 +234,7 @@ instance Serialize Proxy where
   put (Grenade t w tp conf nr agents wel) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put wel
   put (Hasktorch t w tp conf nr agents adam mdl wel) =
     put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl >> put wel
-  put (RegressionProxy m acts cfg) = put (4 :: Int) >> put m >> put acts >> put cfg
+  put (RegressionProxy m acts) = put (4 :: Int) >> put m >> put acts
   get =
     fmap force $! do
       (c :: Int) <- get
@@ -276,7 +276,7 @@ instance Serialize Proxy where
                 if null paramsT
                   then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel
                   else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel
-        4 -> RegressionProxy <$> get <*> get <*> get
+        4 -> RegressionProxy <$> get <*> get
         _ -> error "Unknown constructor for proxy"
 
 

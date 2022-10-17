@@ -121,7 +121,7 @@ import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.Regression.RegressionLayer
+import           ML.ARAL.Proxy.Regression
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
@@ -362,11 +362,11 @@ mkUnichainRegressionAs ::
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
-  -> NNConfig
+  -> RegressionConfig
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues = do
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun regConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
   -- let feats = fromIntegral $ V.length (ftExt initialState)
@@ -376,9 +376,9 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
   -- putStrLn "Net: "
   -- print model
   -- repMem <- mkReplayMemories as settings nnConfig
-  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig
+  let mkRegressionProxy xs = RegressionProxy xs (length as)
   let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (V.length inp) (length as)
+  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just regConfig) (V.length inp) (length as)
   let proxies' =
             Proxies
               (Scalar (V.replicate agents defRhoMin) (length as))
@@ -390,7 +390,7 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
               tabSA
               tabSA
               Nothing
-  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
+  workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
   return $!
     force $
     ARAL

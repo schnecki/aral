@@ -45,7 +45,7 @@ periodsTrainStart = 1000
 -- | A RegressionLayer holds one node for each action.
 data RegressionLayer =
   RegressionLayer
-    { regressionLayerActions :: !(VB.Vector RegressionNode, VB.Vector RegressionNode) -- ^ On set of actions for each regime.
+    { regressionLayerActions :: !(VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode)) -- ^ One set of actions for each regime.
     , regressionInpWelford   :: !(WelfordExistingAggregate (VS.Vector Double))
     , regressionStep         :: !Int
     , regressionRegime       :: !(VB.Vector RegimeDetection)    -- Low or High variance regime
@@ -53,22 +53,27 @@ data RegressionLayer =
   deriving (Show, Generic, Serialize, NFData)
 
 
-prettyRegressionLayer :: RegressionLayer -> Doc
-prettyRegressionLayer (RegressionLayer (nodesLow, nodesHigh) welInp _ _) =
-  vcat (text "Low Regime" : map (prettyRegressionNode True (Just welInp)) (VB.toList nodesLow)) $+$ mempty $+$
-  vcat (text "High Regime" : map (prettyRegressionNode True (Just welInp)) (VB.toList nodesHigh))
+prettyRegressionLayerWithObs :: Bool -> RegressionLayer -> Doc
+prettyRegressionLayerWithObs wObs (RegressionLayer (nodesLow, mNodesHigh) welInp _ _) =
+  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$ mempty $+$
+  maybe mempty (\nodesHigh -> vcat (text "High Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode wObs (Just welInp) n) [0 ..] (VB.toList nodesHigh))) mNodesHigh
 
 prettyRegressionLayerNoObs :: RegressionLayer -> Doc
-prettyRegressionLayerNoObs (RegressionLayer (nodesLow, nodesHigh) welInp _ _) =
-  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$ mempty $+$
-  vcat (text "High Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesHigh))
+prettyRegressionLayerNoObs = prettyRegressionLayerWithObs False
+
+prettyRegressionLayer :: RegressionLayer -> Doc
+prettyRegressionLayer = prettyRegressionLayerWithObs True
 
 
 -- | Create a new empty regression layer by providing the config, the number of nodes for the layer and the number of inputs.
 randRegressionLayer :: Maybe RegressionConfig -> Int -> Int -> IO RegressionLayer
 randRegressionLayer mCfg nrInput nrOutput = do
-  nodes <- mapM (randRegressionNode (fromMaybe def mCfg) nrInput) [0 .. nrOutput - 1]
-  return $ RegressionLayer (VB.fromList nodes, VB.fromList nodes) WelfordExistingAggregateEmpty 0 (VB.singleton def)
+  let cfg = fromMaybe def mCfg
+  nodes <- mapM (randRegressionNode cfg nrInput) [0 .. nrOutput - 1]
+  let mRegHigh
+        | regConfigUseLowHighRegime cfg = Just $ VB.fromList nodes
+        | otherwise = Nothing
+  return $ RegressionLayer (VB.fromList nodes, mRegHigh) WelfordExistingAggregateEmpty 0 (VB.singleton def)
 
 
 -- | Add ground truth values from different workers to the layer.
@@ -138,20 +143,22 @@ applyRegressionLayer regId (RegressionLayer nodes welInp step regime) actIdx sta
 -- Regime helpers
 
 -- | Apply a function to a specific regime (Low, High).
-overRegime :: Int -> Regime -> (VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode)
+overRegime :: Int -> Regime -> (VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode)) -> (VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode))
 overRegime step _ f (nodesLow, nodesHigh)
-  | step < periodsSharedRegime = (f nodesLow, f nodesHigh)
-overRegime _ Low f (nodesLow, nodesHigh)  = (f nodesLow, nodesHigh)
-overRegime _ High f (nodesLow, nodesHigh) = (nodesLow, f nodesHigh)
+  | step < periodsSharedRegime = (f nodesLow, f <$> nodesHigh)
+overRegime _ _ f (nodesLow, Nothing)  = (f nodesLow, Nothing)
+overRegime _ Low f (nodesLow,  mNodesHigh)  = (f nodesLow, mNodesHigh)
+overRegime _ High f (nodesLow, Just nodesHigh) = (nodesLow, Just $ f nodesHigh)
 
 -- | Apply a function to the right regime.
-withRegime :: Int -> Regime -> (VB.Vector RegressionNode -> a) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> a
+withRegime :: Int -> Regime -> (VB.Vector RegressionNode -> a) -> (VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode)) -> a
 withRegime step _ f (nodesLow, _)
   | step < periodsSharedRegime = f nodesLow
+withRegime _ _ f (nodesLow, Nothing)   = f nodesLow
 withRegime _ Low f (nodesLow, _)   = f nodesLow
-withRegime _ High f (_, nodesHigh) = f nodesHigh
+withRegime _ High f (_, Just nodesHigh) = f nodesHigh
 
 
 -- | Apply a function over both regimes and update regimes.
-overBothRegimes ::(VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode) -> (VB.Vector RegressionNode, VB.Vector RegressionNode)
-overBothRegimes f (nodesLow, nodesHigh) = (f nodesLow, f nodesHigh)
+overBothRegimes ::(VB.Vector RegressionNode -> VB.Vector RegressionNode) -> (VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode)) -> (VB.Vector RegressionNode, Maybe (VB.Vector RegressionNode))
+overBothRegimes f (nodesLow, nodesHigh) = (f nodesLow, f <$> nodesHigh)

@@ -290,7 +290,7 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     m' = foldl' (\m' ((st, as, _, _), AgentValue vs) -> update m' st as vs) m (concat xs)
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
-insertProxyMany _ _ !period !xs px@(RegressionProxy nodes nrAs cfg) = do
+insertProxyMany _ _ !period !xs px@(RegressionProxy nodes nrAs) = do
   let regLayer = addGroundTruthValueLayer period (concatMap makeObservations (concat xs)) nodes
   return $ set proxyRegressionLayer (trainRegressionLayer period regLayer) px
   -- emptyCache
@@ -395,33 +395,6 @@ updateNNTargetNet _ _ _ px = error $ show px ++ " proxy in updateNNTargetNet. Sh
 
 -- | Train the neural network from a given batch. The training instances are Unscaled, that is in the range [-1, 1] or similar.
 trainBatch :: forall m . (MonadIO m) => Period -> [[((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value)]] -> Proxy -> m Proxy
-trainBatch !period !trainingInstances px@(RegressionProxy !layer !nrActs !cfg) = do
-  let layer' = undefined -- trainBatchRegressionLayer period (concat trainingInstances') layer
-  return $! RegressionProxy layer' nrActs cfg
-  where
-    minMaxVal =
-      case px ^?! proxyType of
-        NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
-          where minV = minimum $ map fst minMaxVals
-                maxV = maximum $ map snd minMaxVals
-        _ -> getMinMaxVal px
-    convertTrainingInstances :: (Int -> Int -> Int) -> ((StateFeatures, VB.Vector ActionIndex, RewardValue, IsRandomAction), Value) -> [((StateFeatures, ActionIndex, IsRandomAction), Double)]
-    convertTrainingInstances idxFun ((ft, as, rew, isRand), AgentValue vs)
-      --  | config ^. autoNormaliseInput = zipWith3 (\agNr aIdx val -> ((normaliseStateFeature wel ft, idxFun agNr aIdx), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
-      | otherwise = zipWith3 (\agNr aIdx val -> ((ft, idxFun agNr aIdx, isRand), val)) [0 .. VB.length as - 1] (VB.toList as) (V.toList vs)
-    trainingInstances' = concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
-      -- case px ^?! proxyType of
-      --   NoScaling CombinedUnichain _ -> concatMap (map (convertTrainingInstances (\_ idx -> idx))) trainingInstances -- combined proxies (idx already calculated)
-                         -- _                            -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
-        -- NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
-        -- _                            -> concatMap (map (convertTrainingInstances mkIdx . second (scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
-    mkIdx agNr aIdx = agNr * nrActs + aIdx
-
-    -- lRate = getLearningRate (config ^. grenadeLearningParams)
-    -- scaleAlg = config ^. scaleOutputAlgorithm
-    -- dec = decaySetup (config ^. learningParamsDecay) period
-    -- opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
-
 trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrActs !agents !wel) = do
   netW' <- liftIO $ trainGrenade period opt config netW trainingInstances'
   return $! Grenade netT netW' tp config nrActs agents wel
@@ -479,10 +452,10 @@ trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (program
 lookupProxyAgent :: (MonadIO m) => AgentType -> Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupProxyAgent _ _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
 lookupProxyAgent _ _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
-lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _ _) = return $
+lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _) = return $
   -- trace ("lookupProxyAgent as: " ++ show a)
   applyRegressionLayer (agentIndex agTp) ms a (VB.convert k)
-lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _ _) = error "RegressionProx ydoes not work with multiple agents"
+lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _) = error "RegressionProx ydoes not work with multiple agents"
 lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
   where
     agents = px ^?! proxyNrAgents
@@ -492,7 +465,7 @@ lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNe
 lookupProxy :: (MonadIO m) => AgentType -> Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
 lookupProxy _ _ _ _ (Scalar x _)           = return $ AgentValue x
 lookupProxy _ _ _ (k, ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k, a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _ _)
+lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _)
   | length ass > 1 = error "RegressionProxy does not work with multiple agents"
   | otherwise = return $ AgentValue $ V.convert $ VB.map (\a ->
                                                             -- trace ("lookupProxy (a, ass): " ++ show (a, ass))
@@ -517,7 +490,7 @@ lookupState _ _ (k, nass) (Table m def nrAs) =
   return $ AgentValues $ VB.zipWith (\as agNr -> V.map (\a -> M.findWithDefault def (k, a) m V.! agNr) as) ass (VB.fromList [0 .. VB.length ass - 1])
   where
     ass = toPositiveActionList nrAs nass
-lookupState agTp _ (k, nass) (RegressionProxy ms nrAs _) =
+lookupState agTp _ (k, nass) (RegressionProxy ms nrAs) =
   return $ AgentValues $ VB.zipWith (\as agNr ->
                                        -- trace ("lookupState as: " ++ show as)
                                        V.map (\a -> applyRegressionLayer (agentIndex agTp) ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])

@@ -99,17 +99,19 @@ prettyRegressionNode printObs mWelInp (RegressionNode idx m coefs welOut cfg) =
 randRegressionNode :: RegressionConfig -> Int -> Int -> IO RegressionNode
 randRegressionNode cfg nrInpVals nodeIndex = do
   randInp <- replicateM nrInpVals (randomRIO (-0.05, 0.05 :: Double))
-  coefs <- VS.fromList <$> replicateM (regressionNrCoefficients regFun nrInpVals) (randomRIO (-0.05, 0.05 :: Double))
+  coefs <- VS.fromList <$> replicateM (nrCoefsRegressionModels regFun nrInpVals) (randomRIO (-0.05, 0.05 :: Double))
   return $ RegressionNode nodeIndex M.empty coefs WelfordExistingAggregateEmpty cfg
-  where regFun = regConfigModel cfg
+  where
+    regFun = regConfigModel cfg
 
 
 -- | Add ground truth value to specific node.
 addGroundTruthValueNode :: Period -> Observation -> RegressionNode -> RegressionNode
-addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m coefs welOut cfg@(RegressionConfig step maxObs _ _)) = RegressionNode idx m' coefs welOut' cfg
+addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m coefs welOut cfg) = RegressionNode idx m' coefs welOut' cfg
   where
     key = floor (normaliseUnbounded welOut out * transf)
-    transf = 1 / step
+    transf = 1 / regConfigDataOutStepSize cfg
+    maxObs = regConfigDataMaxObservationsPerStep cfg
     m' = M.alter (Just . maybe (VB.singleton obs) (VB.take maxObs . (obs `VB.cons`))) key m
     welOut'
       | True || period < 30000 = addValue welOut out
@@ -121,15 +123,19 @@ trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Per
 trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut cfg) =
   if M.null m || VB.length allObs < observationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
     then old
-    else let models = map VS.convert $ regressOn (compute regFun) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
-             learnRate = decaySetup (ExponentialDecay (Just 1e-5) 0.8 30000) period 1
+    else let models = map VS.convert $ regressOn (computeModels regFun) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
+             learnRate = decaySetup (regConfigLearnRateDecay cfg) period (regConfigLearnRate0 cfg)
+             minCorr = regConfigMinCorrelation cfg
              eiFittedCoefs :: Either RegressionNode (VS.Vector Double)
              eiFittedCoefs = untilThreshold (fromIntegral (VS.length coefs) * 5e-4) 1 coefs models
           in case eiFittedCoefs of
                Left regNode -> regNode -- in case we reanable previously disabled features
                Right fittedCoefs ->
                  let coefs' = VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefs fittedCoefs
-                  in RegressionNode idx (periodicallyCleanObservations m) coefs' welOut cfg
+                     coefs''
+                       | period > periodsHeatMapActive = VS.map (\v -> if abs v >= minCorr then v else 0) coefs'
+                       | otherwise = coefs'
+                  in RegressionNode idx (periodicallyCleanObservations m) (coefs'') welOut cfg
   where
     regFun = regConfigModel cfg
     observationsToUse = VS.length $ obsInputValues $ VB.head $ snd $ M.findMax m
@@ -180,6 +186,6 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
 
 -- | Apply a regression node.
 applyRegressionNode :: RegressionNode -> VS.Vector Double -> Double
-applyRegressionNode (RegressionNode _ _ coefs welOut cfg) inps = denormaliseUnbounded welOut $ compute regModels (VB.convert coefs :: VB.Vector Double) (VB.convert inps)
+applyRegressionNode (RegressionNode _ _ coefs welOut cfg) inps = denormaliseUnbounded welOut $ computeModels regModels (VB.convert coefs :: VB.Vector Double) (VB.convert inps)
   where
     regModels = regConfigModel cfg

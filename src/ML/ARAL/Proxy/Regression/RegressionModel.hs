@@ -2,9 +2,14 @@
 {-# LANGUAGE DeriveGeneric    #-}
 {-# LANGUAGE FlexibleContexts #-}
 module ML.ARAL.Proxy.Regression.RegressionModel
-    ( RegressionModel (..)
+    ( RegressionModels
+    , RegressionModel (..)
     , RegressionFunction (..)
-    , regressionNrCoefficients
+    , nrCoefsRegressionModels
+    , nrCoefsRegressionModel
+    , nrCoefsRegressionFunction
+    , computeModels
+    , computeModel
     , compute
     -- , fromRegressionModel
     -- , fromRegressionFunction
@@ -12,6 +17,7 @@ module ML.ARAL.Proxy.Regression.RegressionModel
 
 import           Control.DeepSeq
 import           Data.Dynamic
+import           Data.List                   (scanl')
 import           Data.Monoid
 import           Data.Reflection
 import           Data.Serialize
@@ -23,7 +29,7 @@ import           Numeric.Regression.Generic
 import           Numeric.Regression.Internal
 
 
-type RegressionModels = [RegressionModel]
+type RegressionModels = VB.Vector RegressionModel
 
 
 -- | Definition of a regression model.
@@ -32,21 +38,21 @@ data RegressionModel
   | RegModelIndices (VB.Vector Int) RegressionFunction -- ^ Certain function to apply to specific inputs
   deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 
-
--- | Number of coefficients for specified model.
-regressionNrCoefficients :: RegressionFunction -> Int -> Int
-regressionNrCoefficients RegLinear n    = n + 1
-regressionNrCoefficients RegQuadratic n = 2 * n + 1
+-- | Number of required coefficients for vector of specific @RegressionModels@ and specified input vector length..
+nrCoefsRegressionModels :: RegressionModels -> Int -> Int
+nrCoefsRegressionModels models n = VB.sum . VB.map (`nrCoefsRegressionModel` n) $ models
 
 
--- fromRegressionModel :: (Floating a) => RegressionModel -> VB.Vector a -> VB.Vector a -> a
--- fromRegressionModel (RegModelAll fun)          = fromRegressionFunction fun
--- fromRegressionModel (RegModelIndices idxs fun) = \theta inp -> fromRegressionFunction fun (selectIndices theta) (selectIndices inp)
---   where
---     selectIndices vec = VB.foldl' (\acc idx -> acc VB.++ VB.singleton (vec VB.! idx)) VB.empty idxs
+-- | Number of required coefficients for a specific @RegressionModel@ and specified input vector length..
+nrCoefsRegressionModel :: RegressionModel -> Int -> Int
+nrCoefsRegressionModel (RegModelAll fun) n          = nrCoefsRegressionFunction fun n
+nrCoefsRegressionModel (RegModelIndices idxs fun) n = nrCoefsRegressionFunction fun (VB.length idxs)
 
--- fromRegressionFunctionDbl :: (Reifies s Tape) => RegressionFunction -> VB.Vector (ReverseDouble s) -> (VB.Vector (ReverseDouble s) -> ReverseDouble s)
--- fromRegressionFunctionDbl RegLinear theta inp = theta `dot` inp
+-- | Number of required coefficients for a specific @RegressionFunction@ and specified input vector length..
+nrCoefsRegressionFunction :: RegressionFunction -> Int -> Int
+nrCoefsRegressionFunction RegLinear n    = n + 1
+nrCoefsRegressionFunction RegQuadratic n = 2 * n + 1
+
 
 -- | Function to apply to the input.
 data RegressionFunction
@@ -55,21 +61,29 @@ data RegressionFunction
   deriving (Show, Eq, Ord, NFData, Generic, Serialize, Enum, Bounded)
 
 
--- fromRegressionFunction :: (Num a, Reifies s Tape) => RegressionFunction -> VB.Vector (Reverse s a) -> (VB.Vector (Reverse s a) -> Reverse s a)
--- fromRegressionFunction RegLinear theta inp = theta `dot` inp
+-- | Compute the error of the models.
+computeModels :: (ModelVector v, Foldable v, Floating a)
+  => RegressionModels -- ^ Regression function
+  -> Model v a          -- ^ theta vector, the model's parameters
+  -> v a                -- ^ @x@ vector, with the observed numbers
+  -> a                  -- ^ predicted @y@ for this observation
+computeModels mdls _ _ | VB.null mdls = error "computeModels: Empty models. Cannot compute regression!"
+computeModels mdls theta inp = (/ fromIntegral (VB.length mdls)) . VB.sum $ VB.zipWith3 (\nrBefs nrCofs  mdl -> computeModel mdl (fTake nrCofs . fDrop nrBefs $ theta) inp) nrBefCoefs nrCoefs mdls
+  where nrCoefs = VB.map (\mdl -> nrCoefsRegressionModel mdl (fLength inp)) mdls
+        nrBefCoefs = VB.scanl' (+) 0 nrCoefs
 
 computeModel ::
-  (ModelVector v, Foldable v, Num a)
+  (ModelVector v, Foldable v, Floating a)
   => RegressionModel -- ^ Regression function
   -> Model v a          -- ^ theta vector, the model's parameters
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
-computeModel (RegModelAll fun) theta inp =  computeModel fun theta inp
+computeModel (RegModelAll fun) theta inp = compute fun theta inp
 
 
 -- | Compute the predicted value for the given model on the given observation.
 compute ::
-     (ModelVector v, Foldable v, Num a)
+     (ModelVector v, Foldable v, Floating a)
   => RegressionFunction -- ^ Regression function
   -> Model v a          -- ^ theta vector, the model's parameters
   -> v a                -- ^ @x@ vector, with the observed numbers
