@@ -111,12 +111,12 @@ randRegressionNode cfg nrInpVals nodeIndex = do
 addGroundTruthValueNode :: Period -> Observation -> RegressionNode -> RegressionNode
 addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m coefs welOut cfg) = RegressionNode idx m' coefs welOut' cfg
   where
-    key = floor (normaliseUnbounded welOut out * transf)
+    key = round (normaliseUnbounded welOut out * transf)
     transf = 1 / regConfigDataOutStepSize cfg
     maxObs = regConfigDataMaxObservationsPerStep cfg
     m' = M.alter (Just . maybe (VB.singleton obs) (VB.take maxObs . (obs `VB.cons`))) key m
     welOut'
-      | True || period < 30000 = addValue welOut out
+      | period < 30000 = addValue welOut out
       | otherwise = welOut
 
 
@@ -127,9 +127,10 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
     then old
     else let models = map VS.convert $ regressOn (computeModels regModels) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
              learnRate = decaySetup (regConfigLearnRateDecay cfg) period (regConfigLearnRate0 cfg)
+             threshold = decaySetup (ExponentialDecay (Just $ fromIntegral (VS.length coefs) * 1e-4) 0.8 30000) period (fromIntegral (VS.length coefs) * 5e-4)
              minCorr = regConfigMinCorrelation cfg
              eiFittedCoefs :: Either RegressionNode (VS.Vector Double)
-             eiFittedCoefs = untilThreshold (fromIntegral (VS.length coefs) * 5e-4) 1 coefs models
+             eiFittedCoefs = untilThreshold threshold 1 coefs models
           in case eiFittedCoefs of
                Left regNode -> regNode -- in case we reanable previously disabled features
                Right fittedCoefs ->
@@ -141,7 +142,7 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
   where
     regModels = regConfigModel cfg
     lenInp = VS.length (welfordMean welInp)
-    nrObservationsToUse = lenInp
+    nrObservationsToUse = lenInp `div` 3
     modelError oldModel newModel
       | VS.length oldModel /= VS.length newModel =
         error $ "modelError: Error in length of old and new model: " ++ show (VS.length oldModel, VS.length newModel) ++ " period: " ++ show period
@@ -158,12 +159,13 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
           else Right new
       | null rest = $(pureLogPrintWarning) ("No more models, but threshlastModel not reached. Steps: " ++ show iter) (Right new)
       | iter >= gradDecentMaxIterations =
-        if period > 2 * periodsHeatMapActive && VS.any (== 0) coefs
-          then $(pureLogPrintWarning)
-                 ("Reactivating all features. ThresholdModel of " ++
-                  show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
-                 (Left $ trainRegressionNode welInp nrNodes period (RegressionNode idx m (VS.map nonZero coefs) welOut cfg))
-          else $(pureLogPrintWarning)
+        -- if False && period > 2 * periodsHeatMapActive && VS.any (== 0) coefs
+        --   then $(pureLogPrintWarning)
+        --          ("Reactivating all features. ThresholdModel of " ++
+        --           show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
+        --          (Left $ trainRegressionNode welInp nrNodes period (RegressionNode idx m (VS.map nonZero coefs) welOut cfg))
+        --   else
+          $(pureLogPrintWarning)
                  ("Period " ++
                   show period ++ ": ThresholdModel of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
                  (Right new)
@@ -171,15 +173,18 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
     lastObs = VB.take nrObservationsToUse (VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m))
     obsCache = M.toList m
     invTransf = regConfigDataOutStepSize cfg
-    maxNr vec key = min (VB.length vec) . max 1 $ round $ fromIntegral (abs key) * invTransf
     obsRandIdx :: [VB.Vector Int]
-    obsRandIdx = unsafePerformIO $ mapM (\(key, vec) -> fmap VB.fromList $ randomRIO (0, maxNr vec key) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))) obsCache
+    obsRandIdx = unsafePerformIO $ mapM (fmap VB.fromList . randomPick) obsCache
+    randomPick (key, vec) = do
+      r <- randomRIO (0, 1::Double) -- ensure that we don't always feed all the data
+      if r < 0.67
+        then return []
+        else randomRIO (1, maxNr key vec) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))
+    maxNr key vec = min (VB.length vec) . max 1 $ round $ fromIntegral (abs key) * invTransf
     allObs :: VB.Vector Observation
-    allObs = -- lastObs VB.++
-      VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)
+    allObs = lastObs VB.++ VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)
     xs :: VB.Vector (VB.Vector Double)
-    xs =
-      VB.map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
+    xs = VB.map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
     ys :: VB.Vector Double
     ys = VB.map (normaliseUnbounded welOut . obsExpectedOutputValue) allObs
     lastObsPeriod = obsPeriod $ VB.last lastObs

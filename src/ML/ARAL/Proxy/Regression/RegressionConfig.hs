@@ -25,7 +25,7 @@ data RegressionConfig = RegressionConfig
   , regConfigLearnRateDecay             :: !DecaySetup       -- ^ Decay of learning rate. Default: @ExponentialDecay (Just 1e-4) 0.8 30000@
   , regConfigMinCorrelation             :: !Double           -- ^ Minimum correlation, or feature is turned off completely. Default: 0.01
   , regConfigModel                      :: !RegressionModels -- ^ Models to use for Regression: Default: @VB.fromList [RegModelAll RegTermLinear]@
-  , regConfigUseLowHighRegime           :: !Bool             -- ^ Use differnt regression functions for different variance regimes. Default: False
+  , regConfigUseVolatilityRegimes       :: !Bool             -- ^ Use differnt regression functions for different variance regimes. Default: False
   , regConfigVerbose                    :: !Bool             -- ^ Verbose output. Default: False
   } deriving (Eq, Show, Generic, NFData, Serialize)
 

@@ -71,7 +71,7 @@ randRegressionLayer mCfg nrInput nrOutput = do
   let cfg = fromMaybe def mCfg
   nodes <- mapM (randRegressionNode cfg nrInput) [0 .. nrOutput - 1]
   let mRegHigh
-        | regConfigUseLowHighRegime cfg = Just $ VB.fromList nodes
+        | regConfigUseVolatilityRegimes cfg = Just $ VB.fromList nodes
         | otherwise = Nothing
   return $ RegressionLayer (VB.fromList nodes, mRegHigh) WelfordExistingAggregateEmpty 0 (VB.singleton def)
 
