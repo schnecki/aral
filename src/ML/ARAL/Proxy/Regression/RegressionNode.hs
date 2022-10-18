@@ -123,7 +123,7 @@ addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m
 -- | Train a Regression Node.
 trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Period -> RegressionNode -> RegressionNode
 trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut cfg) =
-  if M.null m || VB.length allObs < observationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
+  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
     then old
     else let models = map VS.convert $ regressOn (computeModels regModels) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
              learnRate = decaySetup (regConfigLearnRateDecay cfg) period (regConfigLearnRate0 cfg)
@@ -134,21 +134,14 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
                Left regNode -> regNode -- in case we reanable previously disabled features
                Right fittedCoefs ->
                  let coefs' = VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefs fittedCoefs
-                     intercepIdxs = VB.map (subtract 1 . (`nrCoefsRegressionModel` lenInp)) regModels
                      coefs''
-                       | period > periodsHeatMapActive =
-                         VS.imap
-                           (\i v ->
-                              if abs v >= minCorr || i `VB.elem` intercepIdxs
-                                then v
-                                else 0)
-                           coefs'
+                       | period > periodsHeatMapActive = VS.map (\v -> if abs v >= minCorr then v else 0) (VS.init coefs') `VS.snoc` VS.last coefs'
                        | otherwise = coefs'
-                  in RegressionNode idx (periodicallyCleanObservations m) (coefs'') welOut cfg
+                  in RegressionNode idx (periodicallyCleanObservations m) coefs'' welOut cfg
   where
     regModels = regConfigModel cfg
     lenInp = VS.length (welfordMean welInp)
-    observationsToUse = lenInp
+    nrObservationsToUse = lenInp
     modelError oldModel newModel
       | VS.length oldModel /= VS.length newModel =
         error $ "modelError: Error in length of old and new model: " ++ show (VS.length oldModel, VS.length newModel) ++ " period: " ++ show period
@@ -175,12 +168,15 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
                   show period ++ ": ThresholdModel of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
                  (Right new)
       | otherwise = untilThreshold thresh (iter + 1) new rest
-    lastObs = VB.take observationsToUse (VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m))
-    obsCache = M.elems m
+    lastObs = VB.take nrObservationsToUse (VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m))
+    obsCache = M.toList m
+    invTransf = regConfigDataOutStepSize cfg
+    maxNr vec key = min (VB.length vec) . max 1 $ round $ fromIntegral (abs key) * invTransf
     obsRandIdx :: [VB.Vector Int]
-    obsRandIdx = unsafePerformIO $ mapM (\vec -> fmap VB.fromList $ randomRIO (0, 1) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))) obsCache
+    obsRandIdx = unsafePerformIO $ mapM (\(key, vec) -> fmap VB.fromList $ randomRIO (0, maxNr vec key) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))) obsCache
     allObs :: VB.Vector Observation
-    allObs = lastObs VB.++ VB.concat (zipWith (\obs -> VB.map (obs VB.!)) obsCache obsRandIdx)
+    allObs = -- lastObs VB.++
+      VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)
     xs :: VB.Vector (VB.Vector Double)
     xs =
       VB.map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) allObs -- <- maybe breaks algorithm (different input scaling not preserved? e.g. for indicators?)
@@ -190,7 +186,7 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
     headObsPeriod = obsPeriod $ VB.head lastObs
     obsPeriods = headObsPeriod - lastObsPeriod
     periodicallyCleanObservations m'
-      | period `mod` 1000 == 0 = M.filter (not . VB.null) . M.map (VB.take 5 . VB.filter ((>= 10 * obsPeriods) . obsPeriod)) $ m'
+      --  | period `mod` 1000 == 0 = M.filter (not . VB.null) . M.map (VB.filter ((>= 10 * obsPeriods) . obsPeriod)) $ m'
       | otherwise = m'
 
 

@@ -144,7 +144,7 @@ data Proxy
       , _proxyHTWelford   :: !(WelfordExistingAggregate StateFeatures)
       }
    | RegressionProxy
-     { _proxyRegressionLayer :: !RegressionLayer -- For each agent and action index
+     { _proxyRegressionLayer :: !RegressionLayer -- One for each worker?
      , _proxyNrActions       :: !Int
      }
 

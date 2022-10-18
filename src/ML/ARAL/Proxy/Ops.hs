@@ -291,10 +291,8 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
 insertProxyMany _ _ !period !xs px@(RegressionProxy nodes nrAs) = do
-  let regLayer = addGroundTruthValueLayer period (concatMap makeObservations (concat xs)) nodes
-  return $ set proxyRegressionLayer (trainRegressionLayer period regLayer) px
-  -- emptyCache
-  -- trainBatch period xs (proxyRegressionLayer .~ regLayer $ px)
+  let regLayer = addGroundTruthValueLayer (concatMap makeObservations (concat xs)) nodes
+  return $ set proxyRegressionLayer (trainRegressionLayer regLayer) px
   where
     makeObservations :: ((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value) -> [(Observation, ActionIndex)]
     makeObservations ((inps, aId, rew, isRand), AgentValue y)

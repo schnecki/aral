@@ -15,7 +15,7 @@ module ML.ARAL.Proxy.Regression.RegressionLayer
 import           Control.DeepSeq
 import           Control.Monad
 import           Data.Default
-import           Data.List                                        (foldl')
+import           Data.List                                        (foldl', foldr)
 import           Data.Maybe                                       (fromMaybe)
 import           Data.Serialize
 import qualified Data.Vector                                      as VB
@@ -55,7 +55,7 @@ data RegressionLayer =
 
 prettyRegressionLayerWithObs :: Bool -> RegressionLayer -> Doc
 prettyRegressionLayerWithObs wObs (RegressionLayer (nodesLow, mNodesHigh) welInp _ _) =
-  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode False (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$ mempty $+$
+  vcat (text "Low Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode wObs (Just welInp) n) [0 ..] (VB.toList nodesLow)) $+$ mempty $+$
   maybe mempty (\nodesHigh -> vcat (text "High Regime" : zipWith (\idx n -> text "Layer Node" <+> int idx $+$ prettyRegressionNode wObs (Just welInp) n) [0 ..] (VB.toList nodesHigh))) mNodesHigh
 
 prettyRegressionLayerNoObs :: RegressionLayer -> Doc
@@ -77,16 +77,17 @@ randRegressionLayer mCfg nrInput nrOutput = do
 
 
 -- | Add ground truth values from different workers to the layer.
-addGroundTruthValueLayer :: Period -> [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
-addGroundTruthValueLayer period [] lay = lay
-addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime)
+addGroundTruthValueLayer :: [(Observation, ActionIndex)] -> RegressionLayer -> RegressionLayer
+addGroundTruthValueLayer [] lay = lay
+addGroundTruthValueLayer obs (RegressionLayer nodes welInp step regime)
   | step > 0 && length obs /= VB.length regime =
     error $ "Regime length does ot fit number of observations: " ++ show (VB.length regime, length obs) ++ ". Number of parallel observations must be constant!"
   | otherwise =
     let regExp = currentRegimeExp (VB.head regime')
-     in writeRegimeFile regExp `seq` RegressionLayer (foldl' updateNodes nodes (zip [0 ..] obs)) welInp' (step + 1) regime'
+     in writeRegimeFile regExp `seq`
+        RegressionLayer (foldr (flip updateNodes) nodes (zip [0 ..] obs)) welInp' (step + 1) regime' -- foldr as Main Agent is more important!
   where
-    updateNodes nds (regId, (ob, aId)) = overRegime step (currentRegimeExp (regime' VB.! regId)) (\ns -> replaceIndex aId (addGroundTruthValueNode period ob (ns VB.! aId)) ns) nds
+    updateNodes nds (regId, (ob, aId)) = overRegime step (currentRegimeExp (regime' VB.! regId)) (\ns -> replaceIndex aId (addGroundTruthValueNode step ob (ns VB.! aId)) ns) nds
     -- reward = obsVarianceRegimeValue $ fst $ head obs
     regime0
       | VB.length regime == length obs = regime
@@ -117,10 +118,10 @@ addGroundTruthValueLayer period obs (RegressionLayer nodes welInp step regime)
 
 
 -- | Train regression layger (= all nodes).
-trainRegressionLayer :: Period -> RegressionLayer -> RegressionLayer
-trainRegressionLayer period (RegressionLayer nodes welInp step regime)
+trainRegressionLayer :: RegressionLayer -> RegressionLayer
+trainRegressionLayer (RegressionLayer nodes welInp step regime)
   | step < periodsTrainStart = RegressionLayer nodes welInp step regime -- only used for learning the normalization
-  | otherwise = RegressionLayer (overBothRegimes (\ns -> VB.map (trainRegressionNode welInp (VB.length ns) period) ns) nodes) welInp step regime
+  | otherwise = RegressionLayer (overBothRegimes (\ns -> VB.map (trainRegressionNode welInp (VB.length ns) step) ns) nodes) welInp step regime
 
 
 -- | Apply regression layer to given inputs

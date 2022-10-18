@@ -370,14 +370,13 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        P.RegressionProxy {} -> mempty
-        px ->
+        _ ->
           text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showDoubleList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     autoInpScale =
       case borl ^. proxies . r1 of
         P.Table {}           -> mempty
-        P.RegressionProxy {} -> mempty
+        P.RegressionProxy {} -> text "True (always on)"
         px                   -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
     scalingText =
       case borl ^. proxies . v of
@@ -452,14 +451,20 @@ prettyARALHead' printRho prettyStateFun borl = do
     textReplayMemoryType ReplayMemoriesUnified {}        = text "unified replay memory"
     textReplayMemoryType mem@ReplayMemoriesPerActions {} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
-      case borl ^. proxies . v of
+      case borl ^. proxies . r1 of
         P.Table {}                                       -> empty
-        P.RegressionProxy {}                             -> empty
+        px@P.RegressionProxy{}                           -> textRegressionConf (px ^?! proxyRegressionLayer)
         P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.Hasktorch _ _ _ conf _ _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _                                                -> error "nnLearningParams in Pretty.hs"
       where
+        textRegressionConf :: RegressionLayer -> Doc
+        textRegressionConf lay =
+          text "Regression Learning Rate" <> colon $$ nest nestCols (printDoubleWith 8 learnRate) <+> parens (text "Period 0" <> colon <+> printDoubleWith 8 (regConfigLearnRate0 cfg)) $+$
+          text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
+          where learnRate = decaySetup (regConfigLearnRateDecay cfg) (regressionStep lay) (regConfigLearnRate0 cfg)
+                cfg = regNodeConfig $ VB.head $ fst (regressionLayerActions lay)
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
