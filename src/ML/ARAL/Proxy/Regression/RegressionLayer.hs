@@ -87,7 +87,7 @@ addGroundTruthValueLayer obs (RegressionLayer nodes welInp step regime)
      in writeRegimeFile regExp `seq`
         RegressionLayer (foldr (flip updateNodes) nodes (zip [0 ..] obs)) welInp' (step + 1) regime' -- foldr as Main Agent is more important!
   where
-    updateNodes nds (regId, (ob, aId)) = overRegime step (currentRegimeExp (regime' VB.! regId)) (\ns -> replaceIndex aId (addGroundTruthValueNode step ob (ns VB.! aId)) ns) nds
+    updateNodes nds (regId, (ob, aId)) = overRegime step (currentRegimeExp (regime' VB.! regId)) (\ns -> replaceIndex aId (addGroundTruthValueNode ob (ns VB.! aId)) ns) nds
     -- reward = obsVarianceRegimeValue $ fst $ head obs
     regime0
       | VB.length regime == length obs = regime
@@ -121,7 +121,8 @@ addGroundTruthValueLayer obs (RegressionLayer nodes welInp step regime)
 trainRegressionLayer :: RegressionLayer -> RegressionLayer
 trainRegressionLayer (RegressionLayer nodes welInp step regime)
   | step < periodsTrainStart = RegressionLayer nodes welInp step regime -- only used for learning the normalization
-  | otherwise = RegressionLayer (overBothRegimes (\ns -> VB.map (trainRegressionNode welInp (VB.length ns) step) ns) nodes) welInp step regime
+  | otherwise = RegressionLayer (overBothRegimes (\ns -> VB.map (trainRegressionNode welInp (VB.length ns, nrWorkers) step) ns) nodes) welInp step regime
+  where nrWorkers = VB.length regime
 
 
 -- | Apply regression layer to given inputs

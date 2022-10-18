@@ -108,26 +108,26 @@ randRegressionNode cfg nrInpVals nodeIndex = do
 
 
 -- | Add ground truth value to specific node.
-addGroundTruthValueNode :: Period -> Observation -> RegressionNode -> RegressionNode
-addGroundTruthValueNode period obs@(Observation _ _ _ out) (RegressionNode idx m coefs welOut cfg) = RegressionNode idx m' coefs welOut' cfg
+addGroundTruthValueNode :: Observation -> RegressionNode -> RegressionNode
+addGroundTruthValueNode obs@(Observation _ _ _ out) (RegressionNode idx m coefs welOut cfg) = RegressionNode idx m' coefs welOut' cfg
   where
     key = round (normaliseUnbounded welOut out * transf)
     transf = 1 / regConfigDataOutStepSize cfg
     maxObs = regConfigDataMaxObservationsPerStep cfg
     m' = M.alter (Just . maybe (VB.singleton obs) (VB.take maxObs . (obs `VB.cons`))) key m
     welOut'
-      | period < 30000 = addValue welOut out
+      | isWelfordExistingAggregateEmpty welOut|| welfordCount welOut < 30000 = addValue welOut out
       | otherwise = welOut
 
 
 -- | Train a Regression Node.
-trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> Int -> Period -> RegressionNode -> RegressionNode
-trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut cfg) =
-  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` 10) /= 0 -- retrain every ~10% of change values. Note: This does not take number of worker agents into account!
+trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> (Int, Int) -> Period -> RegressionNode -> RegressionNode
+trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m coefs welOut cfg) =
+  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` (25 * nrWorkers)) /= 0 -- re-train every ~25% of changed values.
     then old
     else let models = map VS.convert $ regressOn (computeModels regModels) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
              learnRate = decaySetup (regConfigLearnRateDecay cfg) period (regConfigLearnRate0 cfg)
-             threshold = decaySetup (ExponentialDecay (Just $ fromIntegral (VS.length coefs) * 1e-4) 0.8 30000) period (fromIntegral (VS.length coefs) * 5e-4)
+             threshold = decaySetup (ExponentialDecay (Just $ fromIntegral (VS.length coefs) * 1.5e-4) 0.8 30000) period (fromIntegral (VS.length coefs) * 5e-4)
              minCorr = regConfigMinCorrelation cfg
              eiFittedCoefs :: Either RegressionNode (VS.Vector Double)
              eiFittedCoefs = untilThreshold threshold 1 coefs models
@@ -155,19 +155,19 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
     untilThreshold thresh iter lastModel (new:rest)
       | modelError lastModel new <= thresh =
         if regConfigVerbose cfg
-          then $(pureLogPrintWarning) ("ThresholdModel reached. Steps: " ++ show iter) (Right new)
+          then $(pureLogPrintInfo) ("Threshold reached. Steps: " ++ show iter) (Right new)
           else Right new
-      | null rest = $(pureLogPrintWarning) ("No more models, but threshlastModel not reached. Steps: " ++ show iter) (Right new)
+      | null rest = $(pureLogPrintError) ("No more models, but threshlastModel not reached. Steps: " ++ show iter) (Right new)
       | iter >= gradDecentMaxIterations =
         -- if False && period > 2 * periodsHeatMapActive && VS.any (== 0) coefs
         --   then $(pureLogPrintWarning)
-        --          ("Reactivating all features. ThresholdModel of " ++
+        --          ("Reactivating all features. Threshold of " ++
         --           show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
         --          (Left $ trainRegressionNode welInp nrNodes period (RegressionNode idx m (VS.map nonZero coefs) welOut cfg))
         --   else
           $(pureLogPrintWarning)
                  ("Period " ++
-                  show period ++ ": ThresholdModel of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
+                  show period ++ ": Threshold of " ++ show thresh ++ " never reached in " ++ show gradDecentMaxIterations ++ " steps: " ++ show (modelError lastModel new))
                  (Right new)
       | otherwise = untilThreshold thresh (iter + 1) new rest
     lastObs = VB.take nrObservationsToUse (VB.modify (VB.sortBy (comparing (Down . obsPeriod))) $ VB.concat (M.elems m))
@@ -180,7 +180,7 @@ trainRegressionNode welInp nrNodes period old@(RegressionNode idx m coefs welOut
       if r < 0.67
         then return []
         else randomRIO (1, maxNr key vec) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))
-    maxNr key vec = min (VB.length vec) . max 1 $ round $ fromIntegral (abs key) * invTransf
+    maxNr key vec = max 1 . min (VB.length vec `div` 2) $ round $ fromIntegral (abs key) * invTransf * 0.5
     allObs :: VB.Vector Observation
     allObs = lastObs VB.++ VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)
     xs :: VB.Vector (VB.Vector Double)
