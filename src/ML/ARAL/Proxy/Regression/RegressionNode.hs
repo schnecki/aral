@@ -98,13 +98,15 @@ prettyRegressionNode printObs mWelInp (RegressionNode idx m coefs welOut cfg) =
 -- | Create new regression node with provided config and given number of input values.
 randRegressionNode :: RegressionConfig -> Int -> Int -> IO RegressionNode
 randRegressionNode cfg nrInpVals nodeIndex = do
-  coefs <- VS.fromList . map (\x -> x + 0.05 * signum x) <$> replicateM nrCoefs (randomRIO (-0.05, 0.05 :: Double))
+  coefs <- VS.fromList <$> -- . map (\x -> x + 0.05 * signum x) <$>
+           replicateM nrCoefs (randomRIO (-unif, unif :: Double))
   return $ RegressionNode nodeIndex M.empty coefs WelfordExistingAggregateEmpty cfg
   where
     nrCoefs = nrCoefsRegressionModels regFun nrInpVals
     regFun = regConfigModel cfg
     -- W_l,i ~ U(-sqrt (6/(n_l+n_{l+1})),sqrt (6/(n_l+n_{l+1}))) where n_l is the number of nodes in layer l
     xavier = sqrt 6 / sqrt (fromIntegral nrInpVals + fromIntegral nrCoefs)
+    unif = 1 / sqrt(fromIntegral nrCoefs)
 
 
 -- | Add ground truth value to specific node.
@@ -123,7 +125,7 @@ addGroundTruthValueNode obs@(Observation _ _ _ out) (RegressionNode idx m coefs 
 -- | Train a Regression Node.
 trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> (Int, Int) -> Period -> RegressionNode -> RegressionNode
 trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m coefs welOut cfg) =
-  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` (4 * nrWorkers)) /= 0 -- re-train every ~25% of changed values.
+  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 (M.size m * nrNodes `div` (4 * nrWorkers)) /= 0 -- re-train every ~25% of changed values.
     then old
     else let models = map VS.convert $ regressOn (computeModels regModels) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
              threshold = decaySetup (ExponentialDecay (Just $ fromIntegral (VS.length coefs) * 1.5e-4) 0.8 30000) period (fromIntegral (VS.length coefs) * 5e-4)
@@ -140,7 +142,7 @@ trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m
   where
     regModels = regConfigModel cfg
     lenInp = VS.length (welfordMean welInp)
-    nrObservationsToUse = lenInp
+    nrObservationsToUse = VS.length coefs
     modelError oldModel newModel
       | VS.length oldModel /= VS.length newModel =
         error $ "modelError: Error in length of old and new model: " ++ show (VS.length oldModel, VS.length newModel) ++ " period: " ++ show period
@@ -177,7 +179,10 @@ trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m
       r <- randomRIO (0, 1::Double) -- ensure that we don't always feed all the data
       if r < 0.75
         then return []
-        else randomRIO (1, maxNr key vec) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))
+        else randomRIO (1, maxNr key vec) >>= \nr ->
+                                                replicateM nr (randomRIO (0, VB.length vec - 1))
+                                                -- VB.take nr (VB.modify (VB.sortBy (comparing (Down . abs . (\x -> subtract (obsExpectedOutputValue x) . #TODO: compute val#)))) $ VB.concat (M.elems m))
+
     maxNr key vec = max 1 . min (VB.length vec `div` 2) $ round $ fromIntegral (abs key) * invTransf
     allObs :: VB.Vector Observation
     allObs = lastObs VB.++ VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)

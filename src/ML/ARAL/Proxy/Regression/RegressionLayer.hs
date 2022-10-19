@@ -69,7 +69,9 @@ prettyRegressionLayer = prettyRegressionLayerWithObs True
 randRegressionLayer :: Maybe RegressionConfig -> Int -> Int -> IO RegressionLayer
 randRegressionLayer mCfg nrInput nrOutput = do
   let cfg = fromMaybe def mCfg
-  nodes <- mapM (randRegressionNode cfg nrInput) [0 .. nrOutput - 1]
+  nodes <- mapM (randRegressionNode cfg nrInput) [0 .. nrOutput - 1]  -- different init values for each node
+  -- node <- randRegressionNode cfg nrInput 0
+  -- let nodes = zipWith (\i x -> x { regNodeIndex = i}) [0..] $ replicate nrOutput node -- use same initial values for all nodes
   let mRegHigh
         | regConfigUseVolatilityRegimes cfg = Just $ VB.fromList nodes
         | otherwise = Nothing
@@ -95,7 +97,7 @@ addGroundTruthValueLayer obs (RegressionLayer nodes welInp step regime)
       | otherwise = error "addGroundTruthValueNode: Should not happen!"
     regime' = VB.zipWith (\reg -> addValueToRegime reg . obsVarianceRegimeValue . fst) regime0 (VB.fromList obs)
     welInp'
-      | True || step < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
+      | step < 30000 = foldl' addValue welInp (map (obsInputValues . fst) obs)
       | otherwise = welInp
     replaceIndex idx x xs = xs VB.// [(idx, x)]
     getBorder

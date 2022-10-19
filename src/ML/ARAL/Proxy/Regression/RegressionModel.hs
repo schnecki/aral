@@ -10,7 +10,7 @@ module ML.ARAL.Proxy.Regression.RegressionModel
     , nrCoefsRegressionTerm
     , computeModels
     , computeModel
-    , compute
+    , computeTerm
     -- , fromRegressionModel
     -- , fromRegressionTerm
     ) where
@@ -28,6 +28,7 @@ import           GHC.Generics
 import           Numeric.Regression.Generic
 import           Numeric.Regression.Internal
 
+import           Debug.Trace
 
 type RegressionModels = VB.Vector RegressionModel
 
@@ -42,7 +43,12 @@ computeModels :: (ModelVector v, Foldable v, Floating a)
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
 computeModels mdls _ _ | VB.null mdls = error "computeModels: Empty models. Cannot compute regression!"
-computeModels mdls theta inp = (+ fLast theta) . VB.sum $ VB.zipWith3 (\nrBefs nrCofs  mdl -> computeModel mdl (fTake nrCofs . fDrop nrBefs $ theta) inp) nrBefCoefs nrCoefs mdls
+computeModels mdls theta inp =
+  -- trace ("Length theta: " ++ show (fLength theta))
+  -- trace ("nrCoefs: " ++ show nrCoefs)
+  -- trace ("nrBefCoefs: " ++ show nrBefCoefs)
+  -- trace ("res: " ++ show (VB.zipWith (\nrBefs nrCofs -> take nrCofs $ drop nrBefs  [0..fLength theta - 1]) nrBefCoefs nrCoefs))
+  (+ fLast theta) . VB.sum $ VB.zipWith3 (\nrBefs nrCofs  mdl -> computeModel mdl (fTake nrCofs . fDrop nrBefs $ theta) inp) nrBefCoefs nrCoefs mdls
   where nrCoefs = VB.map (\mdl -> nrCoefsRegressionModel mdl (fLength inp)) mdls
         nrBefCoefs = VB.scanl' (+) 0 nrCoefs
 
@@ -50,21 +56,23 @@ computeModels mdls theta inp = (+ fLast theta) . VB.sum $ VB.zipWith3 (\nrBefs n
 data RegressionModel
   = RegModelAll RegressionTerm                     -- ^ Regression over all inputs
   | RegModelIndices (VB.Vector Int) RegressionTerm -- ^ Certain function to apply to specific inputs
+  | RegModelLayer RegressionTerm (VB.Vector RegressionModel)
   deriving (Eq, Ord, NFData, Generic, Serialize)
 
 instance Show RegressionModel where
   show (RegModelAll term) = "RegModelAll " ++ show term
   show (RegModelIndices ind term) = "RegModelIndices [" ++ lsTxt ++ "] " ++ show term
     where ind' =  sort $ VB.toList ind
-          ls = foldl (\acc@((start, end):rs) x -> if end + 1 == x then (start, x):rs else (x, x):acc) [(head ind', head ind')] ind'
+          ls = foldl (\acc@((start, end):rs) x -> if end + 1 == x then (start, x):rs else (x, x):acc) [(head ind', head ind')] (tail ind')
           lsTxt = concat $ intersperse "," $ map (\(start, end) -> if start == end then show start else (show start ++ "-" ++ show end)) ls
+  show (RegModelLayer term model) = show model ++ "(" ++ show term ++ ")"
 
 
 -- | Number of required coefficients for a specific @RegressionModel@ and specified input vector length..
 nrCoefsRegressionModel :: RegressionModel -> Int -> Int
-nrCoefsRegressionModel (RegModelAll fun) n          = nrCoefsRegressionTerm fun n
-nrCoefsRegressionModel (RegModelIndices idxs fun) n = nrCoefsRegressionTerm fun (VB.length idxs)
-
+nrCoefsRegressionModel (RegModelAll term) n          = nrCoefsRegressionTerm term n
+nrCoefsRegressionModel (RegModelIndices idxs term) n = nrCoefsRegressionTerm term (VB.length idxs)
+nrCoefsRegressionModel (RegModelLayer term layers) n = nrCoefsRegressionTerm term (VB.length layers) + VB.sum (VB.map (`nrCoefsRegressionModel` n) layers) + VB.length layers
 
 -- | Compute function for one specified regression model.
 computeModel ::
@@ -73,8 +81,16 @@ computeModel ::
   -> Model v a          -- ^ theta vector, the model's parameters
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
-computeModel (RegModelAll fun) theta inp             = compute fun theta inp
-computeModel (RegModelIndices indices fun) theta inp = compute fun theta (fFromList $ map (inp `fIdx`) (VB.toList indices))
+computeModel (RegModelAll term) theta inp             = computeTerm term theta inp
+computeModel (RegModelIndices indices term) theta inp = computeTerm term theta (fFromList $ map (inp `fIdx`) (VB.toList indices))
+computeModel (RegModelLayer term layers) theta inp = computeTerm term (fTake len theta) (fFromList . VB.toList $ VB.zipWith3 computeSubModel nrBefCoefs nrCoefs layers)
+  where
+    len = VB.length layers
+    nrCoefs = VB.map (\mdl -> nrCoefsRegressionModel mdl (fLength inp)) layers
+    nrBefCoefs = VB.scanl' (+) 0 nrCoefs
+    computeSubModel nrBefs nrCoefs mdl =
+      let theta' = fTake nrCoefs . fDrop (nrBefs + len) $ theta
+      in computeModel mdl (fInit theta') inp + fLast theta'
 
 -- | Function to apply to the input.
 data RegressionTerm
@@ -96,22 +112,19 @@ nrCoefsRegressionTerm RegTermPriceHLC n
 -- over :: Int -> Int -> Int
 -- over n k = fac n / (fac k * fac (n - k))
 
---
-
-
 -- | Compute the predicted value for the given model on the given observation.
-compute ::
+computeTerm ::
      (ModelVector v, Foldable v, Floating a)
   => RegressionTerm -- ^ Regression function
   -> Model v a          -- ^ theta vector, the model's parameters
   -> v a                -- ^ @x@ vector, with the observed numbers
   -> a                  -- ^ predicted @y@ for this observation
-compute RegTermLinear theta x    = theta `dot'` x
-compute RegTermQuadratic theta x = theta `dot'` fMap (^2) x
-compute RegTermNonLinear theta x = theta `dot'` fFromList (map (\(xIdx, yIdx) -> x `fIdx` xIdx * x `fIdx` yIdx) xs)
+computeTerm RegTermLinear theta x    = theta `dot'` x
+computeTerm RegTermQuadratic theta x = theta `dot'` fMap (^2) x
+computeTerm RegTermNonLinear theta x = theta `dot'` fFromList (map (\(xIdx, yIdx) -> x `fIdx` xIdx * x `fIdx` yIdx) xs)
   where xs = [(xIdx, yIdx) | xIdx <- [0..n-1], yIdx <- [0..n-1], xIdx < yIdx ]
         n = fLength x
-compute RegTermPriceHLC theta x
+computeTerm RegTermPriceHLC theta x
   | fLength x `mod` 3 /= 0 = error $ "compute: Unexpected input length for RegTermPriceHLC: " ++ show (fLength x)
   | otherwise = theta `dot'` fConcatList (fmap (\idx -> mkCalc (x `fIdx` idx, x `fIdx` (idx + 1), x `fIdx` (idx + 2))) [0, 3..fLength x - 3])
   where mkCalc (h, l, c) = fFromList [(h - l), (c - l)]
