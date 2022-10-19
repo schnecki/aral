@@ -98,7 +98,7 @@ prettyRegressionNode printObs mWelInp (RegressionNode idx m coefs welOut cfg) =
 -- | Create new regression node with provided config and given number of input values.
 randRegressionNode :: RegressionConfig -> Int -> Int -> IO RegressionNode
 randRegressionNode cfg nrInpVals nodeIndex = do
-  coefs <- VS.fromList <$> replicateM nrCoefs (randomRIO (-xavier, xavier :: Double))
+  coefs <- VS.fromList . map (\x -> x + 0.05 * signum x) <$> replicateM nrCoefs (randomRIO (-0.05, 0.05 :: Double))
   return $ RegressionNode nodeIndex M.empty coefs WelfordExistingAggregateEmpty cfg
   where
     nrCoefs = nrCoefsRegressionModels regFun nrInpVals
@@ -123,10 +123,9 @@ addGroundTruthValueNode obs@(Observation _ _ _ out) (RegressionNode idx m coefs 
 -- | Train a Regression Node.
 trainRegressionNode :: WelfordExistingAggregate (VS.Vector Double) -> (Int, Int) -> Period -> RegressionNode -> RegressionNode
 trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m coefs welOut cfg) =
-  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` (25 * nrWorkers)) /= 0 -- re-train every ~25% of changed values.
+  if M.null m || VB.length allObs < nrObservationsToUse || period `mod` max 1 ((VS.length coefs - 1) * nrNodes `div` (4 * nrWorkers)) /= 0 -- re-train every ~25% of changed values.
     then old
     else let models = map VS.convert $ regressOn (computeModels regModels) ys xs (VB.convert coefs) :: [Model VS.Vector Double]
-             learnRate = decaySetup (regConfigLearnRateDecay cfg) period (regConfigLearnRate0 cfg)
              threshold = decaySetup (ExponentialDecay (Just $ fromIntegral (VS.length coefs) * 1.5e-4) 0.8 30000) period (fromIntegral (VS.length coefs) * 5e-4)
              minCorr = regConfigMinCorrelation cfg
              eiFittedCoefs :: Either RegressionNode (VS.Vector Double)
@@ -134,15 +133,14 @@ trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m
           in case eiFittedCoefs of
                Left regNode -> regNode -- in case we reanable previously disabled features
                Right fittedCoefs ->
-                 let coefs' = VS.zipWith (\oldVal newVal -> (1 - learnRate) * oldVal + learnRate * newVal) coefs fittedCoefs
-                     coefs''
-                       | period > periodsHeatMapActive = VS.map (\v -> if abs v >= minCorr then v else 0) (VS.init coefs') `VS.snoc` VS.last coefs'
-                       | otherwise = coefs'
-                  in RegressionNode idx (periodicallyCleanObservations m) coefs'' welOut cfg
+                 let coefs'
+                       | period > periodsHeatMapActive = VS.map (\v -> if abs v >= minCorr then v else 0) (VS.init fittedCoefs) `VS.snoc` VS.last fittedCoefs
+                       | otherwise = fittedCoefs
+                  in RegressionNode idx (periodicallyCleanObservations m) coefs' welOut cfg
   where
     regModels = regConfigModel cfg
     lenInp = VS.length (welfordMean welInp)
-    nrObservationsToUse = lenInp `div` 3
+    nrObservationsToUse = lenInp
     modelError oldModel newModel
       | VS.length oldModel /= VS.length newModel =
         error $ "modelError: Error in length of old and new model: " ++ show (VS.length oldModel, VS.length newModel) ++ " period: " ++ show period
@@ -177,10 +175,10 @@ trainRegressionNode welInp (nrNodes, nrWorkers) period old@(RegressionNode idx m
     obsRandIdx = unsafePerformIO $ mapM (fmap VB.fromList . randomPick) obsCache
     randomPick (key, vec) = do
       r <- randomRIO (0, 1::Double) -- ensure that we don't always feed all the data
-      if r < 0.67
+      if r < 0.75
         then return []
         else randomRIO (1, maxNr key vec) >>= \nr -> replicateM nr (randomRIO (0, VB.length vec - 1))
-    maxNr key vec = max 1 . min (VB.length vec `div` 2) $ round $ fromIntegral (abs key) * invTransf * 0.5
+    maxNr key vec = max 1 . min (VB.length vec `div` 2) $ round $ fromIntegral (abs key) * invTransf
     allObs :: VB.Vector Observation
     allObs = lastObs VB.++ VB.concat (zipWith (\(_, obs) -> VB.map (obs VB.!)) obsCache obsRandIdx)
     xs :: VB.Vector (VB.Vector Double)

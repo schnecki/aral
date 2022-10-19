@@ -54,7 +54,7 @@ data RegressionModel
 
 instance Show RegressionModel where
   show (RegModelAll term) = "RegModelAll " ++ show term
-  show (RegModelIndices ind term) = "RegModelIndices [" ++ show (VB.head ind) ++ "]" ++ show term
+  show (RegModelIndices ind term) = "RegModelIndices [" ++ lsTxt ++ "] " ++ show term
     where ind' =  sort $ VB.toList ind
           ls = foldl (\acc@((start, end):rs) x -> if end + 1 == x then (start, x):rs else (x, x):acc) [(head ind', head ind')] ind'
           lsTxt = concat $ intersperse "," $ map (\(start, end) -> if start == end then show start else (show start ++ "-" ++ show end)) ls
