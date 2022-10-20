@@ -362,23 +362,16 @@ mkUnichainRegressionAs ::
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
-  -> RegressionConfig
+  -> (s -> RegressionConfig)
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun regConfig settings initValues = do
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
-  -- let feats = fromIntegral $ V.length (ftExt initialState)
-  --     rows = genericLength as * fromIntegral (settings ^. independentAgents)
-      -- netFun cols = modelBuilderHT feats (rows, cols)
-  -- let model = netFun 1
-  -- putStrLn "Net: "
-  -- print model
-  -- repMem <- mkReplayMemories as settings nnConfig
   let mkRegressionProxy xs = RegressionProxy xs (length as)
   let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just regConfig) (V.length inp) (length as)
+  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just $ mkRegConfig initialState) (V.length inp) (length as)
   let proxies' =
             Proxies
               (Scalar (V.replicate agents defRhoMin) (length as))

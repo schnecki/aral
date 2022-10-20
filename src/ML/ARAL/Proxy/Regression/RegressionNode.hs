@@ -105,7 +105,7 @@ randRegressionNode cfg nrInpVals nodeIndex = do
     nrCoefs = nrCoefsRegressionModels regFun nrInpVals
     regFun = regConfigModel cfg
     -- W_l,i ~ U(-sqrt (6/(n_l+n_{l+1})),sqrt (6/(n_l+n_{l+1}))) where n_l is the number of nodes in layer l
-    xavier = sqrt 6 / sqrt (fromIntegral nrInpVals + fromIntegral nrCoefs)
+    -- xavier = sqrt 6 / sqrt (fromIntegral nrInpVals + fromIntegral nrCoefs)
     unif = 1 / sqrt(fromIntegral nrCoefs)
 
 
