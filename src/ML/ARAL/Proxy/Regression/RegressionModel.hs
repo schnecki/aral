@@ -80,7 +80,7 @@ instance Show RegressionModel where
           lsTxt = concat $ intersperse "," $ map (\(start, end) -> if start == end then show start else (show start ++ "-" ++ show end)) ls
   show (RegModelLayer useIntercepts term model) = show term ++ "(" ++ show model ++ ")" ++ intercept
     where intercept
-            | useIntercepts = " + C"
+            | useIntercepts = " with model intercepts"
             | otherwise = ""
 
 

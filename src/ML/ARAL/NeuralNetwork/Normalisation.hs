@@ -5,7 +5,7 @@ module ML.ARAL.NeuralNetwork.Normalisation
     , denormaliseUnbounded
     ) where
 
-import qualified Data.Vector.Storable                        as V
+import qualified Data.Vector.Storable                        as VS
 import           Statistics.Sample.WelfordOnlineMeanVariance
 
 import           ML.ARAL.Types
@@ -13,16 +13,16 @@ import           ML.ARAL.Types
 sqrt' = max 1e-3 . sqrt
 
 normaliseStateFeature :: WelfordExistingAggregate StateFeatures -> StateFeatures -> StateFeatures
-normaliseStateFeature WelfordExistingAggregateEmpty x = V.map (min 2 . max (-2)) x
-normaliseStateFeature wel feats = V.zipWith3 (\mu var f -> min 5 . max (-5) $ (f - mu) / sqrt' var) mean variance feats
+normaliseStateFeature WelfordExistingAggregateEmpty x = VS.map (min 2 . max (-2)) x
+normaliseStateFeature wel feats = VS.zipWith3 (\mu var f -> min 5 . max (-5) $ (f - mu) / sqrt' var) mean variance feats
   where (mean, _, variance) = finalize wel
 
 
 normaliseStateFeatureUnbounded :: WelfordExistingAggregate StateFeatures -> StateFeatures -> StateFeatures
-normaliseStateFeatureUnbounded WelfordExistingAggregateEmpty x = V.map (min 2 . max (-2)) x
+normaliseStateFeatureUnbounded WelfordExistingAggregateEmpty x = VS.map (min 2 . max (-2)) x
 normaliseStateFeatureUnbounded wel feats
-  | count < 100 = V.zipWith3 (\mu var f -> min 5 . max (-5) $ (f - mu) / sqrt' var) mean variance feats
-  | otherwise = V.zipWith3 (\mu var f -> (f - mu) / sqrt' var) mean variance feats
+  | count < 100 = VS.zipWith3 (\mu var f -> min 5 . max (-5) $ (f - mu) / sqrt' var) mean variance feats
+  | otherwise = VS.zipWith3 (\mu var f -> (f - mu) / sqrt' var) mean variance feats
   where (mean, _, variance) = finalize wel
         count = welfordCount wel
 
