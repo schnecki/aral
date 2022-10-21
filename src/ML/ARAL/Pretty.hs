@@ -111,11 +111,11 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy layer@(RegressionLayer (low, high) wel step regime) aNr ->
+    P.RegressionProxy layer@(RegressionLayer (low, high) welInp step regime) aNr ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
-          mkInputs xs = nub $ concatMap (map (VB.convert . obsInputValues) . filter ((>= step - 1) . obsPeriod) . concatMap VB.toList . M.elems . regNodeObservations) $ VB.toList xs
+          mkInputs xs = nub $ concatMap (map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) . filter ((>= step - 1) . obsPeriod) . concatMap VB.toList . M.elems . regNodeObservations) $ VB.toList xs
           inputs = mkInputs low ++ maybe [] mkInputs high
           -- inputs = nnCfg ^. prettyPrintElems
           inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (agentIndex MainAgent) layer aId inp)) [0..aNr-1]) inputs
