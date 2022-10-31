@@ -316,8 +316,8 @@ insertProxyMany agent setts !period !xs !px = emptyCache >> trainBatch period xs
 
 addWelford :: Period -> [[((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value)]] -> Proxy -> Proxy
 addWelford period xs px
-  | otherwise = proxyWelford .~ wel' $ px
-  | period < max 100000 (2 * memSize) = proxyWelford .~ wel' $ px
+  --  | otherwise = proxyWelford .~ wel' $ px
+  | period < max 100000 (3 * memSize) = proxyWelford .~ wel' $ px
   | otherwise = px
   where
     config = px ^?! proxyNNConfig

@@ -514,7 +514,7 @@ drawGrid aral = do
 
 drawField :: ARAL St Act -> St -> IO ()
 drawField aral s@(St x y) = do
-  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
   putStr $
     case acts of
       [0] -> " * "

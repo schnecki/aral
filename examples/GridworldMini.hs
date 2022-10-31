@@ -345,8 +345,8 @@ usermode = do
   -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
 
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
@@ -529,7 +529,7 @@ drawGrid aral = do
 
 drawField :: ARAL St Act -> St -> IO ()
 drawField aral s = do
-  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
   putStr $
     case acts of
       [0] -> " * "
