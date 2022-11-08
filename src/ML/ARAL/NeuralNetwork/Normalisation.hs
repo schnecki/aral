@@ -12,9 +12,12 @@ import           ML.ARAL.Types
 
 sqrt' = max 1e-3 . sqrt
 
+clip = id
+-- clip = min 5 . max (-5)
+
 normaliseStateFeature :: WelfordExistingAggregate StateFeatures -> StateFeatures -> StateFeatures
 normaliseStateFeature WelfordExistingAggregateEmpty x = VS.map (min 2 . max (-2)) x
-normaliseStateFeature wel feats = VS.zipWith3 (\mu var f -> min 5 . max (-5) $ (f - mu) / sqrt' var) mean variance feats
+normaliseStateFeature wel feats = VS.zipWith3 (\mu var f -> clip $ (f - mu) / sqrt' var) mean variance feats
   where (mean, _, variance) = finalize wel
 
 

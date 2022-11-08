@@ -475,14 +475,8 @@ prettyARALHead' printRho prettyStateFun borl = do
            in text "NN Learning Rate/Momentum/L2" <> colon $$
               nest
                 nestCols
-                (text "Adam Optimizer with TODO" <+>
-                 text ""
-                   -- (show
-                   --    ( printDoubleWith 8 (realToFrac l)
-                   --    , printDoubleWith 8 (realToFrac beta1)
-                   --    , printDoubleWith 8 (realToFrac beta2)
-                   --    , printDoubleWith 8 (realToFrac epsilon)
-                   --    , printDoubleWith 8 (realToFrac lambda)))
+                (text "Adam Optimizer with LR=" <+> nest nestCols (text (show (printDoubleWith 8 (realToFrac l)))) <+>
+                parens (text "Period 0" <> colon <+> printDoubleWith 8 (realToFrac alpha))
                 )
 
 
