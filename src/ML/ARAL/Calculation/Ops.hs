@@ -463,7 +463,7 @@ mkCalculation' agTp borl (state, _) as reward (stateNext, stateNextActIdxes) epi
         , getExpectedValStateNextR0 = Nothing
         , getExpectedValStateNextR1 = Nothing
         })
-mkCalculation' agTp borl (state, _) as reward (stateNext, stateNextActIdxes) episodeEnd AlgRLearning expValStateNext = do
+mkCalculation' agTp borl (state, stateActIdxs) as reward (stateNext, stateNextActIdxes) episodeEnd AlgRLearning expValStateNext = do
   let aNr = VB.map snd as
       isRandomAction = any fst as
   let alp = getExpSmthParam borl rho alpha
@@ -476,9 +476,10 @@ mkCalculation' agTp borl (state, _) as reward (stateNext, stateNextActIdxes) epi
       params' = decayedParameters borl
   rhoVal <- rhoValueWith agTp Worker borl state aNr `using` rpar
   vValState <- vValueWith agTp Worker borl state aNr `using` rpar
+  vValStateMax <- vStateValueWith agTp Target borl (state, stateActIdxes) `using` rpar
   vValStateNext <- vStateValueWith agTp Target borl (stateNext, stateNextActIdxes) `using` rpar
   rhoMinimumState <- rhoMinimumValueFeat agTp borl state aNr `using` rpar
-  let rhoState = reward .+ vValStateNext - vValState -- r_imm + U_R(s') - U_R(s)
+  let rhoState = reward .+ vValStateNext - vValStateMax -- r_imm + U_R(s') - U_R(s)
   let maxOrMin =
         case borl ^. objective of
           Maximise -> max
@@ -487,8 +488,8 @@ mkCalculation' agTp borl (state, _) as reward (stateNext, stateNextActIdxes) epi
         | isRandomAction = rhoVal -- shareRhoVal borl rhoVal
         | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alp) .* rhoVal + alp .* rhoState
       rhoValOverEstimated
-        | borl ^. settings . overEstimateRho = shareRhoVal borl $ mapValue (overEstimateRhoCalc borl) rhoVal'
-        | otherwise = shareRhoVal borl rhoVal'
+        | borl ^. settings . overEstimateRho = shareRhoVal borl $ mapValue (overEstimateRhoCalc borl) rhoVal
+        | otherwise = shareRhoVal borl rhoVal
   let rhoMinimumVal'
         | isRandomAction = shareRhoVal borl rhoMinimumState
         | otherwise = shareRhoVal borl $ zipWithValue maxOrMin rhoMinimumState $ (1 - alpRhoMin) .* rhoMinimumState + alpRhoMin .* rhoMinimumState' borl rhoVal'

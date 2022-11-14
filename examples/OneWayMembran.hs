@@ -281,6 +281,7 @@ main :: IO ()
 main = do
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
+  chooseRandomReward
   case l of
     "l"   -> lpMode
     "e"   -> experimentMode
@@ -321,7 +322,6 @@ mRefState = Nothing
 usermode :: IO ()
 usermode = do
   alg <- chooseAlg mRefState
-  chooseRandomReward
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
