@@ -476,7 +476,7 @@ mkCalculation' agTp borl (state, stateActIdxs) as reward (stateNext, stateNextAc
       params' = decayedParameters borl
   rhoVal <- rhoValueWith agTp Worker borl state aNr `using` rpar
   vValState <- vValueWith agTp Worker borl state aNr `using` rpar
-  vValStateMax <- vStateValueWith agTp Target borl (state, stateActIdxes) `using` rpar
+  vValStateMax <- vStateValueWith agTp Target borl (state, stateActIdxs) `using` rpar
   vValStateNext <- vStateValueWith agTp Target borl (stateNext, stateNextActIdxes) `using` rpar
   rhoMinimumState <- rhoMinimumValueFeat agTp borl state aNr `using` rpar
   let rhoState = reward .+ vValStateNext - vValStateMax -- r_imm + U_R(s') - U_R(s)
