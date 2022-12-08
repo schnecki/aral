@@ -566,13 +566,26 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
   let opt w = mkAdamW 0 0.9 0.999 (Torch.flattenParameters w) 1e-4 1e-4
-  let nnSA tp = case alg of
-        AlgARAL{} | tp /= R0Table && tp /= R1Table -> nnEmpty tp
-        _ -> do
-          modelT <- Torch.sample model
-          modelW <- Torch.sample model
-          return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
-      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing) (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (mkAdamW 0 0.9 0.999 [] 1e-4 1e-4) model WelfordExistingAggregateEmpty
+  let nnSA tp =
+        case alg of
+          AlgARAL {}
+            | tp /= R0Table && tp /= R1Table -> nnEmpty tp
+          _ -> do
+            modelT <- Torch.sample model
+            modelW <- Torch.sample model
+            return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
+      nnEmpty tp =
+        return $
+        Hasktorch
+          (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing HasktorchHuber)
+          (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing HasktorchHuber)
+          tp
+          nnConfig'
+          (length as)
+          (settings ^. independentAgents)
+          (mkAdamW 0 0.9 0.999 [] 1e-4 1e-4)
+          model
+          WelfordExistingAggregateEmpty
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table
@@ -584,16 +597,16 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
         | otherwise = CombinedUnichain
   let nnComb = nnSA nnType
   let proxies' =
-            Proxies
-              (Scalar (V.replicate agents defRhoMin) (length as))
-              (Scalar (V.replicate agents defRho) (length as))
-              nnPsiV
-              nnSAVTable
-              nnPsiW
-              nnSAWTable
-              nnSAR0Table
-              nnSAR1Table
-              repMem
+        Proxies
+          (Scalar (V.replicate agents defRhoMin) (length as))
+          (Scalar (V.replicate agents defRho) (length as))
+          nnPsiV
+          nnSAVTable
+          nnPsiW
+          nnSAWTable
+          nnSAR0Table
+          nnSAR1Table
+          repMem
           -- D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
           -- _ -> error "3D output is not supported by ARAL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings

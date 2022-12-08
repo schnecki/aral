@@ -262,7 +262,7 @@ nnConfig =
     , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
     , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
-    , _scaleParameters = scalingByMaxAbsRewardAlg alg False 6
+    , _scaleParameters = scalingByMaxAbsRewardAlg (AlgARAL 0.8 1.0 ByStateValues) False 6
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
@@ -288,7 +288,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 0.00
+    , _epsilon             = 0.05
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 0.7 -- 0 -- 1.0
@@ -363,17 +363,6 @@ mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (goalX, goalY), 0)
 
-alg :: Algorithm St
-alg =
-  -- AlgARAL 0.8 0.995 ByStateValues
-  AlgDQN 0.99  Exact
-
-  -- AlgARALVOnly ByStateValues Nothing
-        -- AlgDQN 0.99  EpsilonSensitive
-        -- AlgDQN 0.50  EpsilonSensitive            -- does work
-        -- algDQNAvgRewardFree
-
-  -- AlgARAL 0.5 0.8 ByStateValues mRefState
 
 usermode :: IO ()
 usermode = do
@@ -384,6 +373,7 @@ usermode = do
   -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
+  alg <- chooseAlg Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing

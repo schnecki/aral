@@ -52,7 +52,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 5 -- was 20
+maxQueueSize = 20 -- was 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -92,12 +92,12 @@ instance Bounded St where
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=0.05 maxQSize=20"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
-    , _experimentRepetitions      = 40
-    , _preparationSteps           = 1000000
+    , _experimentRepetitions      = 15
+    , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 100000
+    , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
     , _evaluationMaxStepsBetweenSaves = Nothing
     }
@@ -181,40 +181,39 @@ instance ExperimentDef (ARAL St Act) where
       let p = Just $ fromIntegral $ rl' ^. t
           -- val l = realToFrac $ head $ fromValue (rl' ^?! l)
           val' l = realToFrac (rl' ^?! l)
-          results =
-            [
-              StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            , StepResult "reward" p (val' $ lastRewards._head)
-            ]
-            ++
-            [ StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
-            -- , StepResult "psiRho" p (val $ psis . _1)
-            -- , StepResult "psiV" p   (val $ psis . _2)
-            -- , StepResult "psiW" p   (val $ psis . _3)
-            | phase == EvaluationPhase
-            ]
-            ++
-            concatMap
-              (\s ->
-                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ VB.head $ actionIndicesFiltered rl' s))
-                 (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
+          results
+            | phase /= EvaluationPhase = []
+            | otherwise =
+              [ StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
+              , StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
+              , StepResult "reward" p (val' $ lastRewards._head)
+              -- , StepResult "psiRho" p (val $ psis . _1)
+              -- , StepResult "psiV" p   (val $ psis . _2)
+              -- , StepResult "psiW" p   (val $ psis . _3)
+              ]
+            -- ++
+            -- concatMap
+            --   (\s ->
+            --      map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ VB.head $ actionIndicesFiltered rl' s))
+            --      (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
     [ ParameterSetup
         "algorithm"
         (set algorithm)
         (view algorithm)
-        (Just $ const $ return [ -- AlgARAL 0.8 0.99  ByStateValues
-                               -- ,
-                               --   AlgARAL 0.8 0.999 ByStateValues
-                               -- , AlgARAL 0.8 1.0 ByStateValues
-                               -- , AlgDQN 0.99 EpsilonSensitive
-                               -- , AlgDQN 0.99 Exact
-                               -- , AlgDQN 0.5  EpsilonSensitive
-                                AlgDQN 0.5  Exact
-                               , AlgDQN 0.999  Exact
-                               , AlgARAL 0.8 0.99 ByStateValues
-                               ])
+        (Just $ const $ return
+
+                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                  , AlgARAL 0.8 0.999 ByStateValues
+                                  , AlgARAL 0.8 0.99 ByStateValues
+                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                  , AlgDQN 0.999 Exact
+                                  , AlgDQN 0.99 Exact
+                                  , AlgDQN 0.50 Exact
+			          , AlgRLearning
+                                  ])
         Nothing
         Nothing
         Nothing
@@ -257,7 +256,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 5.0 -- 10.0
+    , _epsilon             = 0.05 -- 5.0 -- 10.0
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -298,7 +297,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.0.104 dbname=experimenter user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -337,10 +336,10 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   alg <- chooseAlg mRefStateAct
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
 
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = mInverseSt
                 | otherwise = mInverseStTbl
   askUser (Just inverseSt) True usage cmds [] rl
