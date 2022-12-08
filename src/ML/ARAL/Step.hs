@@ -338,9 +338,9 @@ setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch
   where
     setDropout (Grenade tar wor tp cfg act agents wel)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
     setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel) = Hasktorch tar wo tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel
-    setDropoutMLPSpec x@MLPSpec {}                                               = x
-    setDropoutMLPSpec x@(MLPSpecWDropoutLSTM lin act Nothing Nothing _ outAct _) = x
-    setDropoutMLPSpec (MLPSpecWDropoutLSTM lin act mDrI mDr mLSTM outAct mLoss)  = MLPSpecWDropoutLSTM lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct mLoss
+    setDropoutMLPSpec x@MLPSpec {}                                              = x
+    setDropoutMLPSpec x@(MLPSpecWDropoutLSTM _ _ _ Nothing Nothing _ _)         = x
+    setDropoutMLPSpec (MLPSpecWDropoutLSTM mLoss lin act mDrI mDr mLSTM outAct) = MLPSpecWDropoutLSTM mLoss lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
 
 
 #ifdef DEBUG

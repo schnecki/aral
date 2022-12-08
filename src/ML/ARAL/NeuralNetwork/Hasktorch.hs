@@ -22,6 +22,7 @@ import           Data.List                                   (foldl', genericLen
 import           Data.Maybe
 import           Data.Serialize
 import qualified Data.Vector.Storable                        as V
+import           Data.Word
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           Text.Printf
@@ -87,15 +88,36 @@ data MLPSpec
       , hasktorchOutputActivation :: Maybe HasktorchActivationFun
       }
   | MLPSpecWDropoutLSTM
-      { hasktorchFeatureCounts      :: [Integer]
+      { hasktorchLossFunction       :: Maybe HasktorchLoss -- Default: Huber
+      , hasktorchFeatureCounts      :: [Integer]
       , hasktorchHiddenActivation   :: HasktorchActivation
       , hasktorchInputDropoutAlpha  :: Maybe (Bool, Double) -- Dropout layer for input layer with given probability, e.g. 0.2
       , hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Dropout layer after every hidden layer with given probability, e.g. 0.5
       , hasktorchLSTM               :: Maybe (Int, Int)     -- After first FF layer. Number of layers and hidden nr.
       , hasktorchOutputActivation   :: Maybe HasktorchActivationFun
-      , hasktorchLossFunction       :: Maybe HasktorchLoss
+      }
+  deriving (Show, Eq, Generic, NFData)
+
+data MLPSpec_V1
+  = MLPSpecWDropoutLSTM_V1
+      { v1_hasktorchFeatureCounts      :: [Integer]
+      , v1_hasktorchHiddenActivation   :: HasktorchActivation
+      , v1_hasktorchInputDropoutAlpha  :: Maybe (Bool, Double) -- Dropout layer for input layer with given probability, e.g. 0.2
+      , v1_hasktorchHiddenDropoutAlpha :: Maybe (Bool, Double) -- Dropout layer after every hidden layer with given probability, e.g. 0.5
+      , v1_hasktorchLSTM               :: Maybe (Int, Int)     -- After first FF layer. Number of layers and hidden nr.
+      , v1_hasktorchOutputActivation   :: Maybe HasktorchActivationFun
       }
   deriving (Show, Eq, Generic, Serialize, NFData)
+
+
+instance Serialize MLPSpec where
+  get = do
+    nr <- get :: Get Word8 -- uses smalles of Word8, Word16, Word32, Word64, see https://hackage.haskell.org/package/cereal-0.5.8.3/docs/src/Data.Serialize.html#line-625
+    case nr of
+      0 -> MLPSpec <$> get <*> get <*> get
+      1 -> (MLPSpecWDropoutLSTM <$> get <*> get <*> get <*> get <*> get <*> get <*> get) <|> (fromV1 <$> get)
+        where fromV1 (MLPSpecWDropoutLSTM_V1 a b c d e f) = MLPSpecWDropoutLSTM Nothing a b c d e f
+      _ -> error $ "Unkown nr: " ++ show nr
 
 
 -- Actual model fuction
@@ -229,8 +251,8 @@ randLSTMCell inputSize hiddenSize = do
 
 
 instance Torch.Randomizable MLPSpec MLP where
-  sample (MLPSpec featCounts activations outputActivation) = Torch.sample (MLPSpecWDropoutLSTM featCounts activations Nothing Nothing Nothing outputActivation Nothing)
-  sample (MLPSpecWDropoutLSTM featCounts activations mDropoutInput mDropoutHidden mLSTM outputActivation mLossFun) = do
+  sample (MLPSpec featCounts activations outputActivation) = Torch.sample (MLPSpecWDropoutLSTM Nothing featCounts activations Nothing Nothing Nothing outputActivation)
+  sample (MLPSpecWDropoutLSTM mLossFun featCounts activations mDropoutInput mDropoutHidden mLSTM outputActivation) = do
     let layerSizes = mkLayerSizes (map fromInteger featCounts)
     linears <- mapM sampleDouble layerSizes
     when (length featCounts < 2) $ error "Need at least 1 layer (2 inputs) for ANN"

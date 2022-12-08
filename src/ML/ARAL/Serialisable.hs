@@ -277,7 +277,7 @@ instance Serialize Proxy where
                   then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel
                   else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel
         4 -> RegressionProxy <$> get <*> get
-        _ -> error "Unknown constructor for proxy"
+        _ -> error $ "Unknown constructor for proxy: " <> show c
 
 
 -- ^ Replay Memory
