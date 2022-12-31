@@ -208,9 +208,9 @@ stepExecuteMaterialisedFutures ::
 stepExecuteMaterialisedFutures _ (nr, True, aral) _ = return (nr, True, aral)
 stepExecuteMaterialisedFutures agent (nr, _, aral) dt =
   case view futureReward dt of
-    RewardEmpty     -> return (nr, False, aral)
+    RewardEmpty     -> return (nr + 1, False, t %~ (+ 1) $ aral)
     RewardFuture {} -> return (nr, True, aral)
-    Reward {}       -> (nr+1, False, ) <$> execute agent aral dt
+    Reward {}       -> (nr + 1, False, ) <$> execute agent aral dt
 
 
 minMaxStates :: MVar ((Double, (s, AgentActionIndices)), (Double, (s, AgentActionIndices)))

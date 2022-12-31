@@ -45,7 +45,7 @@ import           ML.ARAL.Types
 
 import           Debug.Trace
 
-
+-- | Activation funtion for all layers plus chaning specific activation functions for given index (0 is after input, 1 is after first hidden, etc).
 data HasktorchActivation = HasktorchActivation HasktorchActivationFun [(Int, HasktorchActivationFun)]
   deriving (Show, Eq, Generic, Serialize, NFData)
 
@@ -59,7 +59,7 @@ instance Default HasktorchLoss where
 
 data HasktorchActivationFun
   = HasktorchRelu
-  | HasktorchLeakyRelu (Maybe Float)
+  | HasktorchLeakyRelu (Maybe Float) -- Default alpha = 0.02
   | HasktorchTanh
   | HasktorchSigmoid
   | HasktorchLogSigmoid
