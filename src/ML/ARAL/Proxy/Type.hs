@@ -62,10 +62,12 @@ import qualified Torch.Typed.Vision                          as Torch (initMnist
 import qualified Torch.Vision                                as Torch.V
 import           Unsafe.Coerce                               (unsafeCoerce)
 
+-- import           ML.ARAL.Proxy.Regression.RegressionLayer
+import           RegNet
+
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.AdamW
 import           ML.ARAL.NeuralNetwork.Hasktorch
-import           ML.ARAL.Proxy.Regression.RegressionLayer
 import           ML.ARAL.Types                               as T
 
 

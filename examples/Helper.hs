@@ -13,21 +13,21 @@ module Helper
 import           Grenade
 import           ML.ARAL
 import           ML.ARAL.InftyVector
-import           ML.ARAL.Proxy.Regression
+import           RegNet
 
 import           Control.Arrow
-import           Control.DeepSeq          (NFData, force)
+import           Control.DeepSeq        (NFData, force)
 import           Control.Lens
-import           Control.Lens             (over, set, traversed, (^.))
-import           Control.Monad            (foldM, unless, when)
-import           Control.Monad.IO.Class   (liftIO)
-import qualified Data.ByteString          as BS
-import           Data.Function            (on)
-import           Data.List                (find, sortBy)
-import           Data.Maybe               (fromMaybe)
-import           Data.Serialize           as S
+import           Control.Lens           (over, set, traversed, (^.))
+import           Control.Monad          (foldM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
+import qualified Data.ByteString        as BS
+import           Data.Function          (on)
+import           Data.List              (find, sortBy)
+import           Data.Maybe             (fromMaybe)
+import           Data.Serialize         as S
 import           Data.Time.Clock
-import qualified Data.Vector              as VB
+import qualified Data.Vector            as VB
 import           System.CPUTime
 import           System.IO
 import           System.Random

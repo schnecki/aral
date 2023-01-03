@@ -54,13 +54,16 @@ import           System.Random
 import qualified Torch                                       as Torch
 import qualified Torch.Optim                                 as Torch
 
+import           RegNet
+-- import           ML.ARAL.Proxy.Regression.RegressionLayer
+
+
 import           ML.ARAL.Calculation.Type
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.Regression.RegressionLayer
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -291,7 +294,7 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
 insertProxyMany _ _ !period !xs px@(RegressionProxy nodes nrAs) = do
-  let regLayer = addGroundTruthValueLayer (concatMap makeObservations (concat xs)) nodes
+  let regLayer = addGroundTruthValueLayer nodes (concatMap makeObservations (concat xs))
   return $ set proxyRegressionLayer (trainRegressionLayer regLayer) px
   where
     makeObservations :: ((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value) -> [(Observation, ActionIndex)]
@@ -301,7 +304,7 @@ insertProxyMany _ _ !period !xs px@(RegressionProxy nodes nrAs) = do
       where
         obs
           | V.length y > 1 = error "insertProxyMany: not yet implemented for v>1"
-          | otherwise = Observation period inps rew (y V.! 0)
+          | otherwise = Observation period inps (y V.! 0)
 
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
   | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
@@ -451,7 +454,7 @@ lookupProxyAgent _ _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
 lookupProxyAgent _ _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
 lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _) = return $
   -- trace ("lookupProxyAgent as: " ++ show a)
-  applyRegressionLayer (agentIndex agTp) ms a (VB.convert k)
+  applyRegressionLayer ms a (VB.convert k)
 lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _) = error "RegressionProx ydoes not work with multiple agents"
 lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
   where
@@ -466,7 +469,7 @@ lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _)
   | length ass > 1 = error "RegressionProxy does not work with multiple agents"
   | otherwise = return $ AgentValue $ V.convert $ VB.map (\a ->
                                                             -- trace ("lookupProxy (a, ass): " ++ show (a, ass))
-                                                            applyRegressionLayer (agentIndex agTp) ms a (VB.convert k)) ass
+                                                            applyRegressionLayer ms a (VB.convert k)) ass
 lookupProxy _ _ lkType k px                = lookupNeuralNetwork lkType k px
 
 
@@ -490,7 +493,7 @@ lookupState _ _ (k, nass) (Table m def nrAs) =
 lookupState agTp _ (k, nass) (RegressionProxy ms nrAs) =
   return $ AgentValues $ VB.zipWith (\as agNr ->
                                        -- trace ("lookupState as: " ++ show as)
-                                       V.map (\a -> applyRegressionLayer (agentIndex agTp) ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
+                                       V.map (\a -> applyRegressionLayer ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
   where
     ass = toPositiveActionList nrAs nass
 lookupState _ tp (k, DisallowedActionIndicies ass) px = do

@@ -20,6 +20,7 @@ module Main where
 
 import           ML.ARAL                  as B
 import           ML.ARAL.Logging
+import           RegNet
 import           SolveLp
 
 import           EasyLogger
@@ -281,7 +282,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 10000 -- ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -345,8 +346,8 @@ usermode = do
   -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf borlSettings (Just initVals)
 
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
@@ -356,6 +357,18 @@ usermode = do
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
+
+regConf :: St -> RegressionConfig
+regConf _ = RegressionConfig
+  { regConfigDataOutStepSize            = 0.01                                                            -- ^ Step size in terms of normalised output value to group observation data. Default: 0.1
+  , regConfigDataMaxObservationsPerStep = 5                                                               -- ^ Maximum number of data points per group. Default: 5
+  , regConfigMinCorrelation             = 0.0075                                                          -- ^ Minimum correlation, or feature is turned off completely. Default: 0.01
+  , regConfigGradDecentMaxIterations    = 3                                                               -- ^ Maximum number of gradient update iterations per step. Default: 3
+  , regConfigModel                      = RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@
+  , regConfigVerbose                    = False                                                           -- ^ Verbose output. Default: False
+  , regConfigStartup = def
+  }
+
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
@@ -525,6 +538,10 @@ drawGrid aral = do
        mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
        putStr "\n")
     ([0 .. maxX] :: [Int])
+
+  case aral ^. proxies . r1 of
+    RegressionProxy lay _ | aral ^. t > 10 -> putStrLn $ "\n\n" ++ regressionLayerFormula lay
+    _                                      -> return ()
 
 
 drawField :: ARAL St Act -> St -> IO ()

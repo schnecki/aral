@@ -114,6 +114,7 @@ import           System.IO.Unsafe                            (unsafePerformIO)
 import qualified Torch
 import qualified Torch.NN                                    as Torch
 
+import           RegNet
 
 import           ML.ARAL.Action.Type
 import           ML.ARAL.Algorithm
@@ -121,7 +122,6 @@ import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.Regression
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
@@ -371,7 +371,7 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
   initialState <- initialStateFun MainAgent
   let mkRegressionProxy xs = RegressionProxy xs (length as)
   let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just $ mkRegConfig initialState) (V.length inp) (length as)
+  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (Just $ mkRegConfig initialState) (V.length inp) (length as)
   let proxies' =
             Proxies
               (Scalar (V.replicate agents defRhoMin) (length as))

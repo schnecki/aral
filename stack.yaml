@@ -9,6 +9,7 @@ packages:
 - ../hasktorch/libtorch-ffi-helper
 - ../welford-online-mean-variance
 - ../regress
+- ../regnet
 
 extra-include-dirs:
 - ../hasktorch/deps/libtorch/include/torch/csrc/api/include

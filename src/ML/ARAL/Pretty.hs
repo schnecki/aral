@@ -30,6 +30,7 @@ import qualified Data.Vector                         as VB
 import qualified Data.Vector.Storable                as V
 import           Grenade
 import           Prelude                             hiding ((<>))
+import           RegNet
 import           System.IO.Unsafe                    (unsafePerformIO)
 import           Text.PrettyPrint                    as P
 import           Text.Printf
@@ -44,7 +45,6 @@ import           ML.ARAL.Parameters
 import qualified ML.ARAL.Proxy                       as P
 import           ML.ARAL.Proxy.Ops                   (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.Regression
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -111,14 +111,16 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy layer@(RegressionLayer (low, high) welInp step regime) aNr ->
+    P.RegressionProxy layer@(RegressionLayer nodes welInp step regime) aNr ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
-          mkInputs xs = nub $ concatMap (map (VB.convert . normaliseStateFeatureUnbounded welInp . obsInputValues) . filter ((>= step - 1) . obsPeriod) . concatMap VB.toList . M.elems . regNodeObservations) $ VB.toList xs
-          inputs = mkInputs low ++ maybe [] mkInputs high
+          mkInputs xs =
+            take 7 $
+            nub $ concatMap (map (VB.convert . RegNet.normaliseStateFeatureUnbounded welInp . obsInputValues) . filter ((>= step - 1) . obsStep) . concatMap VB.toList . M.elems . regNodeObservations) $ VB.toList xs
+          inputs = mkInputs nodes
           -- inputs = nnCfg ^. prettyPrintElems
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (agentIndex MainAgent) layer aId inp)) [0..aNr-1]) inputs
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0..aNr-1]) inputs
        in
         fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer, text "" $+$ text (show regime)]) $
            mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
@@ -462,7 +464,7 @@ prettyARALHead' printRho prettyStateFun borl = do
         textRegressionConf :: RegressionLayer -> Doc
         textRegressionConf lay =
           text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
-          where cfg = regNodeConfig $ VB.head $ fst (regressionLayerActions lay)
+          where cfg = regNodeConfig $ VB.head $ regressionLayerActions lay
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
