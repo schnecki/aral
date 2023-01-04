@@ -282,7 +282,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 10000 -- ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 20000 -- ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -294,6 +294,8 @@ main = do
   $(initLogger) (LogFile "package.log")
   setMinLogLevel LogWarning
   enableARALLogging (LogFile "package.log")
+  enableRegNetLogging LogStdOut
+
 
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
@@ -337,6 +339,8 @@ mRefState = Nothing
 
 usermode :: IO ()
 usermode = do
+  $(initLogger) LogStdOut
+  enableRegNetLogging LogStdOut
 
   alg <- chooseAlg mRefState
 
@@ -362,11 +366,10 @@ regConf :: St -> RegressionConfig
 regConf _ = RegressionConfig
   { regConfigDataOutStepSize            = 0.01                                                            -- ^ Step size in terms of normalised output value to group observation data. Default: 0.1
   , regConfigDataMaxObservationsPerStep = 5                                                               -- ^ Maximum number of data points per group. Default: 5
-  , regConfigMinCorrelation             = 0.0075                                                          -- ^ Minimum correlation, or feature is turned off completely. Default: 0.01
-  , regConfigGradDecentMaxIterations    = 3                                                               -- ^ Maximum number of gradient update iterations per step. Default: 3
+  , regConfigMinCorrelation             = 0.00                                                            -- ^ Minimum correlation, or feature is turned off completely. Default: 0.01
+  , regConfigGradDecentMaxIterations    = 100                                                             -- ^ Maximum number of gradient update iterations per step. Default: 3
   , regConfigModel                      = RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@
-  , regConfigVerbose                    = False                                                           -- ^ Verbose output. Default: False
-  , regConfigStartup = def
+  , regConfigStartup                    = def
   }
 
 

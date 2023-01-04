@@ -116,15 +116,18 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
           mkInputs xs =
-            take 7 $
-            nub $ concatMap (map (VB.convert . RegNet.normaliseStateFeatureUnbounded welInp . obsInputValues) . filter ((>= step - 1) . obsStep) . concatMap VB.toList . M.elems . regNodeObservations) $ VB.toList xs
+            take 100 $
+            nub $
+            concatMap
+              (map (VB.convert . RegNet.normaliseStateFeatureUnbounded welInp . obsInputValues) .
+               filter ((>= step - 1) . obsStep) . concatMap (concatMap VB.toList . M.elems) . VB.toList . regNodeObservations) $
+            VB.toList xs
           inputs = mkInputs nodes
           -- inputs = nnCfg ^. prettyPrintElems
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0..aNr-1]) inputs
-       in
-        fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer, text "" $+$ text (show regime)]) $
-           mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-             sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0 .. aNr - 1]) inputs
+       in fmap (++ [text "" $+$ prettyRegressionLayerNoObs layer, text "" $+$ text (show regime)]) $
+          mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
