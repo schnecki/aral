@@ -226,7 +226,7 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemorySingle
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
     , _trainBatchSize = 8
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
@@ -244,12 +244,12 @@ nnConfig =
     }
 
 borlSettings :: Settings
-borlSettings = def
-  { _workersMinExploration = [0.3, 0.2, 0.1]
-  , _nStep = 2
-  , _independentAgents = 1
-  , _overEstimateRho = False -- True
-  }
+borlSettings =
+  def
+    { _workersMinExploration = [0.1, 0.2, 0.3]
+    , _nStep = 1
+    , _independentAgents = 1
+    }
 
 -- | ARAL Parameters.
 params :: ParameterInitValues
@@ -273,7 +273,7 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 15000  -- 5e-4
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
@@ -282,7 +282,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 20000 -- ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.8 10000 -- ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -292,7 +292,7 @@ initVals = InitValues 0 0 0 0 0 0
 main :: IO ()
 main = do
   $(initLogger) (LogFile "package.log")
-  setMinLogLevel LogWarning
+  setMinLogLevel LogWarning -- LogInfo
   enableARALLogging (LogFile "package.log")
   enableRegNetLogging LogStdOut
 
@@ -351,7 +351,7 @@ usermode = do
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
@@ -364,12 +364,15 @@ usermode = do
 
 regConf :: St -> RegressionConfig
 regConf _ = RegressionConfig
-  { regConfigDataOutStepSize            = 0.01                                                            -- ^ Step size in terms of normalised output value to group observation data. Default: 0.1
-  , regConfigDataMaxObservationsPerStep = 5                                                               -- ^ Maximum number of data points per group. Default: 5
-  , regConfigMinCorrelation             = 0.00                                                            -- ^ Minimum correlation, or feature is turned off completely. Default: 0.01
-  , regConfigGradDecentMaxIterations    = 100                                                             -- ^ Maximum number of gradient update iterations per step. Default: 3
-  , regConfigModel                      = RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@
-  , regConfigStartup                    = def
+  { regConfigBatchSize               = 64
+  , regConfigGradModelErrorThreshold = 1e-5
+  , regConfigGradDecentMaxIterations = 100
+  , regConfigLearningRate            = ExponentialDecaySetup (Just 0.01) 0.5 10000 1
+  , regConfigMinCorrelation          = 0.01
+  , regConfigStartup                 = def
+  , regConfigModel                   =
+    -- RegressionModels True $ VB.fromList [RegModelLayer True RegTermNonLinear $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermQuadratic]]
+    RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@
   }
 
 
@@ -541,10 +544,6 @@ drawGrid aral = do
        mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
        putStr "\n")
     ([0 .. maxX] :: [Int])
-
-  case aral ^. proxies . r1 of
-    RegressionProxy lay _ | aral ^. t > 10 -> putStrLn $ "\n\n" ++ regressionLayerFormula lay
-    _                                      -> return ()
 
 
 drawField :: ARAL St Act -> St -> IO ()

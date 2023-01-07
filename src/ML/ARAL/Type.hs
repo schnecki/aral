@@ -73,6 +73,7 @@ module ML.ARAL.Type
   -- ** Hasktorch
   , mkUnichainHasktorch
   , mkUnichainHasktorchAs
+  , mkUnichainHasktorchAsSingleNets
   -- ** Grenade
   , mkUnichainGrenade
   , mkUnichainGrenadeAs
@@ -139,6 +140,7 @@ type NrRows = Integer
 type NrCols = Integer
 type ModelBuilderFun = NrFeatures -> (NrRows, NrCols) -> IO SpecConcreteNetwork
 type ModelBuilderFunHT = NrFeatures -> (NrRows, NrCols) -> MLPSpec
+type SingleNetPerOutputAction = Bool
 
 
 -------------------- Main RL Datatype --------------------
@@ -363,15 +365,19 @@ mkUnichainRegressionAs ::
   -> ParameterInitValues
   -> ParameterDecaySetting
   -> (s -> RegressionConfig)
+  -> NNConfig
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig settings initValues = do
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
-  let mkRegressionProxy xs = RegressionProxy xs (length as)
+  let regConf = mkRegConfig initialState
+  let nnConfig' = nnConfig { _trainBatchSize = regConfigBatchSize regConf }
+  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig'
   let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (Just $ mkRegConfig initialState) (V.length inp) (length as)
+  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (Just regConf) (V.length inp) (length as)
+  repMem <- mkReplayMemories as settings nnConfig'
   let proxies' =
             Proxies
               (Scalar (V.replicate agents defRhoMin) (length as))
@@ -382,8 +388,9 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
               tabSA
               tabSA
               tabSA
-              Nothing
-  workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+              repMem
+  -- workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
   return $!
     force $
     ARAL
@@ -554,7 +561,25 @@ mkUnichainHasktorchAs ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
+mkUnichainHasktorchAs = mkUnichainHasktorchAsSingleNets False
+
+mkUnichainHasktorchAsSingleNets ::
+  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+     SingleNetPerOutputAction
+  -> [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFunHT
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
@@ -573,7 +598,7 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
           _ -> do
             modelT <- Torch.sample model
             modelW <- Torch.sample model
-            return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
+            return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty nnActs
       nnEmpty tp =
         return $
         Hasktorch
@@ -586,6 +611,7 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
           (mkAdamW 0 0.9 0.999 [] 1e-4 1e-4)
           model
           WelfordExistingAggregateEmpty
+          False
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table
@@ -948,10 +974,11 @@ mkWorkers :: InitialStateFun s -> [Action as] -> Maybe NNConfig -> Settings -> I
 mkWorkers state as mNNConfig setts = do
   let nr = length $ setts ^. workersMinExploration
       workerTypes = map WorkerAgent [1 .. nr]
+      nStepSett = setts ^. nStep
   if nr <= 0
     then return []
     else do
-      repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
+      repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified nStepSett) <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
       states <- mapM state workerTypes
       return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) VB.empty 0) [1 ..] states repMems
   where

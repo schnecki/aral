@@ -5,7 +5,6 @@
 {-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE Strict          #-}
-{-# LANGUAGE StrictData      #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 
@@ -14,7 +13,7 @@ module ML.ARAL.NeuralNetwork.ReplayMemory where
 
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad               (foldM)
+import           Control.Monad               (foldM, replicateM)
 import           Control.Parallel.Strategies
 import           Data.Int
 import           Data.Maybe                  (fromJust, isNothing)
@@ -157,34 +156,19 @@ type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are cons
 -- | Get a list of random input-output tuples from the replay memory. Returns a list at least the length of the batch size with a list of consecutive experiences without a terminal state in between.
 -- In case a terminal state is detected the list is split and the first list exeecds the batchsize.
 getRandomReplayMemoryElements :: AllExpAreConsecutive -> NStep -> Batchsize -> ReplayMemory -> IO [[Experience]]
-getRandomReplayMemoryElements _ _ _ (ReplayMemory _ _ _ 0) = return []
-getRandomReplayMemoryElements _ 1 bs (ReplayMemory vec size _ maxIdx) = do
-  let len = min bs (1 + maxIdx)
-  g <- newStdGen
-  let rands
-        | len == size = take len [0 .. maxIdx]
-        | otherwise = take len $ randomRs (0, maxIdx) g
-  map (return . fromInternal) <$> mapM (VM.read vec) rands
+getRandomReplayMemoryElements _ nStep _ (ReplayMemory _ _ _ maxIdx) | maxIdx < nStep = return []
 getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consequitive experiences
-  let len = min bs ((1 + maxIdx) `div` nStep)
-  g <- newStdGen
-  let rands
-        | len * nStep == size = take len [nStep - 1,2 * nStep - 1 .. maxIdx]
-        | otherwise = take len $ randomRs (nStep - 1, maxIdx) g
-      idxes = map (\r -> filter (>= 0) [r - nStep + 1 .. r]) rands
+  let len = max 1 (bs `div` nStep)
+  rands <- replicateM len (randomRIO (0, max 0 maxIdx - nStep + 1)) -- can start anywhere
+  let idxes = map (\r -> [r, r+1 .. r + nStep - 1]) rands
   concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
     splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
-getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx)
-  | nStep > maxIdx + 1 = return []
-  | otherwise = do
-    let len = min bs ((maxIdx + 1) `div` nStep)
-    g <- newStdGen
-    let rands
-          | len * nStep == size = take len [0,nStep .. maxIdx - nStep + 1]
-          | otherwise = map (subtract nStep . (* nStep)) $ take len $ randomRs (1, (maxIdx + 1) `div` nStep) g
-        idxes = map (\r -> [r .. r + nStep - 1]) rands
-    concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
+getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx) = do
+  let len = max 1 (bs `div` nStep)
+  rands <- map (*nStep) <$> replicateM len (randomRIO (0, max 0 (maxIdx - nStep + 1) `div` nStep)) -- can only start in accordance with n-step
+  let idxes = map (\r -> [r, r+1 .. r + nStep - 1]) rands
+  concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
     splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
 
@@ -204,14 +188,13 @@ splitList f (x:xs) = (x : y) : ys
 getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
 getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified nrAs rm) = getRandomReplayMemoryElements True nStep bs rm
 getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions nrAs tmpRepMem rs) = do
-  g <- newStdGen
-  let idxs = take bs $ randomRs (0, length rs - 1) g
-      rsSel = map (rs VB.!) idxs
+  idxs <- replicateM (bs `div` nStep) (randomRIO (0, length rs - 1))
+  let rsSel = map (rs VB.!) idxs
   concat <$> sequence (parMap rpar getRandomReplayMemoriesElements' rsSel)
   where getRandomReplayMemoriesElements' replMem
            | nStep == 1 || isNothing tmpRepMem = getRandomReplayMemoryElements False 1 1 replMem
            | otherwise = do
-              xs <- getRandomReplayMemoryElements False nStep 1 replMem
+              xs <- getRandomReplayMemoryElements False nStep nStep replMem
               if null xs
                 then getRandomReplayMemoryElements False 1 1 (fromJust tmpRepMem)
                 else return xs

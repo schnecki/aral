@@ -77,8 +77,8 @@ executables:
   gridworld-mini:
     main:                GridworldMini.hs
     other-modules:
-      - Helper
       - SolveLp
+      - Helper
     source-dirs:         .
     default-extensions: CPP
     ghc-options:

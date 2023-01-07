@@ -47,15 +47,16 @@ askUser ::
 askUser mInverse showHelp addUsage cmds qlCmds ql = do
   let usage =
         sortBy (compare `on` fst) $
-        [ ("v", "Print V+W tables")
-        , ("p", "Print everything")
-        , ("h", "Print head")
+        [ ("h", "Print head")
         , ("i", "Print info head only")
+        , ("l", "Load from file save.dat")
+        , ("p", "Print everything")
+        , ("param", "Change parameters")
+        , ("pr", "Plot RegNet")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
-        , ("param", "Change parameters")
         , ("s", "Save to file save.dat (overwrites the file if it exists)")
-        , ("l", "Load from file save.dat")
+        , ("v", "Print V+W tables")
         , ("_", "Any other input starts another learning round\n")
         ] ++
         addUsage ++
@@ -99,6 +100,9 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                          let qPP = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(q' ^. featureExtractor) (borl ^. s), (q' ^. featureExtractor) (q' ^. s)]) q'
                          output <- prettyARALMWithStInverse mInverse qPP
                          liftIO $ print output >> hFlush stdout
+                         liftIO $ case q' ^. proxies . r1 of
+                           RegressionProxy lay _ _ | q' ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
+                           _                                      -> return ()
                          return q')
                       borl
                       [1 .. often]
@@ -121,6 +125,11 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
     "p" -> do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
+      askUser mInverse False addUsage cmds qlCmds ql
+    "pr" -> do
+      case ql ^. proxies . r1 of
+        RegressionProxy lay _ _ | ql ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
+        _                                      -> return ()
       askUser mInverse False addUsage cmds qlCmds ql
     "rp" -> do
       let doc = maybe mempty  prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)

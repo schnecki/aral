@@ -18,9 +18,10 @@ import           Control.DeepSeq
 import           Control.Lens                                ((^.))
 import           Control.Monad                               (when)
 import           Data.Default
-import           Data.List                                   (foldl', genericLength, intersperse)
+import           Data.List                                   (foldl', genericLength, intersperse, transpose)
 import           Data.Maybe
 import           Data.Serialize
+import qualified Data.Vector                                 as VB
 import qualified Data.Vector.Storable                        as V
 import           Data.Word
 import           GHC.Generics
@@ -151,6 +152,7 @@ data MLP =
     , mlpOutputActivation         :: Maybe (Torch.Tensor -> Torch.Tensor)
     , mlpLossFun                  :: HasktorchLoss
     }
+  | MLPList [MLP]
   deriving (Generic, Torch.Parameterized)
 
 -- instance Torch.Scalar Torch.BatchNorm
@@ -160,6 +162,8 @@ instance Show MLP where
   show (MLP layers _ _ mDrI mDr mLSTM _ loss) =
     show layers <>
     maybe "" (\(_, x) -> " w/ Inp Dropout(" ++ printf "%.3f" x ++ ")") mDrI <> maybe "" (\(_, x) -> " w/ Dropout" ++ printf "%.3f" x) mDr <> maybe "" (const " w/ LSTM") mLSTM <> "; Loss: " <> show loss
+  show (MLPList []) = "Empty list! ERROR!"
+  show (MLPList xs@(x:_)) = "List (" ++ show (length xs) ++ ") of " ++ show x
 
 replaceIdx :: [a] -> (Int, a) -> [a]
 replaceIdx xs (idx, x)
@@ -172,8 +176,10 @@ mergeLayers (l:ls) (h:hs) []     = l : h : mergeLayers ls hs []
 mergeLayers [] [] []             = []
 mergeLayers ls hs ds             = error $ "mergeLayers: Unexpected number of layers: " ++ show (length ls, length hs, length ds)
 
-hasktorchModel :: Bool -> MLP -> Torch.Tensor -> (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
-hasktorchModel _ (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _) input =
+hasktorchModel :: Bool -> MLP -> Maybe Int -> Torch.Tensor -> (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
+hasktorchModel train (MLPList xs) (Just actIdx) input = hasktorchModel train (xs !! actIdx) Nothing input
+hasktorchModel train (MLPList xs) Nothing input = error "hasktorchModel: Expecting a action index for MLPList!"
+hasktorchModel _ (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _) Nothing input =
   (, Nothing) $
   foldl' revApply input $ inputDropoutLayer ++ mergeLayers (map Torch.linear inpAndHiddenLayers) hiddenActs hiddenDropout ++ [Torch.linear outputLayer] ++ maybe [] pure outputAct
   where
@@ -195,7 +201,7 @@ hasktorchModel _ (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHi
         Nothing                       -> []
     revApply :: Torch.Tensor -> (Torch.Tensor -> Torch.Tensor) -> Torch.Tensor
     revApply x f = f x
-hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct _) input =
+hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct _) Nothing input =
   runLstmAndRest $ revApply input layer1
   where
     inpAndHiddenLayers = init layers
@@ -234,10 +240,10 @@ hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropo
 randLSTMCell :: Int -> Int -> IO LSTM.LSTMCell
 randLSTMCell inputSize hiddenSize = do
   -- x4 dimension calculations - see https://pytorch.org/docs/master/generated/torch.nn.LSTMCell.html
-  weightsIH' <- Torch.makeIndependent . mkDbl =<< initScale <$> Torch.randIO' [4 * hiddenSize, inputSize]
-  weightsHH' <- Torch.makeIndependent . mkDbl =<< initScale <$> Torch.randIO' [4 * hiddenSize, hiddenSize]
-  biasIH'    <- Torch.makeIndependent . mkDbl =<< initScale <$> Torch.randIO' [4 * hiddenSize]
-  biasHH'    <- Torch.makeIndependent . mkDbl =<< initScale <$> Torch.randIO' [4 * hiddenSize]
+  weightsIH' <- Torch.makeIndependent . mkDbl . initScale =<< Torch.randIO' [4 * hiddenSize, inputSize]
+  weightsHH' <- Torch.makeIndependent . mkDbl . initScale =<< Torch.randIO' [4 * hiddenSize, hiddenSize]
+  biasIH'    <- Torch.makeIndependent . mkDbl . initScale =<< Torch.randIO' [4 * hiddenSize]
+  biasHH'    <- Torch.makeIndependent . mkDbl . initScale =<< Torch.randIO' [4 * hiddenSize]
   pure $
     LSTM.LSTMCell
       { LSTM.weightsIH = weightsIH',
@@ -256,6 +262,7 @@ instance Torch.Randomizable MLPSpec MLP where
     let layerSizes = mkLayerSizes (map fromInteger featCounts)
     linears <- mapM sampleDouble layerSizes
     when (length featCounts < 2) $ error "Need at least 1 layer (2 inputs) for ANN"
+    let nrAs = last layerSizes
     let sampleLstm (numLayers, nrHidden) = do
           -- let h0 = Torch.zeros' [numLayers, 1, nrHidden]
           -- let c0 = Torch.zeros' [numLayers, 1, nrHidden]
@@ -298,24 +305,33 @@ instance Torch.Randomizable MLPSpec MLP where
 mkDbl = Torch.toDType Torch.Double
 
 
-runHasktorch :: MLP -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> [Values]
-runHasktorch mlp nrAs nrAgents mWel st =
+runHasktorch :: MLP -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> Bool -> [Values]
+runHasktorch mlp@MLPList{} nrAs nrAgents mWel st oneAnnPerAction =
   -- trace ("mlp: " ++ show mlp) $
   let input = Torch.asTensor $ V.toList $ maybe id normaliseStateFeature mWel $ st
-      (outputTensor, _) = -- V.map toDouble $
-        hasktorchModel False mlp input
+      outputTensors = map (\aIdx -> fst $ hasktorchModel False mlp (Just aIdx) input) [0..nrAs-1]
+      outputs = map Torch.asValue outputTensors
+   in [AgentValues $ VB.fromList (map V.fromList $ transpose outputs)] -- one storable vector for each output agent
+runHasktorch mlp@MLP{} nrAs nrAgents mWel st oneAnnPerAction =
+  -- trace ("mlp: " ++ show mlp) $
+  let input = Torch.asTensor $ V.toList $ maybe id normaliseStateFeature mWel $ st
+      (outputTensor, _) = hasktorchModel False mlp Nothing input
       output = V.fromList $ Torch.asValue outputTensor
    in [toAgents nrAs nrAgents output]
 
 
-trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
-trainHasktorch period lRate optimizer nnConfig model chs
+trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> Bool -> IO (MLP, optimizer)
+trainHasktorch period lRate optimizer nnConfig MLP{} chs True = error "TODO: resample ANN to MLPList"
+trainHasktorch period lRate optimizer nnConfig (MLPList xs) chs _ = error "TODO: train MLPList"
+trainHasktorch period lRate optimizer nnConfig model@MLP{} chs False
   | nnConfig ^. trainingIterations <= 1 = trainHasktorch' period lRate optimizer nnConfig model chs
   | otherwise = run (nnConfig ^. trainingIterations) (model, optimizer)
   where run 0 res        = return res
         run n (mdl, opt) = trainHasktorch' period lRate opt nnConfig mdl chs >>= run (n-1)
 
 trainHasktorch' :: (Torch.Optimizer optimizer) => Period -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
+trainHasktorch' period lRate optimizer nnConfig model@MLPList{} chs = do
+  error "TODO"
 trainHasktorch' period lRate optimizer nnConfig model chs = do
   -- map (makeLoss model) chs
 
@@ -331,7 +347,7 @@ trainHasktorch' period lRate optimizer nnConfig model chs = do
         -- computeGrads $ mkLossDirect
         mkIndepLossAndGrads
         targets $ gather outputs
-      (outputs, mH0C0s) = hasktorchModel True model inputs
+      (outputs, mH0C0s) = hasktorchModel True model Nothing inputs
       inputs = Torch.asTensor $ map (map (V.toList . fst . fst)) chs
       actions = Torch.asTensor $ map ((: []) . map (snd . fst)) chs
       targets = Torch.asTensor $ map (map snd) chs

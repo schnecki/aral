@@ -20,10 +20,10 @@ type DecayedValue = Double
 
 data DecaySetup
   = NoDecay
-  | ExponentialDecay                    -- ^ Exponentially decrease a given value to 0, maybe cut by the given minimum value. v * rate^(t/steps
+  | ExponentialDecay                     -- ^ Exponentially decrease a given value to 0, maybe cut by the given minimum value. v * rate^(t/steps
       { _decayMinimum :: !(Maybe Double) -- ^ Minimum value.
       , _decayExpRate :: !Double         -- ^ Decay rate.
-      , _decyaSteps   :: !Integer       -- ^ Decay steps.
+      , _decyaSteps   :: !Integer        -- ^ Decay steps.
       }
   | ExponentialIncrease -- ^ Exponentially increase from 0 (or the specified minimum) to the provided value. Formula
                         -- used: v * (1-rate^(t/steps))
