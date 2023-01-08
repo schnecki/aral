@@ -292,8 +292,8 @@ initVals = InitValues 0 0 0 0 0 0
 main :: IO ()
 main = do
   $(initLogger) (LogFile "package.log")
-  setMinLogLevel LogWarning -- LogInfo
-  enableARALLogging (LogFile "package.log")
+  setMinLogLevel LogWarning -- LogDebug -- LogInfo
+  -- enableARALLogging (LogFile "package.log")
   enableRegNetLogging LogStdOut
 
 
@@ -366,8 +366,10 @@ regConf :: St -> RegressionConfig
 regConf _ = RegressionConfig
   { regConfigBatchSize               = 64
   , regConfigGradModelErrorThreshold = 1e-5
-  , regConfigGradDecentMaxIterations = 100
-  , regConfigLearningAlgorithm       = StochasticGradientDescent (ExponentialDecaySetup (Just 1e-8) 0.8 20000 1e-3)
+  , regConfigGradDecentMaxSteps = 100
+  , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
+                                       GradientDescent
+                                       -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
   , regConfigMinCorrelation          = 0.01
   , regConfigStartup                 = def
   , regConfigClipOutput              = Nothing

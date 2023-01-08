@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module ML.ARAL.Calculation.Ops
     ( mkCalculation
+    , setMaxRhoVal
     , rhoValueWith
     , rValue
     , rValueAgentWith
@@ -24,6 +25,8 @@ module ML.ARAL.Calculation.Ops
     , expSmthPsi
     ) where
 
+import System.IO.Unsafe
+import Data.IORef
 import           Control.Lens
 import           Control.Monad.IO.Class
 import qualified Data.Vector.Storable as V
@@ -65,6 +68,17 @@ minimum xs = Data.List.minimum xs
 #else
 import           Data.List                      (maximumBy, minimumBy)
 #endif
+
+
+maxRhoVal :: IORef (Maybe Double)
+maxRhoVal = unsafePerformIO (newIORef Nothing)
+{-# NOINLINE maxRhoVal #-}
+
+setMaxRhoVal :: Double -> IO ()
+setMaxRhoVal = writeIORef maxRhoVal . Just
+
+getMaxRhoVal :: IO (Maybe Double)
+getMaxRhoVal = readIORef maxRhoVal
 
 
 -- | Used to select a discount factor.
@@ -289,6 +303,7 @@ mkCalculation' agTp borl (state, _) as reward (stateNext, stateNextActIdxes) epi
         })
 
 mkCalculation' agTp borl sa@(state, _) as reward (stateNext, stateNextActIdxes) episodeEnd (AlgARAL ga0 ga1 avgRewardType) expValStateNext = do
+  mMaxRhoVal <- liftIO getMaxRhoVal
   let aNr = VB.map snd as
       randomAction = any fst as
   rhoMinimumState <- rhoMinimumValueFeat agTp borl state aNr
@@ -322,10 +337,10 @@ mkCalculation' agTp borl sa@(state, _) as reward (stateNext, stateNextActIdxes) 
       ByStateValues -> return $ reward .+ r1StateNextWorker - r1ValState
       ByStateValuesAndReward ratio decay -> return $ (1 - ratio') .* (reward .+ r1StateNextWorker - r1ValState) +. ratio' * reward
         where ratio' = decaySetup decay (borl ^. t) ratio
-  let maxOrMin =
+  let maxOrMin x =
         case borl ^. objective of
-          Maximise -> max
-          Minimise -> min
+          Maximise -> maybe id min mMaxRhoVal . max x
+          Minimise -> maybe id max mMaxRhoVal . min x
   let rhoVal'
         | initPhase = AgentValue $ V.fromList $ replicate agents (borl ^. expSmoothedReward)
         | fixedPhase = rhoVal
