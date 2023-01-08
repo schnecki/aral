@@ -367,9 +367,10 @@ regConf _ = RegressionConfig
   { regConfigBatchSize               = 64
   , regConfigGradModelErrorThreshold = 1e-5
   , regConfigGradDecentMaxIterations = 100
-  , regConfigLearningRate            = ExponentialDecaySetup (Just 0.01) 0.5 10000 1
+  , regConfigLearningAlgorithm       = StochasticGradientDescent (ExponentialDecaySetup (Just 1e-8) 0.8 20000 1e-3)
   , regConfigMinCorrelation          = 0.01
   , regConfigStartup                 = def
+  , regConfigClipOutput              = Nothing
   , regConfigModel                   =
     -- RegressionModels True $ VB.fromList [RegModelLayer True RegTermNonLinear $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermQuadratic]]
     RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@

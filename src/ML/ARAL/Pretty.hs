@@ -469,7 +469,7 @@ prettyARALHead' printRho prettyStateFun borl = do
         textRegressionConf :: RegressionLayer -> Doc
         textRegressionConf lay =
           text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
-          where cfg = regNodeConfig $ VB.head $ regressionLayerActions lay
+          where cfg = regNodeConfig $ VB.head $ regressionLayerNodes lay
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
