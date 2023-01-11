@@ -46,6 +46,7 @@ data Algorithm s
   | AlgDQN !Gamma !Comparison
   | AlgRLearning
   | AlgARAL !GammaMiddle !GammaHigh !AvgReward
+  | AlgPPO
   deriving (NFData, Show, Generic, Eq, Ord, Serialize)
 
 mapAlgorithmState :: (s -> s') -> Algorithm s -> Algorithm s'
@@ -54,6 +55,7 @@ mapAlgorithmState f (AlgARALVOnly avg mSt)   = AlgARALVOnly avg (first f <$> mSt
 mapAlgorithmState _ (AlgDQN g c)             = AlgDQN g c
 mapAlgorithmState _ AlgRLearning             = AlgRLearning
 mapAlgorithmState _ (AlgARAL gm gh avg)      = AlgARAL gm gh avg
+mapAlgorithmState _ AlgPPO                   = AlgPPO
 
 
 isAlgBorl :: Algorithm s -> Bool

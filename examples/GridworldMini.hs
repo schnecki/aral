@@ -363,10 +363,10 @@ usermode = do
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
 
 regConf :: St -> RegressionConfig
-regConf _ = RegressionConfig
+regConf _ = def
   { regConfigBatchSize               = 64
   , regConfigGradModelErrorThreshold = 1e-5
-  , regConfigGradDecentMaxSteps = 100
+  , regConfigGradDecentMaxSteps = 10
   , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
                                        GradientDescent
                                        -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
