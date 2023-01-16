@@ -371,9 +371,11 @@ prettyARALHead' printRho prettyStateFun borl = do
   where
     params = borl ^. parameters
     params' = decayedParameters borl
-    scalingAlg cfg = case cfg ^. scaleOutputAlgorithm of
-      ScaleMinMax    -> "Min-Max Normalisation"
-      ScaleLog shift -> "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
+    scalingAlg :: ScalingAlgorithm -> Doc
+    scalingAlg scl = case scl of
+      ScaleMinMax                      -> text "Min-Max Normalisation"
+      ScaleLog shift                   -> text "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
+      ScaleClip (minVal, maxVal) scale -> text "Clip (" <> text (showDouble minVal) <> text "," <> text (showDouble maxVal) <> text ") of " <> scalingAlg scale
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
@@ -389,7 +391,7 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> "Regression representation (no scaling needed!)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
           text
@@ -402,14 +404,14 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
           text
@@ -420,7 +422,7 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =
