@@ -26,13 +26,16 @@ import qualified Data.Vector.Storable                        as V
 import           Data.Word
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
+import           System.IO.Unsafe                            (unsafePerformIO)
 import           Text.Printf
 import qualified Torch                                       as Torch hiding (dropout)
 import qualified Torch.Autograd                              as Torch (toDependent)
 import qualified Torch.Functional                            as Torch hiding (dropout)
-import qualified Torch.Functional.Internal                   as Torch (dropout, gather)
+import qualified Torch.Functional.Internal                   as Torch (dropout, gather, normAll, row_stack)
 import qualified Torch.HList                                 as Torch
 import qualified Torch.Initializers                          as Torch
+import qualified Torch.Internal.Cast                         as Cast
+import qualified Torch.Internal.Managed.Native               as ATen
 import qualified Torch.NN.Recurrent.Cell.LSTM                as LSTM
 import qualified Torch.Serialize                             as Torch
 import qualified Torch.Tensor                                as Torch
@@ -337,6 +340,7 @@ trainHasktorch' period lRate optimizer nnConfig model chs = do
 
   let grads :: Torch.Gradients
       grads =
+        -- trace ("sum, lens: " ++ show (sum (map length chs), map length chs) )
         -- trace ("inputs: " ++ show (Torch.asTensor $ map (map (V.toList . fst . fst)) chs))
         -- trace ("actions: " ++ show actions)
         -- trace ("outputs: " ++ show outputs ) $
@@ -356,9 +360,14 @@ trainHasktorch' period lRate optimizer nnConfig model chs = do
       nrNStep = Torch.size 1 targets
       nrAs = Torch.size 2 targets
       gather x = Torch.reshape [nrRows, nrNStep] $ Torch.gather x 2 actions False
-      computeGrads l = Torch.Gradients $ Torch.grad l (Torch.flattenParameters model)
+      -- computeGrads l = Torch.Gradients $ Torch.grad l (Torch.flattenParameters model)
+      mClipGradNorm = case nnConfig ^. clipGradients of
+        ClipByGlobalNorm maxNorm -> unsafePerformIO . clipGradNorm maxNorm
+        ClipByValue val          -> unsafePerformIO . clipGradNormType (Just val) 1.0
+        _                        -> id
       mkIndepLossAndGrads t o =
         Torch.Gradients $
+        mClipGradNorm $
         foldl1 (zipWith (+)) $
         map (\l -> Torch.grad l (Torch.flattenParameters model)) $
         zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
@@ -370,6 +379,50 @@ trainHasktorch' period lRate optimizer nnConfig model chs = do
       lRateTensor = Torch.asTensor lRate
   Torch.runStep' model optimizer grads lRateTensor
 
+
+-- r"""Clips gradient norm of an iterable of parameters.
+
+--     The norm is computed over all gradients together, as if they were
+--     concatenated into a single vector. Gradients are modified in-place.
+
+--     Args:
+--         parameters (Iterable[Tensor] or Tensor): an iterable of Tensors or a
+--             single Tensor that will have gradients normalized
+--         max_norm (float or int): max norm of the gradients
+--         norm_type (float or int): type of the used p-norm. Can be ``'inf'`` for
+--             infinity norm.
+--         error_if_nonfinite (bool): if True, an error is thrown if the total
+--             norm of the gradients from :attr:`parameters` is ``nan``,
+--             ``inf``, or ``-inf``. Default: False (will switch to True in the future)
+
+--     Returns:
+--         Total norm of the parameter gradients (viewed as a single vector).
+--     """
+
+clipGradNorm :: Double -> [Torch.Tensor] -> IO [Torch.Tensor]
+clipGradNorm = clipGradNormType (Just 2.0)
+
+clipGradNormType :: Maybe Double -> Double -> [Torch.Tensor] -> IO [Torch.Tensor]
+clipGradNormType mNormType maxNorm grads
+  -- totalNorm :: Double
+ = do
+  totalNorm <-
+    case mNormType of
+      Nothing -> do
+        norms <- mapM (fmap (Torch.max . Torch.abs) . Torch.detach) grads
+        return $ maximum $ map (Torch.asValue . Torch.max) norms
+      Just nt -> Torch.asValue . flip normAll (realToFrac nt) . Torch.row_stack <$> mapM (fmap (`normAll` nt) . Torch.detach) grads
+          -- torch.norm(torch.stack([torch.norm(g.detach(), norm_type).to(device) for g in grads]), norm_type)
+      -- divisor = sqrt . sum $ squaredSums grads
+  let clip_coef :: Double
+      clip_coef = maxNorm / (totalNorm + 1e-6)
+  return $ map (clamp (-clip_coef) clip_coef) grads
+
+  where
+    clamp :: Double -> Double -> Torch.Tensor -> Torch.Tensor
+    clamp minV maxV input = unsafePerformIO $ Cast.cast3 ATen.clamp_tss input minV maxV
+    normAll :: Torch.Tensor -> Double -> Torch.Tensor
+    normAll self p = unsafePerformIO $ Cast.cast2 ATen.norm_ts self p
 
 mkSqrdLoss :: Double -> Double -> Double
 mkSqrdLoss t o =

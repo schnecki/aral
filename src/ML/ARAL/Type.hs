@@ -590,7 +590,7 @@ mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilt
   print model
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let opt w = mkAdamW 0 0.9 0.999 (Torch.flattenParameters w) 1e-4 1e-4
+  let opt w = mkAdamW 0.9 0.999 (Torch.flattenParameters w) 1e-5 1e-3
   let nnSA tp =
         case alg of
           AlgARAL {}
@@ -608,7 +608,7 @@ mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilt
           nnConfig'
           (length as)
           (settings ^. independentAgents)
-          (mkAdamW 0 0.9 0.999 [] 1e-4 1e-4)
+          (mkAdamW 0.9 0.999 [] 1e-4 1e-4)
           model
           WelfordExistingAggregateEmpty
           False

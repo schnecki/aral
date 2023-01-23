@@ -15,7 +15,10 @@ import           Control.DeepSeq
 import           Control.Lens
 import           Control.Monad               (foldM, replicateM)
 import           Control.Parallel.Strategies
+import           Data.Function               (on)
 import           Data.Int
+import           Data.List                   (maximumBy)
+import qualified Data.Map.Strict             as M
 import           Data.Maybe                  (fromJust, isNothing)
 import qualified Data.Vector                 as VB
 import qualified Data.Vector.Mutable         as VM
@@ -131,17 +134,34 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
     then do -- temporary replay memory full, add experience to corresponding action memory
       let !vec = tmpRepMem' ^. replayMemoryVector
       !mems <- mapM (VM.read vec) [0 .. tmpRepMem' ^. replayMemorySize - 1]
+      let asCounts = VB.foldl (\m aNr -> M.insertWith (+) aNr (1 :: Int) m) M.empty (VB.concat $ map (VB.map snd . (^. _2)) mems)
+          maxCountActionNr = fst . maximumBy (compare `on` snd) $ M.toList asCounts
       !startIdx <-
-        case head mems ^. _2 of
-          idxs
-            | VB.length idxs == 1 -> return (snd $ VB.head idxs)
-          idxs -> do
-            agent <- randomRIO (0, length idxs - 1) -- randomly choose an agents first action
-            return $! agent * nrAs + snd (idxs VB.! agent)
+        do case head mems ^. _2 of
+             idxs
+               | VB.length idxs == 1 -> return maxCountActionNr
+             idxs
+            -- agent <- randomRIO (0, length idxs - 1) -- randomly choose an agents first action
+              -> do
+               let agent = maxCountActionNr
+               return $! agent * nrAs + snd (idxs VB.! agent)
       let !r = rs VB.! startIdx
       !r' <- foldM (flip $ addToReplayMemory nrAs) r mems
       return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
     else return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
+    --   let !vec = tmpRepMem' ^. replayMemoryVector
+    --   !mems <- mapM (VM.read vec) [0 .. tmpRepMem' ^. replayMemorySize - 1]
+    --   !startIdx <-
+    --     case head mems ^. _2 of
+    --       idxs
+    --         | VB.length idxs == 1 -> return (snd $ VB.head idxs)
+    --       idxs -> do
+    --         agent <- randomRIO (0, length idxs - 1) -- randomly choose an agents first action
+    --         return $! agent * nrAs + snd (idxs VB.! agent)
+    --   let !r = rs VB.! startIdx
+    --   !r' <- foldM (flip $ addToReplayMemory nrAs) r mems
+    --   return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') (rs VB.// [(startIdx, r')])
+    -- else return $! ReplayMemoriesPerActions nrAs (Just tmpRepMem') rs
 
 
 -- | Add an element to the replay memory. Replaces the oldest elements once the predefined replay memory size is reached.
@@ -157,7 +177,7 @@ type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are cons
 -- In case a terminal state is detected the list is split and the first list exeecds the batchsize.
 getRandomReplayMemoryElements :: AllExpAreConsecutive -> NStep -> Batchsize -> ReplayMemory -> IO [[Experience]]
 getRandomReplayMemoryElements _ nStep _ (ReplayMemory _ _ _ maxIdx) | maxIdx < nStep = return []
-getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consequitive experiences
+getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consecutive experiences
   let len = max 1 (bs `div` nStep)
   rands <- replicateM len (randomRIO (0, max 0 maxIdx - nStep + 1)) -- can start anywhere
   let idxes = map (\r -> [r, r+1 .. r + nStep - 1]) rands
@@ -188,16 +208,17 @@ splitList f (x:xs) = (x : y) : ys
 getRandomReplayMemoriesElements :: NStep -> Batchsize -> ReplayMemories -> IO [[Experience]]
 getRandomReplayMemoriesElements nStep bs (ReplayMemoriesUnified nrAs rm) = getRandomReplayMemoryElements True nStep bs rm
 getRandomReplayMemoriesElements nStep bs (ReplayMemoriesPerActions nrAs tmpRepMem rs) = do
-  idxs <- replicateM (bs `div` nStep) (randomRIO (0, length rs - 1))
+  idxs <- replicateM (ceiling $ fromIntegral bs / fromIntegral nStep) (randomRIO (0, length rs - 1))
   let rsSel = map (rs VB.!) idxs
   concat <$> sequence (parMap rpar getRandomReplayMemoriesElements' rsSel)
   where getRandomReplayMemoriesElements' replMem
            | nStep == 1 || isNothing tmpRepMem = getRandomReplayMemoryElements False 1 1 replMem
            | otherwise = do
-              xs <- getRandomReplayMemoryElements False nStep nStep replMem
-              if null xs
-                then getRandomReplayMemoryElements False 1 1 (fromJust tmpRepMem)
-                else return xs
+              xs <- getRandomReplayMemoryElements False nStep nStep replMem -- get one only
+              return xs
+              -- if null xs
+              --   then getRandomReplayMemoryElements True nStep 1 (fromJust tmpRepMem)
+              --   else return xs
 
 
 -- | Size of replay memory (combined if it is a per action replay memory).

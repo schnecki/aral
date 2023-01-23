@@ -132,14 +132,18 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
-  -- | (1 + period) `mod` (borl ^. settings . nStep) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
-  | (1 + period) `mod` (config ^. trainBatchSize) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
+  | (1 + period) `mod` (borl ^. settings . samplingSteps) /= 0 || period < fromIntegral (replayMemoriesSize replMems) = do
+  -- regress: | (1 + period) `mod` (config ^. trainBatchSize) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
     replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let aNr = VB.map snd as
     let aRand = or $ VB.map fst as
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr rew aRand val px) mVal
-        mInsertWelford mVal px = maybe (return px) (\val -> return $ addWelford period [[((stateFeat, aNr, rew, aRand), val)]] px) mVal
+        mInsertWelford mVal px = maybe (return px) (\val ->
+                                                      updateNNTargetNet agent (borl ^. settings) period (addWelford period [[((stateFeat, aNr, rew, aRand), val)]] px)
+                                                      -- return $ addWelford period [[((stateFeat, aNr, rew, aRand), val)]] px
+                                                   ) mVal
+
     !pRhoMin' <- mInsertProxy (getRhoMinimumVal' calc) pRhoMin `using` rpar
     !pRho'    <- mInsertProxy (getRhoVal' calc) pRho `using` rpar
     !pV'      <- mInsertWelford (getVValState' calc) (pxs ^. v) `using` rpar
@@ -203,7 +207,8 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
   where
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(ProxiesCombinedUnichain !pRhoMin !pRho !proxy (Just !replMems))
-  | (1 + period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
+  --  | (1 + period) `mod` (borl ^. settings.nStep) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
+  | (1 + period) `mod` (borl ^. settings . samplingSteps) /= 0 || period < fromIntegral (replayMemoriesSize replMems) = do
     !replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
     let aNr = VB.map snd as
@@ -299,7 +304,9 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     m' = foldl' (\m' ((st, as, _, _), AgentValue vs) -> update m' st as vs) m (concat xs)
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
-insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs _) = return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
+insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs config)
+  | (1 + period) `mod` (config ^. trainBatchSize) /= 0 = return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
+  | otherwise = return px
   where
     groundTruthValues = concatMap makeGroundTruthValues (concat xs)
     makeGroundTruthValues :: ((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value) -> [GroundTruthValue]
@@ -312,14 +319,32 @@ insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs _) = return $
           | otherwise = GroundTruthValue inps (y V.! 0) (VB.head aId)
 
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
-  | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
+  | (1 + period) `mod` (setts ^. samplingSteps) /= 0 = return $ CombinedProxy subPx col (vs <> xs)
+  --  | (1 + period) `mod` (setts ^. nStep) == 0 = return $ CombinedProxy subPx col (vs <> xs)
   | otherwise = return px
 insertProxyMany _ setts period xs px
   | period < memSize = return $ addWelford period xs px
   where config = px ^?! proxyNNConfig
         memSize = config ^. replayMemoryMaxSize
-insertProxyMany agent setts !period !xs !px
-  | (1 + period) `mod` (setts ^. nStep) /= 0 || period < px ^?! proxyNNConfig . replayMemoryMaxSize = emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+--
+--
+--
+-- insertProxyMany agent setts !period !xs !px
+--   | (1 + period) `mod` (setts ^. nStep) /= 0 || period < px ^?! proxyNNConfig . replayMemoryMaxSize = emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+--
+--
+--
+-- insertProxyMany agent setts !period !xs !px
+--   | (1 + period) `mod` (setts ^. samplingSteps) /= 0 = emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+--   | (1 + period) `mod` (setts ^. nStep) /= 0 || period < px ^?! proxyNNConfig . replayMemoryMaxSize = emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+-- insertProxyMany agent setts !period !xs !px
+--   | nstep == 1 && ((1 + period) `mod` (max 1 (memSize `div` (config ^. trainBatchSize * nrCopies)))) /= 0 =
+--     emptyCache >> updateNNTargetNet agent setts period (addWelford period xs px) -- skip ANN learning if not nStep or terminal
+--   where config = px ^?! proxyNNConfig
+--         nrCopies = (+1) . length $ setts ^. workersMinExploration
+--         memSize = config ^. replayMemoryMaxSize
+--         nstep = setts ^. nStep
+
 insertProxyMany agent setts !period !xs !px = emptyCache >> trainBatch period xs (addWelford period xs px) >>= updateNNTargetNet agent setts period
 
 addWelford :: Period -> [[((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value)]] -> Proxy -> Proxy
@@ -333,7 +358,7 @@ addWelford period xs px
     fst4 (x,_,_,_) = x
     wel = px ^?! proxyWelford
     wel'
-      | config ^. autoNormaliseInput = foldl' addValue wel (concatMap (map (fst4 . fst)) xs)
+      | config ^. autoNormaliseInput || welfordCount wel <= memSize = foldl' addValue wel (concatMap (map (fst4 . fst)) xs)
       | otherwise = wel
 
 
@@ -373,6 +398,7 @@ updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents
   | period <= memSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod =
     let netT' = Torch.replaceParameters netT (Torch.flattenParameters netW)
+     -- in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
      in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
   | updatePeriod = do
     params' <-
@@ -385,11 +411,8 @@ updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents
         (Torch.flattenParameters netT)
         (Torch.flattenParameters netW)
     let netT' = Torch.replaceParameters netT params'
-    return $
-      -- trace ("netT: " ++ show (Torch.flattenParameters netT))
-      -- trace ("netW: " ++ show (Torch.flattenParameters netW))
-      -- trace ("update: " ++ show params')
-      Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
+    -- return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
+    return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -425,10 +448,11 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     scaleAlg = config ^. scaleOutputAlgorithm
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
-trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam !mdl !wel !nnActs) = do
+trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam0 !mdl !wel !nnActs) = do
   (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances' nnActs
   return $! Hasktorch netT netW' tp config nrActs agents adam' mdl wel nnActs
   where
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     minMaxVal =
       case px ^?! proxyType of
         NoScaling _ (Just minMaxVals) -> Just (minV, maxV)
@@ -445,8 +469,9 @@ trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrA
         NoScaling {}                 -> concatMap (map (convertTrainingInstances mkIdx)) trainingInstances
         _                            -> concatMap (map (convertTrainingInstances mkIdx . second (scaleValue scaleAlg minMaxVal))) trainingInstances -- single proxy
     mkIdx agNr aIdx = agNr * nrActs + aIdx
-    lRate0 = getLearningRate (config ^. grenadeLearningParams)
-    lRate = realToFrac $ dec $ realToFrac lRate0
+    adam = adam0 { nu = nu }
+    lRate = getLearningRate (config ^. grenadeLearningParams)
+    nu = realToFrac $ dec 1.0
     scaleAlg = config ^. scaleOutputAlgorithm
     dec = decaySetup (config ^. learningParamsDecay) period
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
@@ -545,9 +570,14 @@ lookupActionsNeuralNetworkUnscaled :: (MonadIO m) => LookupType -> StateFeatures
 lookupActionsNeuralNetworkUnscaled tp st px@(Grenade _ _ pxTp config _ _ _) = head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
   where
     tp' = mkLookupType config tp
-lookupActionsNeuralNetworkUnscaled tp st px@(Hasktorch _ _ pxTp config _ _ _ _ _ _) = head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
+lookupActionsNeuralNetworkUnscaled tp st px@(Hasktorch _ _ pxTp config _ _ _ _ wel _) = clipOutput . head <$> cached (tp', pxTp, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
   where
     tp' = mkLookupType config tp
+    memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
+    clipOutput
+      | welfordCount wel < (memSize `div` 10) = mapValues (V.map (min 10 . max (-10)))
+      | otherwise = id
+
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> cached (tp', CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)
   where
     tp' = mkLookupType (px ^?! proxyNNConfig) tp
@@ -684,3 +714,4 @@ mkNNList !borl !scaled !pr =
     agents = pr ^?! proxyNrAgents
     actIdxs = [0 .. (nrActs - 1)]
     nrActs = pr ^?! proxyNrActions
+

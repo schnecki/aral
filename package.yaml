@@ -65,6 +65,7 @@ dependencies:
   - say
   - easy-logger
   - hasktorch
+  - libtorch-ffi
   - welford-online-mean-variance
   - regress >= 0.1.2
   - ad

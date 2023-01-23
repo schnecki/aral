@@ -226,7 +226,7 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
+    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
     , _trainBatchSize = 8
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
@@ -347,11 +347,11 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
@@ -531,9 +531,6 @@ mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St x y ) = (x, y)
-  -- second (fst . head . filter ((==1) . snd)) $
-  -- head $ filter ((1 `elem`) . map snd . snd) $
-  -- zip [0..] $ map (zip [0..]) st
 
 
 drawGrid :: ARAL St Act -> IO ()

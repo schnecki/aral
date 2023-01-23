@@ -6,12 +6,14 @@ module ML.ARAL.NeuralNetwork.AdamW
     ) where
 
 import qualified Torch
-import qualified Torch.Optim as Torch
+import qualified Torch.Optim        as Torch
 
+import           ML.ARAL.Decay.Type
 
 -- | State representation for Adam Optimizer
 data AdamW = AdamW
-  { beta1       :: Float          -- 1st moment forgetting factor
+  { nu          :: Float
+  , beta1       :: Float          -- 1st moment forgetting factor
   , beta2       :: Float          -- 2nd moment forgetting factor
   , m1          :: [Torch.Tensor] -- 1st moment
   , m2          :: [Torch.Tensor] -- 2nd moment
@@ -22,20 +24,20 @@ data AdamW = AdamW
   deriving (Show)
 
 mkAdamW ::
-  Int ->
   Float ->
   Float ->
   [Torch.Parameter] ->
   Double ->
   Double ->
   AdamW
-mkAdamW iter beta1 beta2 parameters l2 weightDecay =
+mkAdamW beta1 beta2 parameters l2 weightDecay =
   AdamW
+    1
     beta1
     beta2
     (initZeros <$> parameters)
     (initZeros <$> parameters)
-    iter
+    0
     l2
     weightDecay
   where
@@ -53,7 +55,7 @@ adamW ::
   AdamW ->
   -- | returns new parameters + updated adam parameters
   ([Torch.Tensor], AdamW)
-adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW beta1 beta2 m1' m2' (iter + 1) l2 weightDecay)
+adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW nu beta1 beta2 m1' m2' (iter + 1) l2 weightDecay)
     -- decaying averages of 1st & 2nd moments
   where
     f1 m1 dp = Torch.mulScalar beta1 m1 + Torch.mulScalar (1 - beta1) dp
@@ -61,17 +63,17 @@ adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW
     gradients'
       | l2 == 0 = gradients
       | otherwise = zipWith Torch.add gradients (map (Torch.mulScalar l2) parameters)
-    m1' = zipWith f1 m1 gradients
-    m2' = zipWith f2 m2 gradients
+    m1' = zipWith f1 m1 gradients'
+    m2' = zipWith f2 m2 gradients'
     -- bias adjustment
     a beta = Torch.divScalar (1 - beta ^ (iter + 1))
     a1 = fmap (a beta1) m1'
     a2 = fmap (a beta2) m2'
     -- parameter update
-    eps = 1e-37
+    eps = 1e-8 -- 1e-37
     update prevParam a1' a2'
-      | weightDecay == 0 = prevParam - lr * a1' / (Torch.sqrt a2' + eps)
-      | otherwise = prevParam - lr * a1' / (Torch.sqrt a2' + eps) + Torch.mulScalar weightDecay prevParam
+      | weightDecay == 0 = prevParam - Torch.mulScalar nu (lr * a1' / (Torch.sqrt a2' + eps))
+      | otherwise = prevParam - Torch.mulScalar nu (lr * a1' / (Torch.sqrt a2' + eps) + Torch.mulScalar weightDecay prevParam)
     parameters' = zipWith3 update parameters a1 a2
 
 instance Torch.Optimizer AdamW where

@@ -157,6 +157,7 @@ borlSettings =
     , _overEstimateRho               = False -- True
     , _independentAgents             = 1
     , _independentAgentsSharedRho    = True -- False
+    , _samplingSteps                 = 1
     }
 
 

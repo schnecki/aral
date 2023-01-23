@@ -161,6 +161,7 @@ chooseAction agTp borl useRand selFromList = do
              AlgARAL {} -> do
                bestR1 <-
                  do r1Values <- mapM (rValueAgentWith agTp Worker borl RBig agent state) as -- 1. choose highest bias values
+                    -- r1Values <- mapM (rValueAgentWith agTp Target borl RBig agent state) as -- 1. choose highest bias values
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
                if length bestR1 == 1
                  then return (False, head bestR1)

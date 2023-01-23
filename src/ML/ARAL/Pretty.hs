@@ -342,6 +342,7 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnTargetUpdate $+$
     nnBatchSize $+$
     nnNStep $+$
+    smplSteps $+$
     nnReplMemSize $+$
     nnLearningParams $+$
     text "Algorithm" <>
@@ -374,6 +375,7 @@ prettyARALHead' printRho prettyStateFun borl = do
     scalingAlg :: ScalingAlgorithm -> Doc
     scalingAlg scl = case scl of
       ScaleMinMax                      -> text "Min-Max Normalisation"
+      ScaleSymlog                      -> "Symlog scaling"
       ScaleLog shift                   -> text "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
       ScaleClip (minVal, maxVal) scale -> text "Clip (" <> text (showDouble minVal) <> text "," <> text (showDouble maxVal) <> text ") of " <> scalingAlg scale
     nnWorkers =
@@ -448,6 +450,13 @@ prettyARALHead' printRho prettyStateFun borl = do
         px         -> textNNConf (borl ^. settings)
       where
         textNNConf conf = text "NStep" <> colon $$ nest nestCols (int $ conf ^. nStep)
+    smplSteps =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textNNConf (borl ^. settings)
+      where
+        textNNConf conf = text "Sampling steps" <> colon $$ nest nestCols (int $ conf ^. samplingSteps)
     nnReplMemSize =
       case borl ^. proxies . v of
         P.Table {} -> empty

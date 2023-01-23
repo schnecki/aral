@@ -222,6 +222,7 @@ instance Show Proxy where
   show (Grenade _ _ t _ _ _ _)     = "Grenade " ++ show t
   show (Hasktorch _ _ t _ _ _ _ _ _ nnActs) = "Hasktorch " ++ show t ++ ". Indpendent nets for each action: " ++ show nnActs
   show (CombinedProxy p col _)   = "CombinedProxy of " ++ show p ++ " at column " ++ show col
+  show (RegressionProxy p _ _)   = "RegressionProxy of " ++ show p
 
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{}              = "Scalar"
