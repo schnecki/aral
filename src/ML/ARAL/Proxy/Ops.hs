@@ -575,7 +575,7 @@ lookupActionsNeuralNetworkUnscaled tp st px@(Hasktorch _ _ pxTp config _ _ _ _ w
     tp' = mkLookupType config tp
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     clipOutput
-      | welfordCount wel < (memSize `div` 10) = mapValues (V.map (min 10 . max (-10)))
+      | welfordCount wel < (memSize `div` 5) = mapValues (V.map (min 3 . max (-3)))
       | otherwise = id
 
 lookupActionsNeuralNetworkUnscaled tp st (CombinedProxy px nr _) = (!! nr) <$> cached (tp', CombinedUnichain, st) (lookupActionsNeuralNetworkUnscaledFull tp' st px)

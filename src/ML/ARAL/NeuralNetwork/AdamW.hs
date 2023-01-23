@@ -6,7 +6,8 @@ module ML.ARAL.NeuralNetwork.AdamW
     ) where
 
 import qualified Torch
-import qualified Torch.Optim        as Torch
+import qualified Torch.Functional.Internal as Torch (powScalar)
+import qualified Torch.Optim               as Torch
 
 import           ML.ARAL.Decay.Type
 
@@ -56,15 +57,15 @@ adamW ::
   -- | returns new parameters + updated adam parameters
   ([Torch.Tensor], AdamW)
 adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW nu beta1 beta2 m1' m2' (iter + 1) l2 weightDecay)
-    -- decaying averages of 1st & 2nd moments
   where
+    -- decaying averages of 1st & 2nd moments
     f1 m1 dp = Torch.mulScalar beta1 m1 + Torch.mulScalar (1 - beta1) dp
-    f2 m2 dp = Torch.mulScalar beta2 m2 + Torch.mulScalar (1 - beta2) (dp * dp)
-    gradients'
+    f2 m2 dp = Torch.mulScalar beta2 m2 + Torch.mulScalar (1 - beta2) (Torch.powScalar dp 2)
+    gradients' -- l2 is not effective, see `Decoupled Weight Decay Regularization`: https://arxiv.org/abs/1711.05101
       | l2 == 0 = gradients
       | otherwise = zipWith Torch.add gradients (map (Torch.mulScalar l2) parameters)
-    m1' = zipWith f1 m1 gradients'
-    m2' = zipWith f2 m2 gradients'
+    m1' = zipWith f1 m1 gradients
+    m2' = zipWith f2 m2 gradients
     -- bias adjustment
     a beta = Torch.divScalar (1 - beta ^ (iter + 1))
     a1 = fmap (a beta1) m1'
