@@ -398,7 +398,6 @@ updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents
   | period <= memSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod =
     let netT' = Torch.replaceParameters netT (Torch.flattenParameters netW)
-     -- in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
      in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
   | updatePeriod = do
     params' <-
@@ -411,7 +410,6 @@ updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents
         (Torch.flattenParameters netT)
         (Torch.flattenParameters netW)
     let netT' = Torch.replaceParameters netT params'
-    -- return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
     return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
   | otherwise = return px
   where
