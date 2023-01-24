@@ -239,9 +239,10 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = ClipByGlobalNorm 0.01
+    , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
     , _autoNormaliseInput = True
     }
+
 
 borlSettings :: Settings
 borlSettings =
@@ -249,6 +250,7 @@ borlSettings =
     { _workersMinExploration = [0.1, 0.2, 0.3]
     , _nStep = 1
     , _independentAgents = 1
+    , _samplingSteps = 8
     }
 
 -- | ARAL Parameters.

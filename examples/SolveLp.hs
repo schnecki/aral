@@ -199,6 +199,7 @@ runBorlLpInferWithRewardRepetWMax wMax repetitionsReward policy mRefStAct = do
         Optimal {} -> True
         _          -> False
 
+
 makeConstraints ::
      (BorlLp s as, Show as, Eq as)
   => Int

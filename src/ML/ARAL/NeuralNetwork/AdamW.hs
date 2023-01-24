@@ -5,6 +5,7 @@ module ML.ARAL.NeuralNetwork.AdamW
     , adamW
     ) where
 
+import           Data.List                 (zipWith4)
 import qualified Torch
 import qualified Torch.Functional.Internal as Torch (powScalar)
 import qualified Torch.Optim               as Torch
@@ -13,25 +14,23 @@ import           ML.ARAL.Decay.Type
 
 -- | State representation for Adam Optimizer
 data AdamW = AdamW
-  { nu          :: Float          -- ^ Learning rate
-  , beta1       :: Float          -- ^ 1st moment forgetting factor
-  , beta2       :: Float          -- ^ 2nd moment forgetting factor
+  { nu          :: Double         -- ^ Learning rate
+  , beta1       :: Double         -- ^ 1st moment forgetting factor
+  , beta2       :: Double         -- ^ 2nd moment forgetting factor
   , m1          :: [Torch.Tensor] -- ^ 1st moment
   , m2          :: [Torch.Tensor] -- ^ 2nd moment
   , iter        :: Int            -- ^ iteration
-  , l2          :: Double         -- ^ l2 (unused!)
   , weightDecay :: Double         -- ^ weight decay
   }
   deriving (Show)
 
 mkAdamW ::
-  Float ->
-  Float ->
+  Double ->
+  Double ->
   [Torch.Parameter] ->
   Double ->
-  Double ->
   AdamW
-mkAdamW beta1 beta2 parameters l2 weightDecay =
+mkAdamW beta1 beta2 parameters weightDecay =
   AdamW
     1
     beta1
@@ -39,7 +38,6 @@ mkAdamW beta1 beta2 parameters l2 weightDecay =
     (initZeros <$> parameters)
     (initZeros <$> parameters)
     0
-    l2
     weightDecay
   where
     initZeros = Torch.zerosLike . Torch.toDependent
@@ -56,14 +54,20 @@ adamW ::
   AdamW ->
   -- | returns new parameters + updated adam parameters
   ([Torch.Tensor], AdamW)
-adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW nu beta1 beta2 m1' m2' (iter + 1) l2 weightDecay)
+adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW nu beta1 beta2 m1' m2' (iter + 1) weightDecay)
   where
     -- decaying averages of 1st & 2nd moments
     f1 m1 dp = Torch.mulScalar beta1 m1 + Torch.mulScalar (1 - beta1) dp
     f2 m2 dp = Torch.mulScalar beta2 m2 + Torch.mulScalar (1 - beta2) (Torch.powScalar dp 2)
-    gradients' -- l2 is not effective, see `Decoupled Weight Decay Regularization`: https://arxiv.org/abs/1711.05101
-      | l2 == 0 = gradients
-      | otherwise = zipWith Torch.add gradients (map (Torch.mulScalar l2) parameters)
+    -- calculate step size
+    biasCorrection1 = 1 - beta1 ^ (iter + 1)
+    biasCorrection2 = 1 - beta2 ^ (iter + 1)
+    stepSizeCorrection = sqrt biasCorrection2 / biasCorrection1
+    stepSize = Torch.mulScalar stepSizeCorrection lr
+    -- add l2
+    -- gradients' -- Note that normal l2 is not effective, see `Decoupled Weight Decay Regularization`: https://arxiv.org/abs/1711.05101
+    --   | l2 == 0 = gradients
+    --   | otherwise = zipWith Torch.add gradients (map (Torch.mulScalar (l2 * realToFrac (1 - stepSizeCorrection))) parameters)
     m1' = zipWith f1 m1 gradients
     m2' = zipWith f2 m2 gradients
     -- bias adjustment
@@ -80,25 +84,31 @@ adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW
     --
     --
     -- 2. Implementation with stepsize for weigth decay (1)
-    -- biasCorrection1 = 1 - beta1 ^ (iter + 1)
-    -- biasCorrection2 = 1 - beta2 ^ (iter + 1)
-    -- stepSize = Torch.mulScalar (sqrt biasCorrection2 / biasCorrection1) lr
-    -- update prevParam a1' a2'
-    --   | weightDecay == 0 = prevParam - Torch.mulScalar nu ((lr `Torch.mul` a1') / (Torch.sqrt a2' + eps))
-    --   | otherwise = prevParam - Torch.mulScalar nu ((lr `Torch.mul` a1') / (Torch.sqrt a2' + eps) + Torch.mulScalar weightDecay (stepSize `Torch.mul` prevParam))
+    update isLastLayer prevParam mm1 mm2
+      --  | weightDecay == 0 = prevParam - Torch.mulScalar nu ((lr `Torch.mul` a1') / (Torch.sqrt a2' + eps))
+      --  | otherwise = prevParam - Torch.mulScalar nu ((lr `Torch.mul` a1') / (Torch.sqrt a2' + eps) + Torch.mulScalar weightDecay (stepSize `Torch.mul` prevParam))
+      --  | otherwise = prevParam - Torch.mulScalar nu ((lr `Torch.mul` a1') / (Torch.sqrt a2' + eps)) - Torch.mulScalar (nu * weightDecay) (stepSize `Torch.mul` prevParam)
+      | isLastLayer || weightDecay == 0 = prevParam - Torch.mulScalar (nu * stepSizeCorrection) (lr `Torch.mul` mm1 `Torch.div` (Torch.sqrt mm2 + eps))
+      | otherwise = prevParam - Torch.mulScalar (nu * stepSizeCorrection) (lr `Torch.mul` mm1 `Torch.div` (Torch.sqrt mm2 + eps))
+                              -- - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) prevParam
+                              -- - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.sign prevParam `Torch.mul` Torch.powScalar prevParam 2)
+                              - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.powScalar prevParam 5) -- values > 1 are penalized much more than values < 1.
     -- parameters' = zipWith3 update parameters a1 a2
+    lastLayerFlag = replicate (length parameters - 1) False ++ [True]
+    parameters' = zipWith4 update lastLayerFlag parameters m1' m2'
+
     --
     --
     -- 3. Implementation with step size for weightDecay (2) (at least `epsilon` is different by being scaled by `sqrt(beta2^t)` in this version 2.)
-    biasCorrection1 = 1 - beta1 ^ (iter + 1)
-    biasCorrection2 = 1 - beta2 ^ (iter + 1)
-    stepSize = Torch.mulScalar (sqrt biasCorrection2 / biasCorrection1) lr
-    step = zipWith (\mm1 mm2 -> mm1 / (Torch.sqrt mm2 + eps) ) m1' m2'
-    update :: Torch.Tensor -> Torch.Tensor -> Torch.Tensor
-    update prevParam step'
-      | weightDecay == 0 = prevParam - Torch.mulScalar nu (stepSize `Torch.mul` step')
-      | otherwise = prevParam - Torch.mulScalar nu (stepSize `Torch.mul` (step' + Torch.mulScalar weightDecay prevParam))
-    parameters' = zipWith update parameters step
+    -- biasCorrection1 = 1 - beta1 ^ (iter + 1)
+    -- biasCorrection2 = 1 - beta2 ^ (iter + 1)
+    -- stepSize = Torch.mulScalar (sqrt biasCorrection2 / biasCorrection1) lr
+    -- step = zipWith (\mm1 mm2 -> mm1 / (Torch.sqrt mm2 + eps) ) m1' m2'
+    -- update :: Torch.Tensor -> Torch.Tensor -> Torch.Tensor
+    -- update prevParam step'
+    --   | weightDecay == 0 = prevParam - Torch.mulScalar nu (stepSize `Torch.mul` step')
+    --   | otherwise = prevParam - Torch.mulScalar nu (stepSize `Torch.mul` (step' + Torch.mulScalar weightDecay prevParam))
+    -- parameters' = zipWith update parameters step
 
 
 instance Torch.Optimizer AdamW where

@@ -225,8 +225,8 @@ instance Serialize Torch.Adam where
   get = Torch.Adam <$> get <*> get <*> get <*> get <*> get
 
 instance Serialize AdamW where
-  put (AdamW nu b1 b2 m1 m2 iter l2 wD) = put nu >> put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put l2 >> put wD
-  get = AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get
+  put (AdamW nu b1 b2 m1 m2 iter wD) = put nu >> put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put wD
+  get = (AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> ((get >>= \(_::Double) -> get) <|> get))
 
 
 instance Serialize Proxy where
