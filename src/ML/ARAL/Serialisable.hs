@@ -224,10 +224,25 @@ instance Serialize Torch.Adam where
   put (Torch.Adam b1 b2 m1 m2 iter) = put b1 >> put b2 >> put m1 >> put m2 >> put iter
   get = Torch.Adam <$> get <*> get <*> get <*> get <*> get
 
+
 instance Serialize AdamW where
   put (AdamW nu b1 b2 m1 m2 iter wD) = put nu >> put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put wD
-  get = (AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> ((get >>= \(_::Double) -> get) <|> get))
+  get = (AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> get) <|>
+        (fmap fromAdamWOld $ AdamWOld <$> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get)
+    where
+      fromAdamWOld :: AdamWOld -> AdamW
+      fromAdamWOld (AdamWOld nu b1 b2 m1 m2 iter _ wd) = AdamW (realToFrac nu) (realToFrac b1) (realToFrac b2) m1 m2 iter wd
 
+data AdamWOld = AdamWOld
+  { adamWOldNu          :: Float          -- ^ Learning rate
+  , adamWOldBeta1       :: Float          -- ^ 1st moment forgetting factor
+  , adamWOldBeta2       :: Float          -- ^ 2nd moment forgetting factor
+  , adamWOldM1          :: [Torch.Tensor] -- ^ 1st moment
+  , adamWOldM2          :: [Torch.Tensor] -- ^ 2nd moment
+  , adamWOldIter        :: Int            -- ^ iteration
+  , adamWOldL2          :: Double         -- ^ l2 (unused!)
+  , adamWOldWeightDecay :: Double         -- ^ weight decay
+  }
 
 instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
@@ -267,7 +282,7 @@ instance Serialize Proxy where
           adam <- get
           mdl <- get
           wel <- get
-          nnActs <- get <|> return False
+          mSAM <- get <|> (get >>= \(_ :: Bool) -> return Nothing)
           return $
             unsafePerformIO $ do
               putStrLn "ANN model: "
@@ -276,8 +291,8 @@ instance Serialize Proxy where
               w <- Torch.sample mdl
               return $
                 if null paramsT
-                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel nnActs
-                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel nnActs
+                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel mSAM
+                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel mSAM
         4 -> RegressionProxy <$> get <*> get <*> get
         _ -> error $ "Unknown constructor for proxy: " <> show c
 

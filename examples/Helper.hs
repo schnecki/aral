@@ -16,24 +16,26 @@ import           ML.ARAL.InftyVector
 import           RegNet
 
 import           Control.Arrow
-import           Control.DeepSeq        (NFData, force)
+import           Control.DeepSeq             (NFData, force)
 import           Control.Lens
-import           Control.Lens           (over, set, traversed, (^.))
-import           Control.Monad          (foldM, unless, when)
-import           Control.Monad.IO.Class (liftIO)
-import qualified Data.ByteString        as BS
-import           Data.Function          (on)
-import           Data.List              (find, sortBy)
-import           Data.Maybe             (fromMaybe)
-import           Data.Serialize         as S
+import           Control.Lens                (over, set, traversed, (^.))
+import           Control.Monad               (foldM, unless, when)
+import           Control.Monad.IO.Class      (liftIO)
+import qualified Data.ByteString             as BS
+import           Data.Function               (on)
+import           Data.List                   (find, sortBy)
+import           Data.Maybe                  (fromMaybe)
+import           Data.Serialize              as S
 import           Data.Time.Clock
-import qualified Data.Vector            as VB
+import qualified Data.Vector                 as VB
 import           System.CPUTime
 import           System.IO
 import           System.Random
 import           Text.Printf
+import           Text.Read                   (readMaybe)
 
 import           Debug.Trace
+import           ML.ARAL.NeuralNetwork.Debug
 
 askUser ::
      (NFData s, Ord s, Show s, Serialize s, NFData as, Serialize as, Show as, RewardFuture s, Eq as)
@@ -52,7 +54,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
         , ("l", "Load from file save.dat")
         , ("p", "Print everything")
         , ("param", "Change parameters")
-        , ("pr", "Plot RegNet")
+        , ("plot", "Plot Function")
         , ("q", "Exit program (unsaved state will be lost)")
         , ("r", "Run for X times")
         , ("s", "Save to file save.dat (overwrites the file if it exists)")
@@ -102,6 +104,8 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                          liftIO $ print output >> hFlush stdout
                          liftIO $ case q' ^. proxies . r1 of
                            RegressionProxy lay _ _ | q' ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
+
+
                            _                                      -> return ()
                          return q')
                       borl
@@ -126,10 +130,18 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
       let ql' = overAllProxies (proxyNNConfig . prettyPrintElems) (\pp -> pp ++ [(ql ^. featureExtractor) (ql ^. s)]) ql
       prettyARALWithStInverse mInverse ql' >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds qlCmds ql
-    "pr" -> do
+    "plot" -> do
+      dim1 <- liftIO $ putStr "Dimension 1 [0]: " >> hFlush stdout >> getIOWithDefault 0
+      dim2 <- liftIO $ putStr "Dimension 2 [1]: " >> hFlush stdout >> getIOWithDefault 1
       case ql ^. proxies . r1 of
-        RegressionProxy lay _ _ | ql ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
-        _                                      -> return ()
+        RegressionProxy lay _ _
+          | ql ^. t > 10 -> liftIO $ mapM_ (\i -> plotRegressionNode i dim1 dim2 Nothing lay) [0 .. regNetNodes lay - 1]
+        px@Hasktorch{} -> liftIO $ do
+          tp <- fromMaybe Target <$> liftIO (putStr "Lookup Type [Target]: " >> hFlush stdout >> getEnumValueSafePrint)
+          plotProxyFunction True dim1 dim2 ql tp px
+        _ -> return ()
+      let doc = maybe mempty prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
+      liftIO $ print doc
       askUser mInverse False addUsage cmds qlCmds ql
     "rp" -> do
       let doc = maybe mempty  prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
@@ -226,6 +238,28 @@ getIOMWithDefault def = do
 
 getIOWithDefault :: forall a . (Read a) => a -> IO a
 getIOWithDefault def = fromMaybe def <$> getIOMWithDefault (Just def)
+
+
+getReadValueSafe :: (Read a) => IO (Maybe a)
+getReadValueSafe = do
+  liftIO $ putStr "Enter value: " >> hFlush stdout
+  readMaybe <$> getLine
+
+
+getEnumValueSafePrint :: forall a . (Show a, Bounded a, Enum a) => IO (Maybe a)
+getEnumValueSafePrint = do
+  let minV = minBound :: a
+      maxV = maxBound :: a
+  mapM_ (\nr -> putStrLn $ show nr <> ":\t " <> show (toEnum nr :: a)) [(fromEnum minV :: Int) .. fromEnum maxV]
+  (toEnumSafe =<<) <$> getReadValueSafe
+  where
+    toEnumSafe ::
+         forall a. (Bounded a, Enum a)
+      => Int
+      -> Maybe a
+    toEnumSafe nr
+      | nr >= fromEnum (minBound :: a) && nr <= fromEnum (maxBound :: a) = Just $ toEnum nr
+      | otherwise = Nothing
 
 
 chooseAlg :: Maybe (s, ActionIndex) -> IO (Algorithm s)

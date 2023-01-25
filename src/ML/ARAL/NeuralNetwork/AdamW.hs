@@ -1,3 +1,6 @@
+{-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE RecordWildCards #-}
 module ML.ARAL.NeuralNetwork.AdamW
     ( AdamW (..)
@@ -5,7 +8,10 @@ module ML.ARAL.NeuralNetwork.AdamW
     , adamW
     ) where
 
+import           Control.DeepSeq
 import           Data.List                 (zipWith4)
+import           Data.Serialize
+import           GHC.Generics
 import qualified Torch
 import qualified Torch.Functional.Internal as Torch (powScalar)
 import qualified Torch.Optim               as Torch
@@ -14,15 +20,19 @@ import           ML.ARAL.Decay.Type
 
 -- | State representation for Adam Optimizer
 data AdamW = AdamW
-  { nu          :: Double         -- ^ Learning rate
-  , beta1       :: Double         -- ^ 1st moment forgetting factor
-  , beta2       :: Double         -- ^ 2nd moment forgetting factor
-  , m1          :: [Torch.Tensor] -- ^ 1st moment
-  , m2          :: [Torch.Tensor] -- ^ 2nd moment
-  , iter        :: Int            -- ^ iteration
-  , weightDecay :: Double         -- ^ weight decay
+  { nu          :: !Double         -- ^ Learning rate
+  , beta1       :: !Double         -- ^ 1st moment forgetting factor
+  , beta2       :: !Double         -- ^ 2nd moment forgetting factor
+  , m1          :: ![Torch.Tensor] -- ^ 1st moment
+  , m2          :: ![Torch.Tensor] -- ^ 2nd moment
+  , iter        :: !Int            -- ^ iteration
+  , weightDecay :: !Double         -- ^ weight decay
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance NFData AdamW where
+  rnf (AdamW _ _ _ mm1 mm2 _ _) = map (\(!_) -> ()) mm1 `seq` map (\(!_) -> ()) mm2 `seq` ()
+
 
 mkAdamW ::
   Double ->
@@ -63,13 +73,15 @@ adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW
     biasCorrection1 = 1 - beta1 ^ (iter + 1)
     biasCorrection2 = 1 - beta2 ^ (iter + 1)
     stepSizeCorrection = sqrt biasCorrection2 / biasCorrection1
-    stepSize = Torch.mulScalar stepSizeCorrection lr
+    -- stepSize = Torch.mulScalar stepSizeCorrection lr
     -- add l2
+    -- l2 :: Double
+    -- l2 = 1e-3
     -- gradients' -- Note that normal l2 is not effective, see `Decoupled Weight Decay Regularization`: https://arxiv.org/abs/1711.05101
     --   | l2 == 0 = gradients
     --   | otherwise = zipWith Torch.add gradients (map (Torch.mulScalar (l2 * realToFrac (1 - stepSizeCorrection))) parameters)
-    m1' = zipWith f1 m1 gradients
-    m2' = zipWith f2 m2 gradients
+    m1' = zipWith f1 m1 gradients -- gradients'
+    m2' = zipWith f2 m2 gradients -- gradients'
     -- bias adjustment
     eps = 1e-8 -- 1e-37
     --

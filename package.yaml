@@ -72,6 +72,7 @@ dependencies:
   - vector-algorithms
   - reflection
   - regnet
+  - process
 
 library:
   source-dirs: src

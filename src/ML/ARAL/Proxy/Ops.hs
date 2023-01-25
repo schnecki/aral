@@ -20,6 +20,7 @@ module ML.ARAL.Proxy.Ops
     , lookupNeuralNetworkUnscaled
     , lookupActionsNeuralNetwork
     , lookupActionsNeuralNetworkUnscaled
+    , executeAndCombineCalculations
     , mkNNList
     , getMinMaxVal
     , mkStateActs
@@ -75,7 +76,7 @@ import           Debug.Trace
 
 -- ^ Lookup Type for neural networks.
 data LookupType = Target | Worker
-  deriving (Eq, Ord, Show, Read)
+  deriving (Eq, Ord, Show, Read, Bounded, Enum)
 
 -- data Output =
 --   SingleAgent (V.Vector Double)
@@ -394,11 +395,11 @@ updateNNTargetNet _ setts period px@(Grenade netT' netW' tp' config' nrActs agen
     smoothUpd = config ^. grenadeSmoothTargetUpdate
     smoothUpdPer = config ^. grenadeSmoothTargetUpdatePeriod
     updatePeriod = (period - memSize - 1) `mod` smoothUpdPer < setts ^. nStep
-updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents adam mdl wel nnActs)
+updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents adam mdl wel mSAM)
   | period <= memSize = return px
   | (smoothUpd == 1 || smoothUpd == 0) && updatePeriod =
     let netT' = Torch.replaceParameters netT (Torch.flattenParameters netW)
-     in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
+     in return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel mSAM
   | updatePeriod = do
     params' <-
       liftIO $
@@ -410,7 +411,7 @@ updateNNTargetNet _ setts period px@(Hasktorch netT netW tp config nrActs agents
         (Torch.flattenParameters netT)
         (Torch.flattenParameters netW)
     let netT' = Torch.replaceParameters netT params'
-    return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel nnActs
+    return $ Hasktorch netT' netW tp config nrActs agents adam mdl wel mSAM
   | otherwise = return px
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
@@ -446,9 +447,9 @@ trainBatch !period !trainingInstances px@(Grenade !netT !netW !tp !config !nrAct
     scaleAlg = config ^. scaleOutputAlgorithm
     dec = decaySetup (config ^. learningParamsDecay) period
     opt = setLearningRate (realToFrac $ dec $ realToFrac lRate) (config ^. grenadeLearningParams)
-trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam0 !mdl !wel !nnActs) = do
-  (netW', adam') <- liftIO $ trainHasktorch period lRate adam config netW trainingInstances' nnActs
-  return $! Hasktorch netT netW' tp config nrActs agents adam' mdl wel nnActs
+trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrActs !agents !adam0 !mdl !wel !mSAM) = do
+  (netW', adam') <- liftIO $ trainHasktorch period mSAM lRate adam config netW trainingInstances'
+  return $! Hasktorch netT netW' tp config nrActs agents adam' mdl wel mSAM
   where
     memSize = px ^?! proxyNNConfig . replayMemoryMaxSize
     minMaxVal =
@@ -589,12 +590,12 @@ maybeWelford config wel
 
 -- | Retrieve all action values of a state from a neural network proxy. For other proxies an error is thrown.
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
-lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ cfg nrAs agents wel)                = return $ runGrenade netW nrAs agents   (maybeWelford cfg wel) st
-lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ cfg nrAs agents wel)                = return $ runGrenade netT nrAs agents   (maybeWelford cfg wel) st
-lookupActionsNeuralNetworkUnscaledFull Worker st (Hasktorch _ netW _ cfg nrAs agents _ mdl wel nnActs) = return $ runHasktorch netW nrAs agents (maybeWelford cfg wel) st nnActs
-lookupActionsNeuralNetworkUnscaledFull Target st (Hasktorch netT _ _ cfg nrAs agents _ mdl wel nnActs) = return $ runHasktorch netT nrAs agents (maybeWelford cfg wel) st nnActs
-lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                                             = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
-lookupActionsNeuralNetworkUnscaledFull _ _ _                                                           = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
+lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ cfg nrAs agents wel)              = return $ runGrenade netW nrAs agents   (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ cfg nrAs agents wel)              = return $ runGrenade netT nrAs agents   (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull Worker st (Hasktorch _ netW _ cfg nrAs agents _ mdl wel mSAM) = return $ runHasktorch netW nrAs agents (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull Target st (Hasktorch netT _ _ cfg nrAs agents _ mdl wel mSAM) = return $ runHasktorch netT nrAs agents (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                                           = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
+lookupActionsNeuralNetworkUnscaledFull _ _ _                                                         = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
 
 mkLookupType :: NNConfig -> LookupType -> LookupType

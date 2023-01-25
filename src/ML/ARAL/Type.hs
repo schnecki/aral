@@ -73,7 +73,7 @@ module ML.ARAL.Type
   -- ** Hasktorch
   , mkUnichainHasktorch
   , mkUnichainHasktorchAs
-  , mkUnichainHasktorchAsSingleNets
+  , mkUnichainHasktorchAsSAM
   -- ** Grenade
   , mkUnichainGrenade
   , mkUnichainGrenadeAs
@@ -561,11 +561,11 @@ mkUnichainHasktorchAs ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainHasktorchAs = mkUnichainHasktorchAsSingleNets False
+mkUnichainHasktorchAs = mkUnichainHasktorchAsSAM Nothing
 
-mkUnichainHasktorchAsSingleNets ::
+mkUnichainHasktorchAsSAM ::
   forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
-     SingleNetPerOutputAction
+     Maybe (Int, Double) -- ^ SAM config
   -> [Action as]
   -> Algorithm s
   -> InitialStateFun s
@@ -579,7 +579,7 @@ mkUnichainHasktorchAsSingleNets ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
+mkUnichainHasktorchAsSAM mSAM as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
@@ -598,7 +598,7 @@ mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilt
           _ -> do
             modelT <- Torch.sample model
             modelW <- Torch.sample model
-            return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty nnActs
+            return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty mSAM
       nnEmpty tp =
         return $
         Hasktorch
@@ -611,7 +611,7 @@ mkUnichainHasktorchAsSingleNets nnActs as alg initialStateFun ftExt asFun asFilt
           (mkAdamW 0.9 0.999 [] 1e-4)
           model
           WelfordExistingAggregateEmpty
-          False
+          mSAM
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table
