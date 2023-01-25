@@ -16,7 +16,7 @@ import           Control.Applicative                         ((<|>))
 import           Control.Arrow                               (second)
 import           Control.DeepSeq
 import           Control.Lens                                ((^.))
-import           Control.Monad                               (when, (>=>))
+import           Control.Monad                               (when, zipWithM, (>=>))
 import           Data.Default
 import           Data.List                                   (foldl', genericLength, intersperse, transpose)
 import           Data.Maybe
@@ -331,83 +331,75 @@ trainHasktorch' period mSAM lRate optimizer nnConfig model chs
       targets = Torch.asTensor $ map (map snd) chs
       nrRows = Torch.size 0 targets
       nrNStep = Torch.size 1 targets
-      mkLossAndGrads :: IO [Torch.Tensor]
-      mkLossAndGrads = return . mkLossAndGrads' nrRows targets . gather . fst . hasktorchModel True model Nothing $ inputs
       gather x = Torch.reshape [nrRows, nrNStep] $ Torch.gather x 2 actions False
-  grads <- mkLossAndGrads
+      mkLossAndGrads :: MLP -> IO [Torch.Tensor]
+      mkLossAndGrads mdl = return . mkLossAndGrads' nnConfig mdl nrRows (Torch.flattenParameters mdl) targets . gather . fst . hasktorchModel True mdl Nothing $ inputs
+  grads <- mkLossAndGrads model
   case mRho of
-    Nothing  -> Torch.runStep' model optimizer (Torch.Gradients grads) lRateTensor
+    Nothing -> Torch.runStep' model optimizer (Torch.Gradients grads) lRateTensor
     Just rho -> do
       let params = fmap Torch.toDependent . Torch.flattenParameters $ model
       gradsDetached <- mapM (Torch.clone >=> Torch.detach) grads
       -- compute \hat{\epsilonW}=\rho / \norm{g} \|g\|
-      let norm v = Torch.linalg_vector_norm v samNorm 0 False Torch.Double
-      gradNorm <- norm . Torch.stack (Torch.Dim 0) <$> mapM (fmap norm . Torch.detach) gradsDetached
-      let rho' = Torch.asTensor rho
-      let epsilonW = map ((rho' / gradNorm + 1e-12) *)  gradsDetached
+      let norm v
+            | Torch.dim v == 1 = Torch.linalg_vector_norm v samNorm 0 False Torch.Double
+            | otherwise = linalg_matrix_norm_tslbs v samNorm [0 .. dim - 1] False Torch.Double
+            where
+              dim = Torch.dim v
+      gradNorm <- Torch.asValue . norm . Torch.stack (Torch.Dim 0) <$> mapM (fmap norm . Torch.detach) gradsDetached
+      let epsilonW = map (Torch.mulScalar (rho / (gradNorm + 1e-12))) gradsDetached
       --
-      let stepForward = zipWith Torch.add params epsilonW    -- virtual step toward \epsilon
-      gradsNew <- map rwhnf stepForward `seq` mkLossAndGrads -- recalculate loss and gradients
-      let stepBack = zipWith Torch.sub params epsilonW       -- virtual step back to the original point
+      --
+      paramsWEps <- zipWithM (\p -> Torch.makeIndependent . Torch.add p) params epsilonW                              -- virtual step toward \epsilon
+
+      -- let flatParameters = Torch.flattenParameters model
+      --     depParameters = fmap Torch.toDependent flatParameters
+      -- newFlatParam <- mapM makeIndependent flatParameters'
+
+      -- paramsWEpsFlattened <- mapM Torch.makeIndependent paramsWEps
+      -- putStrLn $ "Sizes paramsWEps: " ++ show (map sizes paramsWEps)
+      -- putStrLn $ "Sizes params: " ++ show (map sizes params)
+      -- putStrLn $ "flattened: " ++ show (map (sizes. Torch.toDependent) $ Torch.flattenParameters paramsWEps)
+      --
+      -- putStrLn $ "MDL Params BEF: " ++ show (Torch.flattenParameters model) ++ "\n\n"
+      let mdl' = Torch.replaceParameters model paramsWEps
+      -- paramsWEpsFlattened -- (Torch.flattenParameters paramsWEps)                                   --
+      -- putStrLn $ "MDL Params AFT: " ++ show (Torch.flattenParameters mdl') ++ "\n\n"
+      gradsNew <- mkLossAndGrads mdl' -- recalculate loss and gradients
+      -- let recreateParams = zipWith (Torch.sub . Torch.toDependent) paramsWEps epsilonW      -- virtual step back to the original point
+      -- paramsOrig <- zipWithM (\p -> Torch.makeIndependent . Torch.sub p) params epsilonW                              -- virtual step toward \epsilon
+      paramsOrig <- mapM Torch.makeIndependent params
+      let mdl'' = Torch.replaceParameters mdl' paramsOrig
+      -- putStrLn $ "MDL Params AFT AFT: " ++ show (Torch.flattenParameters mdl'') ++ "\n\n"
       --
       -- perform step with new gradients but from old parameters
-      map rwhnf stepBack `seq` Torch.runStep' model optimizer (Torch.Gradients gradsNew) lRateTensor
-
-  where samNorm = 2 -- Experimentally optimized value, see Foret, et al. "Sharpness-aware
+      Torch.runStep' mdl'' optimizer (Torch.Gradients gradsNew) lRateTensor
+  where
+    samNorm = 2 -- Experimentally optimized value, see Foret, et al. "Sharpness-aware
                     -- minimization for efficiently improving generalization." (2020).
-        samActive = maybe False ((== 0) . (period `mod`) . fst) mSAM
-        mRho
-          | samActive = snd <$> mSAM
-          | otherwise = Nothing
-        mClipGradNorm =
-          case nnConfig ^. clipGradients of
-            ClipByGlobalNorm maxNorm -> unsafePerformIO . clipGradNorm maxNorm
-            ClipByValue val          -> unsafePerformIO . clipGradNormType (Just val) 1.0
-            _                        -> id
-        mkLossAndGrads' nrRows t o =
-          let lss = computeLoss nrRows t o
-          in mClipGradNorm . foldl1 (zipWith (+)) . map (\l -> Torch.grad l (Torch.flattenParameters model)) $ lss
-
-        computeLoss nrRows t o =
-          zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
-        lossFun t o =
-          case mlpLossFun model of
-            HasktorchHuber -> Torch.smoothL1Loss Torch.ReduceMean o t -- also known as the Huber loss (see docs)
-            HasktorchMSE   -> Torch.mseLoss t o
-        lRateTensor = Torch.asTensor lRate
+    samActive = maybe False ((== 0) . (period `mod`) . fst) mSAM
+    mRho
+      | samActive = snd <$> mSAM
+      | otherwise = Nothing
+    lRateTensor = Torch.asTensor lRate
 
 
-        -- trace ("sum, lens: " ++ show (sum (map length chs), map length chs) )
-        -- trace ("inputs: " ++ show (Torch.asTensor $ map (map (V.toList . fst . fst)) chs))
-        -- trace ("actions: " ++ show actions)
-        -- trace ("outputs: " ++ show outputs ) $
-        -- trace ("gather outputs: " ++ show (gather outputs)) $
-        -- trace ("targets: " ++ show targets)
-        -- trace ("loss: " ++ show (mkLoss targets $ gather $ hasktorchModel model inputs) ) $
-        -- (`Torch.div` (1 / sum (map genericLength chs))) $
-        -- computeGrads $ mkLossDirect
-      -- (outputs, mH0C0s) = hasktorchModel True model Nothing inputs
-      --
+mkLossAndGrads' :: NNConfig -> MLP -> Int -> [Torch.Parameter] -> Torch.Tensor -> Torch.Tensor -> [Torch.Tensor]
+mkLossAndGrads' nnConfig model nrRows params t o =
+  let lss = computeLoss t o
+   in mClipGradNorm . foldl1 (zipWith (+)) . map (`Torch.grad` params) $ lss
+  where
+    computeLoss t o = zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
+    lossFun t o =
+      case mlpLossFun model of
+        HasktorchHuber -> Torch.smoothL1Loss Torch.ReduceMean o t -- also known as the Huber loss (see docs)
+        HasktorchMSE   -> Torch.mseLoss t o
+    mClipGradNorm =
+      case nnConfig ^. clipGradients of
+        ClipByGlobalNorm maxNorm -> unsafePerformIO . clipGradNorm maxNorm
+        ClipByValue val          -> unsafePerformIO . clipGradNormType (Just val) 1.0
+        _                        -> id
 
-
--- r"""Clips gradient norm of an iterable of parameters.
-
---     The norm is computed over all gradients together, as if they were
---     concatenated into a single vector. Gradients are modified in-place.
-
---     Args:
---         parameters (Iterable[Tensor] or Tensor): an iterable of Tensors or a
---             single Tensor that will have gradients normalized
---         max_norm (float or int): max norm of the gradients
---         norm_type (float or int): type of the used p-norm. Can be ``'inf'`` for
---             infinity norm.
---         error_if_nonfinite (bool): if True, an error is thrown if the total
---             norm of the gradients from :attr:`parameters` is ``nan``,
---             ``inf``, or ``-inf``. Default: False (will switch to True in the future)
-
---     Returns:
---         Total norm of the parameter gradients (viewed as a single vector).
---     """
 
 clipGradNorm :: Double -> [Torch.Tensor] -> IO [Torch.Tensor]
 clipGradNorm = clipGradNormType (Just 2.0)
@@ -438,3 +430,22 @@ mkSqrdLoss :: Double -> Double -> Double
 mkSqrdLoss t o =
   let l = o - t
    in signum l * l ^ (2 :: Int)
+
+
+sizes :: Torch.Tensor -> [Int]
+sizes v = map (`Torch.size` v) [0.. Torch.dim v - 1]
+
+
+linalg_matrix_norm_tslbs ::
+  -- | self
+  Torch.Tensor ->
+  -- | ord
+  Float ->
+  -- | dim
+  [Int] ->
+  -- | keepdim
+  Bool ->
+  -- | dtype
+  Torch.DType ->
+  Torch.Tensor
+linalg_matrix_norm_tslbs _self _ord _dim _keepdim _dtype = unsafePerformIO $ (Cast.cast5 ATen.linalg_matrix_norm_tslbs) _self _ord _dim _keepdim _dtype
