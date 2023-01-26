@@ -24,6 +24,7 @@ import           ML.ARAL.Calculation.Ops
 import           ML.ARAL.Calculation.Type
 import           ML.ARAL.NeuralNetwork.Hasktorch
 import           ML.ARAL.NeuralNetwork.NNConfig
+import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.NeuralNetwork.ReplayMemory
 import           ML.ARAL.NeuralNetwork.Scaling
 import           ML.ARAL.Proxy
@@ -92,9 +93,10 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
         let mkCalc (s, idx, rew, s', epiEnd) = (mkCalculation MainAgent rl) s idx rew s' epiEnd
         calcs <- concat <$> mapM (executeAndCombineCalculations mkCalc) mems
         fhObs <- openFile fileObs AppendMode
-        let getFeat ((sf, _, _, _), _) = sf
+        let getFeat ((sf, _, _, _), _) = scaleIn sf
             getCalc ((_, _, _, _), calc) = calc
             scaleAlg = nnCfg ^. scaleOutputAlgorithm
+            scaleIn = normaliseStateFeature wel
             scaleOut = scaleValue scaleAlg (getMinMaxVal px)
             getOut = case tp of
               R1Table -> fmap ((VS.! 0) . unpackValue . scaleOut) . getR1ValState' . getCalc
