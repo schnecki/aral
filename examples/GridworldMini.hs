@@ -349,7 +349,7 @@ usermode = do
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainHasktorchAsSAM (Just (1, 0.05)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainHasktorchAsSAM Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)

@@ -104,7 +104,8 @@ adamW lr (Torch.Gradients gradients) parameters AdamW {..} = (parameters', AdamW
       | otherwise = prevParam - Torch.mulScalar (nu * stepSizeCorrection) (lr `Torch.mul` mm1 `Torch.div` (Torch.sqrt mm2 + eps))
                               -- - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) prevParam
                               -- - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.sign prevParam `Torch.mul` Torch.powScalar prevParam 2)
-                              - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.powScalar prevParam 150) -- values > 1 are penalized much more than values < 1.
+                              -- - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.powScalar prevParam 5) -- values > 1 are penalized much more than values < 1.
+                              - Torch.mulScalar (nu * stepSizeCorrection * weightDecay) (Torch.powScalar prevParam 9) -- values > 1 are penalized much more than values < 1.
     -- parameters' = zipWith3 update parameters a1 a2
     lastLayerFlag = replicate (length parameters - 1) False ++ [True]
     parameters' = zipWith4 update lastLayerFlag parameters m1' m2'
