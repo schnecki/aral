@@ -429,8 +429,8 @@ instance Show Act where
 actions :: [Act]
 actions = [minBound..maxBound]
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s@(St st) acts
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s@(St st) acts
   | all (== Random) acts = moveRand tp s
   | otherwise = do
     stepRew <- randomRIO (0, 8 :: Double)

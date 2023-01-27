@@ -168,7 +168,7 @@ instance Bounded Act where
   maxBound = toEnum $ unsafePerformIO getActionNrVar - 1
 
 actionFun :: ActionFunction St Act
-actionFun agentType oldSt@(St render _) [Act idx] = do
+actionFun _ agentType oldSt@(St render _) [Act idx] = do
   gym <- getGym (fromEnum agentType)
   res <- stepGymRender render gym (fromIntegral idx)
   rew <- rewardFunction gym oldSt (fromIntegral idx) res

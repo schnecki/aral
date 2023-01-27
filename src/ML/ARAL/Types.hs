@@ -129,7 +129,7 @@ instance Serialize Value where
   get = AgentValue . V.fromList <$> get
 
 newtype Values = AgentValues (VB.Vector (V.Vector Double)) -- ^ A vector of values for every agent
-  deriving (Show)
+  deriving (Show, Eq)
 
 
 instance Num Value where

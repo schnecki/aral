@@ -16,9 +16,9 @@ import           Control.Applicative                         ((<|>))
 import           Control.Arrow                               (second)
 import           Control.DeepSeq
 import           Control.Lens                                ((^.))
-import           Control.Monad                               (when, zipWithM, (>=>))
+import           Control.Monad                               (replicateM, when, zipWithM, (>=>))
 import           Data.Default
-import           Data.List                                   (foldl', genericLength, intersperse, transpose)
+import           Data.List                                   (find, foldl', genericLength, intersperse, transpose)
 import           Data.Maybe
 import           Data.Serialize
 import qualified Data.Vector                                 as VB
@@ -27,12 +27,14 @@ import           Data.Word
 import           GHC.Generics
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.IO.Unsafe                            (unsafePerformIO)
+import           System.Random
 import           Text.Printf
-import qualified Torch                                       as Torch hiding (dropout)
+import qualified Torch
 import qualified Torch.Autograd                              as Torch (toDependent)
 import qualified Torch.DType                                 as Torch
-import qualified Torch.Functional                            as Torch hiding (dropout)
-import qualified Torch.Functional.Internal                   as Torch (dropout, gather, linalg_vector_norm, normAll, row_stack)
+import qualified Torch.Functional
+import qualified Torch.Functional                            as Torch
+import qualified Torch.Functional.Internal                   as Torch (gather, linalg_vector_norm, normAll, row_stack)
 import qualified Torch.HList                                 as Torch
 import qualified Torch.Initializers                          as Torch
 import qualified Torch.Internal.Cast                         as Cast
@@ -177,38 +179,37 @@ mergeLayers (l:ls) (h:hs) []     = l : h : mergeLayers ls hs []
 mergeLayers [] [] []             = []
 mergeLayers ls hs ds             = error $ "mergeLayers: Unexpected number of layers: " ++ show (length ls, length hs, length ds)
 
-hasktorchModel :: Bool -> MLP -> Maybe Int -> Torch.Tensor -> (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
-hasktorchModel _ (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _) Nothing input =
-  (, Nothing) $
-  foldl' revApply input $ inputDropoutLayer ++ mergeLayers (map Torch.linear inpAndHiddenLayers) hiddenActs hiddenDropout ++ [Torch.linear outputLayer] ++ maybe [] pure outputAct
+hasktorchModel :: Bool -> MLP -> Maybe Int -> Torch.Tensor -> IO (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
+hasktorchModel _ (MLP layers hiddenAct hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _) Nothing input = do
+  inputWithDropoutLayer <-
+    case mDropoutInput of
+      (Just (active, dropoutAlpha)) -> Torch.featureDropout dropoutAlpha active input
+      Nothing                       -> return input
+  let dropout hidden =
+        case mDropoutHidden of
+          (Just (active, dropoutAlpha)) -> Torch.dropout dropoutAlpha active hidden
+          Nothing                       -> return hidden
+  let buildRecursive _ prevOut [] = return prevOut
+      buildRecursive idx prevOut (lay:ls) = do
+        let hiddenAct' =
+              case find ((== idx) . fst) hiddenActSpec of
+                Nothing                 -> hiddenAct
+                Just (_, hiddenSpecial) -> hiddenSpecial
+        cur <- dropout . hiddenAct' . Torch.linear lay $ prevOut
+        buildRecursive (idx + 1) cur ls
+  allHidden <- buildRecursive 0 inputWithDropoutLayer (init layers)
+  return $ (, Nothing) $ fromMaybe id outputAct $ Torch.linear outputLayer allHidden
   where
-    inpAndHiddenLayers = init layers
     outputLayer = last layers
-    inputDropoutLayer :: [Torch.Tensor -> Torch.Tensor]
-    inputDropoutLayer =
-      case mDropoutInput of
-        (Just (active, dropoutAlpha)) -> [(\t -> Torch.dropout t dropoutAlpha active)]
-        Nothing                       -> []
-    hiddenActs :: [Torch.Tensor -> Torch.Tensor]
-    hiddenActs
-      | null hiddenActSpec = replicate (length inpAndHiddenLayers) hiddenActDef
-      | otherwise = foldl' replaceIdx (replicate (length inpAndHiddenLayers) hiddenActDef) hiddenActSpec
-    hiddenDropout :: [Torch.Tensor -> Torch.Tensor]
-    hiddenDropout =
-      case mDropoutHidden of
-        (Just (active, dropoutAlpha)) -> replicate (length inpAndHiddenLayers) (\t -> Torch.dropout t dropoutAlpha active)
-        Nothing                       -> []
-    revApply :: Torch.Tensor -> (Torch.Tensor -> Torch.Tensor) -> Torch.Tensor
-    revApply x f = f x
 hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct _) Nothing input =
-  runLstmAndRest $ revApply input layer1
+  return $ runLstmAndRest $ revApply input layer1
   where
     inpAndHiddenLayers = init layers
     outputLayer = last layers
     inputDropoutLayer :: [Torch.Tensor -> Torch.Tensor]
     inputDropoutLayer =
       case mDropoutInput of
-        (Just (active, dropoutAlpha)) -> [(\t -> Torch.dropout t dropoutAlpha active)]
+        (Just (active, dropoutAlpha)) -> [unsafePerformIO . Torch.Functional.featureDropout dropoutAlpha active]
         Nothing                       -> []
     hiddenActs :: [Torch.Tensor -> Torch.Tensor]
     hiddenActs
@@ -217,7 +218,7 @@ hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropo
     hiddenDropout :: [Torch.Tensor -> Torch.Tensor]
     hiddenDropout =
       case mDropoutHidden of
-        (Just (active, dropoutAlpha)) -> replicate (length inpAndHiddenLayers) (\t -> Torch.dropout t dropoutAlpha active)
+        (Just (active, dropoutAlpha)) -> replicate (length inpAndHiddenLayers) (unsafePerformIO . Torch.Functional.dropout dropoutAlpha active)
         Nothing                       -> []
     revApply :: Torch.Tensor -> (Torch.Tensor -> Torch.Tensor) -> Torch.Tensor
     revApply x f = f x
@@ -304,13 +305,13 @@ instance Torch.Randomizable MLPSpec MLP where
 mkDbl = Torch.toDType Torch.Double
 
 
-runHasktorch :: MLP -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> [Values]
-runHasktorch mlp@MLP{} nrAs nrAgents mWel st =
+runHasktorch :: MLP -> NrActions -> NrAgents -> Maybe (WelfordExistingAggregate StateFeatures) -> StateFeatures -> IO [Values]
+runHasktorch mlp@MLP{} nrAs nrAgents mWel st = do
   -- trace ("mlp: " ++ show mlp) $
   let input = Torch.asTensor . V.toList . maybe id normaliseStateFeature mWel $ st
-      (outputTensor, _) = hasktorchModel False mlp Nothing input
-      output = V.fromList . Torch.asValue $ outputTensor
-   in [toAgents nrAs nrAgents output]
+  (outputTensor, _) <- hasktorchModel False mlp Nothing input
+  let output = V.fromList . Torch.asValue $ outputTensor
+  return [toAgents nrAs nrAgents output]
 
 
 trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Maybe (Int, Double) -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
@@ -333,7 +334,7 @@ trainHasktorch' period mSAM lRate optimizer nnConfig model chs
       nrNStep = Torch.size 1 targets
       gather x = Torch.reshape [nrRows, nrNStep] $ Torch.gather x 2 actions False
       mkLossAndGrads :: MLP -> IO [Torch.Tensor]
-      mkLossAndGrads mdl = return . mkLossAndGrads' nnConfig mdl (Torch.flattenParameters mdl) targets . gather . fst . hasktorchModel True mdl Nothing $ inputs
+      mkLossAndGrads mdl = fmap (mkLossAndGrads' nnConfig mdl (Torch.flattenParameters mdl) targets . gather . fst) . hasktorchModel True mdl Nothing $ inputs
   grads <- mkLossAndGrads model
   case mRho of
     Nothing -> Torch.runStep' model optimizer (Torch.Gradients grads) lRateTensor

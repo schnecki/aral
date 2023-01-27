@@ -1,13 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TupleSections     #-}
 module ML.ARAL.NeuralNetwork.Debug
     ( plotProxyFunction
-
+    , calcModelCertainty
     ) where
 
 import           Control.Lens
 import           Control.Monad
-import           Data.List                                   (intercalate, sortBy)
+import           Control.Monad.IO.Class
+import           Data.Function                               (on)
+import           Data.List                                   (foldl', intercalate, sortBy)
+import qualified Data.Map.Strict                             as M
 import           Data.Maybe                                  (maybe)
 import           Data.Ord
 import qualified Data.Text                                   as T
@@ -20,6 +24,7 @@ import           System.Environment                          (getProgName)
 import           System.IO
 import           System.Process
 
+import           ML.ARAL.Algorithm
 import           ML.ARAL.Calculation.Ops
 import           ML.ARAL.Calculation.Type
 import           ML.ARAL.NeuralNetwork.Hasktorch
@@ -29,8 +34,49 @@ import           ML.ARAL.NeuralNetwork.ReplayMemory
 import           ML.ARAL.NeuralNetwork.Scaling
 import           ML.ARAL.Proxy
 import           ML.ARAL.Settings
+import           ML.ARAL.Step                                (setDropoutValue)
 import           ML.ARAL.Type
 import           ML.ARAL.Types
+
+-- Model uncertainty for Dropout ANNS
+calcModelCertainty :: (MonadIO m) => ARAL s as -> m [Double]
+calcModelCertainty aral = fmap (computeProbs . processOuts . mWarn) . replicateM n . runANN . getPx . setDropoutValue True $ aral
+  where
+    mWarn xs@(v:vals)
+      | all (== v) vals = $(pureLogPrintErrorText) ("calcModelCertainty: Elements are all equal. Are you using Dropout?") xs
+      | otherwise = xs
+    runANN :: (MonadIO m) => Proxy -> m Values
+    runANN px = do
+      -- preds <- forM [1.n] $ \_ -> mlp model stochastic testImg
+      emptyCache
+      lookupActionsNeuralNetwork Target sFeats px
+    processOuts :: [Values] -> [VB.Vector (VB.Vector (Int, Double))]
+    processOuts = map (filterActions . indexActions . fromValues)
+    filterActions = VB.zipWith (\disAsIdx -> VB.ifilter (\i _ -> i `notElem` VS.toList disAsIdx)) disallowedActionIndices
+    indexActions = VB.map (\xs -> VB.zip (VB.generate nrAs id) . VB.convert $ xs)
+    nrAs = VB.length (aral ^. actionList)
+    sFeats :: StateFeatures
+    sFeats = (aral ^. featureExtractor) (aral ^. s)
+    DisallowedActionIndicies disallowedActionIndices = actionIndicesDisallowed aral (aral ^. s)
+    n = 100
+    getPx rl =
+      case rl ^. algorithm of
+        AlgARAL {}      -> rl ^. proxies . r1
+        AlgNBORL {}     -> rl ^. proxies . v
+        AlgARALVOnly {} -> rl ^. proxies . v
+        AlgRLearning    -> rl ^. proxies . v
+        AlgDQN {}       -> rl ^. proxies . r1
+    mEmptyConts :: M.Map Int Int
+    mEmptyConts = M.fromList . map (, 0) $ [0 .. nrAs - 1]
+    computeProbs :: [VB.Vector (VB.Vector (Int, Double))] -> [Double]
+    computeProbs = calcProbs . foldl' accumCounts mEmptyConts . map computMaxIdx
+    computMaxIdx :: VB.Vector (VB.Vector (Int, Double)) -> Int
+    computMaxIdx xs
+      | VB.length xs == 1 = fst . VB.maximumBy (compare `on` snd) . VB.head $ xs
+      | otherwise = error "calcModelCertainty currently not implemented for nrAgents > 1 !"
+    accumCounts m aIdx = M.insertWith (+) aIdx 1 m
+    calcProbs :: M.Map Int Int -> [Double]
+    calcProbs = M.elems . M.map ((/ fromIntegral n) . fromIntegral)
 
 
 plotProxyFunction :: Bool -> Int -> Int -> ARAL s as -> LookupType -> Proxy -> IO ()
@@ -68,19 +114,23 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
         leftBorder2 = mean2 - 8 * stdDev2
         rigthBorder2 = mean2 + 8 * stdDev2
         dist2 = max 0.01 (rigthBorder2 - leftBorder2)
+        scaleIn = normaliseStateFeature wel
+        scaleOut = scaleValue scaleAlg (getMinMaxVal px)
+        unscaleOut = unscaleDouble scaleAlg (getMinMaxVal px)
+        scaleAlg = nnCfg ^. scaleOutputAlgorithm
     writeFile file "x\ty\tzModel\n"
     fh <- openFile file AppendMode
     let xs = [leftBorder1,leftBorder1 + 0.025 * dist1 .. rigthBorder1]
         ys = [leftBorder2,leftBorder2 + 0.025 * dist2 .. rigthBorder2]
     forM_ xs $ \x -> do
       forM_ ys $ \y -> do
-        let vec = welfordMeanUnsafe wel VS.// [(dim1, x), (dim2, y)]
-            -- mGrTruth' vec' = maybe "-" (\f -> show (f vec')) mGrTruth
-            -- z = mGrTruth' vec
+        let vecOrigScale = welfordMeanUnsafe wel VS.// [(dim1, x), (dim2, y)]
+            vec = scaleIn vecOrigScale
             mdl = case lookupType of
               Target -> netT
               Worker -> netW
-            zHat = (VS.! nodeIdx) . VB.head . fromValues . head $ runHasktorch mdl nrNodes 1 (Just wel) vec
+        zHat <- unscaleOut . (VS.! nodeIdx) . VB.head . fromValues . head <$> runHasktorch mdl nrNodes 1 (Just wel) vec
+        -- hPutStrLn fh (show (vec VS.! dim1) ++ "\t" ++ show (vec VS.! dim2) ++ "\t" ++ show zHat)
         hPutStrLn fh (show x ++ "\t" ++ show y ++ "\t" ++ show zHat)
     hClose fh
     -- Example Learn Points
@@ -93,15 +143,12 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
         let mkCalc (s, idx, rew, s', epiEnd) = (mkCalculation MainAgent rl) s idx rew s' epiEnd
         calcs <- concat <$> mapM (executeAndCombineCalculations mkCalc) mems
         fhObs <- openFile fileObs AppendMode
-        let getFeat ((sf, _, _, _), _) = scaleIn sf
+        let getFeat ((sf, _, _, _), _) = sf
             getCalc ((_, _, _, _), calc) = calc
-            scaleAlg = nnCfg ^. scaleOutputAlgorithm
-            scaleIn = normaliseStateFeature wel
-            scaleOut = scaleValue scaleAlg (getMinMaxVal px)
             getOut = case tp of
-              R1Table -> fmap ((VS.! 0) . unpackValue . scaleOut) . getR1ValState' . getCalc
-              R0Table -> fmap ((VS.! 0) . unpackValue . scaleOut) . getR0ValState' . getCalc
-              _       -> fmap ((VS.! 0) . unpackValue . scaleOut) . getVValState'  . getCalc
+              R1Table -> fmap ((VS.! 0) . unpackValue) . getR1ValState' . getCalc
+              R0Table -> fmap ((VS.! 0) . unpackValue) . getR0ValState' . getCalc
+              _       -> fmap ((VS.! 0) . unpackValue) . getVValState'  . getCalc
         forM_ calcs $ \obs -> do
           hPutStrLn fhObs $ show (getFeat obs VS.! dim1) ++ "\t" ++ show (getFeat obs VS.! dim2) ++ "\t" ++ (maybe "-" show . getOut $ obs)
         hClose fhObs

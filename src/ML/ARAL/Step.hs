@@ -142,7 +142,7 @@ stepExecute aral (as, workerActions) = do
     writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period aral) workerActions
-  let action agTp s as = (aral ^. actionFunction) agTp s (VB.toList as)
+  let action agTp s as = (aral ^. actionFunction) aral agTp s (VB.toList as)
       actList = aral ^. actionList
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
@@ -177,7 +177,7 @@ applyStateToRewardFutureData state = VB.map (over futureReward applyToReward)
 -- | Run one worker.
 runWorkerAction :: (NFData s) => ARAL s as -> WorkerState s -> WorkerActionChoice -> IO (WorkerState s)
 runWorkerAction aral (WorkerState wNr state replMem oldFutureRewards rew) as = do
-  let action agTp s as = (aral ^. actionFunction) agTp s (VB.toList as)
+  let action agTp s as = (aral ^. actionFunction) aral agTp s (VB.toList as)
       actList = aral ^. actionList
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
@@ -322,6 +322,7 @@ maybeFlipDropout :: ARAL s as -> ARAL s as
 maybeFlipDropout aral =
   case aral ^? proxies . v . proxyNNConfig <|> aral ^? proxies . r1 . proxyNNConfig of
     Just cfg@NNConfig {}
+      | cfg ^. grenadeDropoutOnlyInactiveAfter <= 0 -> aral
       | aral ^. t == cfg ^. grenadeDropoutOnlyInactiveAfter -> setDropoutValue False aral
       | aral ^. t > cfg ^. grenadeDropoutOnlyInactiveAfter -> aral
       | aral ^. t `mod` cfg ^. grenadeDropoutFlipActivePeriod == 0 ->
@@ -337,10 +338,10 @@ setDropoutValue :: Bool -> ARAL s as -> ARAL s as
 setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) setDropout
   where
     setDropout (Grenade tar wor tp cfg act agents wel)                  = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
-    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel nnActs) = Hasktorch tar wo tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel nnActs
+    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel nnActs) = Hasktorch (setDropoutMLP tar) (setDropoutMLP wo) tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel nnActs
     setDropoutMLPSpec x@MLPSpec {}                                              = x
-    setDropoutMLPSpec x@(MLPSpecWDropoutLSTM _ _ _ Nothing Nothing _ _)         = x
     setDropoutMLPSpec (MLPSpecWDropoutLSTM mLoss lin act mDrI mDr mLSTM outAct) = MLPSpecWDropoutLSTM mLoss lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
+    setDropoutMLP (MLP lays hAct hSpecAct mInpDrpOut mHidDrpOut mLSTM mOutAct mLossFun) = MLP lays hAct hSpecAct ((val, ) . snd <$> mInpDrpOut) ((val, ) . snd <$> mHidDrpOut) mLSTM mOutAct mLossFun
 
 
 #ifdef DEBUG

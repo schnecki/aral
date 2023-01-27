@@ -274,8 +274,8 @@ instance Show Act where
 actions :: [Act]
 actions = [minBound .. maxBound]
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun _ (St day) [Act nr]  = do
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ _ (St day) [Act nr]  = do
   let curveHigh = fromIntegral maxDemand - fromIntegral minDemand - 2 * short
   let seasonMedianDemand = seasonMedianDemandFun curveHigh day
   eps <- randomRIO (-epsilonDemand, epsilonDemand) :: IO Int
@@ -283,7 +283,7 @@ actionFun _ (St day) [Act nr]  = do
   let reward = Reward $ errorFun nr actual
   appendFile filename (show actual ++ "\t" ++ show seasonMedianDemand ++"\t" ++ show nr ++ "\n")
   return (reward, St $ (day + 1) `mod` seasonDuration, False)
-actionFun _ _ xs       = error $ "Multiple actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs       = error $ "Multiple actions received in actionFun: " ++ show xs
 
 actionFilter :: St -> [V.Vector Bool]
 actionFilter _ = [V.fromList (replicate (1 + maxDemand - minDemand) True)]

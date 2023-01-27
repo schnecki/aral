@@ -402,8 +402,8 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 
 
 netInp :: St -> V.Vector Double
-netInp st =
-  V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st = V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
+  -- V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Double
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
@@ -448,18 +448,18 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
--- actionFun tp s [Random, Random] = goalState moveRand tp s
-actionFun tp s [x, y] = do
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+-- actionFun _ tp s [Random, Random] = goalState moveRand tp s
+actionFun _ tp s [x, y] = do
   (r1, s1, e1) <- actionFun tp s [x]
   (r2, s2, e2) <- actionFun tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st

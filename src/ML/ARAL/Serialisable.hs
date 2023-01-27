@@ -46,7 +46,6 @@ import qualified Torch.Optim                  as Torch
 import qualified Torch.Serialize              as Torch
 import           Unsafe.Coerce                (unsafeCoerce)
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.Algorithm
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
@@ -282,7 +281,7 @@ instance Serialize Proxy where
           adam <- get
           mdl <- get
           wel <- get
-          mSAM <- get <|> (get >>= \(_ :: Bool) -> return Nothing)
+          mSAM <- get
           return $
             unsafePerformIO $ do
               putStrLn "ANN model: "

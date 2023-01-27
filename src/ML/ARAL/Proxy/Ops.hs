@@ -28,6 +28,7 @@ module ML.ARAL.Proxy.Ops
     , StateNextFeatures
     , LookupType (..)
     , AgentNumber
+    , emptyCache
     ) where
 
 import           Control.Applicative                         ((<|>))
@@ -472,7 +473,7 @@ trainBatch !period !trainingInstances px@(Hasktorch !netT !netW !tp !config !nrA
     lRate = getLearningRate (config ^. grenadeLearningParams)
     nu = realToFrac $ dec 1.0
     scaleAlg = config ^. scaleOutputAlgorithm
-    dec = decaySetup (config ^. learningParamsDecay) period
+    dec = decaySetup (config ^. learningParamsDecay) (period - memSize)
 trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (programming error)"
 
 
@@ -592,8 +593,8 @@ maybeWelford config wel
 lookupActionsNeuralNetworkUnscaledFull :: (MonadIO m) => LookupType -> StateFeatures -> Proxy -> m [Values]
 lookupActionsNeuralNetworkUnscaledFull Worker st (Grenade _ netW _ cfg nrAs agents wel)              = return $ runGrenade netW nrAs agents   (maybeWelford cfg wel) st
 lookupActionsNeuralNetworkUnscaledFull Target st (Grenade netT _ _ cfg nrAs agents wel)              = return $ runGrenade netT nrAs agents   (maybeWelford cfg wel) st
-lookupActionsNeuralNetworkUnscaledFull Worker st (Hasktorch _ netW _ cfg nrAs agents _ mdl wel mSAM) = return $ runHasktorch netW nrAs agents (maybeWelford cfg wel) st
-lookupActionsNeuralNetworkUnscaledFull Target st (Hasktorch netT _ _ cfg nrAs agents _ mdl wel mSAM) = return $ runHasktorch netT nrAs agents (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull Worker st (Hasktorch _ netW _ cfg nrAs agents _ mdl wel mSAM) = liftIO $ runHasktorch netW nrAs agents (maybeWelford cfg wel) st
+lookupActionsNeuralNetworkUnscaledFull Target st (Hasktorch netT _ _ cfg nrAs agents _ mdl wel mSAM) = liftIO $ runHasktorch netT nrAs agents (maybeWelford cfg wel) st
 lookupActionsNeuralNetworkUnscaledFull _ _ CombinedProxy{}                                           = error "lookupActionsNeuralNetworkUnscaledFull called on CombinedProxy"
 lookupActionsNeuralNetworkUnscaledFull _ _ _                                                         = error "lookupActionsNeuralNetworkUnscaledFull called on a non-neural network proxy"
 
@@ -648,7 +649,7 @@ addCache :: (MonadIO m) => CacheKey -> [Values] -> m ()
 addCache k val = liftIO $ hasLocked "addCache" $ modifyMVar_ cacheMVar (return . M.insert k val)
 
 lookupCache :: (MonadIO m) => CacheKey -> m (Maybe [Values])
-lookupCache k = liftIO $ hasLocked "lookupCache" $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
+lookupCache k = return Nothing -- liftIO $ hasLocked "lookupCache" $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 -- | Get output of function f, if possible from cache according to key (st).
 cached :: (MonadIO m) => CacheKey -> m [Values] -> m [Values]

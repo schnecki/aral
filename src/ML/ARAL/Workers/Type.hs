@@ -23,7 +23,6 @@ import           Data.Serialize
 import qualified Data.Vector           as VB
 import           GHC.Generics
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Proxy.Proxies
 import           ML.ARAL.Reward.Type

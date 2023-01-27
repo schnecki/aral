@@ -31,6 +31,7 @@ module ML.ARAL.Type
   , idxStart
   -- * ARAL
   , ARAL (..)
+  , ActionFunction
   , NrFeatures
   , NrRows
   , NrCols
@@ -117,13 +118,13 @@ import qualified Torch.NN                                    as Torch
 
 import           RegNet
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
 import           ML.ARAL.Proxy.Type
+import           ML.ARAL.Reward
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
 import           ML.ARAL.Types
@@ -142,6 +143,7 @@ type ModelBuilderFun = NrFeatures -> (NrRows, NrCols) -> IO SpecConcreteNetwork
 type ModelBuilderFunHT = NrFeatures -> (NrRows, NrCols) -> MLPSpec
 type SingleNetPerOutputAction = Bool
 
+type ActionFunction s as = ARAL s as -> AgentType -> s -> [as] -> IO (Reward s, s, EpisodeEnd)
 
 -------------------- Main RL Datatype --------------------
 

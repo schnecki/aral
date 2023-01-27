@@ -394,9 +394,9 @@ actions = [Reject, Admit]
 
 
 actionFun :: ActionFunction St Act
-actionFun tp st [Reject]            = appendQueueLenFile reject tp st
-actionFun tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
-actionFun _ st act                  = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
+actionFun _ tp st [Reject]            = appendQueueLenFile reject tp st
+actionFun _ tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
+actionFun _ _ st act                  = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
 
 
 appendQueueLenFile :: (AgentType -> St -> IO b) -> AgentType -> St -> IO b

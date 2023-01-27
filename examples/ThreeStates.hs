@@ -233,10 +233,10 @@ instance Show Act where
 actions :: [Act]
 actions = [Left, Right]
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Left]  = moveLeft tp s
-actionFun tp s [Right] = moveRight tp s
-actionFun _ _ xs       = error $ "Multiple actions received in actionFun: " ++ show xs
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Left]  = moveLeft tp s
+actionFun _ tp s [Right] = moveRight tp s
+actionFun _ _ _ xs       = error $ "Multiple actions received in actionFun: " ++ show xs
 
 actionFilter :: St -> [V.Vector Bool]
 actionFilter A = [V.fromList [True, True]]

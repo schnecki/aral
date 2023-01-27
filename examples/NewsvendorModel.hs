@@ -102,11 +102,11 @@ actions :: [Act]
 actions = [Buy, Stop]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp (St nr) [Buy]
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp (St nr) [Buy]
   | payAtEnd = return (Reward 0, St (nr + 1), False)
   | otherwise = return (Reward (-purchasePrice), St (nr + 1), False)
-actionFun tp (St qInt) [Stop] = do
+actionFun _ tp (St qInt) [Stop] = do
   xInt <-
     case demand of
       Uniform -> randomRIO (minDemand, maxDemand)

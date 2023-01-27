@@ -251,7 +251,7 @@ thd3 (_,_,x) = x
 
 makeReward :: (BorlLp s as) => Int -> s -> IO [((State s, Action as), Double, EpisodeEnd)]
 makeReward repetitionsReward s = do
-  let actionFun tp s act = lpActionFunction tp s [act]
+  let actionFun tp s act = lpActionFunction (error "For LP the first parameter in action function must be unused") tp s [act]
   xss <- mapM ((\a -> replicateM repetitionsReward (actionFun MainAgent s a))) acts
   return $ zipWith (\a xs -> ((s, a), round' $ sum (map (fromReward . fst3) xs) / fromIntegral (length xs), getEpsEnd (map thd3 xs))) acts xss
   where

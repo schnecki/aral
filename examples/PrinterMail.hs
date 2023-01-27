@@ -197,9 +197,9 @@ actions :: [Action Act]
 actions = [GoLeft, GoRight]
 
 actionFun :: ActionFunction St Act
-actionFun tp st [GoLeft]  = moveLeft tp st
-actionFun tp st [GoRight] = moveRight tp st
-actionFun _ _ acts        = error $ "unexpected list of actions: " ++ show acts
+actionFun _ tp st [GoLeft]  = moveLeft tp st
+actionFun _ tp st [GoRight] = moveRight tp st
+actionFun _ _ _ acts        = error $ "unexpected list of actions: " ++ show acts
 
 actionFilter :: St -> [V.Vector Bool]
 actionFilter One      = [V.fromList [True, True]]

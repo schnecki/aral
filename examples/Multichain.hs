@@ -156,7 +156,7 @@ actions :: [Action Act]
 actions = [Move]
 
 actionFun :: ActionFunction St Act
-actionFun tp st [Move] = addReset move tp st
+actionFun _ tp st [Move] = addReset move tp st
 
 addReset :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
 addReset f tp st = do

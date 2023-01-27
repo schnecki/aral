@@ -253,13 +253,13 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
-actionFun _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+actionFun _ _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st
