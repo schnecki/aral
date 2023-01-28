@@ -4,8 +4,10 @@
 module ML.ARAL.NeuralNetwork.Debug
     ( plotProxyFunction
     , calcModelCertainty
+    , calcFeatureImportance
     ) where
 
+import           Control.Arrow
 import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -23,6 +25,8 @@ import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.Environment                          (getProgName)
 import           System.IO
 import           System.Process
+import           System.Random
+import           Text.Printf
 
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Calculation.Ops
@@ -34,22 +38,91 @@ import           ML.ARAL.NeuralNetwork.ReplayMemory
 import           ML.ARAL.NeuralNetwork.Scaling
 import           ML.ARAL.Proxy
 import           ML.ARAL.Settings
-import           ML.ARAL.Step                                (setDropoutValue)
+import           ML.ARAL.Step                                (hasDropoutLayer, setDropoutValue)
 import           ML.ARAL.Type
 import           ML.ARAL.Types
 
--- Model uncertainty for Dropout ANNS
-calcModelCertainty :: (MonadIO m) => ARAL s as -> m [Double]
-calcModelCertainty aral = fmap (computeProbs . processOuts . mWarn) . replicateM n . runANN . getPx . setDropoutValue True $ aral
+-- | `Show` a float with specified number of digits after the comma.
+showFloat :: (PrintfArg n, Fractional n) => n -> String
+showFloat = printf ("%+." ++ show 4 ++ "f")
+
+
+calcFeatureImportance :: ARAL s as -> IO [FeatureImportance]
+calcFeatureImportance aral = fmap (Data.List.sortBy (compare `on` abs . deltaMean) . concat) . (\px -> mapM (calcFeatureImportance px sFeat) [0 .. VS.length sFeat - 1]) . getPx $ aral
   where
-    mWarn xs@(v:vals)
-      | all (== v) vals = $(pureLogPrintErrorText) ("calcModelCertainty: Elements are all equal. Are you using Dropout?") xs
-      | otherwise = xs
-    runANN :: (MonadIO m) => Proxy -> m Values
-    runANN px = do
-      -- preds <- forM [1.n] $ \_ -> mlp model stochastic testImg
+    sFeat = (aral ^. featureExtractor) (aral ^. s)
+    runANN :: (MonadIO m) => StateFeatures -> Proxy -> m Values
+    runANN features px = do
       emptyCache
-      lookupActionsNeuralNetwork Target sFeats px
+      lookupActionsNeuralNetworkUnscaled Target features px
+    n = 10000
+    mkRandInputs :: Double -> Double -> IO [Double]
+    mkRandInputs mean stdDev = replicateM n (randomRIO (mean - 3 * stdDev, mean + 3 * stdDev))
+    calcFeatureImportance :: Proxy -> StateFeatures -> Int -> IO [FeatureImportance]
+    calcFeatureImportance px ft i = mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)])) >>= calcRes i . mkMeanAndVariance i
+      where
+        wel = _proxyHTWelford px
+        (means, _, variance) = finalize wel
+        mean = means VS.! i
+        stdDev = sqrt (variance VS.! i)
+    mkMeanAndVariance :: Int -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
+    mkMeanAndVariance i = finalize . addValues newWelfordAggregate . VB.concat . map (VB.map VB.convert . fromValues)
+    calcRes :: Int -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double)) -> IO [FeatureImportance]
+    calcRes i (means, _, variances) = do
+      out <- avgOut . fromValues <$> runANN sFeat (getPx aral)
+      forM [0 .. VB.length means - 1] $ \actionNr -> do
+        let deltaMean = means VB.! actionNr - out VB.! actionNr
+            stdDev = sqrt $ variances VB.! actionNr
+            featImp = FeatureImportance i actionNr deltaMean stdDev
+        print featImp
+        return featImp
+    avgOut :: VB.Vector (VS.Vector Double) -> VB.Vector Double
+    avgOut outAgents
+      | VB.null outAgents || VS.null (VB.head outAgents) = error $ "Empty output from ANN: " ++ show outAgents
+    avgOut outAgents = VB.map (/ fromIntegral (VB.length outAgents)) . VB.foldl1 (VB.zipWith (+)) . VB.map VB.convert $ outAgents
+    getPx rl =
+      case rl ^. algorithm of
+        AlgARAL {}      -> rl ^. proxies . r1
+        AlgNBORL {}     -> rl ^. proxies . v
+        AlgARALVOnly {} -> rl ^. proxies . v
+        AlgRLearning    -> rl ^. proxies . v
+        AlgDQN {}       -> rl ^. proxies . r1
+
+data FeatureImportance =
+  FeatureImportance
+    { featureIdx  :: !Int
+    , actionIdx   :: !Int
+    , deltaMean   :: !Double
+    , deltaStdDev :: !Double
+    }
+  deriving (Eq, Ord)
+
+
+instance Show FeatureImportance where
+  show (FeatureImportance i actionNr mean stdDev) = "Feature " ++ show i ++ " - Action " ++ show actionNr ++ ". Delta mean: " ++ showFloat mean ++ ", StdDev: " ++ showFloat stdDev
+
+
+-- Model uncertainty and robustness for Dropout ANNS
+calcModelCertainty :: (MonadIO m) => ARAL s as -> m [Double]
+calcModelCertainty aral = do
+  dropoutCertainty <- replicateM nDropout . runANN sFeats . getPx . setDropoutValue True $ aral
+  robustness <- mapM (`runANN` (getPx . setDropoutValue False $ aral)) . adaptFeatures $ sFeats
+  return . computeProbs . processOuts $ dropoutCertainty ++ robustness
+  where
+    (means, _, variance) = finalize . _proxyHTWelford . getPx $ aral
+    adaptFeatures :: StateFeatures -> [StateFeatures] -- create a list of features close to the original feature
+    adaptFeatures ft = concatMap (adaptFeature ft) [0 .. VS.length ft - 1]
+    adaptFeature ft i = map (\pct -> ft VS.// [(i, (pct *) $ ft VS.! i)]) [ft VS.! i - sqrt (variance VS.! i), ft VS.! i, ft VS.! i + sqrt (variance VS.! i)]
+    nDropout
+      | hasDropoutLayer aral = 100
+      | otherwise = 0
+    -- mWarn xs@(v:vals)
+    --   | all (== v) vals = $(pureLogPrintErrorText) ("calcModelCertainty: Elements are all equal. Are you using Dropout?") xs
+    --   | otherwise = xs
+    runANN :: (MonadIO m) => StateFeatures -> Proxy -> m Values
+    runANN features px = do
+      emptyCache
+      lookupActionsNeuralNetwork Target features px
     processOuts :: [Values] -> [VB.Vector (VB.Vector (Int, Double))]
     processOuts = map (filterActions . indexActions . fromValues)
     filterActions = VB.zipWith (\disAsIdx -> VB.ifilter (\i _ -> i `notElem` VS.toList disAsIdx)) disallowedActionIndices
@@ -58,7 +131,6 @@ calcModelCertainty aral = fmap (computeProbs . processOuts . mWarn) . replicateM
     sFeats :: StateFeatures
     sFeats = (aral ^. featureExtractor) (aral ^. s)
     DisallowedActionIndicies disallowedActionIndices = actionIndicesDisallowed aral (aral ^. s)
-    n = 100
     getPx rl =
       case rl ^. algorithm of
         AlgARAL {}      -> rl ^. proxies . r1
@@ -69,14 +141,14 @@ calcModelCertainty aral = fmap (computeProbs . processOuts . mWarn) . replicateM
     mEmptyConts :: M.Map Int Int
     mEmptyConts = M.fromList . map (, 0) $ [0 .. nrAs - 1]
     computeProbs :: [VB.Vector (VB.Vector (Int, Double))] -> [Double]
-    computeProbs = calcProbs . foldl' accumCounts mEmptyConts . map computMaxIdx
+    computeProbs inp = calcProbs (length inp) . foldl' accumCounts mEmptyConts . map computMaxIdx $ inp
     computMaxIdx :: VB.Vector (VB.Vector (Int, Double)) -> Int
     computMaxIdx xs
       | VB.length xs == 1 = fst . VB.maximumBy (compare `on` snd) . VB.head $ xs
       | otherwise = error "calcModelCertainty currently not implemented for nrAgents > 1 !"
     accumCounts m aIdx = M.insertWith (+) aIdx 1 m
-    calcProbs :: M.Map Int Int -> [Double]
-    calcProbs = M.elems . M.map ((/ fromIntegral n) . fromIntegral)
+    calcProbs :: Int -> M.Map Int Int -> [Double]
+    calcProbs n = M.elems . M.map ((/ fromIntegral n) . fromIntegral)
 
 
 plotProxyFunction :: Bool -> Int -> Int -> ARAL s as -> LookupType -> Proxy -> IO ()

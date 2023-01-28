@@ -649,7 +649,9 @@ addCache :: (MonadIO m) => CacheKey -> [Values] -> m ()
 addCache k val = liftIO $ hasLocked "addCache" $ modifyMVar_ cacheMVar (return . M.insert k val)
 
 lookupCache :: (MonadIO m) => CacheKey -> m (Maybe [Values])
-lookupCache k = return Nothing -- liftIO $ hasLocked "lookupCache" $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
+lookupCache k =
+  -- return Nothing
+  liftIO $ hasLocked "lookupCache" $ (M.lookup k =<<) <$> tryReadMVar cacheMVar
 
 -- | Get output of function f, if possible from cache according to key (st).
 cached :: (MonadIO m) => CacheKey -> m [Values] -> m [Values]

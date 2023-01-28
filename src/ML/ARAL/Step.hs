@@ -16,6 +16,7 @@ module ML.ARAL.Step
     , epsCompareWith
     , sortBy
     , setDropoutValue
+    , hasDropoutLayer
     ) where
 
 #ifdef DEBUG
@@ -343,6 +344,12 @@ setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch
     setDropoutMLPSpec (MLPSpecWDropoutLSTM mLoss lin act mDrI mDr mLSTM outAct) = MLPSpecWDropoutLSTM mLoss lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
     setDropoutMLP (MLP lays hAct hSpecAct mInpDrpOut mHidDrpOut mLSTM mOutAct mLossFun) = MLP lays hAct hSpecAct ((val, ) . snd <$> mInpDrpOut) ((val, ) . snd <$> mHidDrpOut) mLSTM mOutAct mLossFun
 
+hasDropoutLayer :: ARAL s as -> Bool
+hasDropoutLayer = any isDropoutProxy . allProxies . view proxies
+  where
+    isDropoutProxy (Grenade tar wor tp cfg act agents wel)                  = $(pureLogPrintDebug) "hasDropoutLayer not implemented for Grenade!" False
+    isDropoutProxy (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel nnActs) = isJust (hasktorchInputDropoutAlpha mlp) || isJust (hasktorchHiddenDropoutAlpha mlp)
+    isDropoutProxy _                                                        = False
 
 #ifdef DEBUG
 
