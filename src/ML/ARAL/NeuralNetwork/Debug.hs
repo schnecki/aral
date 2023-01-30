@@ -56,24 +56,31 @@ calcFeatureImportance aral = fmap (Data.List.sortBy (compare `on` abs . deltaMea
       emptyCache
       lookupActionsNeuralNetworkUnscaled Target features px
     n = 10000
+    nNormal
+      | hasDropoutLayer aral = n
+      | otherwise = 1
     mkRandInputs :: Double -> Double -> IO [Double]
     mkRandInputs mean stdDev = replicateM n (randomRIO (mean - 3 * stdDev, mean + 3 * stdDev))
+    avgOuts = (VB.map (/fromIntegral nNormal)) . foldl1 (VB.zipWith (+))
     calcFeatureImportance :: Proxy -> StateFeatures -> Int -> IO [FeatureImportance]
-    calcFeatureImportance px ft i = mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)])) >>= calcRes i . mkMeanAndVariance i
+    calcFeatureImportance px ft i = do
+      outs <- mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)]))
+      out <- avgOuts <$> replicateM nNormal (avgOut . fromValues <$> runANN sFeat (getPx aral)) -- TODO: run multiple times for ANNs with Dropout
+      calcRes i . mkMeanAndVariance i out $ outs
       where
         wel = _proxyHTWelford px
         (means, _, variance) = finalize wel
         mean = means VS.! i
         stdDev = sqrt (variance VS.! i)
-    mkMeanAndVariance :: Int -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
-    mkMeanAndVariance i = finalize . addValues newWelfordAggregate . VB.concat . map (VB.map VB.convert . fromValues)
+    mkMeanAndVariance :: Int -> VB.Vector Double -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
+    mkMeanAndVariance i outBefore = finalize . addValues newWelfordAggregate . VB.concat . map (VB.map (VB.zipWith subtract outBefore . VB.convert) . fromValues)
     calcRes :: Int -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double)) -> IO [FeatureImportance]
     calcRes i (means, _, variances) = do
-      out <- avgOut . fromValues <$> runANN sFeat (getPx aral)
+      -- out <- avgOut . fromValues <$> runANN sFeat (getPx aral)
       forM [0 .. VB.length means - 1] $ \actionNr -> do
-        let deltaMean = means VB.! actionNr - out VB.! actionNr
+        let mean = means VB.! actionNr
             stdDev = sqrt $ variances VB.! actionNr
-            featImp = FeatureImportance i actionNr deltaMean stdDev
+            featImp = FeatureImportance i actionNr mean stdDev
         print featImp
         return featImp
     avgOut :: VB.Vector (VS.Vector Double) -> VB.Vector Double
@@ -92,14 +99,14 @@ data FeatureImportance =
   FeatureImportance
     { featureIdx  :: !Int
     , actionIdx   :: !Int
-    , deltaMean   :: !Double
-    , deltaStdDev :: !Double
+    , deltaMean   :: !Double -- ^ Mean change of output
+    , deltaStdDev :: !Double -- ^ StdDev
     }
   deriving (Eq, Ord)
 
 
 instance Show FeatureImportance where
-  show (FeatureImportance i actionNr mean stdDev) = "Feature " ++ show i ++ " - Action " ++ show actionNr ++ ". Delta mean: " ++ showFloat mean ++ ", StdDev: " ++ showFloat stdDev
+  show (FeatureImportance i actionNr mean stdDev) = "Feature " ++ printf "%3d" i ++ " - Action " ++ printf "%2d" actionNr ++ ". Delta mean: " ++ showFloat mean ++ ", StdDev: " ++ showFloat stdDev
 
 
 -- Model uncertainty and robustness for Dropout ANNS
@@ -207,7 +214,7 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
     hClose fh
     -- Example Learn Points
     case rl ^. proxies . replayMemory of
-      Nothing -> return ()
+      Nothing -> $(logPrintInfoText) "No replay memory. Cannot get observations."
       Just repMem -> do
         mems <- getRandomReplayMemoriesElements (rl ^. settings . nStep) (nnCfg ^. trainBatchSize) repMem
         -- let nsLearnObs = sortBy (comparing ((VS.! dim1) . getStateFeats)) $ mems

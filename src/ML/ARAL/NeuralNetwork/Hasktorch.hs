@@ -70,6 +70,7 @@ data HasktorchActivationFun
   | HasktorchTanh
   | HasktorchSigmoid
   | HasktorchLogSigmoid
+  | HasktorchSymlog
   | HasktorchId
   deriving (Show, Eq, Generic, Serialize, NFData)
 
@@ -87,6 +88,7 @@ mkHasktorchActivation (HasktorchLeakyRelu mAlpha) = Torch.leakyRelu (fromMaybe 0
 mkHasktorchActivation HasktorchTanh               = Torch.tanh
 mkHasktorchActivation HasktorchSigmoid            = Torch.sigmoid
 mkHasktorchActivation HasktorchLogSigmoid         = Torch.logSigmoid
+mkHasktorchActivation HasktorchSymlog             = \t -> Torch.sign t * Torch.log (Torch.abs t + 1)
 
 data MLPSpec
   = MLPSpec
