@@ -159,6 +159,7 @@ data MLP =
     , mlpLSTM                     :: Maybe MLP_LSTM -- Nothing: no LSTM, Just: numLayers, h0, c0, LSTM weights and biases
     , mlpOutputActivation         :: Maybe (Torch.Tensor -> Torch.Tensor)
     , mlpLossFun                  :: HasktorchLoss
+    , mlpIsPolicy                 :: Bool -- ^ Is actually the policy (for actor-critic implementation.)
     }
   deriving (Generic, Torch.Parameterized)
 
@@ -166,9 +167,9 @@ data MLP =
 
 
 instance Show MLP where
-  show (MLP layers _ _ mDrI mDr mLSTM _ loss) =
+  show (MLP layers _ _ mDrI mDr mLSTM _ loss isPol) =
     show layers <>
-    maybe "" (\(_, x) -> " w/ Inp Dropout(" ++ printf "%.3f" x ++ ")") mDrI <> maybe "" (\(_, x) -> " w/ Dropout" ++ printf "%.3f" x) mDr <> maybe "" (const " w/ LSTM") mLSTM <> "; Loss: " <> show loss
+    maybe "" (\(_, x) -> " w/ Inp Dropout(" ++ printf "%.3f" x ++ ")") mDrI <> maybe "" (\(_, x) -> " w/ Dropout" ++ printf "%.3f" x) mDr <> maybe "" (const " w/ LSTM") mLSTM <> "; Loss: " <> show loss <> " isPol: " <> show isPol
 
 replaceIdx :: [a] -> (Int, a) -> [a]
 replaceIdx xs (idx, x)
@@ -182,7 +183,7 @@ mergeLayers [] [] []             = []
 mergeLayers ls hs ds             = error $ "mergeLayers: Unexpected number of layers: " ++ show (length ls, length hs, length ds)
 
 hasktorchModel :: Bool -> MLP -> Maybe Int -> Torch.Tensor -> IO (Torch.Tensor, Maybe (Torch.Tensor, Torch.Tensor))
-hasktorchModel _ (MLP layers hiddenAct hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _) Nothing input = do
+hasktorchModel _ (MLP layers hiddenAct hiddenActSpec mDropoutInput mDropoutHidden Nothing outputAct _ isPol) Nothing input = do
   inputWithDropoutLayer <-
     case mDropoutInput of
       (Just (active, dropoutAlpha)) -> Torch.featureDropout dropoutAlpha active input
@@ -200,11 +201,15 @@ hasktorchModel _ (MLP layers hiddenAct hiddenActSpec mDropoutInput mDropoutHidde
         cur <- dropout . hiddenAct' . Torch.linear lay $ prevOut
         buildRecursive (idx + 1) cur ls
   allHidden <- buildRecursive 0 inputWithDropoutLayer (init layers)
-  return $ (, Nothing) $ fromMaybe id outputAct $ Torch.linear outputLayer allHidden
+  return $ (, Nothing) $ mSoftaxm $ fromMaybe id outputAct $ Torch.linear outputLayer allHidden
   where
+    mSoftaxm
+      | isPol = Torch.softmax (Torch.Dim 0)
+      | otherwise = id
     outputLayer = last layers
-hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct _) Nothing input =
-  return $ runLstmAndRest $ revApply input layer1
+hasktorchModel train (MLP layers hiddenActDef hiddenActSpec mDropoutInput mDropoutHidden (Just (MLP_LSTM numLayers nrInputs _ batchSize h0 c0 (LSTM.LSTMCell wih whh bih bhh))) outputAct _ _) Nothing input =
+  error "Not implemented"
+  -- return $ runLstmAndRest $ revApply input layer1
   where
     inpAndHiddenLayers = init layers
     outputLayer = last layers
@@ -289,6 +294,7 @@ instance Torch.Randomizable MLPSpec MLP where
         , mlpLSTM = mLSTMLayer
         , mlpOutputActivation = mkHasktorchActivation <$> outputActivation
         , mlpLossFun = fromMaybe def mLossFun
+        , mlpIsPolicy = False
         }
     where
       mkLayerSizes (a:(b:t)) = scanl shift (a, b) t
@@ -316,15 +322,15 @@ runHasktorch mlp@MLP{} nrAs nrAgents mWel st = do
   return [toAgents nrAs nrAgents output]
 
 
-trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Maybe (Int, Double) -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
-trainHasktorch period mSAM lRate optimizer nnConfig model@MLP{} chs
-  | nnConfig ^. trainingIterations <= 1 = trainHasktorch' period mSAM lRate optimizer nnConfig model chs
+trainHasktorch :: (Torch.Optimizer optimizer) => Period -> Maybe (Int, Double) -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> Maybe [[Double]] -> IO (MLP, optimizer)
+trainHasktorch period mSAM lRate optimizer nnConfig model@MLP{} chs mAdv
+  | nnConfig ^. trainingIterations <= 1 = trainHasktorch' period mSAM lRate optimizer nnConfig model chs mAdv
   | otherwise = run (nnConfig ^. trainingIterations) (model, optimizer)
   where run 0 res        = return res
-        run n (mdl, opt) = trainHasktorch' period mSAM lRate opt nnConfig mdl chs >>= run (n-1)
+        run n (mdl, opt) = trainHasktorch' period mSAM lRate opt nnConfig mdl chs mAdv >>= run (n-1)
 
-trainHasktorch' :: (Torch.Optimizer optimizer) => Period -> Maybe (Int, Double) -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> IO (MLP, optimizer)
-trainHasktorch' period mSAM lRate optimizer nnConfig model chs
+trainHasktorch' :: (Torch.Optimizer optimizer) => Period -> Maybe (Int, Double) -> Double -> optimizer -> NNConfig -> MLP -> [[((StateFeatures, ActionIndex), Double)]] -> Maybe [[Double]] -> IO (MLP, optimizer)
+trainHasktorch' period mSAM lRate optimizer nnConfig model chs mAdv
   --
   -- for LSTM see snd component of output from hasktorchModel
   --
@@ -333,10 +339,12 @@ trainHasktorch' period mSAM lRate optimizer nnConfig model chs
       actions = Torch.asTensor . map ((: []) . map (snd . fst)) $ chs
       targets = Torch.asTensor . map (map snd) $ chs
       nrRows = Torch.size 0 targets
-      nrNStep = Torch.size 1 targets
-      gather x = Torch.reshape [nrRows, nrNStep] $ Torch.gather x 2 actions False
+      nrAgents = Torch.size 1 targets
+      gather x = Torch.reshape [nrRows, nrAgents] $ Torch.gather x 2 actions False
       mkLossAndGrads :: MLP -> IO [Torch.Tensor]
-      mkLossAndGrads mdl = fmap (mkLossAndGrads' nnConfig mdl (Torch.flattenParameters mdl) targets . gather . fst) . hasktorchModel True mdl Nothing $ inputs
+      mkLossAndGrads mdl = case mAdv of
+        Nothing  -> fmap (mkLossAndGrads' nnConfig mdl (Torch.flattenParameters mdl) targets . gather . fst) . hasktorchModel True mdl Nothing $ inputs
+        Just adv -> fmap (mkLossAndGrads' nnConfig mdl (Torch.flattenParameters mdl) (Torch.asTensor adv) . gather . fst) . hasktorchModel True mdl Nothing $ inputs
   grads <- mkLossAndGrads model
   case mRho of
     Nothing -> Torch.runStep' model optimizer (Torch.Gradients grads) lRateTensor
@@ -391,18 +399,24 @@ mkLossAndGrads' nnConfig model params targets outputs =
   let lss = computeLoss targets outputs
       -- asDbl :: Double -> Double
       -- asDbl = id
-   in
     -- if any (isNaN' . asDbl . Torch.asValue) lss
     -- then error $ "Loss: " ++ show lss ++ "\n\nTargets: " ++ show targets ++ "\n\ninputs" ++ show outputs
     -- else
-      mClipGradNorm . foldl1 (zipWith (+)) . map (`Torch.grad` params) $ lss
+   in mClipGradNorm . foldl1 (zipWith (+)) . map (`Torch.grad` params) $ lss
   where
     nrRows = Torch.size 0 targets
     computeLoss t o = zipWith lossFun (Torch.split nrRows (Torch.Dim 0) t) (Torch.split nrRows (Torch.Dim 0) o)
-    lossFun t o =
-      case mlpLossFun model of
-        HasktorchHuber -> Torch.smoothL1Loss Torch.ReduceMean o t -- also known as the Huber loss (see docs): reduction -> outputs -> targets
-        HasktorchMSE   -> Torch.mseLoss t o                       -- targets -> outputs -> result
+    lossFun t o
+      | mlpIsPolicy model =
+        -- trace ("loss:" ++ show (Torch.mean $ t * Torch.log o))
+        Torch.mean (Torch.log o * t)
+         -- πLoss    = T.mean . fst . T.minDim (T.Dim 1) T.KeepDim
+         --            $ T.cat (T.Dim 1) [surr1, surr2]
+
+      | otherwise =
+        case mlpLossFun model of
+          HasktorchHuber -> Torch.smoothL1Loss Torch.ReduceMean o t -- also known as the Huber loss (see docs): reduction -> outputs -> targets
+          HasktorchMSE   -> Torch.mseLoss t o -- targets -> outputs -> result
     mClipGradNorm =
       case nnConfig ^. clipGradients of
         ClipByGlobalNorm maxNorm -> unsafePerformIO . clipGradNorm maxNorm

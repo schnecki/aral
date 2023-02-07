@@ -339,17 +339,17 @@ setDropoutValue :: Bool -> ARAL s as -> ARAL s as
 setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) setDropout
   where
     setDropout (Grenade tar wor tp cfg act agents wel)                  = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
-    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel nnActs) = Hasktorch (setDropoutMLP tar) (setDropoutMLP wo) tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel nnActs
+    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adamAC adam mlp wel nnActs) = Hasktorch (setDropoutMLP tar) (setDropoutMLP wo) tp cfg nrAct nrAg adamAC adam (setDropoutMLPSpec mlp) wel nnActs
     setDropoutMLPSpec x@MLPSpec {}                                              = x
     setDropoutMLPSpec (MLPSpecWDropoutLSTM mLoss lin act mDrI mDr mLSTM outAct) = MLPSpecWDropoutLSTM mLoss lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
-    setDropoutMLP (MLP lays hAct hSpecAct mInpDrpOut mHidDrpOut mLSTM mOutAct mLossFun) = MLP lays hAct hSpecAct ((val, ) . snd <$> mInpDrpOut) ((val, ) . snd <$> mHidDrpOut) mLSTM mOutAct mLossFun
+    setDropoutMLP (MLP lays hAct hSpecAct mInpDrpOut mHidDrpOut mLSTM mOutAct mLossFun isPol) = MLP lays hAct hSpecAct ((val, ) . snd <$> mInpDrpOut) ((val, ) . snd <$> mHidDrpOut) mLSTM mOutAct mLossFun isPol
 
 hasDropoutLayer :: ARAL s as -> Bool
 hasDropoutLayer = any isDropoutProxy . allProxies . view proxies
   where
-    isDropoutProxy (Grenade tar wor tp cfg act agents wel)                  = $(pureLogPrintDebug) "hasDropoutLayer not implemented for Grenade!" False
-    isDropoutProxy (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel nnActs) = isJust (hasktorchInputDropoutAlpha mlp) || isJust (hasktorchHiddenDropoutAlpha mlp)
-    isDropoutProxy _                                                        = False
+    isDropoutProxy (Grenade tar wor tp cfg act agents wel)                         = $(pureLogPrintDebug) "hasDropoutLayer not implemented for Grenade!" False
+    isDropoutProxy (Hasktorch tar wo tp cfg nrAct nrAg adamAC adam mlp wel nnActs) = isJust (hasktorchInputDropoutAlpha mlp) || isJust (hasktorchHiddenDropoutAlpha mlp)
+    isDropoutProxy _                                                               = False
 
 #ifdef DEBUG
 

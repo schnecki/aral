@@ -183,8 +183,7 @@ instance ExperimentDef (ARAL St Act)
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
-    let inverseSt | isAnn rl = Just mInverseSt
-                  | otherwise = Nothing
+    let inverseSt = Nothing
     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
@@ -226,8 +225,8 @@ nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemorySingle -- ReplayMemoryPerAction
-    , _trainBatchSize = 8
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
+    , _trainBatchSize = 20
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
@@ -250,7 +249,7 @@ borlSettings =
     { _workersMinExploration = [0.1, 0.2, 0.3]
     , _nStep = 1
     , _independentAgents = 1
-    , _samplingSteps = 8
+    , _samplingSteps = 4
     }
 
 -- | ARAL Parameters.
@@ -343,23 +342,24 @@ usermode :: IO ()
 usermode = do
   $(initLogger) LogStdOut
   enableRegNetLogging LogStdOut
+  setMinLogLevel LogAll
 
   alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainHasktorchAsSAM Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorchAsSAMAC True Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
-  let inverseSt | isAnn rl = Just mInverseSt
-                | otherwise = Nothing
+  -- let inverseSt | isAnn rl = Just mInverseSt
+  --               | otherwise = Nothing
 
-  askUser inverseSt True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
@@ -367,18 +367,22 @@ usermode = do
 
 regConf :: St -> RegressionConfig
 regConf _ = def
-  { regConfigBatchSize               = 64
-  , regConfigGradModelErrorThreshold = 1e-5
+  {
+  -- {
+    regConfigBatchSize               = 8
+    -- , regConfigGradModelErrorThreshold = 1e-5
   , regConfigGradDecentMaxSteps = 10
-  , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
-                                       GradientDescent
-                                       -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
-  , regConfigMinCorrelation          = 0.01
-  , regConfigStartup                 = def
-  , regConfigClipOutput              = Nothing
+  -- , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
+  --                                      GradientDescent
+  --                                      -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
+  -- , regConfigMinCorrelation          = 0.01
+  , regConfigStartup                 = def { regConfigPeriodsTrainStart = 1000 }
+  -- , regConfigClipOutput              = Nothing
+  , regConfigShareWelOut     = False
+  , regConfigModelUpdateRate = ExponentialDecaySetup Nothing 0.99 50000 1
   , regConfigModel                   =
     -- RegressionModels True $ VB.fromList [RegModelLayer True RegTermNonLinear $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermQuadratic]]
-    RegressionModels True $ VB.fromList [RegModelAll RegTermLinear] -- ^ Models to use for Regression: Default: @RegressionModels True $ VB.fromList [RegModelAll RegTermLinear]@
+    RegressionModels True $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermNonLinear]
   }
 
 
@@ -402,8 +406,9 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 
 
 netInp :: St -> V.Vector Double
-netInp st = V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
-  -- V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+netInp st =
+  -- V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
+  V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Double
 tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
@@ -455,9 +460,9 @@ actionFun _ tp s [Down]   = goalState moveDown tp s
 actionFun _ tp s [Left]   = goalState moveLeft tp s
 actionFun _ tp s [Right]  = goalState moveRight tp s
 -- actionFun _ tp s [Random, Random] = goalState moveRand tp s
-actionFun _ tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
+actionFun a tp s [x, y] = do
+  (r1, s1, e1) <- actionFun a tp s [x]
+  (r2, s2, e2) <- actionFun a tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
 actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 

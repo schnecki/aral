@@ -48,9 +48,13 @@ showFloat = printf ("%+." ++ show 4 ++ "f")
 
 
 calcFeatureImportance :: ARAL s as -> IO [FeatureImportance]
-calcFeatureImportance aral = fmap (Data.List.sortBy (compare `on` abs . deltaMean) . concat) . (\px -> mapM (calcFeatureImportance px sFeat) [0 .. VS.length sFeat - 1]) . getPx $ aral
+calcFeatureImportance aral =
+  fmap (Data.List.sortBy (compare `on` abs . deltaMean) . concat) . (\px -> mapM (calcFeatureImportance px (mkFeats px)) [0 .. VS.length sFeat - 1]) . getPx $ aral
   where
     sFeat = (aral ^. featureExtractor) (aral ^. s)
+    mkFeats px
+      | px ^?! proxyNNConfig . autoNormaliseInput && isHasktorch px = welfordMeanUnsafe $ px ^?! proxyWelford
+      | otherwise = $(pureLogPrintInfoText) "calcFeatureImportance unreliable if autoNormaliseInput = False!" sFeat
     runANN :: (MonadIO m) => StateFeatures -> Proxy -> m Values
     runANN features px = do
       emptyCache
@@ -61,22 +65,23 @@ calcFeatureImportance aral = fmap (Data.List.sortBy (compare `on` abs . deltaMea
       | otherwise = 1
     mkRandInputs :: Double -> Double -> IO [Double]
     mkRandInputs mean stdDev = replicateM n (randomRIO (mean - 3 * stdDev, mean + 3 * stdDev))
-    avgOuts = (VB.map (/fromIntegral nNormal)) . foldl1 (VB.zipWith (+))
+    avgOuts = (VB.map (/ fromIntegral nNormal)) . foldl1 (VB.zipWith (+))
     calcFeatureImportance :: Proxy -> StateFeatures -> Int -> IO [FeatureImportance]
-    calcFeatureImportance px ft i = do
-      outs <- mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)]))
-      out <- avgOuts <$> replicateM nNormal (avgOut . fromValues <$> runANN sFeat (getPx aral)) -- TODO: run multiple times for ANNs with Dropout
-      calcRes i . mkMeanAndVariance i out $ outs
+    calcFeatureImportance px ft i
+      | isHasktorch px || isGrenade px = do
+        outs <- mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)]))
+        out <- avgOuts <$> replicateM nNormal (avgOut . fromValues <$> runANN ft (getPx aral)) -- TODO: run multiple times for ANNs with Dropout
+        calcRes i . mkMeanAndVariance i out $ outs
       where
         wel = _proxyHTWelford px
         (means, _, variance) = finalize wel
         mean = means VS.! i
         stdDev = sqrt (variance VS.! i)
+    calcFeatureImportance _ _ _ = $(pureLogPrintInfoText) "calcFeatureImportance only implemented for Hasktorch and Grenade" (return [])
     mkMeanAndVariance :: Int -> VB.Vector Double -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
     mkMeanAndVariance i outBefore = finalize . addValues newWelfordAggregate . VB.concat . map (VB.map (VB.zipWith subtract outBefore . VB.convert) . fromValues)
     calcRes :: Int -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double)) -> IO [FeatureImportance]
     calcRes i (means, _, variances) = do
-      -- out <- avgOut . fromValues <$> runANN sFeat (getPx aral)
       forM [0 .. VB.length means - 1] $ \actionNr -> do
         let mean = means VB.! actionNr
             stdDev = sqrt $ variances VB.! actionNr
@@ -168,7 +173,7 @@ plotProxyFunction  inclIterToFilenames dim1 dim2 _ lookupType _ =
 
 -- | Takes node index, two dimension dim1 and dim2 (which both must be < nr of Coefficients) for x axis (input dim) and -/+ StdDev to draw (dim2) to plot and model.
 plotHasktorchAction :: Bool -> Int -> Int -> Int -> ARAL s as -> LookupType -> Proxy -> IO ()
-plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hasktorch netT netW tp nnCfg nrNodes 1 opt mdl wel _)
+plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hasktorch netT netW tp nnCfg nrNodes 1 adamAC opt mdl wel _)
   | isWelfordExistingAggregateEmpty wel = $(logPrintErrorText) $ "Cannot plot regression node " <> tshow nodeIdx <> ". Add data first!"
   | nodeIdx >= nrNodes = $(logPrintErrorText) $ "Node index out of range: " <> tshow nodeIdx <> "<" <> tshow nrNodes
   | dim1 >= len = $(logPrintErrorText) $ "Dimension 1 out of range: " <> tshow dim1 <> "<" <> tshow len
@@ -256,7 +261,7 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
   where
     len = VS.length (welfordMeanUnsafe wel)
     tshow = T.pack . show
-plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 _ lookupType px@(Hasktorch netT netW tp nnCfg nrNodes _ opt mdl wel _) =
+plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 _ lookupType px@(Hasktorch netT netW tp nnCfg nrNodes _ _ opt mdl wel _) =
   $(logPrintErrorText) "plotHasktorchAction: Not defined for nrAgents > 1"
 plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 _ lookupType _ = error "plotHasktorchAction: Should not be called on non-Hasktorch Proxy"
 

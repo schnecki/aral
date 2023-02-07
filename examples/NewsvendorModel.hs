@@ -124,7 +124,7 @@ actionFun _ tp (St qInt) [Stop] = do
     else do
       let reward = retailPrice * q - purchaseCosts - lostSalesPrice * (x - q)
       return (Reward reward, St 0, useEpisodeEnd)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st = [V.fromList [True, True]]

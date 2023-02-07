@@ -411,9 +411,9 @@ actionFun _ tp s [Down]   = goalState moveDown tp s
 actionFun _ tp s [Left]   = goalState moveLeft tp s
 actionFun _ tp s [Right]  = goalState moveRight tp s
 -- actionFun _ tp s [Random, Random] = goalState moveRand tp s
-actionFun _ tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
+actionFun a tp s [x, y] = do
+  (r1, s1, e1) <- actionFun a tp s [x]
+  (r2, s2, e2) <- actionFun a tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
 actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 

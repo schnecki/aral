@@ -247,8 +247,8 @@ instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents wel) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put wel
-  put (Hasktorch t w tp conf nr agents adam mdl wel nnActs) =
-    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl >> put wel >> put nnActs
+  put (Hasktorch t w tp conf nr agents adamAC adam mdl wel nnActs) =
+    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adamAC >> put adam >> put mdl >> put wel >> put nnActs
   put (RegressionProxy m acts nnCfg) = put (4 :: Int) >> put m >> put acts >> put nnCfg
   get =
     fmap force $! do
@@ -278,6 +278,7 @@ instance Serialize Proxy where
           conf <- get
           nr <- get
           agents <- get
+          adamAC <- get
           adam <- get
           mdl <- get
           wel <- get
@@ -290,8 +291,8 @@ instance Serialize Proxy where
               w <- Torch.sample mdl
               return $
                 if null paramsT
-                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel mSAM
-                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel mSAM
+                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adamAC adam mdl wel mSAM
+                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adamAC adam mdl wel mSAM
         4 -> RegressionProxy <$> get <*> get <*> get
         _ -> error $ "Unknown constructor for proxy: " <> show c
 

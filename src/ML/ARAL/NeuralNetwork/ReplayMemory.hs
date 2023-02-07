@@ -168,7 +168,7 @@ addToReplayMemories _ e (ReplayMemoriesPerActions nrAs (Just tmpRepMem) rs) = do
 addToReplayMemory :: NumberOfActions -> InternalExperience -> ReplayMemory -> IO ReplayMemory
 addToReplayMemory nrAs !e (ReplayMemory vec sz idx maxIdx) = do
   VM.write vec (fromIntegral idx) e
-  return $! ReplayMemory vec sz ((idx+1) `mod` fromIntegral sz) (min (maxIdx+1) (sz-1))
+  return $! ReplayMemory vec sz ((idx + 1) `mod` fromIntegral sz) (min (maxIdx + 1) (sz - 1))
 
 
 type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are consecutive.
@@ -176,18 +176,19 @@ type AllExpAreConsecutive = Bool -- ^ Indicates whether all experiences are cons
 -- | Get a list of random input-output tuples from the replay memory. Returns a list at least the length of the batch size with a list of consecutive experiences without a terminal state in between.
 -- In case a terminal state is detected the list is split and the first list exeecds the batchsize.
 getRandomReplayMemoryElements :: AllExpAreConsecutive -> NStep -> Batchsize -> ReplayMemory -> IO [[Experience]]
-getRandomReplayMemoryElements _ nStep _ (ReplayMemory _ _ _ maxIdx) | maxIdx < nStep = return []
-getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) = do -- get consecutive experiences
+getRandomReplayMemoryElements _ nStep _ (ReplayMemory _ _ _ maxIdx) | maxIdx < nStep - 1 = return []
+getRandomReplayMemoryElements True nStep bs (ReplayMemory vec size _ maxIdx) -- get consecutive experiences
+ = do
   let len = max 1 (bs `div` nStep)
-  rands <- replicateM len (randomRIO (0, max 0 maxIdx - nStep + 1)) -- can start anywhere
-  let idxes = map (\r -> [r, r+1 .. r + nStep - 1]) rands
+  rands <- replicateM len (randomRIO (0, max 0 (maxIdx - nStep + 1))) -- can start anywhere
+  let idxes = map (\r -> [r,r + 1 .. r + nStep - 1]) rands
   concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
     splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
 getRandomReplayMemoryElements False nStep bs (ReplayMemory vec size _ maxIdx) = do
   let len = max 1 (bs `div` nStep)
-  rands <- map (*nStep) <$> replicateM len (randomRIO (0, max 0 (maxIdx - nStep + 1) `div` nStep)) -- can only start in accordance with n-step
-  let idxes = map (\r -> [r, r+1 .. r + nStep - 1]) rands
+  rands <- map (* nStep) <$> replicateM len (randomRIO (0, max 0 (maxIdx - nStep + 1) `div` nStep)) -- can only start in accordance with n-step
+  let idxes = map (\r -> [r,r + 1 .. r + nStep - 1]) rands
   concat <$> mapM (fmap splitTerminal . mapM (VM.read vec)) idxes
   where
     splitTerminal xs = filter (not . null) $ splitList isTerminal (map fromInternal xs)
