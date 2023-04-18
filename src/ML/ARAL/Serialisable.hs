@@ -15,36 +15,36 @@
 
 module ML.ARAL.Serialisable where
 
-import           Control.Applicative          ((<|>))
-import           Control.Arrow                (first)
+import           Control.Applicative     ((<|>))
+import           Control.Arrow           (first)
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (foldM_, zipWithM_)
+import           Control.Monad           (foldM_, zipWithM_)
 import           Control.Monad.IO.Class
-import qualified Data.ByteString              as BS
-import           Data.Constraint              (Dict (..))
+import qualified Data.ByteString         as BS
+import           Data.Constraint         (Dict (..))
 import           Data.Int
-import           Data.List                    (foldl')
-import qualified Data.Map                     as M
+import           Data.List               (foldl')
+import           Data.List.Singletons
+import qualified Data.Map                as M
 import           Data.Serialize
-import           Data.Singletons              (sing, withSingI)
-import           Data.Singletons.Prelude.List
-import           Data.Typeable                (Typeable)
-import qualified Data.Vector                  as VB
-import qualified Data.Vector.Mutable          as VM
+import           Data.Singletons         (sing, withSingI)
+import           Data.Typeable           (Typeable)
+import qualified Data.Vector             as VB
+import qualified Data.Vector.Mutable     as VM
 import qualified Data.Vector.Serialize
-import qualified Data.Vector.Storable         as V
+import qualified Data.Vector.Storable    as V
 import           Data.Word
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import           System.IO
 import           System.IO.Unsafe
-import qualified Torch                        as Torch
-import qualified Torch.Optim                  as Torch
-import qualified Torch.Serialize              as Torch
-import           Unsafe.Coerce                (unsafeCoerce)
+import qualified Torch                   as Torch
+import qualified Torch.Optim             as Torch
+import qualified Torch.Serialize         as Torch
+import           Unsafe.Coerce           (unsafeCoerce)
 
 import           ML.ARAL.Algorithm
 import           ML.ARAL.NeuralNetwork

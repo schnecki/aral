@@ -29,72 +29,16 @@ import           System.Random
 
 import           ML.ARAL.Types
 
-
------------------------------- Replay Memories ------------------------------
-
-type IntX = Int16
+type IntX = Double -- Int16
 
 shift :: Double
 shift = 1000 -- 100 for Int8, 100 or 1000 for Int16
 
 
-data ReplayMemories
-  = ReplayMemoriesUnified !NumberOfActions !ReplayMemory                                      -- ^ All experiences are saved in a single replay memory.
-  | ReplayMemoriesPerActions !NumberOfActions !(Maybe ReplayMemory) !(VB.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of
-                                                                                              -- experiences. For multiple agents the action that is used to save the experience is selected randomly.
-  deriving (Generic)
-
-instance Show ReplayMemories where
-  show (ReplayMemoriesUnified _ r)       = "Unified " <> show r
-  show (ReplayMemoriesPerActions _ _ rs) = "Per Action " <> show (VB.head rs)
-
-replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
-replayMemories _ f (ReplayMemoriesUnified nr rm)          = ReplayMemoriesUnified nr <$> f rm
-replayMemories idx f (ReplayMemoriesPerActions nr tmp rs) = (\x -> ReplayMemoriesPerActions nr tmp (rs VB.// [(idx, x)])) <$> f (rs VB.! idx)
-
-
-instance NFData ReplayMemories where
-  rnf (ReplayMemoriesUnified nr rm)        = rnf nr `seq` rnf rm
-  rnf (ReplayMemoriesPerActions nr tmp rs) = rnf nr `seq` rnf1 tmp `seq` rnf rs
-
------------------------------- Replay Memory ------------------------------
-
--- ^ Experience for the outside world. Internal representation is more memory efficient, see @InternalExperience@. The invariant is that the state features are in (-1,1).
-type Experience
-   = ( (StateFeatures, DisallowedActionIndicies)     -- ^ State Features s & disallowed actions per agent
-     , ActionChoice                                  -- ^ True, iff the action was randomly chosen, actionIndex a
-     , RewardValue                                   -- ^ Reward r
-     , (StateNextFeatures, DisallowedActionIndicies) -- ^ State features s' & disallowed actions per agent
-     , EpisodeEnd                                    -- ^ True, iff it is the end of the episode
-      )
-
--- ^ Internal representation, which is more memory efficient. The invariant is that the state features are in (-1,1).
+-- ^ Internal representation, which is more memory efficient. The invariant is that the state features are in (-32,32).
 type InternalExperience
    = ((VS.Vector IntX, Maybe (VB.Vector (VS.Vector Word8))), ActionChoice, RewardValue, (VS.Vector IntX, Maybe (VB.Vector (VS.Vector Word8))), EpisodeEnd, Word8)
 
--- ^ Convert to internal representation.
-toInternal :: Experience -> InternalExperience
-toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActionIndicies dis'), eps) = ((VS.map toIntX stFt, toDis dis), act, r, (VS.map toIntX stFt', toDis dis'), eps, fromIntegral $ VB.length dis)
-  where
-    toDis :: VB.Vector (VS.Vector ActionIndex) -> Maybe (VB.Vector (VS.Vector Word8))
-    toDis nas | all VS.null nas = Nothing
-              | otherwise = Just $ VB.map (VS.map fromIntegral) nas
-    toIntX :: Double -> IntX
-    toIntX !x = fromIntegral (round (x * shift) :: Int)
-
-
--- ^ Convert from internal representation.
-fromInternal :: InternalExperience -> Experience
-fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromIntX stFt, fromDis dis), act, r, (VS.map fromIntX stFt', fromDis dis'), eps)
-  where
-    fromDis :: Maybe (VB.Vector (VS.Vector Word8)) -> DisallowedActionIndicies
-    fromDis Nothing    = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
-    fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
-    fromIntX :: IntX -> Double
-    fromIntX !x = fromIntegral x / shift
-
-
--------------------- Replay Memory --------------------
 
 data ReplayMemory = ReplayMemory
   { _replayMemoryVector :: !(VM.IOVector InternalExperience) -- ^ Memory
@@ -107,8 +51,68 @@ makeLenses ''ReplayMemory
 instance Show ReplayMemory where
   show (ReplayMemory _ sz idx maxIdx) = "Replay Memory with size " <> show sz <> ". Next index: " <> show idx <> "/" <> show maxIdx
 
+
 instance NFData ReplayMemory where
   rnf (ReplayMemory !vec s idx mx) = rnf s `seq` rnf idx `seq` rnf mx
+
+
+------------------------------ Replay Memories ------------------------------
+
+
+data ReplayMemories
+  = ReplayMemoriesUnified !NumberOfActions !ReplayMemory                                      -- ^ All experiences are saved in a single replay memory.
+  | ReplayMemoriesPerActions !NumberOfActions !(Maybe ReplayMemory) !(VB.Vector ReplayMemory) -- ^ Split replay memory size among different actions and choose bachsize uniformly among all sets of
+                                                                                              -- experiences. For multiple agents the action that is used to save the experience is selected randomly.
+  deriving (Generic)
+
+
+replayMemories :: ActionIndex -> Lens' ReplayMemories ReplayMemory
+replayMemories _ f (ReplayMemoriesUnified nr rm)          = ReplayMemoriesUnified nr <$> f rm
+replayMemories idx f (ReplayMemoriesPerActions nr tmp rs) = (\x -> ReplayMemoriesPerActions nr tmp (rs VB.// [(idx, x)])) <$> f (rs VB.! idx)
+
+instance Show ReplayMemories where
+  show (ReplayMemoriesUnified _ r)       = "Unified " <> show r
+  show (ReplayMemoriesPerActions _ _ rs) = "Per Action " <> show (VB.head rs)
+
+instance NFData ReplayMemories where
+  rnf (ReplayMemoriesUnified nr rm)        = rnf nr `seq` rnf rm
+  rnf (ReplayMemoriesPerActions nr tmp rs) = rnf nr `seq` rnf1 tmp `seq` rnf rs
+
+------------------------------ Replay Memory ------------------------------
+
+-- ^ Experience for the outside world. Internal representation is more memory efficient, see @InternalExperience@. The invariant is that the state features are in (-32,32).
+type Experience
+   = ( (StateFeatures, DisallowedActionIndicies)     -- ^ State Features s & disallowed actions per agent
+     , ActionChoice                                  -- ^ True, iff the action was randomly chosen, actionIndex a
+     , RewardValue                                   -- ^ Reward r
+     , (StateNextFeatures, DisallowedActionIndicies) -- ^ State features s' & disallowed actions per agent
+     , EpisodeEnd                                    -- ^ True, iff it is the end of the episode
+      )
+
+
+-- ^ Convert to internal representation.
+toInternal :: Experience -> InternalExperience
+toInternal ((stFt, DisallowedActionIndicies dis), act, r, (stFt', DisallowedActionIndicies dis'), eps) = ((VS.map toIntX stFt, toDis dis), act, r, (VS.map toIntX stFt', toDis dis'), eps, fromIntegral $ VB.length dis)
+  where
+    toDis :: VB.Vector (VS.Vector ActionIndex) -> Maybe (VB.Vector (VS.Vector Word8))
+    toDis nas | all VS.null nas = Nothing
+              | otherwise = Just $ VB.map (VS.map fromIntegral) nas
+    toIntX :: Double -> IntX
+    toIntX !x = x -- fromIntegral (round (x * shift) :: Int)
+
+
+-- ^ Convert from internal representation.
+fromInternal :: InternalExperience -> Experience
+fromInternal ((stFt, dis), act, r, (stFt', dis'), eps, nrAg) = ((VS.map fromIntX stFt, fromDis dis), act, r, (VS.map fromIntX stFt', fromDis dis'), eps)
+  where
+    fromDis :: Maybe (VB.Vector (VS.Vector Word8)) -> DisallowedActionIndicies
+    fromDis Nothing    = DisallowedActionIndicies $ VB.generate (fromIntegral nrAg) (const VS.empty)
+    fromDis (Just nas) = DisallowedActionIndicies $ VB.map (VS.map fromIntegral) nas
+    fromIntX :: IntX -> Double
+    fromIntX !x = x -- fromIntegral x / shift
+
+
+-------------------- Replay Memory --------------------
 
 
 -- | Add an experience to the Replay Memory.

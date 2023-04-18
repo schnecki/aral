@@ -33,7 +33,10 @@ import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
-import           Data.List                          (find, foldl', groupBy, intercalate, maximumBy, partition, sortBy, transpose)
+import           Data.List                          (find, foldl', groupBy,
+                                                     intercalate, maximumBy,
+                                                     partition, sortBy,
+                                                     transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
@@ -104,23 +107,23 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> IO (ARAL s as)
+steps :: (NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> Integer -> IO (ARAL s as)
 steps !aral nr =
   fmap force $!
   liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) aral [0 .. nr - 1]
 
 
-step :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> IO (ARAL s as)
+step :: (NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> IO (ARAL s as)
 step !aral =
   fmap force $!
   nextAction aral >>= stepExecute aral
 
 -- | This keeps the MonadIO alive and force evaluation of ARAL in every step.
-stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
+stepM :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
 stepM !aral = nextAction aral >>= stepExecute aral >>= \b@ARAL{} -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 1000 steps.
-stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
+stepsM :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
 stepsM !aral !nr = do
   aral' <- foldM (\b _ -> nextAction b >>= stepExecute b) aral [1 .. min maxNr nr]
   if nr > maxNr
@@ -129,7 +132,7 @@ stepsM !aral !nr = do
   where
     maxNr = 1000
 
-stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
 stepExecute aral (as, workerActions) = do
   let state = aral ^. s
       period = aral ^. t + length (aral ^. futureRewards)
@@ -201,7 +204,7 @@ runWorkerAction aral (WorkerState wNr state replMem oldFutureRewards rew) as = d
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
-     forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as)
+     forall m s as. (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as)
   => AgentType
   -> (Int, Bool, ARAL s as)
   -> RewardFutureData s
@@ -260,7 +263,7 @@ updateMinMax agTp aral as calc = do
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => AgentType -> ARAL s as -> RewardFutureData s -> m (ARAL s as)
+execute :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => AgentType -> ARAL s as -> RewardFutureData s -> m (ARAL s as)
 execute agTp aral (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
   aral <- if isMainAgent agTp
@@ -364,7 +367,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ hasLocked "getStateFeatures" $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => ARAL s as -> m (ARAL s as)
+writeDebugFiles :: (MonadIO m, NFData s, NFData as, Eq as, RewardFuture s) => ARAL s as -> m (ARAL s as)
 writeDebugFiles aral = do
   let isDqn = isAlgDqn (aral ^. algorithm) || isAlgDqnAvgRewardAdjusted (aral ^. algorithm)
   let isAnn

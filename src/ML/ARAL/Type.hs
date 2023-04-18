@@ -96,13 +96,12 @@ import           Control.Monad                               (join, replicateM)
 import           Control.Monad.IO.Class                      (liftIO)
 import           Data.Default                                (def)
 import           Data.List                                   (foldl', genericLength, zipWith3)
+import           Data.List.Singletons
 import qualified Data.Map.Strict                             as M
 import           Data.Maybe                                  (catMaybes, fromMaybe)
 import qualified Data.Proxy                                  as Type
 import           Data.Serialize
 import           Data.Singletons                             (Sing, SingI, SomeSing (..), sing)
-import           Data.Singletons.Prelude.List
-import           Data.Singletons.TypeLits
 import qualified Data.Text                                   as T
 import           Data.Typeable                               (Typeable)
 import qualified Data.Vector                                 as VB
@@ -111,6 +110,8 @@ import qualified Data.Vector.Storable                        as V
 import           EasyLogger
 import           GHC.Generics
 import           GHC.TypeLits
+import           GHC.TypeLits.KnownNat
+import           GHC.TypeLits.Singletons
 import           Grenade
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.IO.Unsafe                            (unsafePerformIO)

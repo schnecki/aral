@@ -46,10 +46,10 @@ where
 import           Control.DeepSeq
 import           Control.Lens
 import           Data.Constraint                             (Dict (..))
+import           Data.List.Singletons
 import qualified Data.Map.Strict                             as M
 import           Data.Serialize
 import           Data.Singletons                             (SingI)
-import           Data.Singletons.Prelude.List
 import qualified Data.Text                                   as Text
 import           Data.Typeable                               (Typeable, cast)
 import qualified Data.Vector                                 as VB

@@ -163,9 +163,10 @@ insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs
     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 (Just !replMems))
   | (1 + period) `mod` (borl ^. settings . samplingSteps) /= 0 || period < fromIntegral (replayMemoriesSize replMems) = do
-  -- regress: | (1 + period) `mod` (config ^. trainBatchSize) /= 0 || period <= fromIntegral (replayMemoriesSize replMems) - 1 = do
     replMem' <- liftIO $ addToReplayMemories (borl ^. settings . nStep) (stateActs, as, rew, stateNextActs, episodeEnd) replMems
     (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
+    let exp :: Experience
+        exp = (stateActs, as, rew, stateNextActs, episodeEnd)
     let aNr = VB.map snd as
     let aRand = or $ VB.map fst as
     let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr rew aRand val px) mVal
@@ -338,8 +339,8 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
 insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs config) = do
-
-  return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
+  -- trace("gr: " ++ unlines (map show groundTruthValues) )
+   return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
   -- | (1 + period) `mod` (config ^. trainBatchSize) /= 0 =
   -- | otherwise = return px
   where

@@ -16,14 +16,18 @@ module ML.ARAL.Pretty
     ) where
 
 
-import           Control.Arrow                       (first, second, (&&&), (***))
+import           Control.Arrow                       (first, second, (&&&),
+                                                      (***))
 import           Control.Lens
 import           Control.Monad                       (join, when)
 import           Control.Monad.IO.Class
 import           Data.Function                       (on)
-import           Data.List                           (find, foldl', intercalate, intersperse, nub, sort, sortBy)
+import           Data.List                           (find, foldl', intercalate,
+                                                      intersperse, nub, sort,
+                                                      sortBy)
 import qualified Data.Map.Strict                     as M
-import           Data.Maybe                          (fromMaybe, isJust, listToMaybe)
+import           Data.Maybe                          (fromMaybe, isJust,
+                                                      listToMaybe)
 import qualified Data.Set                            as S
 import qualified Data.Text                           as T
 import qualified Data.Vector                         as VB
@@ -43,7 +47,10 @@ import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Parameters
 import qualified ML.ARAL.Proxy                       as P
-import           ML.ARAL.Proxy.Ops                   (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
+import           ML.ARAL.Proxy.Ops                   (LookupType (..),
+                                                      getMinMaxVal,
+                                                      lookupNeuralNetwork,
+                                                      mkNNList)
 import           ML.ARAL.Proxy.Proxies
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
@@ -100,10 +107,10 @@ modifierSubtract borl px lk k v0 = do
   return (v0 - vS)
   where agents = px ^?! proxyNrAgents
 
-prettyTable :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadIO m, Show s, Show as) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
-prettyTableRows :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
+prettyTableRows :: (MonadIO m, Show s, Show as) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ _ ->
@@ -111,27 +118,26 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy layer@(RegressionLayer nodes _ _ step) aNr _ ->
+    P.RegressionProxy layer@(RegressionLayer nodes welInp _ step) aNr _ ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
-          mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+          mkInput k =
+            text (filter (/= '"') $ show $ map printDouble (V.toList k))
+            -- maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
           cfg = regNodeConfig (VB.head nodes)
           mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
-          mkInputs xs =
-            nub $
-            concatMap
-              (map (VB.convert  . obsInputValues) . VB.toList . regNodeObservations)
-               -- filter ((>= step - 1) . obsStep) .
-               -- concatMap (concatMap VB.toList . concatMap M.elems . M.elems) . VB.toList . regNodeObservations)
-              (VB.toList xs)
-          inputs = case mkInputs nodes of
-            xs | length xs `div` VB.length nodes <= 25 -> take 100 xs
-            xs                                         -> take 10 xs
+          mkInputs xs = nub $ concatMap (map (VB.convert . obsInputValues) . VB.toList . (\x -> regNodeObservations x VB.++ regNodeOldObservations x)) (VB.toList xs)
+          inputs =
+            case mkInputs nodes of
+              xs
+                | length xs `div` VB.length nodes <= 25 -> take 100 xs
+              xs -> take 4 xs
           -- inputs = nnCfg ^. prettyPrintElems
           inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0 .. aNr - 1]) inputs
        in fmap (++ [text "" $$ text (regressionLayerFormula layer) $$ text "" $$ text (show cfg)]) $
           -- fmap (++ [text "" $$ text (show cfg)]) $
           mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
+          -- sortBy (compare `on` fst . fst) $
+          concatMap (\((st, a), v) -> [((st, a), AgentValue v), ((RegNet.normaliseStateFeatureUnbounded welInp st, a), AgentValue v)]) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
@@ -184,7 +190,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx =
 
 
 prettyTablesState ::
-     (MonadIO m, Show s, Show as, Ord s)
+     (MonadIO m, Show s, Show as)
   => ARAL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
@@ -234,7 +240,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
-prettyARALTables :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> ARAL s as -> m Doc
+prettyARALTables :: (MonadIO m, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> ARAL s as -> m Doc
 prettyARALTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -500,19 +506,19 @@ prettyARALHead' printRho prettyStateFun borl = do
                 )
 
 
-prettyARAL :: (Ord s, Show s, Show as) => ARAL s as -> IO Doc
+prettyARAL :: (Show s, Show as) => ARAL s as -> IO Doc
 prettyARAL = prettyARALWithStInverse Nothing
 
-prettyARALM :: (MonadIO m, Ord s, Show s, Show as) => ARAL s as -> m Doc
+prettyARALM :: (MonadIO m, Show s, Show as) => ARAL s as -> m Doc
 prettyARALM = prettyARALTables Nothing True True True
 
-prettyARALMWithStInverse :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
+prettyARALMWithStInverse :: (MonadIO m, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
 prettyARALMWithStInverse mStInverse = prettyARALTables mStInverse True True True
 
 
-prettyARALWithStInverse :: (Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> IO Doc
+prettyARALWithStInverse :: (Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> IO Doc
 prettyARALWithStInverse mStInverse borl =
   prettyARALTables mStInverse True True True borl
 
-instance (Ord s, Show s, Show as) => Show (ARAL s as) where
+instance (Show s, Show as) => Show (ARAL s as) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyARAL borl
