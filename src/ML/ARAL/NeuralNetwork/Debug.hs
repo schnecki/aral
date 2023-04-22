@@ -12,7 +12,9 @@ import           Control.Lens
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Function                               (on)
-import           Data.List                                   (foldl', intercalate, sortBy)
+import           Data.List                                   (foldl',
+                                                              intercalate,
+                                                              sortBy)
 import qualified Data.Map.Strict                             as M
 import           Data.Maybe                                  (maybe)
 import           Data.Ord
@@ -38,7 +40,8 @@ import           ML.ARAL.NeuralNetwork.ReplayMemory
 import           ML.ARAL.NeuralNetwork.Scaling
 import           ML.ARAL.Proxy
 import           ML.ARAL.Settings
-import           ML.ARAL.Step                                (hasDropoutLayer, setDropoutValue)
+import           ML.ARAL.Step                                (hasDropoutLayer,
+                                                              setDropoutValue)
 import           ML.ARAL.Type
 import           ML.ARAL.Types
 
@@ -79,7 +82,7 @@ calcFeatureImportance aral =
         stdDev = sqrt (variance VS.! i)
     calcFeatureImportance _ _ _ = $(pureLogPrintInfoText) "calcFeatureImportance only implemented for Hasktorch and Grenade" (return [])
     mkMeanAndVariance :: Int -> VB.Vector Double -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
-    mkMeanAndVariance i outBefore = finalize . addValues newWelfordAggregate . VB.concat . map (VB.map (VB.zipWith subtract outBefore . VB.convert) . fromValues)
+    mkMeanAndVariance i outBefore = finalize . addValues (newWelfordAggregate []) . VB.concat . map (VB.map (VB.zipWith subtract outBefore . VB.convert) . fromValues)
     calcRes :: Int -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double)) -> IO [FeatureImportance]
     calcRes i (means, _, variances) = do
       forM [0 .. VB.length means - 1] $ \actionNr -> do
@@ -264,4 +267,3 @@ plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 rl lookupType px@(Hask
 plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 _ lookupType px@(Hasktorch netT netW tp nnCfg nrNodes _ _ opt mdl wel _) =
   $(logPrintErrorText) "plotHasktorchAction: Not defined for nrAgents > 1"
 plotHasktorchAction inclIterToFilenames nodeIdx dim1 dim2 _ lookupType _ = error "plotHasktorchAction: Should not be called on non-Hasktorch Proxy"
-
