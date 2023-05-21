@@ -37,7 +37,7 @@ import           Prelude                hiding (Left, Right)
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini"
+    { _experimentBaseName = "parallel"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000

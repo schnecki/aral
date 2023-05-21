@@ -138,7 +138,7 @@ expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "newsvendor"
     , _experimentInfoParameters = [isNN]
-    , _experimentRepetitions = 40
+    , _experimentRepetitions = 30
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
@@ -199,56 +199,57 @@ instance RewardFuture St where
 --   | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
 
 
--- instance ExperimentDef (ARAL St Act)
---   -- type ExpM (ARAL St Act) = TF.SessionT IO
---                                           where
---   type ExpM (ARAL St Act) = IO
---   type InputValue (ARAL St Act) = ()
---   type InputState (ARAL St Act) = ()
---   type Serializable (ARAL St Act) = ARALSerialisable St Act
---   serialisable = toSerialisable
---   deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
---   deserialisable = fromSerialisable actionFun actFilter tblInp
---   generateInput _ _ _ _ = return ((), ())
---   runStep phase rl _ _ = do
---     rl' <- stepM rl
---     let inverseSt | isAnn rl = Just mInverseSt
---                   | otherwise = Nothing
---     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
---     let (eNr, eSteps) = rl ^. episodeNrStart
---         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
---         p = Just $ fromIntegral $ rl' ^. t
---         val l = realToFrac $ head $ fromValue (rl' ^?! l)
---         results | phase /= EvaluationPhase =
---                   [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
---                   , StepResult "avgEpisodeLength" p eLength
---                   ]
---                 | otherwise =
---                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
---                   , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
---                   , StepResult "psiRho" p (val $ psis . _1)
---                   , StepResult "psiV" p (val $ psis . _2)
---                   , StepResult "psiW" p (val $ psis . _3)
---                   , StepResult "avgEpisodeLength" p eLength
---                   , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
---                   ] -- ++
---                   -- concatMap
---                   --   (\s ->
---                   --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
---                   --   (sort [(minBound :: St) .. maxBound])
---     return (results, fakeEpisodes rl rl')
---   parameters _ =
---     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
---                                                                   [ AlgARAL 0.8 1.0 ByStateValues
---                                                                   , AlgARAL 0.8 0.999 ByStateValues
---                                                                   , AlgARAL 0.8 0.99 ByStateValues
---                                                                   -- , AlgDQN 0.99 EpsilonSensitive
---                                                                   -- , AlgDQN 0.5 EpsilonSensitive
---                                                                   , AlgDQN 0.999 Exact
---                                                                   , AlgDQN 0.99 Exact
---                                                                   , AlgDQN 0.50 Exact
---                                                                   ]) Nothing Nothing Nothing]
---   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+instance ExperimentDef (ARAL St Act)
+  -- type ExpM (ARAL St Act) = TF.SessionT IO
+                                          where
+  type ExpM (ARAL St Act) = IO
+  type InputValue (ARAL St Act) = ()
+  type InputState (ARAL St Act) = ()
+  type Serializable (ARAL St Act) = ARALSerialisable St Act
+  serialisable = toSerialisable
+  deserialisable :: Serializable (ARAL St Act) -> ExpM (ARAL St Act) (ARAL St Act)
+  deserialisable = fromSerialisable actionFun actFilter tblInp
+  generateInput _ _ _ _ = return ((), ())
+  runStep phase rl _ _ = do
+    rl' <- stepM rl
+    let inverseSt | isAnn rl = Just mInverseSt
+                  | otherwise = Nothing
+    when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
+    let (eNr, eSteps) = rl ^. episodeNrStart
+        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
+        p = Just $ fromIntegral $ rl' ^. t
+        val l = realToFrac $ head $ fromValue (rl' ^?! l)
+        results | phase /= EvaluationPhase =
+                  [ -- StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  -- , StepResult "avgEpisodeLength" p eLength
+                  ]
+                | otherwise =
+                  [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
+                  , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
+                  , StepResult "psiRho" p (val $ psis . _1)
+                  , StepResult "psiV" p (val $ psis . _2)
+                  , StepResult "psiW" p (val $ psis . _3)
+                  , StepResult "avgEpisodeLength" p eLength
+                  , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
+                  ] -- ++
+                  -- concatMap
+                  --   (\s ->
+                  --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
+                  --   (sort [(minBound :: St) .. maxBound])
+    return (results, rl')
+  parameters _ =
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
+                                                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                                                  , AlgARAL 0.8 0.999 ByStateValues
+                                                                  , AlgARAL 0.8 0.99 ByStateValues
+                                                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  , AlgDQN 0.999 Exact
+                                                                  , AlgDQN 0.99 Exact
+                                                                  , AlgDQN 0.50 Exact
+								  , AlgRLearning
+                                                                  ]) Nothing Nothing Nothing]
+  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
@@ -288,10 +289,10 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 0.00
+    , _epsilon             = 0.025
 
     , _exploration         = 1.0
-    , _learnRandomAbove    = 0.7 -- 0 -- 1.0
+    , _learnRandomAbove    = 1.5
     , _zeta                = 0.03
     , _xi                  = 0.005
 
@@ -301,7 +302,7 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 75000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
@@ -310,7 +311,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 75000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -333,19 +334,19 @@ main = do
 
 
 experimentMode :: IO ()
-experimentMode = undefined
-  -- do
-  -- let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
-  -- ---
-  -- rl <- mkUnichainTabular algARAL (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  -- (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
-  -- let runner = liftIO
-  -- ---
-  -- putStrLn $ "Any change: " ++ show changed
-  -- evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
-  --    -- print (view evalsResults evalRes)
-  -- writeAndCompileLatex databaseSetup evalRes
-  -- writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
+experimentMode = 
+  do
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
+  ---
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
+  let runner = liftIO
+  ---
+  putStrLn $ "Any change: " ++ show changed
+  evalRes <- genEvalsConcurrent 6 runner databaseSetup res evals
+     -- print (view evalsResults evalRes)
+  writeAndCompileLatex databaseSetup evalRes
+  writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
 
 
 lpMode :: IO ()

@@ -48,8 +48,8 @@ import           Text.Printf
 import           Debug.Trace
 
 maxX, maxY, goalX, goalY :: Int
-maxX = 10 -- 19                        -- [0..maxX]
-maxY = 10 -- 19                       -- [0..maxY]
+maxX = 19 -- 10                        -- [0..maxX]
+maxY = 19 -- 10                       -- [0..maxY]
 goalX = 1
 goalY = 5
 
@@ -58,8 +58,8 @@ expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "one-way-membran"
-    , _experimentInfoParameters = [isNN]
-    , _experimentRepetitions = 40
+    , _experimentInfoParameters = [isNN, rand]
+    , _experimentRepetitions = 30
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
@@ -68,6 +68,7 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
+    rand = ExperimentInfoParameter "Random Reward X" (unsafePerformIO $ readIORef ioRefMaxR)
 
 evals :: [StatsDef s]
 evals =
@@ -180,8 +181,8 @@ instance ExperimentDef (ARAL St Act)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  , StepResult "avgEpisodeLength" p eLength
+                  [ -- StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  -- , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
@@ -281,6 +282,7 @@ main :: IO ()
 main = do
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
+  chooseRandomReward
   case l of
     "l"   -> lpMode
     "e"   -> experimentMode
@@ -290,7 +292,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -321,7 +323,6 @@ mRefState = Nothing
 usermode :: IO ()
 usermode = do
   alg <- chooseAlg mRefState
-  chooseRandomReward
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)

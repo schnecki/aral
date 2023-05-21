@@ -23,7 +23,7 @@ import           Helper
 
 import           Control.DeepSeq      (NFData)
 import           Control.Lens
-
+import qualified Data.Text as T
 import           Control.Monad        (when)
 import           Data.Default
 import           Control.Monad.IO.Class   (liftIO)
@@ -50,7 +50,7 @@ goalSt = St $ replicate dim goal
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-multi-d 2"
+    { _experimentBaseName = "gridworld-multi-d " <> T.pack (show dim)
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000

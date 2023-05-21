@@ -92,14 +92,14 @@ instance Bounded St where
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=5 phase-aware 4" -- "queuing-system M/M/1 eps=5 phase-aware neu"
+    { _experimentBaseName         = "queuing-system M/M/1 correct params" -- "queuing-system M/M/1 eps=5 phase-aware neu"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
-    , _experimentRepetitions      = 40
-    , _preparationSteps           = 1000000
+    , _experimentRepetitions      = 30
+    , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 100000
+    , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
-    , _evaluationMaxStepsBetweenSaves = Nothing
+    , _evaluationMaxStepsBetweenSaves = Just 20000
     }
 
   where
@@ -200,25 +200,37 @@ instance ExperimentDef (ARAL St Act) where
                  (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
-    [ ParameterSetup
-        "algorithm"
-        (set algorithm)
-        (view algorithm)
-        (Just $ const $ return [ -- AlgARAL 0.8 0.99  ByStateValues
-                               -- ,
-                               --   AlgARAL 0.8 0.999 ByStateValues
-                               -- , AlgARAL 0.8 1.0 ByStateValues
-                               -- , AlgDQN 0.99 EpsilonSensitive
-                               -- , AlgDQN 0.99 Exact
-                               -- , AlgDQN 0.5  EpsilonSensitive
-                                AlgDQN 0.5  Exact
-                               , AlgDQN 0.999  Exact
-                               , AlgARAL 0.8 0.99 ByStateValues
-                               ])
-        Nothing
-        Nothing
-        Nothing
-    ]
+    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
+                                                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                                                  , AlgARAL 0.8 0.999 ByStateValues
+                                                                  , AlgARAL 0.8 0.99 ByStateValues
+                                                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  , AlgDQN 0.999 Exact
+                                                                  , AlgDQN 0.99 Exact
+                                                                  , AlgDQN 0.50 Exact
+								  , AlgRLearning
+                                                                  ]) Nothing Nothing Nothing]
+
+    -- [ ParameterSetup
+    --     "algorithm"
+    --     (set algorithm)
+    --     (view algorithm)
+    --     (Just $ const $ return [ -- AlgARAL 0.8 0.99  ByStateValues
+    --                            -- ,
+    --                            --   AlgARAL 0.8 0.999 ByStateValues
+    --                            -- , AlgARAL 0.8 1.0 ByStateValues
+    --                            -- , AlgDQN 0.99 EpsilonSensitive
+    --                            -- , AlgDQN 0.99 Exact
+    --                            -- , AlgDQN 0.5  EpsilonSensitive
+    --                             AlgDQN 0.5  Exact
+    --                            , AlgDQN 0.999  Exact
+    --                            , AlgARAL 0.8 0.99 ByStateValues
+    --                            ])
+    --     Nothing
+    --     Nothing
+    --     Nothing
+    -- ]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig
@@ -257,7 +269,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 5.0 -- 10.0
+    , _epsilon             = 0.025
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -270,18 +282,53 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 10000  -- 5e-4
-      , _alphaRhoMin = NoDecay
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000 -- 1e-3
+      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
+
+-- -- | ARAL Parameters.
+-- params :: ParameterInitValues
+-- params =
+--   Parameters
+--     { _alpha               = 0.01
+--     , _alphaRhoMin = 2e-5
+--     , _beta                = 0.01
+--     , _delta               = 0.005
+--     , _gamma               = 0.01
+--     , _epsilon             = 5.0 -- 10.0
+
+--     , _exploration         = 1.0
+--     , _learnRandomAbove    = 1.5
+--     , _zeta                = 0.03
+--     , _xi                  = 0.005
+
+--     }
+
+-- -- | Decay function of parameters.
+-- decay :: ParameterDecaySetting
+-- decay =
+--     Parameters
+--       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 10000  -- 5e-4
+--       , _alphaRhoMin = NoDecay
+--       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
+--       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
+--       , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000 -- 1e-3
+--       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
+--       , _xi               = NoDecay
+--       -- Exploration
+--       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
+--       , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
+--       , _learnRandomAbove = NoDecay
+--       }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
@@ -298,7 +345,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl

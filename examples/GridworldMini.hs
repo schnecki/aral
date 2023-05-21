@@ -67,8 +67,8 @@ goalY = 0
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini"
-    , _experimentInfoParameters = [isNN]
+    { _experimentBaseName = "gridworld-mini with diff rand"
+    , _experimentInfoParameters = [isNN, rand]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
@@ -78,6 +78,7 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
+    rand = ExperimentInfoParameter "Random Reward X" (unsafePerformIO $ readIORef ioRefMaxR)
 
 evals :: [StatsDef s]
 evals =
@@ -190,8 +191,9 @@ instance ExperimentDef (ARAL St Act)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  , StepResult "avgEpisodeLength" p eLength
+                  [
+		  -- StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  -- , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
@@ -345,8 +347,8 @@ usermode = do
   -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
 
   let inverseSt | isAnn rl = Just mInverseSt
                 | otherwise = Nothing
