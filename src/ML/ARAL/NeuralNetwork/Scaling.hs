@@ -9,6 +9,7 @@ import           Control.Lens
 import           Data.Serialize
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
+import           Numeric
 import           Prelude              hiding (scaleDouble)
 
 import           Grenade.Utils.Vector
@@ -20,6 +21,8 @@ data ScalingAlgorithm
   = ScaleMinMax    -- ^ Scale using min-max normalisation.
   | ScaleLog Double -- ^ First apply a logarithm and then scale using min-max. Parameters specifies shift. Must be >= 1! A value of around 100 or 1000 usually works well. The smaller the number the
                    -- higher the spread for small values and thus the smaller the spread for large values.
+  | ScaleSymlog    -- ^ See https://arxiv.org/pdf/2301.04104v1.pdf
+  | ScaleClip (MinValue Double, MaxValue Double) ScalingAlgorithm
   deriving (Eq, Ord, Show, NFData, Generic, Serialize)
 
 isScaleLog :: ScalingAlgorithm -> Bool
@@ -58,14 +61,18 @@ unscaleValues alg minMax = mapValues (mapVector $ unscaleDouble alg minMax)
 
 
 -- | Scale a value using the given algorithm.
-scaleDouble :: (Floating n, Ord n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
-scaleDouble ScaleMinMax      = maybe id scaleMinMax
-scaleDouble (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (scaleLog (realToFrac shift))
+scaleDouble :: ScalingAlgorithm -> Maybe (MinValue Double, MaxValue Double) -> Double -> Double
+scaleDouble (ScaleClip (minVal, maxVal) scale) ms = max minVal . min maxVal . scaleDouble scale ms
+scaleDouble ScaleMinMax ms                        = maybe id scaleMinMax ms
+scaleDouble ScaleSymlog  _                        = symlog
+scaleDouble (ScaleLog shift) ms                   = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (scaleLog (realToFrac shift)) ms
 
 -- | Unscale a value using the given algorithm.
-unscaleDouble :: (Floating n, Ord n) => ScalingAlgorithm -> Maybe (MinValue n, MaxValue n) -> n -> n
-unscaleDouble ScaleMinMax      = maybe id unscaleMinMax
-unscaleDouble (ScaleLog shift) = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (unscaleLog (realToFrac shift))
+unscaleDouble :: ScalingAlgorithm -> Maybe (MinValue Double, MaxValue Double) -> Double -> Double
+unscaleDouble (ScaleClip (minVal, maxVal) scale) ms = max minVal . min maxVal . unscaleDouble scale ms
+unscaleDouble ScaleMinMax ms                        = maybe id unscaleMinMax ms
+unscaleDouble ScaleSymlog _                         = symexp
+unscaleDouble (ScaleLog shift) ms                   = maybe (error "scaling with ScaleLog requries minimum and maximum values!") (unscaleLog (realToFrac shift)) ms
 
 scaleZeroOneDouble :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 scaleZeroOneDouble (mn,mx) val = (val - mn) / (mx-mn)
@@ -79,6 +86,13 @@ scaleMinMax (mn,mx) val = 2 * (val - mn) / (mx-mn) - 1
 
 unscaleMinMax :: (Fractional n) => (MinValue n, MaxValue n) -> n -> n
 unscaleMinMax (mn,mx) val = (val + 1) / 2 * (mx-mn) + mn
+
+
+symlog :: (Floating n) => n -> n
+symlog x = signum x * log (abs x + 1) -- log1p (abs x) --  @'log1p' x@ computes @'log' (1 + x)@, but provides more precise results for small (absolute) values of @x@ if possible.
+
+symexp :: (Floating n) => n -> n
+symexp x = signum x * exp(abs x) - 1  -- @'expm1' x@ computes @'exp' x - 1@, but provides more precise results for small (absolute) values of @x@ if possible.
 
 
 -- | Scale the value applying @log@ first. Note that the actual value is clipped by the minimum value, the maximum is open.

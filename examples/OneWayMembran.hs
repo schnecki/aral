@@ -405,18 +405,18 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
--- actionFun tp s [Random, Random] = goalState moveRand tp s
-actionFun tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+-- actionFun _ tp s [Random, Random] = goalState moveRand tp s
+actionFun a tp s [x, y] = do
+  (r1, s1, e1) <- actionFun a tp s [x]
+  (r2, s2, e2) <- actionFun a tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 replaceIndex :: (V.Storable a) => Int -> a -> V.Vector a -> V.Vector a
 replaceIndex nr x xs = V.take nr xs V.++ (x `V.cons` V.drop (nr+1) xs)
@@ -515,7 +515,7 @@ drawGrid aral = do
 
 drawField :: ARAL St Act -> St -> IO ()
 drawField aral s@(St x y) = do
-  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
   putStr $
     case acts of
       [0] -> " * "

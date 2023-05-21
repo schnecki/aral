@@ -22,6 +22,11 @@ data Reward s
   | RewardEmpty
   | (RewardFuture s) => RewardFuture !(StoreType s)
 
+instance Show (Reward s) where
+  show (Reward v)     = show v
+  show RewardEmpty    = "RewardEmpty"
+  show RewardFuture{} = "RewardFuture"
+
 isRewardFuture :: Reward s -> Bool
 isRewardFuture RewardFuture{} = True
 isRewardFuture _              = False

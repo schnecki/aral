@@ -15,26 +15,27 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           ML.ARAL              as B
+import           ML.ARAL                as B
 
 import           Experimenter
 
 import           Helper
 
-import           Control.DeepSeq      (NFData)
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import qualified Data.Text as T
-import           Control.Monad        (when)
+import           Control.Monad          (when)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
-import           Control.Monad.IO.Class   (liftIO)
-import           Data.List            (elemIndex, genericLength)
-import qualified Data.Map.Strict      as M
+import           Data.List              (elemIndex, genericLength)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
-import qualified Data.Vector.Storable as V
+import qualified Data.Text              as T
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           Grenade
-import           Prelude              hiding (Left, Right)
-import System.IO
+import           Prelude                hiding (Left, Right)
+import           System.IO
 import           System.Random
 
 import           Debug.Trace
@@ -156,7 +157,6 @@ fakeEpisodes :: ARAL St Act -> ARAL St Act -> ARAL St Act
 fakeEpisodes rl rl'
   | rl ^. s == goalSt && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
   | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
-
 
 
 nnConfig :: NNConfig
@@ -430,8 +430,8 @@ instance Show Act where
 actions :: [Act]
 actions = [minBound..maxBound]
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s@(St st) acts
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s@(St st) acts
   | all (== Random) acts = moveRand tp s
   | otherwise = do
     stepRew <- randomRIO (0, 8 :: Double)
@@ -443,8 +443,6 @@ actionFun tp s@(St st) acts
     moveX Inc    = moveInc tp s
     moveX Dec    = moveDec tp s
     moveX Random = error "Unexpected Random in actionFun.moveX. Check the actionFilter!"
-
-
 
 
 actFilter :: St -> [V.Vector Bool]
