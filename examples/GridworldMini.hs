@@ -67,7 +67,7 @@ goalY = 0
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini with diff rand"
+    { _experimentBaseName = "gridworld-mini_sens_lr0.2"
     , _experimentInfoParameters = [isNN, rand]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -214,13 +214,33 @@ instance ExperimentDef (ARAL St Act)
                                                                   [ AlgARAL 0.8 1.0 ByStateValues
                                                                   , AlgARAL 0.8 0.999 ByStateValues
                                                                   , AlgARAL 0.8 0.99 ByStateValues
-                                                                  -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  -- don't use -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- don't use -- , AlgDQN 0.5 EpsilonSensitive
                                                                   , AlgDQN 0.999 Exact
                                                                   , AlgDQN 0.99 Exact
                                                                   , AlgDQN 0.50 Exact
 								  , AlgRLearning
-                                                                  ]) Nothing Nothing Nothing]
+
+
+                                                                  ---------------------------
+                                                                  ---- Sensitivity for Gamma:
+                                                                  ---------------------------
+                                                                  --   AlgARAL 0.9 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.9 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.9 0.99 ByStateValues
+                                                                  -- , AlgARAL 0.5 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.5 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.5 0.99 ByStateValues
+
+                                                                  ]) Nothing Nothing Nothing
+      -------------------------------
+      ---- Sensitivity for Learn Rate
+      -------------------------------
+
+    , ParameterSetup "init lr" (set (B.parameters . B.gamma)) (view (B.parameters . B.gamma))
+      (Just $ const $ return [0.2, 0.3]) Nothing Nothing Nothing
+      -- (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
+    ]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig

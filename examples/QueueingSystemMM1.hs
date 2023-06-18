@@ -52,7 +52,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 5 -- was 20
+maxQueueSize = 20 -- 5
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -92,12 +92,12 @@ instance Bounded St where
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 correct params" -- "queuing-system M/M/1 eps=5 phase-aware neu"
+    { _experimentBaseName         = "queuing-system_MM1_sens_gamma0_0.95_maxQLen20" -- "queuing-system M/M/1 eps=5 phase-aware neu"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
     , _experimentRepetitions      = 30
     , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
+    , _evaluationSteps            = 100000
     , _evaluationReplications     = 1
     , _evaluationMaxStepsBetweenSaves = Just 20000
     }
@@ -181,17 +181,16 @@ instance ExperimentDef (ARAL St Act) where
       let p = Just $ fromIntegral $ rl' ^. t
           -- val l = realToFrac $ head $ fromValue (rl' ^?! l)
           val' l = realToFrac (rl' ^?! l)
-          results =
+          results | phase /= EvaluationPhase = []
+                  | otherwise = 
             [
               StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
             , StepResult "reward" p (val' $ lastRewards._head)
-            ]
-            ++
-            [ StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
+            , StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
             -- , StepResult "psiRho" p (val $ psis . _1)
             -- , StepResult "psiV" p   (val $ psis . _2)
             -- , StepResult "psiW" p   (val $ psis . _3)
-            | phase == EvaluationPhase
+            -- | 
             ]
             ++
             concatMap
@@ -201,15 +200,30 @@ instance ExperimentDef (ARAL St Act) where
       return (results, rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgARAL 0.8 1.0 ByStateValues
-                                                                  , AlgARAL 0.8 0.999 ByStateValues
-                                                                  , AlgARAL 0.8 0.99 ByStateValues
-                                                                  -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  , AlgDQN 0.999 Exact
-                                                                  , AlgDQN 0.99 Exact
-                                                                  , AlgDQN 0.50 Exact
-								  , AlgRLearning
+                                                                  [
+                                                                  --   AlgARAL 0.8 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.99 ByStateValues
+                                                                  -- -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  -- , AlgDQN 0.999 Exact
+                                                                  -- , AlgDQN 0.99 Exact
+                                                                  -- , AlgDQN 0.50 Exact
+								  -- , AlgRLearning
+
+                                                                  ---------------------------
+                                                                  ---- Sensitivity for Gamma:
+                                                                  -- ---------------------------
+                                                                    AlgARAL 0.95 1.0 ByStateValues
+                                                                  , AlgARAL 0.95 0.999 ByStateValues
+                                                                  , AlgARAL 0.95 0.99 ByStateValues
+                                                                  --   AlgARAL 0.9 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.9 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.9 0.99 ByStateValues
+                                                                  -- , AlgARAL 0.5 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.5 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.5 0.99 ByStateValues
+
                                                                   ]) Nothing Nothing Nothing]
 
     -- [ ParameterSetup

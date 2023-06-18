@@ -123,8 +123,8 @@ alg :: Algorithm St
 alg =
         -- AlgARAL defaultGamma0 defaultGamma1 ByStateValues mRefState
         -- algDQNAvgRewardFree
-        AlgARAL 0.8 0.999 ByStateValues
-        -- AlgARAL 0.8 0.999 (Fixed 1)
+        -- AlgARAL 0.8 0.999 ByStateValues
+        AlgARAL 0.8 0.999 (Fixed 1)
         -- AlgARALVOnly (Fixed 1) Nothing
         -- AlgDQN 0.99 EpsilonSensitive -- need to change epsilon accordingly to not have complete random!!!
         -- AlgDQN 0.99 Exact
@@ -134,11 +134,11 @@ main :: IO ()
 main = do
 
   -- runBorlLpInferWithRewardRepetWMax 13 80000 policy mRefState >>= print
-  runBorlLp policy mRefState >>= print
+  -- runBorlLp policy mRefState >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings Nothing
-  rl <- mkUnichainTabular alg (liftInitSt initState) netInp actionFun actionFilter params decay borlSettings Nothing
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
   let inverseSt | isAnn rl = mInverseSt
                 | otherwise = mInverseStTbl
 
@@ -185,11 +185,11 @@ params =
     , _alphaRhoMin = 2e-5
     , _beta = 0.07
     , _delta = 0.07
-    , _gamma = 0.07
+    , _gamma = 0.5
     , _epsilon = 1.5
 
     , _exploration = 1.0
-    , _learnRandomAbove = 0.1
+    , _learnRandomAbove = 1.0
     , _zeta = 0.15
     , _xi = 0.001
 
@@ -203,7 +203,7 @@ decay =
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 0.07) 0.05 100000
       , _delta            = ExponentialDecay (Just 0.07) 0.05 100000
-      , _gamma            = ExponentialDecay (Just 0.01) 0.05 10000
+      , _gamma            = ExponentialDecay (Just 0.01) 0.05 100000
       , _zeta             = ExponentialDecay (Just 1e-3) 0.5 150000
       , _xi               = ExponentialDecay (Just 1e-3) 0.5 150000
         -- Exploration

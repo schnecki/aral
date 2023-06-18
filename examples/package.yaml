@@ -151,6 +151,7 @@ executables:
     - aral
     - gym-haskell
     - experimenter
+    - easy-logger
     extra-libraries: python3.10
 
 
