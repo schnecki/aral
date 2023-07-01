@@ -16,6 +16,7 @@ module ML.ARAL.Step
     , epsCompareWith
     , sortBy
     , setDropoutValue
+    , hasDropoutLayer
     ) where
 
 #ifdef DEBUG
@@ -32,7 +33,10 @@ import           Control.Monad.IO.Class             (MonadIO, liftIO)
 import           Control.Parallel.Strategies        hiding (r0)
 import           Data.Either                        (isLeft)
 import           Data.Function                      (on)
-import           Data.List                          (find, foldl', groupBy, intercalate, maximumBy, partition, sortBy, transpose)
+import           Data.List                          (find, foldl', groupBy,
+                                                     intercalate, maximumBy,
+                                                     partition, sortBy,
+                                                     transpose)
 import qualified Data.Map.Strict                    as M
 import           Data.Maybe                         (fromMaybe, isJust)
 import           Data.Ord
@@ -103,23 +107,23 @@ fileEpisodeLength :: FilePath
 fileEpisodeLength = "episodeLength"
 
 
-steps :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> IO (ARAL s as)
+steps :: (NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> Integer -> IO (ARAL s as)
 steps !aral nr =
   fmap force $!
   liftIO $ foldM (\b _ -> nextAction b >>= stepExecute b) aral [0 .. nr - 1]
 
 
-step :: (NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> IO (ARAL s as)
+step :: (NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> IO (ARAL s as)
 step !aral =
   fmap force $!
   nextAction aral >>= stepExecute aral
 
 -- | This keeps the MonadIO alive and force evaluation of ARAL in every step.
-stepM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
+stepM :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> m (ARAL s as)
 stepM !aral = nextAction aral >>= stepExecute aral >>= \b@ARAL{} -> return (force b)
 
 -- | This keeps the MonadIO session alive. This is equal to steps, but forces evaluation of the data structure every 1000 steps.
-stepsM :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
+stepsM :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> Integer -> m (ARAL s as)
 stepsM !aral !nr = do
   aral' <- foldM (\b _ -> nextAction b >>= stepExecute b) aral [1 .. min maxNr nr]
   if nr > maxNr
@@ -128,7 +132,7 @@ stepsM !aral !nr = do
   where
     maxNr = 1000
 
-stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
+stepExecute :: forall m s as . (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => ARAL s as -> NextActions -> m (ARAL s as)
 stepExecute aral (as, workerActions) = do
   let state = aral ^. s
       period = aral ^. t + length (aral ^. futureRewards)
@@ -142,7 +146,7 @@ stepExecute aral (as, workerActions) = do
     writeFile fileEpisodeLength "Episode\tEpisodeLength\n"
     writeFile fileReward "Period\tReward\n"
   workerRefs <- liftIO $ runWorkerActions (set t period aral) workerActions
-  let action agTp s as = (aral ^. actionFunction) agTp s (VB.toList as)
+  let action agTp s as = (aral ^. actionFunction) aral agTp s (VB.toList as)
       actList = aral ^. actionList
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
@@ -177,7 +181,7 @@ applyStateToRewardFutureData state = VB.map (over futureReward applyToReward)
 -- | Run one worker.
 runWorkerAction :: (NFData s) => ARAL s as -> WorkerState s -> WorkerActionChoice -> IO (WorkerState s)
 runWorkerAction aral (WorkerState wNr state replMem oldFutureRewards rew) as = do
-  let action agTp s as = (aral ^. actionFunction) agTp s (VB.toList as)
+  let action agTp s as = (aral ^. actionFunction) aral agTp s (VB.toList as)
       actList = aral ^. actionList
       actNrs = VB.map snd as
       acts = VB.map (actList VB.!) actNrs
@@ -200,7 +204,7 @@ runWorkerAction aral (WorkerState wNr state replMem oldFutureRewards rew) as = d
 -- | This function exectues all materialised rewards until a non-materialised reward is found, i.e. add a new experience
 -- to the replay memory and then, select and learn from the experiences of the replay memory.
 stepExecuteMaterialisedFutures ::
-     forall m s as. (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as)
+     forall m s as. (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as)
   => AgentType
   -> (Int, Bool, ARAL s as)
   -> RewardFutureData s
@@ -208,9 +212,9 @@ stepExecuteMaterialisedFutures ::
 stepExecuteMaterialisedFutures _ (nr, True, aral) _ = return (nr, True, aral)
 stepExecuteMaterialisedFutures agent (nr, _, aral) dt =
   case view futureReward dt of
-    RewardEmpty     -> return (nr, False, aral)
+    RewardEmpty     -> return (nr + 1, False, t %~ (+ 1) $ aral)
     RewardFuture {} -> return (nr, True, aral)
-    Reward {}       -> (nr+1, False, ) <$> execute aral agent dt
+    Reward {}       -> (nr + 1, False, ) <$> execute agent aral dt
 
 
 minMaxStates :: MVar ((Double, (s, AgentActionIndices)), (Double, (s, AgentActionIndices)))
@@ -224,8 +228,8 @@ hasLocked msg action =
   , Handler $ \exc@BlockedIndefinitelyOnSTM -> sayString ("[STM]: " ++ msg) >> throwIO exc
   ]
 
-updateMinMax :: ARAL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
-updateMinMax aral as calc = do
+updateMinMax :: AgentType -> ARAL s as -> AgentActionIndices -> Calculation -> IO (Double, Double)
+updateMinMax agTp aral as calc = do
   mMinMax <- hasLocked "updateMinMax tryReadMVar" $ tryReadMVar minMaxStates
   let minMax' =
         case mMinMax of
@@ -252,24 +256,24 @@ updateMinMax aral as calc = do
         _          -> getVValState' calc
     valueFunction =
       case aral ^. algorithm of
-        AlgARAL {} -> rValue aral RBig
-        AlgDQN {}  -> rValue aral RBig
-        _          -> vValue aral
+        AlgARAL {} -> rValue agTp aral RBig
+        AlgDQN {}  -> rValue agTp aral RBig
+        _          -> vValue agTp aral
 
 
 -- | Execute the given step, i.e. add a new experience to the replay memory and then, select and learn from the
 -- experiences of the replay memory.
-execute :: (MonadIO m, NFData s, NFData as, Ord s, RewardFuture s, Eq as) => ARAL s as -> AgentType -> RewardFutureData s -> m (ARAL s as)
-execute aral agent (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
+execute :: (MonadIO m, NFData s, NFData as, RewardFuture s, Eq as) => AgentType -> ARAL s as -> RewardFutureData s -> m (ARAL s as)
+execute agTp aral (RewardFutureData period state as (Reward reward) stateNext episodeEnd) = do
 #ifdef DEBUG
-  aral <- if isMainAgent agent
+  aral <- if isMainAgent agTp
           then do
             when (aral ^. t == 0) $ forM_ [fileDebugStateV, fileDebugStateW, fileDebugPsiWValues, fileDebugPsiVValues, fileDebugPsiWValues, fileDebugStateValuesNrStates] $ \f ->
               liftIO $ doesFileExist f >>= \x -> when x (removeFile f)
             writeDebugFiles aral
           else return aral
 #endif
-  (proxies', calc) <- P.insert aral agent period state as reward stateNext episodeEnd (mkCalculation aral) (aral ^. proxies)
+  (proxies', calc) <- P.insert aral agTp period state as reward stateNext episodeEnd (mkCalculation agTp aral) (aral ^. proxies)
   let lastVsLst = fromMaybe (VB.singleton $ toValue agents 0) (getLastVs' calc)
       strVAvg = map (show . avg) $ transpose $ VB.toList $ VB.map fromValue lastVsLst
       rhoVal = fromMaybe (toValue agents 0) (getRhoVal' calc)
@@ -294,9 +298,9 @@ execute aral agent (RewardFutureData period state as (Reward reward) stateNext e
       agents = aral ^. settings . independentAgents
       list = concatMap ("\t" <>)
       zero = toValue agents 0
-  if isMainAgent agent
+  if isMainAgent agTp
   then do
-    (minVal, maxVal) <- liftIO $ updateMinMax aral (VB.map snd as) calc
+    (minVal, maxVal) <- liftIO $ updateMinMax agTp aral (VB.map snd as) calc
     let minMaxValTxt = "\t" ++ show minVal ++ "\t" ++ show maxVal
     liftIO $ unless (period < 10) $
       appendFile fileStateValues (show period ++ list strRho ++ "\t" ++ strRhoSmth ++ list strRhoOver ++ list strMinRho ++ list strVAvg ++ list strR0 ++ list strR1 ++ list strR0Scaled ++ list strR1Scaled ++ minMaxValTxt ++ "\n" )
@@ -322,6 +326,7 @@ maybeFlipDropout :: ARAL s as -> ARAL s as
 maybeFlipDropout aral =
   case aral ^? proxies . v . proxyNNConfig <|> aral ^? proxies . r1 . proxyNNConfig of
     Just cfg@NNConfig {}
+      | cfg ^. grenadeDropoutOnlyInactiveAfter <= 0 -> aral
       | aral ^. t == cfg ^. grenadeDropoutOnlyInactiveAfter -> setDropoutValue False aral
       | aral ^. t > cfg ^. grenadeDropoutOnlyInactiveAfter -> aral
       | aral ^. t `mod` cfg ^. grenadeDropoutFlipActivePeriod == 0 ->
@@ -336,12 +341,18 @@ maybeFlipDropout aral =
 setDropoutValue :: Bool -> ARAL s as -> ARAL s as
 setDropoutValue val = overAllProxies (filtered (\p -> isGrenade p || isHasktorch p)) setDropout
   where
-    setDropout (Grenade tar wor tp cfg act agents wel)           = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
-    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adam mlp wel) = Hasktorch tar wo tp cfg nrAct nrAg adam (setDropoutMLPSpec mlp) wel
-    setDropoutMLPSpec x@MLPSpec {}                                             = x
-    setDropoutMLPSpec x@(MLPSpecWDropoutLSTM lin act Nothing Nothing _ outAct) = x
-    setDropoutMLPSpec (MLPSpecWDropoutLSTM lin act mDrI mDr mLSTM outAct)      = MLPSpecWDropoutLSTM lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
+    setDropout (Grenade tar wor tp cfg act agents wel)                  = Grenade (runSettingsUpdate (NetworkSettings val) tar) (runSettingsUpdate (NetworkSettings val) wor) tp cfg act agents wel
+    setDropout (Hasktorch tar wo tp cfg nrAct nrAg adamAC adam mlp wel nnActs) = Hasktorch (setDropoutMLP tar) (setDropoutMLP wo) tp cfg nrAct nrAg adamAC adam (setDropoutMLPSpec mlp) wel nnActs
+    setDropoutMLPSpec x@MLPSpec {}                                              = x
+    setDropoutMLPSpec (MLPSpecWDropoutLSTM mLoss lin act mDrI mDr mLSTM outAct) = MLPSpecWDropoutLSTM mLoss lin act ((val, ) . snd <$> mDrI) ((val, ) . snd <$> mDr) mLSTM outAct
+    setDropoutMLP (MLP lays hAct hSpecAct mInpDrpOut mHidDrpOut mLSTM mOutAct mLossFun isPol) = MLP lays hAct hSpecAct ((val, ) . snd <$> mInpDrpOut) ((val, ) . snd <$> mHidDrpOut) mLSTM mOutAct mLossFun isPol
 
+hasDropoutLayer :: ARAL s as -> Bool
+hasDropoutLayer = any isDropoutProxy . allProxies . view proxies
+  where
+    isDropoutProxy (Grenade tar wor tp cfg act agents wel)                         = $(pureLogPrintDebug) "hasDropoutLayer not implemented for Grenade!" False
+    isDropoutProxy (Hasktorch tar wo tp cfg nrAct nrAg adamAC adam mlp wel nnActs) = isJust (hasktorchInputDropoutAlpha mlp) || isJust (hasktorchHiddenDropoutAlpha mlp)
+    isDropoutProxy _                                                               = False
 
 #ifdef DEBUG
 
@@ -356,7 +367,7 @@ getStateFeatures :: (MonadIO m) => m [a]
 getStateFeatures = liftIO $ hasLocked "getStateFeatures" $ fromMaybe mempty <$> tryReadMVar stateFeatures
 
 
-writeDebugFiles :: (MonadIO m, NFData s, NFData as, Ord s, Eq as, RewardFuture s) => ARAL s as -> m (ARAL s as)
+writeDebugFiles :: (MonadIO m, NFData s, NFData as, Eq as, RewardFuture s) => ARAL s as -> m (ARAL s as)
 writeDebugFiles aral = do
   let isDqn = isAlgDqn (aral ^. algorithm) || isAlgDqnAvgRewardAdjusted (aral ^. algorithm)
   let isAnn

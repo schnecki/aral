@@ -3,5 +3,4 @@ module ML.ARAL.Action
   ) where
 
 
-import           ML.ARAL.Action.Ops  as Type
-import           ML.ARAL.Action.Type as Type
+import           ML.ARAL.Action.Ops as Type

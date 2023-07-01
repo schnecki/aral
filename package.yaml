@@ -37,6 +37,8 @@ dependencies:
   - pretty
   - text
   - singletons
+  - singletons-base
+  - ghc-typelits-knownnat
   - hmatrix
   - vector
   - grenade
@@ -65,10 +67,14 @@ dependencies:
   - say
   - easy-logger
   - hasktorch
+  - libtorch-ffi
   - welford-online-mean-variance
   - regress >= 0.1.2
   - ad
   - vector-algorithms
+  - reflection
+  - regnet
+  - process
 
 library:
   source-dirs: src

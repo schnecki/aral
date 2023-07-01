@@ -55,6 +55,7 @@ dependencies:
   - random-shuffle
   - data-default
   - aral
+  - regnet
 
 executables:
   gridworld:
@@ -76,8 +77,8 @@ executables:
   gridworld-mini:
     main:                GridworldMini.hs
     other-modules:
-      - Helper
       - SolveLp
+      - Helper
     source-dirs:         .
     default-extensions: CPP
     ghc-options:
@@ -151,7 +152,6 @@ executables:
     - aral
     - gym-haskell
     - experimenter
-    - easy-logger
     extra-libraries: python3.10
 
 

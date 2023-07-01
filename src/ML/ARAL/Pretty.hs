@@ -16,20 +16,25 @@ module ML.ARAL.Pretty
     ) where
 
 
-import           Control.Arrow                       (first, second, (&&&), (***))
+import           Control.Arrow                       (first, second, (&&&),
+                                                      (***))
 import           Control.Lens
 import           Control.Monad                       (join, when)
 import           Control.Monad.IO.Class
 import           Data.Function                       (on)
-import           Data.List                           (find, foldl', intercalate, intersperse, nub, sort, sortBy)
+import           Data.List                           (find, foldl', intercalate,
+                                                      intersperse, nub, sort,
+                                                      sortBy)
 import qualified Data.Map.Strict                     as M
-import           Data.Maybe                          (fromMaybe, isJust, listToMaybe)
+import           Data.Maybe                          (fromMaybe, isJust,
+                                                      listToMaybe)
 import qualified Data.Set                            as S
 import qualified Data.Text                           as T
 import qualified Data.Vector                         as VB
 import qualified Data.Vector.Storable                as V
 import           Grenade
 import           Prelude                             hiding ((<>))
+import           RegNet
 import           System.IO.Unsafe                    (unsafePerformIO)
 import           Text.PrettyPrint                    as P
 import           Text.Printf
@@ -42,9 +47,11 @@ import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.Normalisation
 import           ML.ARAL.Parameters
 import qualified ML.ARAL.Proxy                       as P
-import           ML.ARAL.Proxy.Ops                   (LookupType (..), getMinMaxVal, lookupNeuralNetwork, mkNNList)
+import           ML.ARAL.Proxy.Ops                   (LookupType (..),
+                                                      getMinMaxVal,
+                                                      lookupNeuralNetwork,
+                                                      mkNNList)
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Proxy.Type
 import           ML.ARAL.Settings
 import           ML.ARAL.Type
@@ -96,14 +103,14 @@ noMod _ _ = return
 
 modifierSubtract :: (MonadIO m) => ARAL s as -> P.Proxy -> Modifier m
 modifierSubtract borl px lk k v0 = do
-  vS <- P.lookupProxy (borl ^. t) lk (second (VB.replicate agents) k) px
+  vS <- P.lookupProxy MainAgent (borl ^. t) lk (second (VB.replicate agents) k) px
   return (v0 - vS)
   where agents = px ^?! proxyNrAgents
 
-prettyTable :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
+prettyTable :: (MonadIO m, Show s, Show as) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> P.Proxy -> m Doc
 prettyTable borl prettyKey prettyIdx p = vcat <$> prettyTableRows borl prettyKey prettyIdx noMod p
 
-prettyTableRows :: (MonadIO m, Show s, Show as, Ord s) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
+prettyTableRows :: (MonadIO m, Show s, Show as) => ARAL s as -> (NetInputWoAction -> Maybe (Maybe s, String)) -> (ActionIndex -> Doc) -> Modifier m -> P.Proxy -> m [Doc]
 prettyTableRows borl prettyState prettyActionIdx modifier p =
   case p of
     P.Table m _ _ ->
@@ -111,19 +118,30 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy (RegressionLayer ms wel step) aNr _ ->
+    P.RegressionProxy layer@(RegressionLayer nodes welInp _ step) aNr _ ->
       let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
-          mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
-          inputs :: [NetInputWoAction]
-          inputs = nub $ concatMap (concatMap (\obs -> map (VB.convert . obsInputValues) [VB.head obs, VB.last obs]) . M.elems . regNodeObservations) (VB.toList ms)
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer (RegressionLayer ms wel step) aId inp)) [0..aNr-1]) inputs
-       in do
-        mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-          sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) inputActionValue
+          mkInput k =
+            text (filter (/= '"') $ show $ map printDouble (V.toList k))
+            -- maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+          cfg = regNodeConfig (VB.head nodes)
+          mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
+          mkInputs xs = nub $ concatMap (map (VB.convert . obsInputValues) . VB.toList . (\x -> regNodeObservations x VB.++ regNodeOldObservations x)) (VB.toList xs)
+          inputs =
+            case mkInputs nodes of
+              xs
+                | length xs `div` VB.length nodes <= 25 -> take 100 xs
+              xs -> take 4 xs
+          -- inputs = nnCfg ^. prettyPrintElems
+          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0 .. aNr - 1]) inputs
+       in fmap (++ [text "" $$ text (regressionLayerFormula layer) $$ text "" $$ text (show cfg)]) $
+          -- fmap (++ [text "" $$ text (show cfg)]) $
+          mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+          -- sortBy (compare `on` fst . fst) $
+          concatMap (\((st, a), v) -> [((st, a), AgentValue v), ((RegNet.normaliseStateFeatureUnbounded welInp st, a), AgentValue v)]) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
-            | isEmpty kDoc = []
+            --  | isEmpty kDoc = []
             | otherwise = [kDoc <> colon <+> printValue valT <+> text "  " <+> printValue valW]
           unfoldActs = concatMap (\(f, (ts, ws)) -> zipWith (\(nr, t) (_, w) -> (f nr, (t, w))) ts ws)
       return $ concatMap printFun (unfoldActs mtrue)
@@ -172,7 +190,7 @@ prettyStateActionEntry borl pState pActIdx stInp actIdx =
 
 
 prettyTablesState ::
-     (MonadIO m, Show s, Show as, Ord s)
+     (MonadIO m, Show s, Show as)
   => ARAL s as
   -> (NetInputWoAction -> Maybe (Maybe s, String))
   -> (ActionIndex -> Doc)
@@ -222,7 +240,7 @@ prettyAvgRewardType period (ByStateValuesAndReward ratio decay) =
 prettyAvgRewardType _ (Fixed x)              = "fixed value of " <> double x
 
 
-prettyARALTables :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> ARAL s as -> m Doc
+prettyARALTables :: (MonadIO m, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> Bool -> Bool -> Bool -> ARAL s as -> m Doc
 prettyARALTables mStInverse t1 t2 t3 borl = do
   let algDoc doc
         | isAlgBorl (borl ^. algorithm) = doc
@@ -332,6 +350,7 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnTargetUpdate $+$
     nnBatchSize $+$
     nnNStep $+$
+    smplSteps $+$
     nnReplMemSize $+$
     nnLearningParams $+$
     text "Algorithm" <>
@@ -361,26 +380,28 @@ prettyARALHead' printRho prettyStateFun borl = do
   where
     params = borl ^. parameters
     params' = decayedParameters borl
-    scalingAlg cfg = case cfg ^. scaleOutputAlgorithm of
-      ScaleMinMax    -> "Min-Max Normalisation"
-      ScaleLog shift -> "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
+    scalingAlg :: ScalingAlgorithm -> Doc
+    scalingAlg scl = case scl of
+      ScaleMinMax                      -> text "Min-Max Normalisation"
+      ScaleSymlog                      -> "Symlog scaling"
+      ScaleLog shift                   -> text "Logarithmic Scaling w/ shift: " <> text (showDouble shift)
+      ScaleClip (minVal, maxVal) scale -> text "Clip (" <> text (showDouble minVal) <> text "," <> text (showDouble maxVal) <> text ") of " <> scalingAlg scale
     nnWorkers =
       case borl ^. proxies . r1 of
         P.Table {} -> mempty
-        P.RegressionProxy {} -> mempty
-        px ->
+        _ ->
           text "Workers Minimum Exploration (Epsilon-Greedy)" <> semicolon $$ nest nestCols (text (showDoubleList (borl ^. settings . workersMinExploration))) <+>
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     autoInpScale =
       case borl ^. proxies . r1 of
         P.Table {}           -> mempty
-        P.RegressionProxy {} -> mempty
+        P.RegressionProxy {} -> text "True (always on)"
         px                   -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
     scalingText =
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
-        P.RegressionProxy {} -> "Regression representation (no scaling needed/implemented!)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        P.RegressionProxy {} -> "Regression representation (no scaling needed!)"
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
           text
@@ -393,14 +414,14 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
           text
@@ -411,7 +432,7 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
         P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
-        px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig)
+        px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =
@@ -425,23 +446,30 @@ prettyARALHead' printRho prettyStateFun borl = do
             text "every" <+> int (conf ^. grenadeSmoothTargetUpdatePeriod) <+> text "periods"
     nnBatchSize =
       case borl ^. proxies . v of
-        P.Table {}           -> empty
-        P.RegressionProxy {} -> empty
-        px                   -> textNNConf (px ^?! proxyNNConfig)
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf = text "NN Batchsize" <> colon $$ nest nestCols (int $ conf ^. trainBatchSize)
     nnNStep =
       case borl ^. proxies . v of
-        P.Table {}           -> empty
-        P.RegressionProxy {} -> empty
-        px                   -> textNNConf (borl ^. settings)
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textNNConf (borl ^. settings)
       where
         textNNConf conf = text "NStep" <> colon $$ nest nestCols (int $ conf ^. nStep)
+    smplSteps =
+      case borl ^. proxies . v of
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textNNConf (borl ^. settings)
+      where
+        textNNConf conf = text "Sampling steps" <> colon $$ nest nestCols (int $ conf ^. samplingSteps)
     nnReplMemSize =
       case borl ^. proxies . v of
-        P.Table {}           -> empty
-        P.RegressionProxy {} -> empty
-        px                   -> textNNConf (px ^?! proxyNNConfig)
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textNNConf (px ^?! proxyNNConfig)
       where
         textNNConf conf =
           text "NN Replay Memory size" <> colon $$ nest nestCols (int $ conf ^. replayMemoryMaxSize) <+>
@@ -449,14 +477,18 @@ prettyARALHead' printRho prettyStateFun borl = do
     textReplayMemoryType ReplayMemoriesUnified {}        = text "unified replay memory"
     textReplayMemoryType mem@ReplayMemoriesPerActions {} = text "per actions each of size " <> int (replayMemoriesSubSize mem)
     nnLearningParams =
-      case borl ^. proxies . v of
+      case borl ^. proxies . r1 of
         P.Table {}                                       -> empty
-        P.RegressionProxy {}                             -> empty
+        px@P.RegressionProxy{}                           -> textRegressionConf (px ^?! proxyRegressionLayer)
         P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
-        P.Hasktorch _ _ _ conf _ _ _ _ _                 -> textGrenadeConf conf (conf ^. grenadeLearningParams)
+        P.Hasktorch _ _ _ conf _ _ _ _ _ _ nnActs        -> textGrenadeConf conf (conf ^. grenadeLearningParams) <> text "," <+> text "Single Net per Action: " <> text (show nnActs)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _                                                -> error "nnLearningParams in Pretty.hs"
       where
+        textRegressionConf :: RegressionLayer -> Doc
+        textRegressionConf lay =
+          text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
+          where cfg = regNodeConfig $ VB.head $ regressionLayerNodes lay
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
@@ -469,30 +501,24 @@ prettyARALHead' printRho prettyStateFun borl = do
            in text "NN Learning Rate/Momentum/L2" <> colon $$
               nest
                 nestCols
-                (text "Adam Optimizer with TODO" <+>
-                 text ""
-                   -- (show
-                   --    ( printDoubleWith 8 (realToFrac l)
-                   --    , printDoubleWith 8 (realToFrac beta1)
-                   --    , printDoubleWith 8 (realToFrac beta2)
-                   --    , printDoubleWith 8 (realToFrac epsilon)
-                   --    , printDoubleWith 8 (realToFrac lambda)))
+                (text "Adam Optimizer with LR=" <+> nest nestCols (text (show (printDoubleWith 8 (realToFrac l)))) <+>
+                parens (text "Period 0" <> colon <+> printDoubleWith 8 (realToFrac alpha))
                 )
 
 
-prettyARAL :: (Ord s, Show s, Show as) => ARAL s as -> IO Doc
+prettyARAL :: (Show s, Show as) => ARAL s as -> IO Doc
 prettyARAL = prettyARALWithStInverse Nothing
 
-prettyARALM :: (MonadIO m, Ord s, Show s, Show as) => ARAL s as -> m Doc
+prettyARALM :: (MonadIO m, Show s, Show as) => ARAL s as -> m Doc
 prettyARALM = prettyARALTables Nothing True True True
 
-prettyARALMWithStInverse :: (MonadIO m, Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
+prettyARALMWithStInverse :: (MonadIO m, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> m Doc
 prettyARALMWithStInverse mStInverse = prettyARALTables mStInverse True True True
 
 
-prettyARALWithStInverse :: (Ord s, Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> IO Doc
+prettyARALWithStInverse :: (Show s, Show as) => Maybe (NetInputWoAction -> Maybe (Either String s)) -> ARAL s as -> IO Doc
 prettyARALWithStInverse mStInverse borl =
   prettyARALTables mStInverse True True True borl
 
-instance (Ord s, Show s, Show as) => Show (ARAL s as) where
+instance (Show s, Show as) => Show (ARAL s as) where
   show borl = renderStyle wideStyle $ unsafePerformIO $ prettyARAL borl

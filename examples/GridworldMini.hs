@@ -20,6 +20,7 @@ module Main where
 
 import           ML.ARAL                  as B
 import           ML.ARAL.Logging
+import           RegNet
 import           SolveLp
 
 import           EasyLogger
@@ -37,7 +38,8 @@ import           Control.Monad.IO.Class   (liftIO)
 import           Data.Default
 import           Data.Function            (on)
 import           Data.IORef
-import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
+import           Data.List                (elemIndex, genericLength, groupBy,
+                                           sort, sortBy)
 import qualified Data.Map.Strict          as M
 import           Data.Serialize
 import           Data.Singletons.TypeLits hiding (natVal)
@@ -67,8 +69,8 @@ goalY = 0
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini_sens_lr0.2"
-    , _experimentInfoParameters = [isNN, rand]
+    { _experimentBaseName = "gridworld-mini"
+    , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
@@ -78,7 +80,6 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
-    rand = ExperimentInfoParameter "Random Reward X" (unsafePerformIO $ readIORef ioRefMaxR)
 
 evals :: [StatsDef s]
 evals =
@@ -183,17 +184,15 @@ instance ExperimentDef (ARAL St Act)
   generateInput _ _ _ _ = return ((), ())
   runStep phase rl _ _ = do
     rl' <- stepM rl
-    let inverseSt | isAnn rl = Just mInverseSt
-                  | otherwise = Nothing
+    let inverseSt = Nothing
     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
         eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [
-		  -- StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  -- , StepResult "avgEpisodeLength" p eLength
+                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
@@ -214,41 +213,26 @@ instance ExperimentDef (ARAL St Act)
                                                                   [ AlgARAL 0.8 1.0 ByStateValues
                                                                   , AlgARAL 0.8 0.999 ByStateValues
                                                                   , AlgARAL 0.8 0.99 ByStateValues
-                                                                  -- don't use -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  -- don't use -- , AlgDQN 0.5 EpsilonSensitive
+                                                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                                                  -- , AlgDQN 0.5 EpsilonSensitive
                                                                   , AlgDQN 0.999 Exact
                                                                   , AlgDQN 0.99 Exact
                                                                   , AlgDQN 0.50 Exact
 								  , AlgRLearning
-
-
-                                                                  ---------------------------
-                                                                  ---- Sensitivity for Gamma:
-                                                                  ---------------------------
-                                                                  --   AlgARAL 0.9 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.9 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.9 0.99 ByStateValues
-                                                                  -- , AlgARAL 0.5 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.5 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.5 0.99 ByStateValues
-
                                                                   ]) Nothing Nothing Nothing
-      -------------------------------
-      ---- Sensitivity for Learn Rate
-      -------------------------------
 
-    , ParameterSetup "init lr" (set (B.parameters . B.gamma)) (view (B.parameters . B.gamma))
-      (Just $ const $ return [0.2, 0.3]) Nothing Nothing Nothing
-      -- (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
+    , ParameterSetup "init lr" (set (parameters . gamma) (view (parameters . gamma)))
+      (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
     ]
+
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig
 nnConfig =
   NNConfig
     { _replayMemoryMaxSize = 1000
-    , _replayMemoryStrategy = ReplayMemorySingle
-    , _trainBatchSize = 8
+    , _replayMemoryStrategy = ReplayMemoryPerAction -- ReplayMemorySingle
+    , _trainBatchSize = 20
     , _trainingIterations = 1
     , _grenadeLearningParams = OptAdam 0.005 0.9 0.999 1e-8 1e-3
     , _grenadeSmoothTargetUpdate = 0.01
@@ -260,17 +244,19 @@ nnConfig =
     , _cropTrainMaxValScaled = Just 0.98
     , _grenadeDropoutFlipActivePeriod = 10000
     , _grenadeDropoutOnlyInactiveAfter = 10^5
-    , _clipGradients = ClipByGlobalNorm 0.01
+    , _clipGradients = NoClipping -- ClipByGlobalNorm 0.01
     , _autoNormaliseInput = True
     }
 
+
 borlSettings :: Settings
-borlSettings = def
-  { _workersMinExploration = [0.3, 0.2, 0.1]
-  , _nStep = 2
-  , _independentAgents = 1
-  , _overEstimateRho = False -- True
-  }
+borlSettings =
+  def
+    { _workersMinExploration = [0.1, 0.2, 0.3]
+    , _nStep = 1
+    , _independentAgents = 1
+    , _samplingSteps = 4
+    }
 
 -- | ARAL Parameters.
 params :: ParameterInitValues
@@ -280,7 +266,7 @@ params =
     , _alphaRhoMin = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
-    , _gamma               = 0.01
+    , _gamma               = 0.025
     , _epsilon             = 0.025
 
     , _exploration         = 1.0
@@ -294,7 +280,7 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 15000  -- 5e-4
       , _alphaRhoMin      = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
@@ -303,7 +289,7 @@ decay =
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.01) 0.8 10000 -- ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
@@ -313,8 +299,10 @@ initVals = InitValues 0 0 0 0 0 0
 main :: IO ()
 main = do
   $(initLogger) (LogFile "package.log")
-  setMinLogLevel LogWarning
-  enableARALLogging (LogFile "package.log")
+  setMinLogLevel LogWarning -- LogDebug -- LogInfo
+  -- enableARALLogging (LogFile "package.log")
+  enableRegNetLogging LogStdOut
+
 
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
   l <- getLine
@@ -358,26 +346,51 @@ mRefState = Nothing
 
 usermode :: IO ()
 usermode = do
+  $(initLogger) LogStdOut
+  enableRegNetLogging LogStdOut
+  setMinLogLevel LogAll
 
   alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
   -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainHasktorch alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainHasktorchAsSAMAC True Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay nnConfig borlSettings (Just initVals)
+  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
-  let inverseSt | isAnn rl = Just mInverseSt
-                | otherwise = Nothing
+  -- let inverseSt | isAnn rl = Just mInverseSt
+  --               | otherwise = Nothing
 
-  askUser inverseSt True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
+  askUser Nothing True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
   where
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
+
+regConf :: St -> RegressionConfig
+regConf _ = def
+  {
+  -- {
+    regConfigBatchSize               = 8
+    -- , regConfigGradModelErrorThreshold = 1e-5
+  , regConfigGradDecentMaxSteps = 10
+  -- , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
+  --                                      GradientDescent
+  --                                      -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
+  -- , regConfigMinCorrelation          = 0.01
+  , regConfigStartup                 = def { regConfigPeriodsTrainStart = 1000 }
+  -- , regConfigClipOutput              = Nothing
+  , regConfigShareWelOut     = False
+  , regConfigModelUpdateRate = ExponentialDecaySetup Nothing 0.99 50000 1
+  , regConfigModel                   =
+    -- RegressionModels True $ VB.fromList [RegModelLayer True RegTermNonLinear $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermQuadratic]]
+    RegressionModels True $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermNonLinear]
+  }
+
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
@@ -400,6 +413,7 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 
 netInp :: St -> V.Vector Double
 netInp st =
+  -- V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
   V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Double
@@ -445,18 +459,18 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
--- actionFun tp s [Random, Random] = goalState moveRand tp s
-actionFun tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+-- actionFun _ tp s [Random, Random] = goalState moveRand tp s
+actionFun a tp s [x, y] = do
+  (r1, s1, e1) <- actionFun a tp s [x]
+  (r2, s2, e2) <- actionFun a tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st
@@ -531,9 +545,6 @@ mInverseSt xs = return <$> M.lookup xs allStateInputs
 
 getCurrentIdx :: St -> (Int,Int)
 getCurrentIdx (St x y ) = (x, y)
-  -- second (fst . head . filter ((==1) . snd)) $
-  -- head $ filter ((1 `elem`) . map snd . snd) $
-  -- zip [0..] $ map (zip [0..]) st
 
 
 drawGrid :: ARAL St Act -> IO ()
@@ -551,7 +562,7 @@ drawGrid aral = do
 
 drawField :: ARAL St Act -> St -> IO ()
 drawField aral s = do
-  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
   putStr $
     case acts of
       [0] -> " * "

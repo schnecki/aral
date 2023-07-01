@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE InstanceSigs        #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -fno-cse #-}
@@ -83,6 +82,12 @@ isWorkerAgent :: AgentType -> Bool
 isWorkerAgent MainAgent = False
 isWorkerAgent _         = True
 
+agentIndex :: AgentType -> Int
+agentIndex MainAgent = 0
+agentIndex (WorkerAgent idx)
+  | idx == 0 = error "agentIdx: Worker agent may not have index 0"
+  | otherwise = idx
+
 
 instance Enum AgentType where
   fromEnum MainAgent        = 0
@@ -124,7 +129,7 @@ instance Serialize Value where
   get = AgentValue . V.fromList <$> get
 
 newtype Values = AgentValues (VB.Vector (V.Vector Double)) -- ^ A vector of values for every agent
-  deriving (Show)
+  deriving (Show, Eq)
 
 
 instance Num Value where

@@ -1,1 +1,0 @@
-../sync_and_run.sh
