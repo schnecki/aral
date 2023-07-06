@@ -244,7 +244,7 @@ instance ExperimentDef (ARAL St Act)
 
   -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
   beforeEvaluationHook expNr repetNr repNr _ rl = do
-    mapM_ (moveFileToSubfolder rl repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
+    mapM_ (moveFileToSubfolder rl expNr repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
     return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 
@@ -353,13 +353,13 @@ mRefState = Nothing
 -- mRefState = Just (fromIdx (goalX, goalY), 0)
 
 
-moveFileToSubfolder :: ARAL St Act -> Int -> FilePath -> IO ()
-moveFileToSubfolder rl repNr filename = do
+moveFileToSubfolder :: ARAL St Act -> Int -> Int -> FilePath -> IO ()
+moveFileToSubfolder rl expNr repNr filename = do
   createDirectoryIfMissing True dirName
   doesFileExist filename >>= \exists -> when exists (renameFile filename fpSub)
   where
     dirName = "results" </> T.unpack (view experimentBaseName . expSetup $ rl) </> "files"
-    fpSub = filename ++ "_rep" ++ show repNr
+    fpSub = dirName </> "exp" ++ show expNr ++ "_rep" ++ show repNr ++ "_" ++ filename
 
 
 usermode :: IO ()
