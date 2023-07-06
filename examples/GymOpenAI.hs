@@ -361,7 +361,7 @@ netInp isTabular gym (St _ st)
 observationSpaceBounds :: Gym -> ([Double], [Double])
 observationSpaceBounds gym = map (max (-maxVal)) *** map (min maxVal) $ gymRangeToDoubleLists $ getGymRangeFromSpace $ observationSpace gym
   where
-    maxVal | name gym == "CartPole-v1" = 20
+    maxVal -- | name gym == "CartPole-v1" = 20
            | otherwise = 25
 
 
