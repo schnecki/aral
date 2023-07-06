@@ -13,33 +13,33 @@ module Main where
 
 import           Experimenter
 import           Helper
-import           ML.ARAL                  as B
+import           ML.ARAL                as B
 import           ML.ARAL.Action.Ops
 import           ML.ARAL.Exploration
 import           SolveLp
 
-import           Control.Arrow            (first, second, (***))
-import           Control.DeepSeq          (NFData)
+import           Control.Arrow          (first, second, (***))
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
-import           Control.Lens             (set, (^.))
-import           Control.Monad            (foldM, liftM, unless, when)
-import           Control.Monad.IO.Class   (liftIO)
+import           Control.Lens           (set, (^.))
+import           Control.Monad          (foldM, liftM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
-import           Data.Function            (on)
+import           Data.Function          (on)
 import           Data.IORef
-import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
-import qualified Data.Map.Strict          as M
+import           Data.List              (elemIndex, genericLength, groupBy,
+                                         sort, sortBy)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
-import           Data.Singletons.TypeLits hiding (natVal)
-import qualified Data.Text                as T
-import           Data.Text.Encoding       as E
-import qualified Data.Vector              as VB
-import qualified Data.Vector.Storable     as V
+import qualified Data.Text              as T
+import           Data.Text.Encoding     as E
+import qualified Data.Vector            as VB
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
-import           GHC.Int                  (Int32, Int64)
+import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
 import           Grenade
-import           Prelude                  hiding (Left, Right)
+import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.IO.Unsafe
 import           System.Random

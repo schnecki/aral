@@ -1,9 +1,3 @@
--- With the goal state being (0,0) an agent following the optimal policy needs on average 4 steps to the goal state.
--- Thus, it accumulates a reward of 4.0*4 + 10 = 26.0 every 5 steps. That is 5.2 as average reward in the optimal case.
---
--- for 1 agent: rho^\pi^* = 5.20
---
-
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -16,12 +10,14 @@
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeFamilies               #-}
+
+-- | Re-Implementation of CartPole-v1
+-- see https://github.com/openai/gym/blob/master/gym/envs/classic_control/cartpole.py
 module Main where
 
 import           ML.ARAL                as B
 import           ML.ARAL.Logging
 import           RegNet
-import           SolveLp
 
 import           EasyLogger
 import           Experimenter
@@ -41,6 +37,7 @@ import           Data.IORef
 import           Data.List              (elemIndex, genericLength, groupBy,
                                          sort, sortBy)
 import qualified Data.Map.Strict        as M
+import           Data.Maybe
 import           Data.Serialize
 import qualified Data.Text              as T
 import           Data.Text.Encoding     as E
@@ -58,17 +55,89 @@ import           Text.Printf
 
 import           Debug.Trace
 
-maxX, maxY, goalX, goalY :: Int
-maxX = 4                        -- [0..maxX]
-maxY = 4                        -- [0..maxY]
-goalX = 0
-goalY = 0
+gravity = 9.8
+masscart = 1.0
+masspole = 0.1
+total_mass = masspole + masscart
+poleLength = 0.5  -- actually half the pole's length
+polemass_length = masspole * poleLength
+force_mag = 10.0
+tau = 0.02  -- seconds between state updates
+kinematics_integrator = "euler"
+
+-- Angle at which to fail the episode
+theta_threshold_radians = 12 * 2 * pi / 360
+x_threshold = 2.4
+
+-- Angle limit set to 2 * theta_threshold_radians so failing observation
+-- is still within bounds.
+-- high = [
+--   x_threshold * 2,
+--     np.finfo(np.float32).max,
+--     theta_threshold_radians * 2,
+--     np.finfo(np.float32).max,
+--     ]
+
+data Act = Left | Right
+  deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
+
+
+data St =
+  St { stX                     :: Double
+     , stXDot                  :: Double
+     , stTheta                 :: Double
+     , stThetaDot              :: Double
+     , stStepsBeyondTerminated :: Maybe Int
+     }
+  deriving (Show, Eq, Ord, NFData, Generic, Serialize)
+
+reset :: IO St
+reset = St <$> randomRIO (-0.05, 0.05) <*> randomRIO (-0.05, 0.05) <*> randomRIO (-0.05, 0.05) <*> randomRIO (-0.05, 0.05) <*> pure Nothing
+
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
+  let force =
+        case action of
+          Right -> force_mag
+          Left  -> -force_mag
+      costheta = cos theta
+      sintheta = sin theta
+      -- # For the interested reader:
+      -- # https://coneural.org/florian/papers/05_cart_pole.pdf
+      temp = (force + polemass_length * thetaDot ** 2 * sintheta) / total_mass
+      thetaacc = (gravity * sintheta - costheta * temp) / (poleLength * (4.0 / 3.0 - masspole * costheta ** 2 / total_mass))
+      xacc = temp - polemass_length * thetaacc * costheta / total_mass
+  let st' =
+        if kinematics_integrator == "euler"
+          then let x' = x + tau * xDot
+                   xDot' = xDot + tau * xacc
+                   theta' = theta + tau * thetaDot
+                   thetaDot' = thetaDot + tau * thetaacc
+                in St x' xDot' theta' thetaDot' Nothing
+              -- semi-implicit euler
+          else let xDot' = xDot + tau * xacc
+                   x' = x + tau * xDot'
+                   thetaDot' = thetaDot + tau * thetaacc
+                   theta' = theta + tau * thetaDot'
+                in St x' xDot' theta' thetaDot' Nothing
+      terminated = x < (-x_threshold) || x > x_threshold || theta < (-theta_threshold_radians) || theta > theta_threshold_radians
+      (reward, stepsBeyondTerminated')
+        | not terminated = (1.0, Nothing)
+        | otherwise =
+          case stepsBeyondTerminated of
+            Nothing -> (1.0, Just 0) -- Pole just fell!
+            Just nr -> (0.0, Just $ nr + 1)
+  let rewardNew = Reward . (12 - ) . toDegrees . abs . stTheta $ st'
+      toDegrees = (360 / (2 * pi) *)
+  if isJust stepsBeyondTerminated
+    then (\st' -> (rewardNew, st', terminated)) <$> reset
+    else return (rewardNew, st' {stStepsBeyondTerminated = stepsBeyondTerminated'}, terminated)
 
 
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "gridworld-mini"
+    { _experimentBaseName = "cartpole"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -117,58 +186,6 @@ evals =
 instance RewardFuture St where
   type StoreType St = ()
 
-instance BorlLp St Act where
-  lpActions _ = actions
-  lpActionFunction = actionFun
-  lpActionFilter _ = head . actFilter
-
-policy :: Policy St Act
-policy s a
-  | s == fromIdx (goalX, goalY) && a == actRand =
-    let distanceSA = concatMap filterDistance $ groupBy ((==) `on` fst) $ sortBy (compare `on` fst) stateActions
-        pol = map ((, 1 / fromIntegral (length distanceSA)) . first fromIdx) distanceSA
-     in pol
-  | s == fromIdx (goalX, goalY) = []
-  | a == actRand = []
-  | otherwise = mkProbability $ filterChance $ filterDistance $ filter filterActRand [(step sa', actUp), (step sa', actLeft), (step sa', actRight), (step sa', actRand)]
-  where
-    sa' = ((row, col), a)
-    step ((row, col), a)
-      | a == actUp = (max 0 $ row - 1, col)
-      | a == actDown = (min maxX $ row + 1, col)
-      | a == actLeft = (row, max 0 $ col - 1)
-      | a == actRight = (row, min maxY $ col + 1)
-      | a == actRand = (row, col)
-    row = fst $ getCurrentIdx s
-    col = snd $ getCurrentIdx s
-    actRand = head actions
-    actUp = actions !! 1
-    actDown = actions !! 2
-    actLeft = actions !! 3
-    actRight = actions !! 4
-    states = [minBound .. maxBound] :: [St]
-    stateActions = ((goalX, goalY), actRand) : map (first getCurrentIdx) [(s, a) | s <- states, a <- tail actions, s /= fromIdx (goalX, goalY)]
-    filterActRand ((r, c), a)
-      | r == goalX && c == goalY = a == actRand
-      | otherwise = a /= actRand
-    filterChance [x] = [x]
-    filterChance xs = filter ((== maximum stepsToBorder) . mkStepsToBorder . step) xs
-      where
-        stepsToBorder :: [Int]
-        stepsToBorder = map (mkStepsToBorder . step) xs :: [Int]
-        mkStepsToBorder (r, c) = min (r `mod` maxX) (c `mod` maxY)
-    filterDistance xs = filter ((== minimum dist) . mkDistance . step) xs
-      where
-        dist :: [Int]
-        dist = map (mkDistance . step) xs
-    mkDistance (r, c) = r + abs (c - goalY)
-    mkProbability xs = map (\x -> (first fromIdx x, 1 / fromIntegral (length xs))) xs
-
-fakeEpisodes :: ARAL St Act -> ARAL St Act -> ARAL St Act
-fakeEpisodes rl rl'
-  | rl ^. s == goal && rl ^. episodeNrStart == rl' ^. episodeNrStart = episodeNrStart %~ (\(nr, t) -> (nr + 1, t + 1)) $ rl'
-  | otherwise = episodeNrStart %~ (\(nr, t) -> (nr, t + 1)) $ rl'
-
 
 instance ExperimentDef (ARAL St Act)
   -- type ExpM (ARAL St Act) = TF.SessionT IO
@@ -206,7 +223,7 @@ instance ExperimentDef (ARAL St Act)
                   --   (\s ->
                   --      map (\a -> StepResult (T.pack $ show (s, a)) p (M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (filteredActionIndexes actions actFilter s))
                   --   (sort [(minBound :: St) .. maxBound])
-    return (results, fakeEpisodes rl rl')
+    return (results, rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
                                                                   [ AlgARAL 0.8 1.0 ByStateValues
@@ -237,7 +254,7 @@ nnConfig =
     , _grenadeSmoothTargetUpdate = 0.01
     , _grenadeSmoothTargetUpdatePeriod = 100
     , _learningParamsDecay = ExponentialDecay Nothing 0.05 100000
-    , _prettyPrintElems = map netInp ([minBound .. maxBound] :: [St])
+    , _prettyPrintElems = [] -- map netInp ([minBound .. maxBound] :: [St])
     , _scaleParameters = scalingByMaxAbsRewardAlg (AlgARAL 0.8 1.0 ByStateValues) False 6
     , _scaleOutputAlgorithm = ScaleMinMax
     , _cropTrainMaxValScaled = Just 0.98
@@ -303,11 +320,10 @@ main = do
   enableRegNetLogging LogStdOut
 
 
-  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, l for lp mode, and u for user mode: " >> hFlush stdout
+  putStr "Experiment or user mode [User mode]? Enter e for experiment mode, or u for user mode: " >> hFlush stdout
   l <- getLine
-  chooseRandomReward
   case l of
-    "l"   -> lpMode
+    -- "l"   -> lpMode
     "e"   -> experimentMode
     "exp" -> experimentMode
     _     -> usermode
@@ -317,7 +333,7 @@ experimentMode :: IO ()
 experimentMode = do
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
   ---
-  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
   let runner = liftIO
   ---
@@ -326,16 +342,6 @@ experimentMode = do
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
   writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
-
-
-lpMode :: IO ()
-lpMode = do
-  putStrLn "I am solving the system using linear programming to provide the optimal solution...\n"
-  lpRes <- runBorlLpInferWithRewardRepet 100000 policy mRefState
-  print lpRes
-  mkStateFile 0.65 False True lpRes
-  mkStateFile 0.65 False False lpRes
-  putStrLn "NOTE: Above you can see the solution generated using linear programming. Bye!"
 
 
 mRefState :: Maybe (St, ActionIndex)
@@ -358,16 +364,16 @@ usermode = do
   -- rl <- mkUnichainHasktorchAsSAMAC True Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
   -- let inverseSt | isAnn rl = Just mInverseSt
   --               | otherwise = Nothing
 
   askUser Nothing True usage cmds [cmdDrawGrid] rl -- maybe increase learning by setting estimate of rho
   where
-    cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [Up, Left, Down, Right]
-    usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
+    cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [ Left, Right]
+    usage = [("j", "Move left"), ("l", "Move right")]
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
 
 regConf :: St -> RegressionConfig
@@ -410,153 +416,78 @@ modelBuilderGrenade lenIn (lenActs, cols) =
     lenOut = lenActs * cols
 
 
-netInp :: St -> V.Vector Double
-netInp st =
-  -- V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
-  V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st), scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
+-- netInp :: St -> V.Vector Double
+-- netInp (St x xDot theta thetaDot _) =
+--   -- V.fromList [fromIntegral . fst . getCurrentIdx $ st, fromIntegral . snd . getCurrentIdx $ st]
+--   V.fromList [scaleMinMax (0, fromIntegral maxX) $ fromIntegral $ fst (getCurrentIdx st),
+--               scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Double
-tblInp st = V.fromList [fromIntegral $ fst (getCurrentIdx st), fromIntegral $ snd (getCurrentIdx st)]
-
-initState :: St
-initState = fromIdx (maxX,maxY)
-
-goal :: St
-goal = fromIdx (goalX, goalY)
-
--- State
-data St = St Int Int deriving (Eq, NFData, Generic, Serialize)
-
-instance Ord St where
-  x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
-
-instance Show St where
-  show xs = show (getCurrentIdx xs)
-
-instance Enum St where
-  fromEnum st = let (x,y) = getCurrentIdx st
-                in x * (maxX + 1) + y
-  toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
-
-instance Bounded St where
-  minBound = fromIdx (0,0)
-  maxBound = fromIdx (maxX, maxY)
+tblInp (St x xDot theta thetaDot _) =
+  V.fromList
+    [ min steps . max (-steps) $ fromInteger $ round x                        -- in (4.8,4.8)
+    , min steps . max (-steps) $ fromInteger $ round xDot                     -- in (-Inf, Inf)
+    , min steps . max (-steps) $ fromInteger $ round (360 / (2 * pi) * theta) -- in (24, 24)
+    , min steps . max (-steps) $ fromInteger $ round thetaDot                 -- in (-Inf, In)
+    ]
+  where
+    steps = 5.0 -- there are (2*steps+1)  buckets
 
 
--- Actions
-data Act = Random | Up | Down | Left | Right
-  deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
+-- -- State
+-- data St = St Int Int deriving (Eq, NFData, Generic, Serialize)
 
-instance Show Act where
-  show Random = "random"
-  show Up     = "up    "
-  show Down   = "down  "
-  show Left   = "left  "
-  show Right  = "right "
+-- instance Ord St where
+--   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
+
+-- instance Show St where
+--   show xs = show (getCurrentIdx xs)
+
+-- instance Enum St where
+--   fromEnum st = let (x,y) = getCurrentIdx st
+--                 in x * (maxX + 1) + y
+--   toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
+
+-- instance Bounded St where
+--   minBound = fromIdx (0,0)
+--   maxBound = fromIdx (maxX, maxY)
+
+
+-- -- Actions
+-- data Act = Random | Up | Down | Left | Right
+--   deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
+
+-- instance Show Act where
+--   show Random = "random"
+--   show Up     = "up    "
+--   show Down   = "down  "
+--   show Left   = "left  "
+--   show Right  = "right "
 
 actions :: [Act]
-actions = [Random, Up, Down, Left, Right]
+actions = [Left, Right]
 
-
-actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun _ tp s [Random] = goalState moveRand tp s
-actionFun _ tp s [Up]     = goalState moveUp tp s
-actionFun _ tp s [Down]   = goalState moveDown tp s
-actionFun _ tp s [Left]   = goalState moveLeft tp s
-actionFun _ tp s [Right]  = goalState moveRight tp s
--- actionFun _ tp s [Random, Random] = goalState moveRand tp s
-actionFun a tp s [x, y] = do
-  (r1, s1, e1) <- actionFun a tp s [x]
-  (r2, s2, e2) <- actionFun a tp s1 [y]
-  return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
-actFilter st
-  | st == fromIdx (goalX, goalY) = replicate (borlSettings ^. independentAgents) (True `V.cons` V.replicate (length actions - 1) False)
-actFilter _
-  | borlSettings ^. independentAgents == 1 = [False `V.cons` V.replicate (length actions - 1) True]
-actFilter _
-  | borlSettings ^. independentAgents == 2 = [V.fromList [False, True, True, False, False], V.fromList [False, False, False, True, True]]
-actFilter _ = error "Unexpected setup in actFilter in GridworldMini.hs"
+actFilter _ = [V.fromList [True, True]]
 
 
-moveRand :: AgentType -> St -> IO (Reward St, St, EpisodeEnd)
-moveRand = moveUp
-
-ioRefMaxR :: IORef Double
-ioRefMaxR = unsafePerformIO $ newIORef 8
-{-# NOINLINE ioRefMaxR  #-}
-
-
-goalState :: (AgentType -> St -> IO (Reward St, St, EpisodeEnd)) -> AgentType -> St -> IO (Reward St, St, EpisodeEnd)
-goalState f tp st = do
-  x <- randomRIO (0, maxX :: Int)
-  y <- randomRIO (0, maxY :: Int)
-  maxRand <- readIORef ioRefMaxR
-  r <- if maxRand <= 0 then return 0 else randomRIO (0, maxRand)
-  let stepRew (Reward re, s, e) = (Reward $ re + r, s, e)
-  case getCurrentIdx st of
-    (x', y')
-      | x' == goalX && y' == goalY -> -- return (Reward 10, fromIdx (x, y), True)
-                                   return (Reward 10, fromIdx (x, y), False)
-    _ -> stepRew <$> f tp st
-
-
-moveUp :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveUp _ st
-    | m == 0 = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m-1,n), False)
-  where (m,n) = getCurrentIdx st
-
-moveDown :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveDown _ st
-    | m == maxX = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m+1,n), False)
-  where (m,n) = getCurrentIdx st
-
-moveLeft :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveLeft _ st
-    | n == 0 = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m,n-1), False)
-  where (m,n) = getCurrentIdx st
-
-moveRight :: AgentType -> St -> IO (Reward St,St, EpisodeEnd)
-moveRight _ st
-    | n == maxY = return (Reward (-1), st, False)
-    | otherwise = return (Reward 0, fromIdx (m,n+1), False)
-  where (m,n) = getCurrentIdx st
-
-
--- Conversion from/to index for state
-
-fromIdx :: (Int, Int) -> St
-fromIdx (m,n) = St m n
-  --  $ zipWith (\nr xs -> zipWith (\nr' ys -> if m == nr && n == nr' then 1 else 0) [0..] xs) [0..] base
-  -- where base = replicate 5 [0,0,0,0,0]
-
-
-allStateInputs :: M.Map NetInputWoAction St
-allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
-
-mInverseSt :: NetInputWoAction -> Maybe (Either String St)
-mInverseSt xs = return <$> M.lookup xs allStateInputs
-
-getCurrentIdx :: St -> (Int,Int)
-getCurrentIdx (St x y ) = (x, y)
+-- allStateInputs :: M.Map NetInputWoAction St
+-- allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 
 drawGrid :: ARAL St Act -> IO ()
 drawGrid aral = do
-  putStr "\n    "
-  mapM_ (putStr . printf "%2d ") ([0 .. maxY] :: [Int])
-  putStr "\n"
-  mapM_
-    (\x -> do
-       putStr (printf "%2d: " x)
-       mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
-       putStr "\n")
-    ([0 .. maxX] :: [Int])
+  putStrLn "TODO"
+  -- putStr "\n    "
+  -- mapM_ (putStr . printf "%2d ") ([0 .. maxY] :: [Int])
+  -- putStr "\n"
+  -- mapM_
+  --   (\x -> do
+  --      putStr (printf "%2d: " x)
+  --      mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
+  --      putStr "\n")
+  --   ([0 .. maxX] :: [Int])
 
 
 drawField :: ARAL St Act -> St -> IO ()
@@ -570,11 +501,3 @@ drawField aral s = do
       [3] -> " < "
       [4] -> " > "
       _   -> error "unexpected action"
-
-
-chooseRandomReward :: IO ()
-chooseRandomReward = do
-  putStr "Enter x for random reward in U(0, x) per step (Default: 0): "
-  hFlush stdout
-  nr <- getIOWithDefault 0
-  writeIORef ioRefMaxR nr

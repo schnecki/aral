@@ -91,6 +91,22 @@ executables:
     - hmatrix-glpk
     - easy-logger
 
+  cartpole:
+    main:                CartPoleV1.hs
+    other-modules:
+      - Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - aral
+    - experimenter
+    - easy-logger
+
+
   gridworld-step:
     main:                GridworldStep.hs
     other-modules:
@@ -139,21 +155,21 @@ executables:
     - experimenter
     - hmatrix-glpk
 
-  gym:
-    main:                GymOpenAI.hs
-    other-modules:       Helper
-    source-dirs:         .
-    default-extensions: CPP
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - aral
-    - gym-haskell
-    - experimenter
-    extra-libraries: python3.10
-
+  # gym:
+  #   main:                GymOpenAI.hs
+  #   other-modules:       Helper
+  #   source-dirs:         .
+  #   default-extensions: CPP
+  #   ghc-options:
+  #   - -threaded
+  #   - -rtsopts
+  #   - -with-rtsopts=-N
+  #   dependencies:
+  #   - aral
+  #   - gym-haskell
+  #   - experimenter
+  #   - easy-logger
+  #   extra-libraries: python3.10
 
   multichain:
     main:                Multichain.hs
@@ -214,21 +230,21 @@ executables:
     - experimenter
     - hmatrix-glpk
 
-  parallel:
-    main:                Parallel.hs
-    other-modules:
-    - Helper
-    - SolveLp
-    source-dirs:         .
-    default-extensions: CPP
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - aral
-    - experimenter
-    - hmatrix-glpk
+  # parallel:
+  #   main:                Parallel.hs
+  #   other-modules:
+  #   - Helper
+  #   - SolveLp
+  #   source-dirs:         .
+  #   default-extensions: CPP
+  #   ghc-options:
+  #   - -threaded
+  #   - -rtsopts
+  #   - -with-rtsopts=-N
+  #   dependencies:
+  #   - aral
+  #   - experimenter
+  #   - hmatrix-glpk
 
   newsvendor:
     main:                NewsvendorModel.hs
