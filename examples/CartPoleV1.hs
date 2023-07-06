@@ -359,7 +359,7 @@ moveFileToSubfolder rl repNr filename = do
   doesFileExist filename >>= \exists -> when exists (renameFile filename fpSub)
   where
     dirName = "results" </> T.unpack (view experimentBaseName . expSetup $ rl) </> "files"
-    fpSub = filename ++ "rep" ++ show repNr
+    fpSub = filename ++ "_rep" ++ show repNr
 
 
 usermode :: IO ()
