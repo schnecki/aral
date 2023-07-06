@@ -69,8 +69,8 @@ module ML.ARAL.Type
   , mkUnichainTabular
   , mkUnichainTabularAs
   , mkMultichainTabular
-  -- ** Regression
-  , mkUnichainRegressionAs
+  -- -- ** Regression
+  -- , mkUnichainRegressionAs
   -- ** Hasktorch
   , mkUnichainHasktorch
   , mkUnichainHasktorchAs
@@ -123,7 +123,7 @@ import           System.IO.Unsafe                            (unsafePerformIO)
 import qualified Torch
 import qualified Torch.NN                                    as Torch
 
-import           RegNet
+-- import           RegNet
 
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Decay
@@ -363,69 +363,69 @@ mkUnichainTabularAs as alg initialStateFun ftExt asFun asFilter params decayFun 
     agents = settings ^. independentAgents
 
 
-mkUnichainRegressionAs ::
-  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
-     [Action as]
-  -> Algorithm s
-  -> InitialStateFun s
-  -> FeatureExtractor s
-  -> ActionFunction s as
-  -> ActionFilter s
-  -> ParameterInitValues
-  -> ParameterDecaySetting
-  -> (s -> RegressionConfig)
-  -> NNConfig
-  -> Settings
-  -> Maybe InitValues
-  -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig nnConfig settings initValues = do
-  $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
-  initialState <- initialStateFun MainAgent
-  let regConf = mkRegConfig initialState
-  let nnConfig' = nnConfig { _trainBatchSize = regConfigBatchSize regConf }
-  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig'
-  let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just regConf) (V.length inp) (length as)
-  repMem <- mkReplayMemories as settings nnConfig'
-  let proxies' =
-            Proxies
-              (Scalar (V.replicate agents defRhoMin) (length as))
-              (Scalar (V.replicate agents defRho) (length as))
-              tabSA
-              tabSA
-              tabSA
-              tabSA
-              tabSA
-              tabSA
-              repMem
-  -- workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
-  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
-  return $!
-    force $
-    ARAL
-      (VB.fromList as)
-      asFun
-      asFilter
-      initialState
-      workers'
-      ftExt
-      0
-      (0, 0)
-      params
-      decayFun
-      settings
-      VB.empty
-      (convertAlgorithm ftExt alg)
-      Maximise
-      defRhoMin
-      mempty
-      mempty
-      (toValue agents 0, toValue agents 0, toValue agents 0)
-      proxies'
-  where
-    defRho = defaultRho (fromMaybe defInitValues initValues)
-    defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
-    agents = settings ^. independentAgents
+-- mkUnichainRegressionAs ::
+--   forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+--      [Action as]
+--   -> Algorithm s
+--   -> InitialStateFun s
+--   -> FeatureExtractor s
+--   -> ActionFunction s as
+--   -> ActionFilter s
+--   -> ParameterInitValues
+--   -> ParameterDecaySetting
+--   -> (s -> RegressionConfig)
+--   -> NNConfig
+--   -> Settings
+--   -> Maybe InitValues
+--   -> IO (ARAL s as)
+-- mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig nnConfig settings initValues = do
+--   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
+--   initialState <- initialStateFun MainAgent
+--   let regConf = mkRegConfig initialState
+--   let nnConfig' = nnConfig { _trainBatchSize = regConfigBatchSize regConf }
+--   let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig'
+--   let inp = ftExt initialState
+--   tabSA <- mkRegressionProxy <$> randRegressionLayer (Just regConf) (V.length inp) (length as)
+--   repMem <- mkReplayMemories as settings nnConfig'
+--   let proxies' =
+--             Proxies
+--               (Scalar (V.replicate agents defRhoMin) (length as))
+--               (Scalar (V.replicate agents defRho) (length as))
+--               tabSA
+--               tabSA
+--               tabSA
+--               tabSA
+--               tabSA
+--               tabSA
+--               repMem
+--   -- workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+--   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
+--   return $!
+--     force $
+--     ARAL
+--       (VB.fromList as)
+--       asFun
+--       asFilter
+--       initialState
+--       workers'
+--       ftExt
+--       0
+--       (0, 0)
+--       params
+--       decayFun
+--       settings
+--       VB.empty
+--       (convertAlgorithm ftExt alg)
+--       Maximise
+--       defRhoMin
+--       mempty
+--       mempty
+--       (toValue agents 0, toValue agents 0, toValue agents 0)
+--       proxies'
+--   where
+--     defRho = defaultRho (fromMaybe defInitValues initValues)
+--     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
+--     agents = settings ^. independentAgents
 
 
 mkMultichainTabular ::

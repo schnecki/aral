@@ -55,7 +55,6 @@ dependencies:
   - random-shuffle
   - data-default
   - aral
-  - regnet
 
 executables:
   gridworld:

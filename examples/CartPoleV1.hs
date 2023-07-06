@@ -17,7 +17,6 @@ module Main where
 
 import           ML.ARAL                as B
 import           ML.ARAL.Logging
-import           RegNet
 
 import           EasyLogger
 import           Experimenter
@@ -317,7 +316,6 @@ main = do
   $(initLogger) (LogFile "package.log")
   setMinLogLevel LogWarning -- LogDebug -- LogInfo
   -- enableARALLogging (LogFile "package.log")
-  enableRegNetLogging LogStdOut
 
 
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, or u for user mode: " >> hFlush stdout
@@ -352,7 +350,6 @@ mRefState = Nothing
 usermode :: IO ()
 usermode = do
   $(initLogger) LogStdOut
-  enableRegNetLogging LogStdOut
   setMinLogLevel LogAll
 
   alg <- chooseAlg mRefState
@@ -365,7 +362,6 @@ usermode = do
 
   -- Use a table to approximate the function (tabular version)
   rl <- mkUnichainTabular alg (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
-  -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay regConf nnConfig borlSettings (Just initVals)
 
   -- let inverseSt | isAnn rl = Just mInverseSt
   --               | otherwise = Nothing
@@ -375,26 +371,6 @@ usermode = do
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [ Left, Right]
     usage = [("j", "Move left"), ("l", "Move right")]
     cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
-
-regConf :: St -> RegressionConfig
-regConf _ = def
-  {
-  -- {
-    regConfigBatchSize               = 8
-    -- , regConfigGradModelErrorThreshold = 1e-5
-  , regConfigGradDecentMaxSteps = 10
-  -- , regConfigLearningAlgorithm       = -- StochasticGradientDescentAdam def Nothing
-  --                                      GradientDescent
-  --                                      -- AlternatingAlgorithms $ VB.fromList [ (10, 100, GradientDescent) ,(1000, 3, StochasticGradientDescentAdam def Nothing)]
-  -- , regConfigMinCorrelation          = 0.01
-  , regConfigStartup                 = def { regConfigPeriodsTrainStart = 1000 }
-  -- , regConfigClipOutput              = Nothing
-  , regConfigShareWelOut     = False
-  , regConfigModelUpdateRate = ExponentialDecaySetup Nothing 0.99 50000 1
-  , regConfigModel                   =
-    -- RegressionModels True $ VB.fromList [RegModelLayer True RegTermNonLinear $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermQuadratic]]
-    RegressionModels True $ VB.fromList [RegModelAll RegTermLinear, RegModelAll RegTermNonLinear]
-  }
 
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec

@@ -41,9 +41,11 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Parallel.Strategies                 hiding (r0)
 import           Data.Function                               (on)
-import           Data.List                                   (foldl', sortBy, transpose, (!!))
+import           Data.List                                   (foldl', sortBy,
+                                                              transpose, (!!))
 import qualified Data.Map.Strict                             as M
-import           Data.Maybe                                  (fromMaybe, isNothing)
+import           Data.Maybe                                  (fromMaybe,
+                                                              isNothing)
 import qualified Data.Text                                   as T
 import qualified Data.Vector                                 as VB
 import qualified Data.Vector.Storable                        as V
@@ -56,9 +58,6 @@ import           System.Random
 import           System.Random.Shuffle
 import qualified Torch                                       as Torch
 import qualified Torch.Optim                                 as Torch
-
-import           RegNet
--- import           ML.ARAL.Proxy.Regression.RegressionLayer
 
 
 import           ML.ARAL.Calculation.Type
@@ -117,34 +116,34 @@ insert borl agent _ state aNrs rew stateNext episodeEnd getCalc pxs
   | borl ^. settings . disableAllLearning = (pxs, ) . fst <$> getCalc stateActs aNrs rew stateNextActs episodeEnd emptyExpectedValuationNext
   where
     (_, stateActs, stateNextActs) = mkStateActs borl state stateNext
-insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1@RegressionProxy{} Nothing) = do
+-- insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies pRhoMin pRho pPsiV pV pPsiW pW pR0 pR1@RegressionProxy{} Nothing) = do
 
-  (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
-  let exp :: Experience
-      exp = (stateActs, as, rew, stateNextActs, episodeEnd)
+--   (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
+--   let exp :: Experience
+--       exp = (stateActs, as, rew, stateNextActs, episodeEnd)
 
-  -- let aNr = VB.map snd as
-  -- let aRand = or $ VB.map fst as
-  -- let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr rew aRand val px) mVal
-  let !workerReplMems = borl ^.. workers.traversed.workerReplayMemory
-  !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) 1) workerReplMems
-  let mkCalc (s, idx, rew, s', epiEnd) = getCalc s idx rew s' epiEnd
-  calcs <- mapM (executeAndCombineCalculations mkCalc) ([exp] : concat workerMems)
-  let mTrainBatch !accessor !calcs !px =
-        maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
+--   -- let aNr = VB.map snd as
+--   -- let aRand = or $ VB.map fst as
+--   -- let mInsertProxy mVal px = maybe (return px) (\val -> insertProxy agent (borl ^. settings) period stateFeat aNr rew aRand val px) mVal
+--   let !workerReplMems = borl ^.. workers.traversed.workerReplayMemory
+--   !workerMems <- liftIO $ mapM (getRandomReplayMemoriesElements (borl ^. settings.nStep) 1) workerReplMems
+--   let mkCalc (s, idx, rew, s', epiEnd) = getCalc s idx rew s' epiEnd
+--   calcs <- mapM (executeAndCombineCalculations mkCalc) ([exp] : concat workerMems)
+--   let mTrainBatch !accessor !calcs !px =
+--         maybe (return px) (\xs -> insertProxyMany agent (borl ^. settings) period xs px) (mapM (mapM (\c -> let (inp, mOut) = second accessor c in mOut >>= \out -> Just (inp, out))) calcs)
 
-  -- perform update
-  pRhoMin' <- mTrainBatch getRhoMinimumVal' calcs pRhoMin   `using` rpar
-  pRho'    <- mTrainBatch getRhoVal' calcs pRho             `using` rpar
-  pV'      <- mTrainBatch getVValState' calcs pV            `using` rpar
-  pW'      <- mTrainBatch getWValState' calcs pW            `using` rpar
-  pPsiV'   <- mTrainBatch getPsiVValState' calcs pPsiV      `using` rpar
-  pPsiW'   <- mTrainBatch getPsiWValState' calcs pPsiW      `using` rpar
-  pR0'     <- mTrainBatch getR0ValState' calcs pR0          `using` rpar
-  pR1'     <- mTrainBatch getR1ValState' calcs pR1          `using` rpar
-  return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
-  where
-    (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
+--   -- perform update
+--   pRhoMin' <- mTrainBatch getRhoMinimumVal' calcs pRhoMin   `using` rpar
+--   pRho'    <- mTrainBatch getRhoVal' calcs pRho             `using` rpar
+--   pV'      <- mTrainBatch getVValState' calcs pV            `using` rpar
+--   pW'      <- mTrainBatch getWValState' calcs pW            `using` rpar
+--   pPsiV'   <- mTrainBatch getPsiVValState' calcs pPsiV      `using` rpar
+--   pPsiW'   <- mTrainBatch getPsiWValState' calcs pPsiW      `using` rpar
+--   pR0'     <- mTrainBatch getR0ValState' calcs pR0          `using` rpar
+--   pR1'     <- mTrainBatch getR1ValState' calcs pR1          `using` rpar
+--   return (Proxies pRhoMin' pRho' pPsiV' pV' pPsiW' pW' pR0' pR1' Nothing, calc)
+--   where
+--     (stateFeat, stateActs, stateNextActs) = mkStateActs borl state stateNext
 insert !borl !agent !period !state !as !rew !stateNext !episodeEnd !getCalc !pxs@(Proxies !pRhoMin !pRho !pPsiV !pV !pPsiW !pW !pR0 !pR1 !Nothing) = do
   (calc, _) <- getCalc stateActs as rew stateNextActs episodeEnd emptyExpectedValuationNext
   let aNr = VB.map snd as
@@ -338,21 +337,21 @@ insertProxyMany _ _ _ !xs (Table !m !def acts) = return $ Table m' def acts
     m' = foldl' (\m' ((st, as, _, _), AgentValue vs) -> update m' st as vs) m (concat xs)
     update :: M.Map (StateFeatures, ActionIndex) (V.Vector Double) -> StateFeatures -> AgentActionIndices -> V.Vector Double -> M.Map (StateFeatures, ActionIndex) (V.Vector Double)
     update m st as vs = foldl' (\m' (idx, aNr, v) -> M.alter (\mOld -> Just $ fromMaybe def mOld V.// [(idx, v)]) (V.map trunc st, aNr) m') m (zip3 [0 ..V.length vs - 1] (VB.toList as) (V.toList vs))
-insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs config) = do
-  -- trace("gr: " ++ unlines (map show groundTruthValues) )
-   return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
-  -- | (1 + period) `mod` (config ^. trainBatchSize) /= 0 =
-  -- | otherwise = return px
-  where
-    groundTruthValues = concatMap makeGroundTruthValues (concat xs)
-    makeGroundTruthValues :: ((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value) -> [GroundTruthValue]
-    makeGroundTruthValues ((inps, aId, rew, isRand), AgentValue y)
-      | VB.length aId > 1 = error "insertProxyMany: not yet implemented aId"
-      | otherwise = [val]
-      where
-        val
-          | V.length y > 1 = error "insertProxyMany: not yet implemented for v>1"
-          | otherwise = GroundTruthValue inps (y V.! 0) (VB.head aId)
+-- insertProxyMany _ setts !period !xs px@(RegressionProxy nodes nrAs config) = do
+--   -- trace("gr: " ++ unlines (map show groundTruthValues) )
+--    return $ set proxyRegressionLayer (addGroundTruthValuesAndUpdate nodes groundTruthValues) px
+--   -- | (1 + period) `mod` (config ^. trainBatchSize) /= 0 =
+--   -- | otherwise = return px
+--   where
+--     groundTruthValues = concatMap makeGroundTruthValues (concat xs)
+--     makeGroundTruthValues :: ((StateFeatures, AgentActionIndices, RewardValue, IsRandomAction), Value) -> [GroundTruthValue]
+--     makeGroundTruthValues ((inps, aId, rew, isRand), AgentValue y)
+--       | VB.length aId > 1 = error "insertProxyMany: not yet implemented aId"
+--       | otherwise = [val]
+--       where
+--         val
+--           | V.length y > 1 = error "insertProxyMany: not yet implemented for v>1"
+--           | otherwise = GroundTruthValue inps (y V.! 0) (VB.head aId)
 
 insertProxyMany _ setts !period !xs px@(CombinedProxy !subPx !col !vs) -- only accumulate data if an update will follow
   | (1 + period) `mod` (setts ^. samplingSteps) /= 0 = return $ CombinedProxy subPx col (vs <> xs)
@@ -505,24 +504,24 @@ trainBatch _ _ _ = error "called trainBatch on non-neural network proxy (program
 lookupProxyAgent :: (MonadIO m) => AgentType -> Period -> LookupType -> AgentNumber -> (StateFeatures, ActionIndex) -> Proxy -> m Double
 lookupProxyAgent _ _ _ agNr _ (Scalar x _)    = return $ x V.! agNr
 lookupProxyAgent _ _ _ agNr (k, a) (Table m def _) = return $ M.findWithDefault def (k, a) m V.! agNr
-lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _ _) = return $
-  -- trace ("lookupProxyAgent as: " ++ show a)
-  applyRegressionLayer ms a (VB.convert k)
-lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _ _) = error "RegressionProx ydoes not work with multiple agents"
-lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
-  where
-    agents = px ^?! proxyNrAgents
+-- lookupProxyAgent agTp _ _ 0 (k, a) (RegressionProxy ms _ _) = return $
+--   -- trace ("lookupProxyAgent as: " ++ show a)
+--   applyRegressionLayer ms a (VB.convert k)
+-- lookupProxyAgent agTp _ _ agNr (k, a) (RegressionProxy ms _ _) = error "RegressionProx ydoes not work with multiple agents"
+-- lookupProxyAgent _ _ lkType agNr (k, a) px = selectIndex agNr <$> lookupNeuralNetwork lkType (k, VB.replicate agents a) px
+--   where
+--     agents = px ^?! proxyNrAgents
 
 
 -- | Retrieve a value.
 lookupProxy :: (MonadIO m) => AgentType -> Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
 lookupProxy _ _ _ _ (Scalar x _)           = return $ AgentValue x
 lookupProxy _ _ _ (k, ass) (Table m def _) = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k, a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _ _)
-  | length ass > 1 = error "RegressionProxy does not work with multiple agents"
-  | otherwise = return $ AgentValue $ V.convert $ VB.map (\a ->
-                                                            -- trace ("lookupProxy (a, ass): " ++ show (a, ass))
-                                                            applyRegressionLayer ms a (VB.convert k)) ass
+-- lookupProxy agTp _ _ (k, ass) (RegressionProxy ms _ _)
+--   | length ass > 1 = error "RegressionProxy does not work with multiple agents"
+--   | otherwise = return $ AgentValue $ V.convert $ VB.map (\a ->
+--                                                             -- trace ("lookupProxy (a, ass): " ++ show (a, ass))
+--                                                             applyRegressionLayer ms a (VB.convert k)) ass
 lookupProxy _ _ lkType k px                = lookupNeuralNetwork lkType k px
 
 
@@ -530,7 +529,7 @@ lookupProxy _ _ lkType k px                = lookupNeuralNetwork lkType k px
 lookupProxyNoUnscale :: (MonadIO m) => AgentType -> Period -> LookupType -> (StateFeatures, AgentActionIndices) -> Proxy -> m Value
 lookupProxyNoUnscale _ _ _ _ (Scalar x _)                = return $ AgentValue x
 lookupProxyNoUnscale _ _ _ (k,ass) (Table m def _)       = return $ AgentValue $ V.convert $ VB.zipWith (\a agNr -> M.findWithDefault def (k,a) m V.! agNr) ass (VB.generate (VB.length ass) id)
-lookupProxyNoUnscale agTp p lkType k l@RegressionProxy{} = lookupProxy agTp p lkType k l
+-- lookupProxyNoUnscale agTp p lkType k l@RegressionProxy{} = lookupProxy agTp p lkType k l
 lookupProxyNoUnscale _ _ lkType k px                     = lookupNeuralNetworkUnscaled lkType k px
 
 
@@ -543,12 +542,12 @@ lookupState _ _ (k, nass) (Table m def nrAs) =
   return $ AgentValues $ VB.zipWith (\as agNr -> V.map (\a -> M.findWithDefault def (k, a) m V.! agNr) as) ass (VB.fromList [0 .. VB.length ass - 1])
   where
     ass = toPositiveActionList nrAs nass
-lookupState agTp _ (k, nass) (RegressionProxy ms nrAs _) =
-  return $ AgentValues $ VB.zipWith (\as agNr ->
-                                       -- trace ("lookupState as: " ++ show as)
-                                       V.map (\a -> applyRegressionLayer ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
-  where
-    ass = toPositiveActionList nrAs nass
+-- lookupState agTp _ (k, nass) (RegressionProxy ms nrAs _) =
+--   return $ AgentValues $ VB.zipWith (\as agNr ->
+--                                        -- trace ("lookupState as: " ++ show as)
+--                                        V.map (\a -> applyRegressionLayer ms a k) as) ass (VB.fromList [0 .. VB.length ass - 1])
+--   where
+--     ass = toPositiveActionList nrAs nass
 lookupState _ tp (k, DisallowedActionIndicies ass) px = do
   AgentValues vals <- lookupActionsNeuralNetwork tp k px
   return $ AgentValues $ VB.zipWith filterActions ass vals

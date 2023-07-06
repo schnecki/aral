@@ -13,7 +13,6 @@ module Helper
 import           Grenade
 import           ML.ARAL
 import           ML.ARAL.InftyVector
-import           RegNet
 
 import           Control.Arrow
 import           Control.DeepSeq             (NFData, force)
@@ -103,7 +102,7 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
                          output <- prettyARALMWithStInverse mInverse qPP
                          liftIO $ print output >> hFlush stdout
                          liftIO $ case q' ^. proxies . r1 of
-                           RegressionProxy lay _ _ | q' ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
+                           -- RegressionProxy lay _ _ | q' ^. t > 10 -> mapM_ (\i -> plotRegressionNode i 0 1 Nothing lay) [0..regNetNodes lay - 1]
 
 
                            _                                      -> return ()
@@ -134,19 +133,19 @@ askUser mInverse showHelp addUsage cmds qlCmds ql = do
       dim1 <- liftIO $ putStr "Dimension 1 [0]: " >> hFlush stdout >> getIOWithDefault 0
       dim2 <- liftIO $ putStr "Dimension 2 [1]: " >> hFlush stdout >> getIOWithDefault 1
       case ql ^. proxies . r1 of
-        RegressionProxy lay _ _
-          | ql ^. t > 10 -> liftIO $ mapM_ (\i -> plotRegressionNode i dim1 dim2 Nothing lay) [0 .. regNetNodes lay - 1]
+        -- RegressionProxy lay _ _
+        --   | ql ^. t > 10 -> liftIO $ mapM_ (\i -> plotRegressionNode i dim1 dim2 Nothing lay) [0 .. regNetNodes lay - 1]
         px@Hasktorch{} -> liftIO $ do
           tp <- fromMaybe Target <$> liftIO (putStr "Lookup Type [Target]: " >> hFlush stdout >> getEnumValueSafePrint)
           plotProxyFunction True dim1 dim2 ql tp px
         _ -> return ()
-      let doc = maybe mempty prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
-      liftIO $ print doc
+      -- let doc = maybe mempty prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
+      -- liftIO $ print doc
       askUser mInverse False addUsage cmds qlCmds ql
-    "rp" -> do
-      let doc = maybe mempty  prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
-      print doc
-      askUser mInverse False addUsage cmds qlCmds ql
+    -- "rp" -> do
+    --   let doc = maybe mempty  prettyRegressionLayer (ql ^? proxies . r1 . proxyRegressionLayer)
+    --   print doc
+    --   askUser mInverse False addUsage cmds qlCmds ql
     "h" -> do
       prettyARALHead True mInverse ql >>= print >> hFlush stdout
       askUser mInverse False addUsage cmds qlCmds ql

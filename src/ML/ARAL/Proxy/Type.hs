@@ -10,12 +10,12 @@
 
 module ML.ARAL.Proxy.Type
   ( ProxyType (..)
-  , Proxy (Scalar, Table, Grenade, Hasktorch, CombinedProxy, RegressionProxy)
+  , Proxy (Scalar, Table, Grenade, Hasktorch, CombinedProxy)
   , isActorCritic
   , prettyProxyType
   , proxyScalar
   , proxyTable
-  , proxyRegressionLayer
+  -- , proxyRegressionLayer
   , proxyDefault
   , proxyType
   , proxyNNConfig
@@ -65,7 +65,7 @@ import qualified Torch.Vision                                as Torch.V
 import           Unsafe.Coerce                               (unsafeCoerce)
 
 -- import           ML.ARAL.Proxy.Regression.RegressionLayer
-import           RegNet
+-- import           RegNet
 
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.NeuralNetwork.AdamW
@@ -149,11 +149,11 @@ data Proxy
       , _proxyHTWelford   :: !(WelfordExistingAggregate StateFeatures)
       , _proxyHTSAM       :: !(Maybe (Int, Double)) -- ^ SAM setup: Interval, rho
       }
-   | RegressionProxy
-     { _proxyRegressionLayer :: !RegressionLayer -- One for each worker?
-     , _proxyNrActions       :: !Int
-     , _proxyNNConfig        :: !NNConfig
-     }
+   -- | RegressionProxy
+   --   { _proxyRegressionLayer :: !RegressionLayer -- One for each worker?
+   --   , _proxyNrActions       :: !Int
+   --   , _proxyNNConfig        :: !NNConfig
+   --   }
 
 isActorCritic :: Proxy -> Bool
 isActorCritic (Hasktorch tar _ _ _ _ _ _ _ _ _ _) = mlpIsPolicy tar
@@ -167,9 +167,9 @@ proxyTable :: Traversal' Proxy (M.Map (StateFeatures, ActionIndex) (V.Vector Dou
 proxyTable f (Table m d acts) = (\m' -> Table m' d acts) <$> f m
 proxyTable  _ p               = pure p
 
-proxyRegressionLayer :: Traversal' Proxy RegressionLayer
-proxyRegressionLayer f (RegressionProxy ms acts nnCfg) = (\ms' -> RegressionProxy ms' acts nnCfg) <$> f ms
-proxyRegressionLayer  _ p                              = pure p
+-- proxyRegressionLayer :: Traversal' Proxy RegressionLayer
+-- proxyRegressionLayer f (RegressionProxy ms acts nnCfg) = (\ms' -> RegressionProxy ms' acts nnCfg) <$> f ms
+-- proxyRegressionLayer  _ p                              = pure p
 
 
 proxyDefault :: Traversal' Proxy (V.Vector Double)
@@ -183,7 +183,7 @@ proxyType f (CombinedProxy p c out)                                      = (\tp'
 proxyType  _ p                                                           = pure p
 
 proxyNNConfig :: Traversal' Proxy NNConfig
-proxyNNConfig f (RegressionProxy ms acts nnCfg)                              = (\nnCfg' -> RegressionProxy ms acts nnCfg') <$> f nnCfg
+-- proxyNNConfig f (RegressionProxy ms acts nnCfg)                              = (\nnCfg' -> RegressionProxy ms acts nnCfg') <$> f nnCfg
 proxyNNConfig f (Grenade t w tp conf acts agents wel)                        = (\conf' -> Grenade t w tp conf' acts agents wel) <$> f conf
 proxyNNConfig f (Hasktorch t w tp conf acts agents adamAC adam mdl wel mSAM) = (\conf' -> Hasktorch t w tp conf' acts agents adamAC adam mdl wel mSAM) <$> f conf
 proxyNNConfig f (CombinedProxy p c out)                                      = (\conf' -> CombinedProxy (p { _proxyNNConfig = conf'}) c out) <$> f (_proxyNNConfig p)
@@ -191,7 +191,7 @@ proxyNNConfig  _ p                                                           = p
 
 proxyNrActions :: Traversal' Proxy Int
 proxyNrActions f (Table m d acts)                                             = (\acts' -> Table m d acts') <$> f acts
-proxyNrActions f (RegressionProxy ms acts nnCfg)                              = (\acts' -> RegressionProxy ms acts' nnCfg) <$> f acts
+-- proxyNrActions f (RegressionProxy ms acts nnCfg)                              = (\acts' -> RegressionProxy ms acts' nnCfg) <$> f acts
 proxyNrActions f (Grenade t w tp conf acts agents wel)                        = (\acts' -> Grenade t w tp conf acts' agents wel) <$> f acts
 proxyNrActions f (Hasktorch t w tp conf acts agents adamAC adam mdl wel mSAM) = (\acts' -> Hasktorch t w tp conf acts' agents adamAC adam mdl wel mSAM) <$> f acts
 proxyNrActions f (CombinedProxy p c out)                                      = (\acts' -> CombinedProxy (p { _proxyNrActions = acts'}) c out) <$> f (_proxyNrActions p)
@@ -229,12 +229,12 @@ instance Show Proxy where
   show (Grenade _ _ t _ _ _ _)     = "Grenade " ++ show t
   show (Hasktorch _ _ t _ _ _ _ _ _ _ mSAM) = "Hasktorch " ++ show t ++ ". SAM config: " ++ show mSAM
   show (CombinedProxy p col _)   = "CombinedProxy of " ++ show p ++ " at column " ++ show col
-  show (RegressionProxy p _ _)   = "RegressionProxy of " ++ show p
+  -- show (RegressionProxy p _ _)   = "RegressionProxy of " ++ show p
 
 prettyProxyType :: Proxy -> String
 prettyProxyType Scalar{}              = "Scalar"
 prettyProxyType Table{}               = "Tabular"
-prettyProxyType RegressionProxy{}     = "RegressionProxy"
+-- prettyProxyType RegressionProxy{}     = "RegressionProxy"
 prettyProxyType Grenade{}             = "Grenade"
 prettyProxyType Hasktorch{}           = "Hasktorch"
 prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProxyType p
@@ -242,7 +242,7 @@ prettyProxyType (CombinedProxy p _ _) = "Combined Proxy built on " <> prettyProx
 
 instance NFData Proxy where
   rnf (Table x def acts)                                  = rnf x `seq` rnf def `seq` rnf acts
-  rnf (RegressionProxy x nrActs nnCfg)                    = rnf x `seq` rnf nrActs `seq` rnf nnCfg
+  -- rnf (RegressionProxy x nrActs nnCfg)                    = rnf x `seq` rnf nrActs `seq` rnf nnCfg
   rnf (Grenade t w tp cfg nrActs agents wel)              = rnf t `seq` rnf w `seq` rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents `seq` rnf wel
   rnf (Hasktorch t w tp cfg nrActs agents _ _ _ wel mSAM) = rnf tp `seq` rnf cfg `seq` rnf nrActs `seq` rnf agents `seq` rnf wel `seq` rnf mSAM
   rnf (Scalar x nrAs)                                     = rnf x `seq` rnf nrAs

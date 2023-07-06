@@ -34,7 +34,7 @@ import qualified Data.Vector                         as VB
 import qualified Data.Vector.Storable                as V
 import           Grenade
 import           Prelude                             hiding ((<>))
-import           RegNet
+-- import           RegNet
 import           System.IO.Unsafe                    (unsafePerformIO)
 import           Text.PrettyPrint                    as P
 import           Text.Printf
@@ -118,26 +118,26 @@ prettyTableRows borl prettyState prettyActionIdx modifier p =
           mkInput k = maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
        in mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
           sortBy (compare `on` fst . fst) $ map (\((st, a), v) -> ((st, a), AgentValue v)) (M.toList m)
-    P.RegressionProxy layer@(RegressionLayer nodes welInp _ step) aNr _ ->
-      let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
-          mkInput k =
-            text (filter (/= '"') $ show $ map printDouble (V.toList k))
-            -- maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
-          cfg = regNodeConfig (VB.head nodes)
-          mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
-          mkInputs xs = nub $ concatMap (map (VB.convert . obsInputValues) . VB.toList . (\x -> regNodeObservations x VB.++ regNodeOldObservations x)) (VB.toList xs)
-          inputs =
-            case mkInputs nodes of
-              xs
-                | length xs `div` VB.length nodes <= 25 -> take 100 xs
-              xs -> take 4 xs
-          -- inputs = nnCfg ^. prettyPrintElems
-          inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0 .. aNr - 1]) inputs
-       in fmap (++ [text "" $$ text (regressionLayerFormula layer) $$ text "" $$ text (show cfg)]) $
-          -- fmap (++ [text "" $$ text (show cfg)]) $
-          mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
-          -- sortBy (compare `on` fst . fst) $
-          concatMap (\((st, a), v) -> [((st, a), AgentValue v), ((RegNet.normaliseStateFeatureUnbounded welInp st, a), AgentValue v)]) inputActionValue
+    -- P.RegressionProxy layer@(RegressionLayer nodes welInp _ step) aNr _ ->
+    --   let mkAct idx = show $ (borl ^. actionList) VB.! (idx `mod` length (borl ^. actionList))
+    --       mkInput k =
+    --         text (filter (/= '"') $ show $ map printDouble (V.toList k))
+    --         -- maybe (text (filter (/= '"') $ show $ map printDouble (V.toList k))) (\(ms, st) -> text $ maybe st show ms) (prettyState k)
+    --       cfg = regNodeConfig (VB.head nodes)
+    --       mkInputs :: VB.Vector RegressionNode -> [NetInputWoAction]
+    --       mkInputs xs = nub $ concatMap (map (VB.convert . obsInputValues) . VB.toList . (\x -> regNodeObservations x VB.++ regNodeOldObservations x)) (VB.toList xs)
+    --       inputs =
+    --         case mkInputs nodes of
+    --           xs
+    --             | length xs `div` VB.length nodes <= 25 -> take 100 xs
+    --           xs -> take 4 xs
+    --       -- inputs = nnCfg ^. prettyPrintElems
+    --       inputActionValue = concatMap (\inp -> map (\aId -> ((inp, aId), V.singleton $ applyRegressionLayer layer aId inp)) [0 .. aNr - 1]) inputs
+    --    in fmap (++ [text "" $$ text (regressionLayerFormula layer) $$ text "" $$ text (show cfg)]) $
+    --       -- fmap (++ [text "" $$ text (show cfg)]) $
+    --       mapM (\((k, idx), val) -> modifier Target (k, idx) val >>= \v -> return (mkInput k <> comma <+> text (mkAct idx) <> colon <+> printValue v)) $
+    --       -- sortBy (compare `on` fst . fst) $
+    --       concatMap (\((st, a), v) -> [((st, a), AgentValue v), ((RegNet.normaliseStateFeatureUnbounded welInp st, a), AgentValue v)]) inputActionValue
     pr -> do
       mtrue <- mkListFromNeuralNetwork borl prettyState prettyActionIdx True modifier pr
       let printFun (kDoc, (valT, valW))
@@ -394,13 +394,13 @@ prettyARALHead' printRho prettyStateFun borl = do
           maybe mempty (\(WorkerState _ _ ms _ _) -> text "Replay memories:" <+> textReplayMemoryType ms) (borl ^? workers . _head)
     autoInpScale =
       case borl ^. proxies . r1 of
-        P.Table {}           -> mempty
-        P.RegressionProxy {} -> text "True (always on)"
-        px                   -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
+        P.Table {} -> mempty
+        -- P.RegressionProxy {} -> text "True (always on)"
+        px         -> text $ show (px ^?! proxyNNConfig . autoNormaliseInput)
     scalingText =
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
-        P.RegressionProxy {} -> "Regression representation (no scaling needed!)"
+        -- P.RegressionProxy {} -> "Regression representation (no scaling needed!)"
         px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
@@ -413,14 +413,14 @@ prettyARALHead' printRho prettyStateFun borl = do
     scalingTextDqn =
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
-        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        -- P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
         px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinR1Value, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxR1Value))
     scalingTextAvgRewardAdjustedDqn =
       case borl ^. proxies . r1 of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
-        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        -- P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
         px                   -> textNNConf (px ^?! proxyNNConfig) <> semicolon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf =
@@ -431,15 +431,15 @@ prettyARALHead' printRho prettyStateFun borl = do
     scalingTextBorlVOnly =
       case borl ^. proxies . v of
         P.Table {}           -> text "Tabular representation (no scaling needed)"
-        P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
+        -- P.RegressionProxy {} -> text "Regression representation (no scaling needed)"
         px                   -> textNNConf (px ^?! proxyNNConfig) <> colon <+> scalingAlg (px ^?! proxyNNConfig . scaleOutputAlgorithm)
       where
         textNNConf conf = text (show (printDoubleWith 8 $ conf ^. scaleParameters . scaleMinVValue, printDoubleWith 8 $ conf ^. scaleParameters . scaleMaxVValue))
     nnTargetUpdate =
       case borl ^. proxies . v of
-        P.Table {}           -> empty
-        P.RegressionProxy {} -> empty
-        px                   -> textTargetUpdate (px ^?! proxyNNConfig)
+        P.Table {} -> empty
+        -- P.RegressionProxy {} -> empty
+        px         -> textTargetUpdate (px ^?! proxyNNConfig)
       where
         textTargetUpdate conf =
             text "NN Smooth Target Update Rate" <> colon $$ nest nestCols (printDoubleWith 8 $ conf ^. grenadeSmoothTargetUpdate) <+>
@@ -479,16 +479,16 @@ prettyARALHead' printRho prettyStateFun borl = do
     nnLearningParams =
       case borl ^. proxies . r1 of
         P.Table {}                                       -> empty
-        px@P.RegressionProxy{}                           -> textRegressionConf (px ^?! proxyRegressionLayer)
+        -- px@P.RegressionProxy{}                           -> textRegressionConf (px ^?! proxyRegressionLayer)
         P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.Hasktorch _ _ _ conf _ _ _ _ _ _ nnActs        -> textGrenadeConf conf (conf ^. grenadeLearningParams) <> text "," <+> text "Single Net per Action: " <> text (show nnActs)
         P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _                                                -> error "nnLearningParams in Pretty.hs"
       where
-        textRegressionConf :: RegressionLayer -> Doc
-        textRegressionConf lay =
-          text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
-          where cfg = regNodeConfig $ VB.head $ regressionLayerNodes lay
+        -- textRegressionConf :: RegressionLayer -> Doc
+        -- textRegressionConf lay =
+        --   text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
+        --   where cfg = regNodeConfig $ VB.head $ regressionLayerNodes lay
         textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
         textGrenadeConf conf (OptSGD rate momentum l2) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
