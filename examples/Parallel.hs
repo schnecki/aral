@@ -37,7 +37,7 @@ import           Prelude                hiding (Left, Right)
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "parallel"
+    { _experimentBaseName = "gridworld-mini"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -340,10 +340,10 @@ actions :: [Act]
 actions = [Up, Down]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Up]   = moveUp tp s
-actionFun tp s [Down] = moveDown tp s
-actionFun _ _ xs      = error $ "Multiple actions received in actionFun: " ++ show xs
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Up]   = moveUp tp s
+actionFun _ tp s [Down] = moveDown tp s
+actionFun _ _ _ xs      = error $ "Multiple actions received in actionFun: " ++ show xs
 
 actionFilter :: St -> [V.Vector Bool]
 actionFilter Start    = [V.fromList [True, True]]

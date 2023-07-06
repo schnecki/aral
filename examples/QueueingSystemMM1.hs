@@ -52,7 +52,7 @@ import           Debug.Trace
 
 -- Maximum Queue Size
 maxQueueSize :: Int
-maxQueueSize = 20 -- 5
+maxQueueSize = 20 -- was 20
 
 -- Setup as in Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and average reward reinforcement learning. In ICML (pp. 328-336).
 lambda, mu, fixedPayoffR, c :: Double
@@ -92,14 +92,14 @@ instance Bounded St where
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system_MM1_sens_gamma0_0.95_maxQLen20" -- "queuing-system M/M/1 eps=5 phase-aware neu"
+    { _experimentBaseName         = "queuing-system M/M/1 eps=0.05 maxQSize=20"
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
-    , _experimentRepetitions      = 30
+    , _experimentRepetitions      = 15
     , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 100000
+    , _evaluationSteps            = 10000
     , _evaluationReplications     = 1
-    , _evaluationMaxStepsBetweenSaves = Just 20000
+    , _evaluationMaxStepsBetweenSaves = Nothing
     }
 
   where
@@ -181,70 +181,43 @@ instance ExperimentDef (ARAL St Act) where
       let p = Just $ fromIntegral $ rl' ^. t
           -- val l = realToFrac $ head $ fromValue (rl' ^?! l)
           val' l = realToFrac (rl' ^?! l)
-          results | phase /= EvaluationPhase = []
-                  | otherwise = 
-            [
-              StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
-            , StepResult "reward" p (val' $ lastRewards._head)
-            , StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
-            -- , StepResult "psiRho" p (val $ psis . _1)
-            -- , StepResult "psiV" p   (val $ psis . _2)
-            -- , StepResult "psiW" p   (val $ psis . _3)
-            -- | 
-            ]
-            ++
-            concatMap
-              (\s ->
-                 map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ VB.head $ actionIndicesFiltered rl' s))
-                 (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
+          results
+            | phase /= EvaluationPhase = []
+            | otherwise =
+              [ StepResult "avgRew" p (realToFrac $ V.head $ rl ^?! proxies . rho . proxyScalar)
+              , StepResult "queueLength" p (fromIntegral $ getQueueLength $ rl' ^. s)
+              , StepResult "reward" p (val' $ lastRewards._head)
+              -- , StepResult "psiRho" p (val $ psis . _1)
+              -- , StepResult "psiV" p   (val $ psis . _2)
+              -- , StepResult "psiW" p   (val $ psis . _3)
+              ]
+            -- ++
+            -- concatMap
+            --   (\s ->
+            --      map (\a -> StepResult (T.pack $ show (s, a)) p (realToFrac $ V.head $ M.findWithDefault 0 (tblInp s, a) (rl' ^?! proxies . r1 . proxyTable))) (V.toList $ VB.head $ actionIndicesFiltered rl' s))
+            --      (sort $ take 9 $ filter (const (phase == EvaluationPhase))[(minBound :: St) .. maxBound ])
       return (results, rl')
   parameters _ =
-    [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [
-                                                                  --   AlgARAL 0.8 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.8 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.8 0.99 ByStateValues
-                                                                  -- -- , AlgDQN 0.99 EpsilonSensitive
-                                                                  -- -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  -- , AlgDQN 0.999 Exact
-                                                                  -- , AlgDQN 0.99 Exact
-                                                                  -- , AlgDQN 0.50 Exact
-								  -- , AlgRLearning
+    [ ParameterSetup
+        "algorithm"
+        (set algorithm)
+        (view algorithm)
+        (Just $ const $ return
 
-                                                                  ---------------------------
-                                                                  ---- Sensitivity for Gamma:
-                                                                  -- ---------------------------
-                                                                    AlgARAL 0.95 1.0 ByStateValues
-                                                                  , AlgARAL 0.95 0.999 ByStateValues
-                                                                  , AlgARAL 0.95 0.99 ByStateValues
-                                                                  --   AlgARAL 0.9 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.9 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.9 0.99 ByStateValues
-                                                                  -- , AlgARAL 0.5 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.5 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.5 0.99 ByStateValues
-
-                                                                  ]) Nothing Nothing Nothing]
-
-    -- [ ParameterSetup
-    --     "algorithm"
-    --     (set algorithm)
-    --     (view algorithm)
-    --     (Just $ const $ return [ -- AlgARAL 0.8 0.99  ByStateValues
-    --                            -- ,
-    --                            --   AlgARAL 0.8 0.999 ByStateValues
-    --                            -- , AlgARAL 0.8 1.0 ByStateValues
-    --                            -- , AlgDQN 0.99 EpsilonSensitive
-    --                            -- , AlgDQN 0.99 Exact
-    --                            -- , AlgDQN 0.5  EpsilonSensitive
-    --                             AlgDQN 0.5  Exact
-    --                            , AlgDQN 0.999  Exact
-    --                            , AlgARAL 0.8 0.99 ByStateValues
-    --                            ])
-    --     Nothing
-    --     Nothing
-    --     Nothing
-    -- ]
+                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                  , AlgARAL 0.8 0.999 ByStateValues
+                                  , AlgARAL 0.8 0.99 ByStateValues
+                                  -- , AlgDQN 0.99 EpsilonSensitive
+                                  -- , AlgDQN 0.5 EpsilonSensitive
+                                  , AlgDQN 0.999 Exact
+                                  , AlgDQN 0.99 Exact
+                                  , AlgDQN 0.50 Exact
+			          , AlgRLearning
+                                  ])
+        Nothing
+        Nothing
+        Nothing
+    ]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
 
 nnConfig :: NNConfig
@@ -283,7 +256,7 @@ params =
     , _beta                = 0.01
     , _delta               = 0.005
     , _gamma               = 0.01
-    , _epsilon             = 0.025
+    , _epsilon             = 0.05 -- 5.0 -- 10.0
 
     , _exploration         = 1.0
     , _learnRandomAbove    = 1.5
@@ -296,53 +269,18 @@ params =
 decay :: ParameterDecaySetting
 decay =
     Parameters
-      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 50000  -- 5e-4
-      , _alphaRhoMin      = NoDecay
+      { _alpha            = ExponentialDecay (Just 1e-5) 0.5 10000  -- 5e-4
+      , _alphaRhoMin = NoDecay
       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
-      , _gamma            = ExponentialDecay (Just 1e-3) 0.5 150000 -- 1e-3
+      , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000 -- 1e-3
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
-      , _exploration      = ExponentialDecay (Just 0.01) 0.50 100000
+      , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
-
--- -- | ARAL Parameters.
--- params :: ParameterInitValues
--- params =
---   Parameters
---     { _alpha               = 0.01
---     , _alphaRhoMin = 2e-5
---     , _beta                = 0.01
---     , _delta               = 0.005
---     , _gamma               = 0.01
---     , _epsilon             = 5.0 -- 10.0
-
---     , _exploration         = 1.0
---     , _learnRandomAbove    = 1.5
---     , _zeta                = 0.03
---     , _xi                  = 0.005
-
---     }
-
--- -- | Decay function of parameters.
--- decay :: ParameterDecaySetting
--- decay =
---     Parameters
---       { _alpha            = ExponentialDecay (Just 1e-5) 0.5 10000  -- 5e-4
---       , _alphaRhoMin = NoDecay
---       , _beta             = ExponentialDecay (Just 1e-4) 0.5 150000
---       , _delta            = ExponentialDecay (Just 5e-4) 0.5 150000
---       , _gamma            = ExponentialDecay (Just 1e-2) 0.5 150000 -- 1e-3
---       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
---       , _xi               = NoDecay
---       -- Exploration
---       , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
---       , _exploration      = ExponentialDecay (Just 0.10) 0.50 100000
---       , _learnRandomAbove = NoDecay
---       }
 
 initVals :: InitValues
 initVals = InitValues 0 0 0 0 0 0
@@ -359,7 +297,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.0.104 dbname=experimenter user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -398,10 +336,10 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   alg <- chooseAlg mRefStateAct
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
-  rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
+  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
 
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = mInverseSt
                 | otherwise = mInverseStTbl
   askUser (Just inverseSt) True usage cmds [] rl
@@ -456,9 +394,9 @@ actions = [Reject, Admit]
 
 
 actionFun :: ActionFunction St Act
-actionFun tp st [Reject]            = appendQueueLenFile reject tp st
-actionFun tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
-actionFun _ st act                  = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
+actionFun _ tp st [Reject]            = appendQueueLenFile reject tp st
+actionFun _ tp st@(St _ True) [Admit] = appendQueueLenFile admit tp st
+actionFun _ _ st act                  = error $ "unexpected st action tuple in actionFun: " ++ show (st, act)
 
 
 appendQueueLenFile :: (AgentType -> St -> IO b) -> AgentType -> St -> IO b

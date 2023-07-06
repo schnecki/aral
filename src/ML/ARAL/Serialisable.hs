@@ -15,37 +15,37 @@
 
 module ML.ARAL.Serialisable where
 
-import           Control.Arrow                (first)
+import           Control.Applicative     ((<|>))
+import           Control.Arrow           (first)
 import           Control.Concurrent.MVar
 import           Control.DeepSeq
 import           Control.Lens
-import           Control.Monad                (foldM_, zipWithM_)
+import           Control.Monad           (foldM_, zipWithM_)
 import           Control.Monad.IO.Class
-import qualified Data.ByteString              as BS
-import           Data.Constraint              (Dict (..))
+import qualified Data.ByteString         as BS
+import           Data.Constraint         (Dict (..))
 import           Data.Int
-import           Data.List                    (foldl')
-import qualified Data.Map                     as M
+import           Data.List               (foldl')
+import           Data.List.Singletons
+import qualified Data.Map                as M
 import           Data.Serialize
-import           Data.Singletons              (sing, withSingI)
-import           Data.Singletons.Prelude.List
-import           Data.Typeable                (Typeable)
-import qualified Data.Vector                  as VB
-import qualified Data.Vector.Mutable          as VM
+import           Data.Singletons         (sing, withSingI)
+import           Data.Typeable           (Typeable)
+import qualified Data.Vector             as VB
+import qualified Data.Vector.Mutable     as VM
 import qualified Data.Vector.Serialize
-import qualified Data.Vector.Storable         as V
+import qualified Data.Vector.Storable    as V
 import           Data.Word
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
 import           System.IO
 import           System.IO.Unsafe
-import qualified Torch                        as Torch
-import qualified Torch.Optim                  as Torch
-import qualified Torch.Serialize              as Torch
-import           Unsafe.Coerce                (unsafeCoerce)
+import qualified Torch                   as Torch
+import qualified Torch.Optim             as Torch
+import qualified Torch.Serialize         as Torch
+import           Unsafe.Coerce           (unsafeCoerce)
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.Algorithm
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
@@ -223,17 +223,33 @@ instance Serialize Torch.Adam where
   put (Torch.Adam b1 b2 m1 m2 iter) = put b1 >> put b2 >> put m1 >> put m2 >> put iter
   get = Torch.Adam <$> get <*> get <*> get <*> get <*> get
 
-instance Serialize AdamW where
-  put (AdamW b1 b2 m1 m2 iter l2 wD) = put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put l2 >> put wD
-  get = AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> get
 
+instance Serialize AdamW where
+  put (AdamW nu b1 b2 m1 m2 iter wD) = put nu >> put b1 >> put b2 >> put m1 >> put m2 >> put iter >> put wD
+  get = (AdamW <$> get <*> get <*> get <*> get <*> get <*> get <*> get) <|>
+        (fmap fromAdamWOld $ AdamWOld <$> get <*> get <*> get <*> get <*> get <*> get <*> get <*> get)
+    where
+      fromAdamWOld :: AdamWOld -> AdamW
+      fromAdamWOld (AdamWOld nu b1 b2 m1 m2 iter _ wd) = AdamW (realToFrac nu) (realToFrac b1) (realToFrac b2) m1 m2 iter wd
+
+data AdamWOld = AdamWOld
+  { adamWOldNu          :: Float          -- ^ Learning rate
+  , adamWOldBeta1       :: Float          -- ^ 1st moment forgetting factor
+  , adamWOldBeta2       :: Float          -- ^ 2nd moment forgetting factor
+  , adamWOldM1          :: [Torch.Tensor] -- ^ 1st moment
+  , adamWOldM2          :: [Torch.Tensor] -- ^ 2nd moment
+  , adamWOldIter        :: Int            -- ^ iteration
+  , adamWOldL2          :: Double         -- ^ l2 (unused!)
+  , adamWOldWeightDecay :: Double         -- ^ weight decay
+  }
 
 instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
   put (Grenade t w tp conf nr agents wel) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put wel
-  put (Hasktorch t w tp conf nr agents adam mdl wel) =
-    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adam >> put mdl >> put wel
+  put (Hasktorch t w tp conf nr agents adamAC adam mdl wel nnActs) =
+    put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adamAC >> put adam >> put mdl >> put wel >> put nnActs
+  put (RegressionProxy m acts nnCfg) = put (4 :: Int) >> put m >> put acts >> put nnCfg
   get =
     fmap force $! do
       (c :: Int) <- get
@@ -262,9 +278,11 @@ instance Serialize Proxy where
           conf <- get
           nr <- get
           agents <- get
+          adamAC <- get
           adam <- get
           mdl <- get
           wel <- get
+          mSAM <- get
           return $
             unsafePerformIO $ do
               putStrLn "ANN model: "
@@ -273,9 +291,10 @@ instance Serialize Proxy where
               w <- Torch.sample mdl
               return $
                 if null paramsT
-                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adam mdl wel
-                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adam mdl wel
-        _ -> error "Unknown constructor for proxy"
+                  then Hasktorch (t {mlpLayers = []}) (w {mlpLayers = []}) tp conf nr agents adamAC adam mdl wel mSAM
+                  else Hasktorch (Torch.replaceParameters t paramsT) (Torch.replaceParameters w paramsW) tp conf nr agents adamAC adam mdl wel mSAM
+        4 -> RegressionProxy <$> get <*> get <*> get
+        _ -> error $ "Unknown constructor for proxy: " <> show c
 
 
 -- ^ Replay Memory

@@ -23,7 +23,6 @@ import           Data.Serialize
 import qualified Data.Vector           as VB
 import           GHC.Generics
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Proxy.Proxies
 import           ML.ARAL.Reward.Type
@@ -34,7 +33,7 @@ type Workers s = [WorkerState s]
 
 data WorkerState s =
   WorkerState
-    { _workerNumber        :: !Int                              -- ^ Worker nr.
+    { _workerNumber        :: !Int                              -- ^ Worker nr. >= 1.
     , _workerS             :: !s                                -- ^ Current state.
     , _workerReplayMemory  :: !ReplayMemories                   -- ^ Replay Memories of worker.
     , _workerFutureRewards :: !(VB.Vector (RewardFutureData s)) -- ^ Future reward data.

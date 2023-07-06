@@ -53,8 +53,8 @@ data SelectedActions s = SelectedActions
 -- | This function chooses the next action from the current state s and all possible actions.
 nextAction :: (MonadIO m) => ARAL s as -> m NextActions
 nextAction !borl = do
-  mainAgent <- nextActionFor borl mainAgentStrategy (borl ^. s) (params' ^. exploration) `using` rparWith rpar
-  ws <- zipWithM (nextActionFor borl (borl ^. settings . explorationStrategy)) (borl ^.. workers . traversed . workerS) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
+  mainAgent <- nextActionFor MainAgent borl mainAgentStrategy (borl ^. s) (params' ^. exploration) `using` rparWith rpar
+  ws <- zipWithM (\worker -> nextActionFor (WorkerAgent $ worker ^. workerNumber) borl (borl ^. settings . explorationStrategy) (worker ^. workerS)) (borl ^. workers) (map maxExpl $ borl ^. settings . workersMinExploration) `using` rpar
   return (mainAgent, ws)
   where
     params' = decayedParameters borl
@@ -62,9 +62,10 @@ nextAction !borl = do
     mainAgentStrategy | borl ^. settings.mainAgentSelectsGreedyActions = Greedy
                       | otherwise = borl ^. settings . explorationStrategy
 
-nextActionFor :: (MonadIO m) => ARAL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
-nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate agents id)
+nextActionFor :: (MonadIO m) => AgentType -> ARAL s as -> ExplorationStrategy -> s -> Double -> m ActionChoice
+nextActionFor agTp borl strategy state explore = VB.zipWithM chooseAgentAction acts (VB.generate agents id)
   where
+    isAC = isActorCritic (borl ^. proxies . r1) || isActorCritic (borl ^. proxies . r1)
     agents = VB.length acts
     acts = actionIndicesFiltered borl state
     chooseAgentAction as agentIndex
@@ -73,11 +74,13 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
       | otherwise =
         flip runReaderT cfg $
         case strategy of
-          Greedy -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs))
-          EpsilonGreedy -> chooseAction borl True (\xs -> return $ SelectedActions (head xs) (last xs))
+          _ | isAC -> chooseAction agTp borl False chooseByPolicy
+          EpsilonGreedy | isAC -> chooseAction agTp borl False (chooseBySoftmax 0.01)
+          Greedy -> chooseAction agTp borl False (\xs -> return $ SelectedActions (head xs) (last xs))
+          EpsilonGreedy -> chooseAction agTp borl True (\xs -> return $ SelectedActions (head xs) (last xs))
           SoftmaxBoltzmann t0
-            | temp < 0.001 -> chooseAction borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
-            | otherwise -> chooseAction borl False (chooseBySoftmax temp)
+            | temp < 0.001 -> chooseAction agTp borl False (\xs -> return $ SelectedActions (head xs) (last xs)) -- Greedily choosing actions
+            | otherwise -> chooseAction agTp borl False (chooseBySoftmax temp)
             where temp = t0 * explore / fromIntegral agents
       where
         cfg = ActionPickingConfig state (explore / fromIntegral agents) agentIndex (V.toList as)
@@ -88,6 +91,14 @@ nextActionFor borl strategy state explore = VB.zipWithM chooseAgentAction acts (
         --     (Maximise, AlgARAL {}) -> (avg (borl ^?! proxies . rho . proxyScalar) - borl ^. expSmoothedReward) / borl ^. expSmoothedReward
         --     _ -> explore
 
+chooseByPolicy :: ActionSelection s
+chooseByPolicy xs = do
+  r <- liftIO $ randomRIO (0 :: Double, 1)
+  return $ SelectedActions (xs !! chooseByProbability r 0 0 probs) (reverse xs !! chooseByProbability r 0 0 probs)
+  where
+    probs = map (sum . map fst) xs
+
+
 chooseBySoftmax :: TemperatureInitFactor -> ActionSelection s
 chooseBySoftmax temp xs = do
   r <- liftIO $ randomRIO (0 :: Double, 1)
@@ -95,11 +106,18 @@ chooseBySoftmax temp xs = do
   where
     probs = softmax temp $ map (fst . head) xs
 
+
 chooseByProbability :: RandomNormValue -> ActionIndex -> Double -> [Double] -> Int
 chooseByProbability r idx acc [] = error $ "no more options in chooseByProbability in Action.Ops: " ++ show (r, idx, acc)
-chooseByProbability r idx acc (v:vs)
-  | acc + v >= r = idx
-  | otherwise = chooseByProbability r (idx + 1) (acc + v) vs
+chooseByProbability r idx acc xs = chooseByProbability' r idx acc (norm xs)
+  where
+    norm xs = map (/ s) xs
+      where
+        s = sum xs
+    chooseByProbability' r idx acc [v] = idx
+    chooseByProbability' r idx acc (v:vs)
+      | acc + v >= r = idx
+      | otherwise = chooseByProbability r (idx + 1) (acc + v) vs
 
 
 data ActionPickingConfig s =
@@ -110,15 +128,15 @@ data ActionPickingConfig s =
     , actPickActions    :: [ActionIndex]
     }
 
-chooseAction :: (MonadIO m) => ARAL s as -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndex)
-chooseAction borl useRand selFromList = do
+chooseAction :: (MonadIO m) => AgentType -> ARAL s as -> UseRand -> ActionSelection s -> ReaderT (ActionPickingConfig s) m (Bool, ActionIndex)
+chooseAction agTp borl useRand selFromList = do
   rand <- liftIO $ randomRIO (0, 1)
   state <- asks actPickState
   explore <- asks actPickExpl
   agent <- asks actPickAgentIndex
   as <- asks actPickActions
   lift $
-    if useRand && rand < explore
+    if useRand && rand < explore -- && not isAC
       then do
         r <- liftIO $ randomRIO (0, length as - 1)
         return (True, as !! r)
@@ -128,16 +146,16 @@ chooseAction borl useRand selFromList = do
                  if isUnichain borl
                    then return as
                    else do
-                     (rhoVals :: [Double]) <- mapM (rhoValueAgentWith Worker borl agent state) as -- every agent has a list of possible actions
+                     (rhoVals :: [Double]) <- mapM (rhoValueAgentWith agTp workerNetOrActor borl agent state) as -- every agent has a list of possible actions
                      map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip rhoVals as))
                bestV <-
-                 do (vVals :: [Double]) <- mapM (vValueAgentWith Worker borl agent state) bestRho
+                 do (vVals :: [Double]) <- mapM (vValueAgentWith agTp workerNetOrActor borl agent state) bestRho
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip vVals bestRho))
                if length bestV == 1
                  then return (False, head bestV)
                  else do
                    bestE <-
-                     do (eVals :: [Double]) <- mapM (eValueAvgCleanedAgent borl agent state) bestV
+                     do (eVals :: [Double]) <- mapM (eValueAvgCleanedAgent agTp borl agent state) bestV
                         let (increasing, decreasing) = partition ((0 <) . fst) (zip eVals bestV)
                             actionsToChooseFrom
                               | null decreasing = increasing
@@ -160,12 +178,12 @@ chooseAction borl useRand selFromList = do
                        return (False, bestE !! r)
              AlgARAL {} -> do
                bestR1 <-
-                 do r1Values <- mapM (rValueAgentWith Worker borl RBig agent state) as -- 1. choose highest bias values
+                 do r1Values <- mapM (rValueAgentWith agTp workerNetOrActor borl RBig agent state) as -- 1. choose highest bias values
                     map snd . maxOrMin <$> liftIO (selFromList $ groupBy (epsCompareN 0 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r1Values as))
                if length bestR1 == 1
                  then return (False, head bestR1)
                  else do
-                   r0Values <- mapM (rValueAgentWith Worker borl RSmall agent state) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
+                   r0Values <- mapM (rValueAgentWith agTp workerNetOrActor borl RSmall agent state) bestR1 -- 2. choose action by epsilon-max R0 (near-Blackwell-optimal algorithm)
                    bestR0ValueActions <- liftIO $ fmap maxOrMin $ selFromList $ groupBy (epsCompareN 1 (==) `on` fst) $ sortBy (flip compare `on` fst) (zip r0Values bestR1)
                    let bestR0 = map snd bestR0ValueActions
                    if length bestR0 == 1
@@ -173,14 +191,21 @@ chooseAction borl useRand selFromList = do
                      else do
                        r <- liftIO $ randomRIO (0, length bestR0 - 1) --  3. Uniform selection of leftover actions
                        return (False, bestR0 !! r)
-             AlgARALVOnly {} -> singleValueNextAction as EpsilonSensitive (vValueAgentWith Worker borl agent state)
-             AlgRLearning {} -> singleValueNextAction as Exact (vValueAgentWith Worker borl agent state)
-             AlgDQN _ cmp -> singleValueNextAction as cmp (rValueAgentWith Worker borl RBig agent state)
+             AlgARALVOnly {} -> singleValueNextAction as EpsilonSensitive (vValueAgentWith agTp workerNetOrActor borl agent state)
+             AlgRLearning {} -> singleValueNextAction as Exact (vValueAgentWith agTp workerNetOrActor borl agent state)
+             AlgDQN _ cmp -> singleValueNextAction as cmp (rValueAgentWith agTp workerNetOrActor borl RBig agent state)
+             _ -> error "Not implemented. Missing Actor Critic implementation?"
   where
-    maxOrMin =
-      case borl ^. objective of
-        Maximise -> maximised
-        Minimise -> minimised
+    isAC = isActorCritic (borl ^. proxies . r1) || isActorCritic (borl ^. proxies . r1)
+    workerNetOrActor
+      | isAC = Target
+      | otherwise = Worker
+    maxOrMin
+      --  | isAC = xs !! chooseByProbability (unsafePerformIO (randomRIO (0, 1))) 0 0 probs
+      | otherwise =
+        case borl ^. objective of
+          Maximise -> maximised
+          Minimise -> minimised
     headE []    = error "head: empty input data in nextAction on E Value"
     headE (x:_) = x
     headDqn []    = error "head: empty input data in nextAction on Dqn Value"

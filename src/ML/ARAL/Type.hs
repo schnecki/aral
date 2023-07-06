@@ -31,6 +31,7 @@ module ML.ARAL.Type
   , idxStart
   -- * ARAL
   , ARAL (..)
+  , ActionFunction
   , NrFeatures
   , NrRows
   , NrCols
@@ -73,6 +74,8 @@ module ML.ARAL.Type
   -- ** Hasktorch
   , mkUnichainHasktorch
   , mkUnichainHasktorchAs
+  , mkUnichainHasktorchAsSAM
+  , mkUnichainHasktorchAsSAMAC
   -- ** Grenade
   , mkUnichainGrenade
   , mkUnichainGrenadeAs
@@ -92,14 +95,18 @@ import           Control.Lens
 import           Control.Monad                               (join, replicateM)
 import           Control.Monad.IO.Class                      (liftIO)
 import           Data.Default                                (def)
-import           Data.List                                   (foldl', genericLength, zipWith3)
+import           Data.List                                   (foldl',
+                                                              genericLength,
+                                                              zipWith3)
+import           Data.List.Singletons
 import qualified Data.Map.Strict                             as M
-import           Data.Maybe                                  (catMaybes, fromMaybe)
+import           Data.Maybe                                  (catMaybes,
+                                                              fromMaybe)
 import qualified Data.Proxy                                  as Type
 import           Data.Serialize
-import           Data.Singletons                             (Sing, SingI, SomeSing (..), sing)
-import           Data.Singletons.Prelude.List
-import           Data.Singletons.TypeLits
+import           Data.Singletons                             (Sing, SingI,
+                                                              SomeSing (..),
+                                                              sing)
 import qualified Data.Text                                   as T
 import           Data.Typeable                               (Typeable)
 import qualified Data.Vector                                 as VB
@@ -108,21 +115,23 @@ import qualified Data.Vector.Storable                        as V
 import           EasyLogger
 import           GHC.Generics
 import           GHC.TypeLits
+import           GHC.TypeLits.KnownNat
+import           GHC.TypeLits.Singletons
 import           Grenade
 import           Statistics.Sample.WelfordOnlineMeanVariance
 import           System.IO.Unsafe                            (unsafePerformIO)
 import qualified Torch
 import qualified Torch.NN                                    as Torch
 
+import           RegNet
 
-import           ML.ARAL.Action.Type
 import           ML.ARAL.Algorithm
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork
 import           ML.ARAL.Parameters
 import           ML.ARAL.Proxy.Proxies
-import           ML.ARAL.Proxy.RegressionNode
 import           ML.ARAL.Proxy.Type
+import           ML.ARAL.Reward
 import           ML.ARAL.RewardFuture
 import           ML.ARAL.Settings
 import           ML.ARAL.Types
@@ -139,7 +148,9 @@ type NrRows = Integer
 type NrCols = Integer
 type ModelBuilderFun = NrFeatures -> (NrRows, NrCols) -> IO SpecConcreteNetwork
 type ModelBuilderFunHT = NrFeatures -> (NrRows, NrCols) -> MLPSpec
+type SingleNetPerOutputAction = Bool
 
+type ActionFunction s as = ARAL s as -> AgentType -> s -> [as] -> IO (Reward s, s, EpisodeEnd)
 
 -------------------- Main RL Datatype --------------------
 
@@ -362,23 +373,20 @@ mkUnichainRegressionAs ::
   -> ActionFilter s
   -> ParameterInitValues
   -> ParameterDecaySetting
+  -> (s -> RegressionConfig)
   -> NNConfig
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun nnConfig settings initValues = do
+mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun mkRegConfig nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
-  -- let feats = fromIntegral $ V.length (ftExt initialState)
-  --     rows = genericLength as * fromIntegral (settings ^. independentAgents)
-      -- netFun cols = modelBuilderHT feats (rows, cols)
-  -- let model = netFun 1
-  -- putStrLn "Net: "
-  -- print model
-  repMem <- mkReplayMemories as settings nnConfig
-  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig
+  let regConf = mkRegConfig initialState
+  let nnConfig' = nnConfig { _trainBatchSize = regConfigBatchSize regConf }
+  let mkRegressionProxy xs = RegressionProxy xs (length as) nnConfig'
   let inp = ftExt initialState
-  tabSA <- mkRegressionProxy <$> randRegressionLayer Nothing (V.length inp) (length as)
+  tabSA <- mkRegressionProxy <$> randRegressionLayer (Just regConf) (V.length inp) (length as)
+  repMem <- mkReplayMemories as settings nnConfig'
   let proxies' =
             Proxies
               (Scalar (V.replicate agents defRhoMin) (length as))
@@ -389,8 +397,9 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
               tabSA
               tabSA
               tabSA
-              Nothing -- repMem
-  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
+              repMem
+  -- workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
+  workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig') settings
   return $!
     force $
     ARAL
@@ -417,68 +426,6 @@ mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayF
     defRho = defaultRho (fromMaybe defInitValues initValues)
     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initValues)
     agents = settings ^. independentAgents
-
-
--- mkUnichainRegressionAs ::
---      forall s as. (Eq as, Ord as, NFData as)
---   => [Action as]
---   -> Algorithm s
---   -> InitialStateFun s
---   -> FeatureExtractor s
---   -> ActionFunction s as
---   -> ActionFilter s
---   -> ParameterInitValues
---   -> ParameterDecaySetting
---   -> Settings
---   -> Maybe InitValues
---   -> IO (ARAL s as)
--- mkUnichainRegressionAs as alg initialStateFun ftExt asFun asFilter params decayFun settings initVals = do
---   $(logPrintDebugText) "Creating tabular unichain ARAL"
---   st <- initialStateFun MainAgent
---   let inp = ftExt st
---   let mkRegressionProxy xs = RegressionProxy xs (length as) WelfordExistingAggregateEmpty
---   tabSA <- mkRegressionProxy . RegressionLayer . VB.fromList <$> mapM (const $ randRegressionNode (V.length inp)) [0.. length as - 1]
---   let proxies' =
---         Proxies
---           (Scalar (V.replicate agents defRhoMin) (length as))
---           (Scalar (V.replicate agents defRho) (length as))
---           tabSA
---           tabSA
---           tabSA
---           tabSA
---           tabSA
---           tabSA
---           Nothing
---   workers' <- liftIO $ mkWorkers initialStateFun as Nothing settings
---   return $
---     ARAL
---       (VB.fromList as)
---       asFun
---       asFilter
---       st
---       workers'
---       ftExt
---       0
---       (0, 0)
---       params
---       decayFun
---       settings
---       mempty
---       (convertAlgorithm ftExt alg)
---       Maximise
---       defRhoMin
---       mempty
---       mempty
---       (toValue agents 0, toValue agents 0, toValue agents 0)
---       proxies'
---   where
---     defRhoMin = defaultRhoMinimum (fromMaybe defInitValues initVals)
---     defRho = defaultRho (fromMaybe defInitValues initVals)
---     defV = V.replicate agents $ defaultV (fromMaybe defInitValues initVals)
---     defW = V.replicate agents $ defaultW (fromMaybe defInitValues initVals)
---     defR0 = V.replicate agents $ defaultR0 (fromMaybe defInitValues initVals)
---     defR1 = V.replicate agents $ defaultR1 (fromMaybe defInitValues initVals)
---     agents = settings ^. independentAgents
 
 
 mkMultichainTabular ::
@@ -561,7 +508,44 @@ mkUnichainHasktorchAs ::
   -> Settings
   -> Maybe InitValues
   -> IO (ARAL s as)
-mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
+mkUnichainHasktorchAs = mkUnichainHasktorchAsSAM Nothing
+
+mkUnichainHasktorchAsSAM ::
+  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+     Maybe (Int, Double) -- ^ SAM config
+  -> [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFunHT
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainHasktorchAsSAM = mkUnichainHasktorchAsSAMAC False
+
+mkUnichainHasktorchAsSAMAC ::
+  forall s as . (Eq as, NFData as, Ord as, Enum as, NFData s) =>
+     Bool
+  -> Maybe (Int, Double) -- ^ SAM config
+  -> [Action as]
+  -> Algorithm s
+  -> InitialStateFun s
+  -> FeatureExtractor s
+  -> ActionFunction s as
+  -> ActionFilter s
+  -> ParameterInitValues
+  -> ParameterDecaySetting
+  -> ModelBuilderFunHT
+  -> NNConfig
+  -> Settings
+  -> Maybe InitValues
+  -> IO (ARAL s as)
+mkUnichainHasktorchAsSAMAC actorCritic mSAM as alg initialStateFun ftExt asFun asFilter params decayFun modelBuilderHT nnConfig settings initValues = do
   $(logPrintDebugText) "Creating unichain ARAL with Hasktorch"
   initialState <- initialStateFun MainAgent
   let feats = fromIntegral $ V.length (ftExt initialState)
@@ -572,14 +556,33 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
   print model
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let opt w = mkAdamW 0 0.9 0.999 (Torch.flattenParameters w) 1e-4 1e-4
-  let nnSA tp = case alg of
-        AlgARAL{} | tp /= R0Table && tp /= R1Table -> nnEmpty tp
-        _ -> do
-          modelT <- Torch.sample model
-          modelW <- Torch.sample model
-          return $ Hasktorch modelT modelW tp nnConfig' (length as) (settings ^. independentAgents) (opt modelW) model WelfordExistingAggregateEmpty
-      nnEmpty tp = return $ Hasktorch (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing) (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing) tp nnConfig' (length as) (settings ^. independentAgents) (mkAdamW 0 0.9 0.999 [] 1e-4 1e-4) model WelfordExistingAggregateEmpty
+  let opt w = mkAdamW 0.9 0.999 (Torch.flattenParameters w) 1e-2 -- 1e-4 -- 1e-3
+  let nnSA tp =
+        case alg of
+          AlgARAL {}
+            | tp /= R0Table && tp /= R1Table -> nnEmpty tp
+          _ -> do
+            modelT <- Torch.sample model
+            modelW <- Torch.sample model
+            let tp'
+                  | actorCritic = NoScaling tp Nothing
+                  | otherwise = tp
+                modelT' = modelT {mlpIsPolicy = actorCritic}
+            return $ Hasktorch modelT' modelW tp' nnConfig' (length as) (settings ^. independentAgents) (opt modelT') (opt modelW) model (WelfordExistingAggregateEmpty []) mSAM
+      nnEmpty tp =
+        return $
+        Hasktorch
+          (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing HasktorchHuber False)
+          (MLP [] Torch.relu [] Nothing Nothing Nothing Nothing HasktorchHuber False)
+          tp
+          nnConfig'
+          (length as)
+          (settings ^. independentAgents)
+          (mkAdamW 0.9 0.999 [] 1e-4)
+          (mkAdamW 0.9 0.999 [] 1e-4)
+          model
+          (WelfordExistingAggregateEmpty [])
+          mSAM
   nnSAVTable <- nnSA VTable
   nnSAWTable <- nnSA WTable
   nnSAR0Table <- nnSA R0Table
@@ -591,16 +594,16 @@ mkUnichainHasktorchAs as alg initialStateFun ftExt asFun asFilter params decayFu
         | otherwise = CombinedUnichain
   let nnComb = nnSA nnType
   let proxies' =
-            Proxies
-              (Scalar (V.replicate agents defRhoMin) (length as))
-              (Scalar (V.replicate agents defRho) (length as))
-              nnPsiV
-              nnSAVTable
-              nnPsiW
-              nnSAWTable
-              nnSAR0Table
-              nnSAR1Table
-              repMem
+        Proxies
+          (Scalar (V.replicate agents defRhoMin) (length as))
+          (Scalar (V.replicate agents defRho) (length as))
+          nnPsiV
+          nnSAVTable
+          nnPsiW
+          nnSAWTable
+          nnSAR0Table
+          nnSAR1Table
+          repMem
           -- D2Sing SNat SNat -> ProxiesCombinedUnichain (Scalar (V.replicate agents defRhoMin) (length as)) (Scalar (V.replicate agents defRho) (length as)) nnComb repMem
           -- _ -> error "3D output is not supported by ARAL!"
   workers' <- liftIO $ mkWorkers initialStateFun as (Just nnConfig) settings
@@ -763,7 +766,7 @@ mkUnichainGrenadeHelper as alg initialState initialStateFun ftExt asFun asFilter
   print net
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) WelfordExistingAggregateEmpty
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) (WelfordExistingAggregateEmpty [])
   let nnSAVTable = nnSA VTable
   let nnSAWTable = nnSA WTable
   let nnSAR0Table = nnSA R0Table
@@ -852,7 +855,7 @@ mkMultichainGrenade alg initialStateFun ftExt asFun asFilter params decayFun net
   let as = [minBound .. maxBound] :: [as]
   repMem <- mkReplayMemories as settings nnConfig
   let nnConfig' = set replayMemoryMaxSize (maybe 1 replayMemoriesSize repMem) nnConfig
-  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) WelfordExistingAggregateEmpty
+  let nnSA tp = Grenade net net tp nnConfig' (length as) (settings ^. independentAgents) (WelfordExistingAggregateEmpty [])
   let nnSAMinRhoTable = nnSA VTable
   let nnSARhoTable = nnSA VTable
   let nnSAVTable = nnSA VTable
@@ -942,10 +945,11 @@ mkWorkers :: InitialStateFun s -> [Action as] -> Maybe NNConfig -> Settings -> I
 mkWorkers state as mNNConfig setts = do
   let nr = length $ setts ^. workersMinExploration
       workerTypes = map WorkerAgent [1 .. nr]
+      nStepSett = setts ^. nStep
   if nr <= 0
     then return []
     else do
-      repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory True (setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
+      repMems <- replicateM nr (maybe (fmap (ReplayMemoriesUnified (length as)) <$> mkReplayMemory True (max 1 $ setts ^. nStep)) (mkReplayMemories' True as setts) mNNConfig)
       states <- mapM state workerTypes
       return $ zipWith3 (\wNr st rep -> WorkerState wNr st (fromMaybe err rep) VB.empty 0) [1 ..] states repMems
   where

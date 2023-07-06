@@ -14,11 +14,13 @@ module ML.ARAL.NeuralNetwork.Conversion
     , NrAgents
     ) where
 
+import           Data.List.Singletons
 import           Data.Singletons
-import           Data.Singletons.Prelude.List
-import           Data.Singletons.TypeLits
 import qualified Data.Vector                  as VB
 import qualified Data.Vector.Storable         as V
+import           GHC.TypeLits
+import           GHC.TypeLits.KnownNat
+import           GHC.TypeLits.Singletons      hiding (natVal)
 import           Grenade
 import           Numeric.LinearAlgebra.Static
 

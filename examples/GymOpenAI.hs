@@ -1,17 +1,17 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | !!! IMPORTANT !!!
 --
--- REQUIREMENTS: python 3.4 and gym (https://gym.openai.com/docs/#installation) 
+-- REQUIREMENTS: python 3.4 and gym (https://gym.openai.com/docs/#installation)
 --
 --
 --  ArchLinux Commands:
@@ -31,25 +31,25 @@ import           Control.Concurrent.MVar
 import           Control.DeepSeq         (NFData)
 import           Control.Lens
 import           Control.Monad           (join, when)
+import           Control.Monad.IO.Class
 import           Data.Default
 import           Data.List               (genericLength, sort)
-import EasyLogger
 import           Data.Maybe              (fromMaybe)
 import           Data.Serialize
 import qualified Data.Text               as T
 import qualified Data.Vector.Storable    as V
+import           EasyLogger
 import           GHC.Generics
 import           GHC.Int                 (Int64)
-import System.IO
 import           Grenade
 import           System.Environment      (getArgs)
-import Control.Monad.IO.Class
+import           System.IO
 import           System.IO.Unsafe        (unsafePerformIO)
 
-import           Helper
-import           ML.ARAL as B
-import           ML.Gym
 import           Experimenter
+import           Helper
+import           ML.ARAL                 as B
+import           ML.Gym
 
 import           Debug.Trace
 
@@ -160,7 +160,6 @@ instance ExperimentDef (ARAL St Act)
     --   -- (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
     ]
   beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
-
 
 
 type Render = Bool
@@ -466,7 +465,6 @@ experimentMode = do
      -- print (view evalsResults evalRes)
   writeAndCompileLatex databaseSetup evalRes
   writeCsvMeasure databaseSetup res NoSmoothing ["reward", "avgEpisodeLength"]
-
 
 
 usermode :: IO ()

@@ -63,7 +63,8 @@ makeLenses ''NNConfig
 instance NFData NNConfig where
   rnf (NNConfig rep repStrat batchsize tr !lp smooth smoothPer dec pp sc scalg crop dropFlip dropInactive clip autoNorm) =
     rnf rep `seq` rnf repStrat `seq` rnf batchsize `seq` rnf tr `seq` rnf lp `seq` rnf smooth `seq`
-    rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip `seq` rnf dropInactive `seq` rnf clip `seq` rnf autoNorm
+    rnf smoothPer `seq` rnf dec `seq` rnf pp `seq` rnf sc `seq` rnf scalg `seq` rnf crop `seq` rnf dropFlip
+    `seq` rnf dropInactive `seq` rnf clip `seq` rnf autoNorm
 
 
 setLearningRate :: Double -> Optimizer opt -> Optimizer opt

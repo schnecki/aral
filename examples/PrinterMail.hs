@@ -100,19 +100,6 @@ modelBuilderGrenade  cols =
 instance RewardFuture St where
   type StoreType St = ()
 
-alg :: Algorithm St
-alg =
-        -- AlgDQN 0.99 EpsilonSensitive
-        -- AlgDQN 0.5  Exact
-        AlgDQN 0.8027  Exact
-        -- AlgDQN 0.50  EpsilonSensitive
-        -- AlgARAL 0.8 0.99 (Fixed 2.5)
-        -- AlgARAL 0.8 0.99 ByStateValues
-        -- ByStateValues -- (ByStateValuesAndReward 0.5) -- ByReward -- (Fixed 30)
-        -- AlgARALVOnly ByStateValues mRefStateAct
-        -- AlgARAL 0.5 0.8 ByStateValues mRefStateAct
-
-        -- AlgARAL 0.5 0.8 ByStateValues  (ByStateValuesAndReward 1.0 (ExponentialDecay Nothing 0.5 100000))
 
 mRefStateAct :: Maybe (St, ActionIndex)
 -- mRefStateAct = Just (initState, fst $ head $ zip [0..] (actionFilter initState))
@@ -124,7 +111,9 @@ main = do
   -- createModel >>= mapM_ testRun
 
   -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
+  alg <- chooseAlg Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
+
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 
   where
@@ -208,9 +197,9 @@ actions :: [Action Act]
 actions = [GoLeft, GoRight]
 
 actionFun :: ActionFunction St Act
-actionFun tp st [GoLeft]  = moveLeft tp st
-actionFun tp st [GoRight] = moveRight tp st
-actionFun _ _ acts        = error $ "unexpected list of actions: " ++ show acts
+actionFun _ tp st [GoLeft]  = moveLeft tp st
+actionFun _ tp st [GoRight] = moveRight tp st
+actionFun _ _ _ acts        = error $ "unexpected list of actions: " ++ show acts
 
 actionFilter :: St -> [V.Vector Bool]
 actionFilter One      = [V.fromList [True, True]]

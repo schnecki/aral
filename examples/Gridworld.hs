@@ -17,24 +17,24 @@
 {-# LANGUAGE TypeFamilies               #-}
 module Main where
 
-import           Control.Arrow            (first, second, (***))
+import           Control.Arrow          (first, second, (***))
 import           Control.DeepSeq
-import           Control.DeepSeq          (NFData)
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
-import           Control.Lens             (set, (^.))
-import           Control.Monad            (foldM, liftM, unless, when)
-import           Control.Monad.IO.Class   (liftIO)
+import           Control.Lens           (set, (^.))
+import           Control.Monad          (foldM, liftM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
-import           Data.Function            (on)
-import           Data.List                (elemIndex, genericLength, groupBy, sortBy)
-import qualified Data.Map.Strict          as M
+import           Data.Function          (on)
+import           Data.List              (elemIndex, genericLength, groupBy,
+                                         sortBy)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
-import           Data.Singletons.TypeLits hiding (natVal)
-import qualified Data.Vector.Storable     as V
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.TypeLits
 import           Grenade
-import           Prelude                  hiding (Left, Right)
+import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.Random
 
@@ -157,6 +157,7 @@ borlSettings =
     , _overEstimateRho               = False -- True
     , _independentAgents             = 1
     , _independentAgentsSharedRho    = True -- False
+    , _samplingSteps                 = 1
     }
 
 
@@ -345,13 +346,13 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
-actionFun _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+actionFun _ _ _ xs        = error $ "Multiple actions received in actionFun: " ++ show xs
 
 actFilter :: St -> [V.Vector Bool]
 actFilter st

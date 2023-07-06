@@ -13,33 +13,33 @@ module Main where
 
 import           Experimenter
 import           Helper
-import           ML.ARAL                  as B
+import           ML.ARAL                as B
 import           ML.ARAL.Action.Ops
 import           ML.ARAL.Exploration
 import           SolveLp
 
-import           Control.Arrow            (first, second, (***))
-import           Control.DeepSeq          (NFData)
+import           Control.Arrow          (first, second, (***))
+import           Control.DeepSeq        (NFData)
 import           Control.Lens
-import           Control.Lens             (set, (^.))
-import           Control.Monad            (foldM, liftM, unless, when)
-import           Control.Monad.IO.Class   (liftIO)
+import           Control.Lens           (set, (^.))
+import           Control.Monad          (foldM, liftM, unless, when)
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
-import           Data.Function            (on)
+import           Data.Function          (on)
 import           Data.IORef
-import           Data.List                (elemIndex, genericLength, groupBy, sort, sortBy)
-import qualified Data.Map.Strict          as M
+import           Data.List              (elemIndex, genericLength, groupBy,
+                                         sort, sortBy)
+import qualified Data.Map.Strict        as M
 import           Data.Serialize
-import           Data.Singletons.TypeLits hiding (natVal)
-import qualified Data.Text                as T
-import           Data.Text.Encoding       as E
-import qualified Data.Vector              as VB
-import qualified Data.Vector.Storable     as V
+import qualified Data.Text              as T
+import           Data.Text.Encoding     as E
+import qualified Data.Vector            as VB
+import qualified Data.Vector.Storable   as V
 import           GHC.Generics
-import           GHC.Int                  (Int32, Int64)
+import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
 import           Grenade
-import           Prelude                  hiding (Left, Right)
+import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.IO.Unsafe
 import           System.Random
@@ -48,8 +48,8 @@ import           Text.Printf
 import           Debug.Trace
 
 maxX, maxY, goalX, goalY :: Int
-maxX = 19 -- 10                        -- [0..maxX]
-maxY = 19 -- 10                       -- [0..maxY]
+maxX = 10 -- 19                        -- [0..maxX]
+maxY = 10 -- 19                       -- [0..maxY]
 goalX = 1
 goalY = 5
 
@@ -58,8 +58,8 @@ expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
     { _experimentBaseName = "one-way-membran"
-    , _experimentInfoParameters = [isNN, rand]
-    , _experimentRepetitions = 30
+    , _experimentInfoParameters = [isNN]
+    , _experimentRepetitions = 40
     , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
@@ -68,7 +68,6 @@ expSetup borl =
     }
   where
     isNN = ExperimentInfoParameter "Is neural network" (isNeuralNetwork (borl ^. proxies . v))
-    rand = ExperimentInfoParameter "Random Reward X" (unsafePerformIO $ readIORef ioRefMaxR)
 
 evals :: [StatsDef s]
 evals =
@@ -181,8 +180,8 @@ instance ExperimentDef (ARAL St Act)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
-                  [ -- StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  -- , StepResult "avgEpisodeLength" p eLength
+                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
+                  , StepResult "avgEpisodeLength" p eLength
                   ]
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
@@ -292,7 +291,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
+  let databaseSetup = DatabaseSetting "host=192.168.1.110 dbname=ARADRL user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -405,18 +404,18 @@ actions :: [Act]
 actions = [Random, Up, Down, Left, Right]
 
 
-actionFun :: AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun tp s [Random] = goalState moveRand tp s
-actionFun tp s [Up]     = goalState moveUp tp s
-actionFun tp s [Down]   = goalState moveDown tp s
-actionFun tp s [Left]   = goalState moveLeft tp s
-actionFun tp s [Right]  = goalState moveRight tp s
--- actionFun tp s [Random, Random] = goalState moveRand tp s
-actionFun tp s [x, y] = do
-  (r1, s1, e1) <- actionFun tp s [x]
-  (r2, s2, e2) <- actionFun tp s1 [y]
+actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
+actionFun _ tp s [Random] = goalState moveRand tp s
+actionFun _ tp s [Up]     = goalState moveUp tp s
+actionFun _ tp s [Down]   = goalState moveDown tp s
+actionFun _ tp s [Left]   = goalState moveLeft tp s
+actionFun _ tp s [Right]  = goalState moveRight tp s
+-- actionFun _ tp s [Random, Random] = goalState moveRand tp s
+actionFun a tp s [x, y] = do
+  (r1, s1, e1) <- actionFun a tp s [x]
+  (r2, s2, e2) <- actionFun a tp s1 [y]
   return ((r1 + r2) / 2, s2, e1 || e2)
-actionFun _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
+actionFun _ _ _ xs        = error $ "Multiple/Unexpected actions received in actionFun: " ++ show xs
 
 replaceIndex :: (V.Storable a) => Int -> a -> V.Vector a -> V.Vector a
 replaceIndex nr x xs = V.take nr xs V.++ (x `V.cons` V.drop (nr+1) xs)
@@ -515,7 +514,7 @@ drawGrid aral = do
 
 drawField :: ARAL St Act -> St -> IO ()
 drawField aral s@(St x y) = do
-  acts <- map snd . VB.toList <$> nextActionFor aral Greedy s 0
+  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
   putStr $
     case acts of
       [0] -> " * "

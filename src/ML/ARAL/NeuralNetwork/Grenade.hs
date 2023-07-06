@@ -14,8 +14,8 @@ import           Control.DeepSeq
 import           Control.Lens                                (set, (^.))
 import           Control.Parallel.Strategies
 import           Data.List                                   (genericLength)
+import           Data.List.Singletons
 import           Data.Singletons
-import           Data.Singletons.Prelude.List
 import qualified Data.Vector.Storable                        as V
 import           GHC.TypeLits
 import           Grenade

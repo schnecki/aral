@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 module ML.ARAL.Settings where
 
+import           Control.Applicative
 import           Control.DeepSeq
 import           Control.Lens
 import           Data.Default
@@ -24,9 +25,13 @@ data Settings = Settings
   , _overEstimateRho               :: !Bool                -- ^ Overestimate the average reward to find better policies. This may lead to incorrect state value estimates! [Default: False]
   , _independentAgents             :: !Int                 -- ^ Split action space into independent X agents. At least 1. Changes have no effect after initialisation of the agent.
   , _independentAgentsSharedRho    :: !Bool                -- ^ Share the average reward over all independent agents. Default: True
-  } deriving (Show, Eq, Ord, NFData, Generic, Serialize)
+  , _samplingSteps                 :: !Int                 -- ^ Number of steps to sample before learning. Not functional for tabular representation. Default: 1
+  } deriving (Show, Eq, Ord, NFData, Generic)
 makeLenses ''Settings
+
+instance Serialize Settings where
+  get = Settings <$> get <*> get <*> get <*> get <*> get <*> get <*> get  <*> get  <*> get  <*> (get <|> pure 1)
 
 
 instance Default Settings where
-  def = Settings EpsilonGreedy [] False 1 False True False 1 True
+  def = Settings EpsilonGreedy [] False 1 False True False 1 True 1
