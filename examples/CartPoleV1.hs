@@ -47,6 +47,8 @@ import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
 import           Grenade
 import           Prelude                hiding (Left, Right)
+import           System.Directory
+import           System.FilePath.Posix  ((</>))
 import           System.IO
 import           System.IO.Unsafe
 import           System.Random
@@ -240,7 +242,11 @@ instance ExperimentDef (ARAL St Act)
     --   (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
     ]
 
-  beforeEvaluationHook _ _ _ _ rl = return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+  -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
+  beforeEvaluationHook expNr repetNr repNr _ rl = do
+    mapM_ (moveFileToSubfolder rl repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
+    return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+
 
 nnConfig :: NNConfig
 nnConfig =
@@ -345,6 +351,15 @@ experimentMode = do
 mRefState :: Maybe (St, ActionIndex)
 mRefState = Nothing
 -- mRefState = Just (fromIdx (goalX, goalY), 0)
+
+
+moveFileToSubfolder :: ARAL St Act -> Int -> FilePath -> IO ()
+moveFileToSubfolder rl repNr filename = do
+  createDirectoryIfMissing True dirName
+  doesFileExist filename >>= \exists -> when exists (renameFile filename fpSub)
+  where
+    dirName = "results" </> T.unpack (view experimentBaseName . expSetup $ rl) </> "files"
+    fpSub = filename ++ "rep" ++ show repNr
 
 
 usermode :: IO ()
