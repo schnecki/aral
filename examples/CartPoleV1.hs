@@ -131,14 +131,14 @@ actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
   let rewardNew = Reward . (12 - ) . toDegrees . abs . stTheta $ st'
       toDegrees = (360 / (2 * pi) *)
   if isJust stepsBeyondTerminated
-    then (\st' -> (rewardNew, st', terminated)) <$> reset
-    else return (rewardNew, st' {stStepsBeyondTerminated = stepsBeyondTerminated'}, terminated)
+    then (\st' -> (reward, st', terminated)) <$> reset
+    else return (reward, st' {stStepsBeyondTerminated = stepsBeyondTerminated'}, terminated)
 
 
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole"
+    { _experimentBaseName = "cartpole_reward_original_new_reward_fun"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -416,13 +416,14 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 tblInp :: St -> V.Vector Double
 tblInp (St x xDot theta thetaDot _) =
   V.fromList
-    [ min steps . max (-steps) $ fromInteger $ round x                        -- in (4.8,4.8)
-    , min steps . max (-steps) $ fromInteger $ round xDot                     -- in (-Inf, Inf)
-    , min steps . max (-steps) $ fromInteger $ round (360 / (2 * pi) * theta) -- in (24, 24)
-    , min steps . max (-steps) $ fromInteger $ round thetaDot                 -- in (-Inf, In)
+    [ min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-4.8, 4.8) x                        -- in (-4.8,4.8)
+    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-vInf, vInf) xDot                     -- in (-Inf, Inf)
+    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-24, 24) (360 / (2 * pi) * theta) -- in (-24, 24)
+    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-vInf, vInf) thetaDot                 -- in (-Inf, Inf)
     ]
   where
     steps = 5.0 -- there are (2*steps+1)  buckets
+    vInf  = 25
 
 
 -- -- State
