@@ -138,7 +138,7 @@ actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole_reward_original_new_reward_fun"
+    { _experimentBaseName = "cartpole_reward_original_new_st_rep"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
