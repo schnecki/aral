@@ -416,14 +416,14 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 tblInp :: St -> V.Vector Double
 tblInp (St x xDot theta thetaDot _) =
   V.fromList
-    [ min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-4.8, 4.8) x                        -- in (-4.8,4.8)
-    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-vInf, vInf) xDot                     -- in (-Inf, Inf)
-    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-24, 24) (360 / (2 * pi) * theta) -- in (-24, 24)
-    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ unscaleMinMax (-vInf, vInf) thetaDot                 -- in (-Inf, Inf)
+    [ min steps . max (-steps) $ fromInteger $ round $ (steps*) $ scaleMinMax (-x_threshold, x_threshold) x		-- in (-2.4,2.4)
+    , min steps . max (-steps) $ fromInteger $ round xDot -- $ (steps*) $ scaleMinMax (-vInf, vInf) xDot			-- in (-Inf, Inf)
+    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ scaleMinMax (-12, 12) (360 / (2 * pi) * theta)	-- in (-12, 12)
+    , min steps . max (-steps) $ fromInteger $ round thetaDot -- $ (steps*) $ scaleMinMax (-vInf, vInf) thetaDot			-- in (-Inf, Inf)
     ]
   where
     steps = 5.0 -- there are (2*steps+1)  buckets
-    vInf  = 25
+    vInf  = 1
 
 
 -- -- State
