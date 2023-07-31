@@ -131,7 +131,10 @@ actionFun aral agentType (St position velocity step) [action] = do
          else return $ St position' velocity'' (step+1)
   when (agentType == MainAgent) $ void $ render st'
   let currentHeight = heightPos position'
-  let rewardNew = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
+  let rewardNew
+        | terminated = 10
+        | signum velocity /= signum velocity' = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
+        | otherwise = -10
   return (if terminated then 10 else rewardNew, st', terminated)
 
   where clamp (low, high) a = min high (max a low)
