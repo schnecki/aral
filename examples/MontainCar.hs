@@ -5,7 +5,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedLists            #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
@@ -27,7 +26,7 @@ import           Control.Arrow          (first, second, (***))
 import           Control.DeepSeq        (NFData)
 import           Control.Lens
 import           Control.Lens           (set, (^.))
-import           Control.Monad          (foldM, liftM, unless, when)
+import           Control.Monad          (foldM, forM, liftM, unless, void, when)
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Default
 import           Data.Function          (on)
@@ -75,8 +74,12 @@ import           Debug.Trace
 -- | 1   | Don't accelerate        | Inf   | position (m) |
 -- | 2   | Accelerate to the right | Inf   | position (m) |
 
+
+max_steps = 200
 min_position = -1.2
 max_position = 0.6
+min_height = minimum $ map heightPos [min_position - 0.01,min_position .. max_position]
+max_height = maximum $ map heightPos [min_position - 0.01,min_position .. max_position]
 max_speed = 0.07
 goal_position = 0.5
 goal_velocity = 0
@@ -102,15 +105,16 @@ actIdx Right = 2
 data St =
   St { stPosition :: Double
      , stVelocity :: Double
+     , stStep     :: Int
      }
   deriving (Show, Eq, Ord, NFData, Generic, Serialize)
 
 reset :: IO St
-reset = St <$> randomRIO (-0.6, -0.4) <*> pure 0
+reset = St <$> randomRIO (-0.6, -0.4) <*> pure 0 <*> pure 0
 
 
 actionFun :: ARAL St Act -> AgentType -> St -> [Act] -> IO (Reward St, St, EpisodeEnd)
-actionFun _ _ (St position velocity) [action] = do
+actionFun aral agentType (St position velocity step) [action] = do
 
   let velocity' =
         clamp (-max_speed, max_speed) $
@@ -120,12 +124,24 @@ actionFun _ _ (St position velocity) [action] = do
   let velocity''
         | position' == min_position && velocity' < 0 = 0
         | otherwise = velocity'
-      terminated = position' >= goal_position && velocity' >= goal_velocity
+      terminated = position' >= goal_position && velocity'' >= goal_velocity
       reward = -1.0
-      st' = St position'  velocity'
-  return (reward, st', terminated)
+  st' <- if terminated --  || step >= max_steps
+         then reset
+         else return $ St position' velocity'' (step+1)
+  when (agentType == MainAgent) $ void $ render st'
+  let currentHeight = heightPos position'
+  let rewardNew = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
+  return (if terminated then 10 else rewardNew, st', terminated)
 
   where clamp (low, high) a = min high (max a low)
+
+height :: St -> Double
+height = heightPos . stPosition
+
+heightPos :: Double -> Double
+heightPos pos = sin (3 * pos) * 0.45 + 0.55
+
 
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
@@ -133,9 +149,9 @@ expSetup borl =
     { _experimentBaseName = "cartpole"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
-    , _preparationSteps = 500000
+    , _preparationSteps = 1000000
     , _evaluationWarmUpSteps = 0
-    , _evaluationSteps = 10000
+    , _evaluationSteps = 100000
     , _evaluationReplications = 1
     , _evaluationMaxStepsBetweenSaves = Just 20000
     }
@@ -269,6 +285,7 @@ borlSettings =
     , _nStep = 1
     , _independentAgents = 1
     , _samplingSteps = 4
+    , _overEstimateRho = False -- True
     }
 
 -- | ARAL Parameters.
@@ -301,13 +318,13 @@ decay =
       , _zeta             = ExponentialDecay (Just 0) 0.5 150000
       , _xi               = NoDecay
       -- Exploration
-      , _epsilon          = [NoDecay] -- ExponentialDecay (Just 5.0) 0.5 150000
+      , _epsilon          = pure NoDecay -- ExponentialDecay (Just 5.0) 0.5 150000
       , _exploration      = ExponentialDecay (Just 0.01) 0.8 10000 -- ExponentialDecay (Just 0.01) 0.50 100000
       , _learnRandomAbove = NoDecay
       }
 
 initVals :: InitValues
-initVals = InitValues 0 0 0 0 0 0
+initVals = InitValues 0 (-10) 0 0 0 0
 
 main :: IO ()
 main = do
@@ -315,6 +332,7 @@ main = do
   setMinLogLevel LogWarning -- LogDebug -- LogInfo
   -- enableARALLogging (LogFile "package.log")
 
+  writeFile "render.out" ""
 
   putStr "Experiment or user mode [User mode]? Enter e for experiment mode, or u for user mode: " >> hFlush stdout
   l <- getLine
@@ -377,7 +395,7 @@ usermode = do
   where
     cmds = zipWith (\u a -> (fst u, maybe [0] return (elemIndex a actions))) usage [ Left, Right]
     usage = [("j", "Move left"), ("l", "Move right")]
-    cmdDrawGrid = ("d", "Draw grid", \rl -> drawGrid rl >> return rl)
+    cmdDrawGrid = ("d", "Render", \rl -> render (rl ^. s) >>= putStrLn >> return rl)
 
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
@@ -406,13 +424,14 @@ modelBuilderGrenade lenIn (lenActs, cols) =
 --               scaleMinMax (0, fromIntegral maxY) $ fromIntegral $ snd (getCurrentIdx st)]
 
 tblInp :: St -> V.Vector Double
-tblInp (St pos vel) =
+tblInp (St pos vel _) =
   V.fromList
     [ min steps . max (-steps) $ fromInteger $ round $ (steps*) $ scaleMinMax (min_position, max_position) pos
-    , min steps . max (-steps) $ fromInteger $ round $ (steps*) $ scaleMinMax (-max_speed, max_speed) vel                     -- in (-Inf, Inf)
+    , min steps . max (-steps) $ signum vel
+      -- fromInteger $ round $ (steps*) $ scaleMinMax (-max_speed, max_speed) vel
     ]
   where
-    steps = 5.0 -- there are (2*steps+1) buckets
+    steps = 10 -- there are (2*steps+1) buckets
 
 
 -- -- State
@@ -457,28 +476,31 @@ actFilter _ = [V.fromList [True, True, True]]
 -- allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..maxBound]
 
 
-drawGrid :: ARAL St Act -> IO ()
-drawGrid aral = do
-  putStrLn "TODO"
-  -- putStr "\n    "
-  -- mapM_ (putStr . printf "%2d ") ([0 .. maxY] :: [Int])
-  -- putStr "\n"
-  -- mapM_
-  --   (\x -> do
-  --      putStr (printf "%2d: " x)
-  --      mapM_ (drawField aral . St x) ([0 .. maxY] :: [Int])
-  --      putStr "\n")
-  --   ([0 .. maxX] :: [Int])
+render :: St -> IO String
+render (St pos _ _) = do
+  let stepX = 0.025
+  let stepY = 0.03
+  let xs = [min_position - stepX,min_position .. max_position + stepX]
+  let ys = [max_height + stepY,max_height .. min_height - stepY]
+  let h = heightPos pos
+      hGoal = heightPos goal_position
+  let inStepX val posV = val - posV >= 0 && val - posV <= stepX
+      inStepY val posV = val - posV >= 0 && val - posV <= stepY
+  lines <-
+    forM ys $ \y -> do
+      line <-
+        forM xs $ \x -> do
+          let sign
+                | inStepX x pos && inStepY y h = 'x'
+              -- | x - pos >= 0 && x - pos <= step = 'x'
+                | inStepX x goal_position && inStepY y hGoal = 'G'
+              -- | x - goal_position >= 0 && x - goal_position <= step = 'G'
+                | inStepY y (heightPos x) = '-'
+                | otherwise = ' '
+          return sign
+      return (line ++ "\n")
+  let out = clear ++ concat lines ++ "  Height: " ++ show h ++ "\n"
+  appendFile "render.out" out
+  return out
 
-
-drawField :: ARAL St Act -> St -> IO ()
-drawField aral s = do
-  acts <- map snd . VB.toList <$> nextActionFor MainAgent aral Greedy s 0
-  putStr $
-    case acts of
-      [0] -> " * "
-      [1] -> " ^ "
-      [2] -> " v "
-      [3] -> " < "
-      [4] -> " > "
-      _   -> error "unexpected action"
+clear = replicate 10 '\n'
