@@ -107,7 +107,7 @@ executables:
     - filepath
 
   mountaincar:
-    main:                MontainCar.hs
+    main:                MountainCar.hs
     other-modules:
       - Helper
     source-dirs:         .

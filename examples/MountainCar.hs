@@ -149,9 +149,9 @@ expSetup borl =
     { _experimentBaseName = "cartpole"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
-    , _preparationSteps = 1000000
+    , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
-    , _evaluationSteps = 100000
+    , _evaluationSteps = 10000
     , _evaluationReplications = 1
     , _evaluationMaxStepsBetweenSaves = Just 20000
     }
@@ -431,7 +431,7 @@ tblInp (St pos vel _) =
       -- fromInteger $ round $ (steps*) $ scaleMinMax (-max_speed, max_speed) vel
     ]
   where
-    steps = 10 -- there are (2*steps+1) buckets
+    steps = 5 -- there are (2*steps+1) buckets
 
 
 -- -- State
