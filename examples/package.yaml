@@ -106,6 +106,21 @@ executables:
     - easy-logger
     - filepath
 
+  mountaincar:
+    main:                MontainCar.hs
+    other-modules:
+      - Helper
+    source-dirs:         .
+    default-extensions: CPP
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - aral
+    - experimenter
+    - easy-logger
+    - filepath
 
   gridworld-step:
     main:                GridworldStep.hs
