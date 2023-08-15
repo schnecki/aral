@@ -11,6 +11,9 @@
 {-# LANGUAGE TypeFamilies               #-}
 --
 -- | See https://github.com/openai/gym/blob/master/gym/envs/classic_control/mountain_car.py
+--
+--  Run `tail -f render.out` to render the RL process on the command line.
+--  Run `sh plot.sh` to plot the output plots via `gnuplot`.
 module Main where
 
 import           ML.ARAL                as B
