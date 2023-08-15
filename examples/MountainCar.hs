@@ -152,7 +152,7 @@ expSetup borl =
     { _experimentBaseName = "cartpole"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
-    , _preparationSteps = 500000
+    , _preparationSteps = 500001
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
     , _evaluationReplications = 1
@@ -256,7 +256,9 @@ instance ExperimentDef (ARAL St Act)
   -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
   beforeEvaluationHook expNr repetNr repNr _ rl = do
     mapM_ (moveFileToSubfolder rl expNr repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
-    return $ set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+    let rl' = set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
+    st' <- reset 
+    return $ set s st' rl'
 
 
 nnConfig :: NNConfig
@@ -503,7 +505,7 @@ render (St pos _ _) = do
           return sign
       return (line ++ "\n")
   let out = clear ++ concat lines ++ "  Height: " ++ show h ++ "\n"
-  appendFile "render.out" out
+  -- appendFile "render.out" out
   return out
 
 clear = replicate 10 '\n'

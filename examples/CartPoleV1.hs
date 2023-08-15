@@ -132,13 +132,13 @@ actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
       toDegrees = (360 / (2 * pi) *)
   if isJust stepsBeyondTerminated
     then (\st' -> (reward, st', terminated)) <$> reset
-    else return (reward, st' {stStepsBeyondTerminated = stepsBeyondTerminated'}, terminated)
+    else return (rewardNew, st' {stStepsBeyondTerminated = stepsBeyondTerminated'}, terminated)
 
 
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole_reward_original_new_st_rep"
+    { _experimentBaseName = "cartpole_reward_new_new_st_rep"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
