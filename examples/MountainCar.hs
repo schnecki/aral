@@ -152,7 +152,7 @@ heightPos pos = sin (3 * pos) * 0.45 + 0.55
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole"
+    { _experimentBaseName = "mountaincar"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500001
@@ -218,19 +218,16 @@ instance ExperimentDef (ARAL St Act)
     let inverseSt = Nothing
     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
-        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
+        eLength = fromIntegral (expSetup rl ^. evaluationSteps) / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
-        results | phase /= EvaluationPhase =
-                  [ StepResult "reward" p (realToFrac (rl' ^?! lastRewards._head))
-                  , StepResult "avgEpisodeLength" p eLength
-                  ]
+        results | phase /= EvaluationPhase = []
                 | otherwise =
                   [ StepResult "reward" p (realToFrac $ rl' ^?! lastRewards._head)
                   , StepResult "avgRew" p (realToFrac $ V.head (rl' ^?! proxies . rho . proxyScalar))
-                  , StepResult "psiRho" p (val $ psis . _1)
-                  , StepResult "psiV" p (val $ psis . _2)
-                  , StepResult "psiW" p (val $ psis . _3)
+                  -- , StepResult "psiRho" p (val $ psis . _1)
+                  -- , StepResult "psiV" p (val $ psis . _2)
+                  -- , StepResult "psiW" p (val $ psis . _3)
                   , StepResult "avgEpisodeLength" p eLength
                   , StepResult "avgEpisodeLengthNr" (Just $ fromIntegral eNr) eLength
                   ] -- ++
