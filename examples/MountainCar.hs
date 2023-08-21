@@ -136,7 +136,7 @@ actionFun aral agentType (St position velocity step) [action] = do
   let currentHeight = heightPos position'
   let rewardNew
         | terminated = 10
-        | signum velocity /= signum velocity' = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
+        | position > -0.4 && velocity > 0 || position < -0.6 && velocity < 0 = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
         | otherwise = -10
   return (if terminated then 10 else rewardNew, st', terminated)
 
@@ -260,7 +260,7 @@ instance ExperimentDef (ARAL St Act)
   beforeEvaluationHook expNr repetNr repNr _ rl = do
     mapM_ (moveFileToSubfolder rl expNr repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
     let rl' = set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
-    st' <- reset 
+    st' <- reset
     return $ set s st' rl'
 
 
@@ -353,6 +353,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
+  writeIORef renderEnabled False
   let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -380,8 +381,14 @@ moveFileToSubfolder rl expNr repNr filename = do
     fpSub = dirName </> "exp" ++ show expNr ++ "_rep" ++ show repNr ++ "_" ++ filename
 
 
+renderEnabled :: IORef Bool
+renderEnabled = unsafePerformIO $ newIORef True
+{-# NOINLINE renderEnabled #-}
+
+
 usermode :: IO ()
 usermode = do
+  writeIORef renderEnabled True
   $(initLogger) LogStdOut
   setMinLogLevel LogAll
 
@@ -442,36 +449,6 @@ tblInp (St pos vel _) =
     steps = 5 -- there are (2*steps+1) buckets
 
 
--- -- State
--- data St = St Int Int deriving (Eq, NFData, Generic, Serialize)
-
--- instance Ord St where
---   x <= y = fst (getCurrentIdx x) < fst (getCurrentIdx y) || (fst (getCurrentIdx x) == fst (getCurrentIdx y) && snd (getCurrentIdx x) < snd (getCurrentIdx y))
-
--- instance Show St where
---   show xs = show (getCurrentIdx xs)
-
--- instance Enum St where
---   fromEnum st = let (x,y) = getCurrentIdx st
---                 in x * (maxX + 1) + y
---   toEnum x = fromIdx (x `div` (maxX+1), x `mod` (maxX+1))
-
--- instance Bounded St where
---   minBound = fromIdx (0,0)
---   maxBound = fromIdx (maxX, maxY)
-
-
--- -- Actions
--- data Act = Random | Up | Down | Left | Right
---   deriving (Eq, Ord, Enum, Bounded, Generic, NFData, Serialize)
-
--- instance Show Act where
---   show Random = "random"
---   show Up     = "up    "
---   show Down   = "down  "
---   show Left   = "left  "
---   show Right  = "right "
-
 actions :: [Act]
 actions = [minBound..maxBound]
 
@@ -486,29 +463,33 @@ actFilter _ = [V.fromList [True, True, True]]
 
 render :: St -> IO String
 render (St pos _ _) = do
-  let stepX = 0.025
-  let stepY = 0.03
-  let xs = [min_position - stepX,min_position .. max_position + stepX]
-  let ys = [max_height + stepY,max_height .. min_height - stepY]
-  let h = heightPos pos
-      hGoal = heightPos goal_position
-  let inStepX val posV = val - posV >= 0 && val - posV <= stepX
-      inStepY val posV = val - posV >= 0 && val - posV <= stepY
-  lines <-
-    forM ys $ \y -> do
-      line <-
-        forM xs $ \x -> do
-          let sign
-                | inStepX x pos && inStepY y h = 'x'
-              -- | x - pos >= 0 && x - pos <= step = 'x'
-                | inStepX x goal_position && inStepY y hGoal = 'G'
-              -- | x - goal_position >= 0 && x - goal_position <= step = 'G'
-                | inStepY y (heightPos x) = '-'
-                | otherwise = ' '
-          return sign
-      return (line ++ "\n")
-  let out = clear ++ concat lines ++ "  Height: " ++ show h ++ "\n"
-  -- appendFile "render.out" out
-  return out
+  enabled <- readIORef renderEnabled
+  if not enabled
+    then return ""
+    else do
+      let stepX = 0.025
+      let stepY = 0.03
+      let xs = [min_position - stepX,min_position .. max_position + stepX]
+      let ys = [max_height + stepY,max_height .. min_height - stepY]
+      let h = heightPos pos
+          hGoal = heightPos goal_position
+      let inStepX val posV = val - posV >= 0 && val - posV <= stepX
+          inStepY val posV = val - posV >= 0 && val - posV <= stepY
+      lines <-
+        forM ys $ \y -> do
+          line <-
+            forM xs $ \x -> do
+              let sign
+                    | inStepX x pos && inStepY y h = 'x'
+                 -- | x - pos >= 0 && x - pos <= step = 'x'
+                    | inStepX x goal_position && inStepY y hGoal = 'G'
+                 -- | x - goal_position >= 0 && x - goal_position <= step = 'G'
+                    | inStepY y (heightPos x) = '-'
+                    | otherwise = ' '
+              return sign
+          return (line ++ "\n")
+      let out = clear ++ concat lines ++ "  Height: " ++ show h ++ "\n"
+      appendFile "render.out" out
+      return out
 
 clear = replicate 10 '\n'

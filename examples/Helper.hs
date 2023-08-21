@@ -266,8 +266,8 @@ chooseAlg mRefState = do
   putStrLn "\nChoose Algorithm:"
   putStrLn "------------------------------"
   putStrLn $ unlines
-    [ "0: AlgARAL 0.8 1.0 ByStateValues (DEFAULT)"
-    , "1: AlgARAL 0.8 0.99 ByStateValues"
+    [ "0: AlgARAL 0.8 0.99 ByStateValues (DEFAULT)"
+    , "1: AlgARAL 0.8 1.0 ByStateValues"
     , "2: AlgDQN 0.99 Exact"
     , "3: AlgRLearning"
     , "4: AlgARAL 0.9 0.99 ByStateValues"
@@ -278,9 +278,9 @@ chooseAlg mRefState = do
   nr <- getIOWithDefault 0
   return $
     case nr of
-      1 -> AlgARAL 0.8 0.99 ByStateValues
+      1 -> AlgARAL 0.8 1.0 ByStateValues
       2 -> AlgDQN 0.99 Exact
       3 -> AlgRLearning
       4 -> AlgARAL 0.9 0.99 ByStateValues
       5 -> AlgDQN 0.99 Exact
-      _ -> AlgARAL 0.8 1.0 ByStateValues
+      _ -> AlgARAL 0.8 0.99 ByStateValues
