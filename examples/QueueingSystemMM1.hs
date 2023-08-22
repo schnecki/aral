@@ -1,6 +1,8 @@
 -- This is the example used by Mahadevan, S. (1996, March). Sensitive discount optimality: Unifying discounted and
 -- average reward reinforcement learning. In ICML (pp. 328-336).
 
+
+
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -92,12 +94,12 @@ instance Bounded St where
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName         = "queuing-system M/M/1 eps=0.05 maxQSize=20"
+    { _experimentBaseName         = "queuing-system_new_sens" -- M/M/1 eps=0.05 maxQSize=20
     , _experimentInfoParameters   = [iMaxQ, iLambda, iMu, iFixedPayoffR, iC, isNN]
-    , _experimentRepetitions      = 15
+    , _experimentRepetitions      = 30
     , _preparationSteps           = 500000
     , _evaluationWarmUpSteps      = 0
-    , _evaluationSteps            = 10000
+    , _evaluationSteps            = 100000
     , _evaluationReplications     = 1
     , _evaluationMaxStepsBetweenSaves = Nothing
     }
@@ -204,15 +206,21 @@ instance ExperimentDef (ARAL St Act) where
         (view algorithm)
         (Just $ const $ return
 
-                                  [ AlgARAL 0.8 1.0 ByStateValues
-                                  , AlgARAL 0.8 0.999 ByStateValues
-                                  , AlgARAL 0.8 0.99 ByStateValues
+                                  [ AlgARAL 0.5 1.0 ByStateValues
+                                  , AlgARAL 0.5 0.999 ByStateValues
+                                  , AlgARAL 0.5 0.99 ByStateValues
+                                  -- , AlgARAL 0.8 1.0 ByStateValues
+                                  -- , AlgARAL 0.8 0.999 ByStateValues
+                                  -- , AlgARAL 0.8 0.99 ByStateValues
+                                  , AlgARAL 0.9 1.0 ByStateValues
+                                  , AlgARAL 0.9 0.999 ByStateValues
+                                  , AlgARAL 0.9 0.99 ByStateValues
                                   -- , AlgDQN 0.99 EpsilonSensitive
                                   -- , AlgDQN 0.5 EpsilonSensitive
-                                  , AlgDQN 0.999 Exact
-                                  , AlgDQN 0.99 Exact
-                                  , AlgDQN 0.50 Exact
-			          , AlgRLearning
+                                  -- , AlgDQN 0.999 Exact
+                                  -- , AlgDQN 0.99 Exact
+                                  -- , AlgDQN 0.50 Exact
+			          -- , AlgRLearning
                                   ])
         Nothing
         Nothing
@@ -297,7 +305,8 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=192.168.0.104 dbname=experimenter user=experimenter password=experimenter port=5432" 10
+  -- let databaseSetup = DatabaseSetting "host=192.168.0.104 dbname=experimenter user=experimenter password=experimenter port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password=experimenter port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings  (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl

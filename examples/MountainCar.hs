@@ -136,7 +136,7 @@ actionFun aral agentType (St position velocity step) [action] = do
   let currentHeight = heightPos position'
   let rewardNew
         | terminated = 10
-        | position > -0.4 && velocity > 0 || position < -0.6 && velocity < 0 = Reward $ -10 + 10 * ((currentHeight - min_height) / (max_height - min_height))
+        | position < -0.5 && velocity < 0 || position > -0.5 && velocity > 0 = Reward $ -10 + 20 * ((currentHeight - min_height) / (max_height - min_height))
         | otherwise = -10
   return (if terminated then 10 else rewardNew, st', terminated)
 
@@ -152,7 +152,7 @@ heightPos pos = sin (3 * pos) * 0.45 + 0.55
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "mountaincar"
+    { _experimentBaseName = "mountaincar_rew"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500001

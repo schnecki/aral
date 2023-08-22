@@ -138,7 +138,7 @@ actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole_reward_new_new_st_rep"
+    { _experimentBaseName = "cartpole_correct_epslen"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -204,7 +204,8 @@ instance ExperimentDef (ARAL St Act)
     let inverseSt = Nothing
     when (rl' ^. t `mod` 10000 == 0) $ liftIO $ prettyARALHead True inverseSt rl' >>= print
     let (eNr, eSteps) = rl ^. episodeNrStart
-        eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
+        -- eLength = fromIntegral eSteps / max 1 (fromIntegral eNr)
+        eLength = fromIntegral (expSetup rl ^. evaluationSteps) / max 1 (fromIntegral eNr)
         p = Just $ fromIntegral $ rl' ^. t
         val l = realToFrac $ head $ fromValue (rl' ^?! l)
         results | phase /= EvaluationPhase =
