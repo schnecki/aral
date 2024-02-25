@@ -255,7 +255,7 @@ instance ExperimentDef (ARAL St Act)
 
   -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
   beforeEvaluationHook expNr repetNr repNr _ rl = do
-    mapM_ (moveFileToSubfolder rl expNr repNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
+    mapM_ (moveFileToSubfolder rl expNr repetNr) (["reward", "stateValues", "stateValuesAgents", "queueLength", "episodeLength"] :: [FilePath])
     let rl' = set episodeNrStart (0, 0) $ set (B.parameters . exploration) 0.00 $ set (B.settings . disableAllLearning) True rl
     st' <- reset
     return $ set s st' rl'
