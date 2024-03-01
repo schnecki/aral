@@ -2,6 +2,7 @@
 
 Near-Blackwell Optimal *A*verage *R*eward *A*djusted Reinforcement *L*earning
 
+
 (c) Manuel Schneckenreither
 
 ## Prerequisites
@@ -10,11 +11,11 @@ You need git, stack (for Haskell, GHC) and gym (see gym-haskell folder).
 For ArchLinux using `sudo` and `yay`:
 
     sudo pacman -S postgresql-libs snappy blas lapack protobuf glpk
-    cd /tmp
 
-    # pacman -S python python-pip cmake
-    pip install gym --user
-    pip install gym[atari] --user
+    # download hasktorch
+    cd ../
+    git clone https://github.com/hasktorch/hasktorch
+    git checkout v0.2-lts-19.25
 
 
 ## Cloning & Building
