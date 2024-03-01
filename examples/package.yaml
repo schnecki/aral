@@ -33,9 +33,7 @@ dependencies:
   - pretty
   - text
   - singletons
-  - hmatrix
   - vector
-  - grenade
   - bytestring
   - exceptions
   - directory
@@ -55,6 +53,8 @@ dependencies:
   - random-shuffle
   - data-default
   - aral
+  - hmatrix
+  - hmatrix-glpk
 
 executables:
   gridworld:
@@ -71,7 +71,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix
 
   gridworld-mini:
     main:                GridworldMini.hs
@@ -87,8 +87,8 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
     - easy-logger
+    - hmatrix
 
   cartpole:
     main:                CartPoleV1.hs
@@ -136,7 +136,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix
 
   gridworld-multi:
     main:                GridworldMultiD.hs
@@ -152,7 +152,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix
 
   queuing-system:
     main:                QueueingSystemMM1.hs
@@ -168,8 +168,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
-
+    - hmatrix
   # gym:
   #   main:                GymOpenAI.hs
   #   other-modules:       Helper
@@ -211,7 +210,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - aral
-    - hmatrix-glpk
+    - hmatrix
 
   three-states:
     main:                ThreeStates.hs
@@ -227,7 +226,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix
 
   demand-forecast:
     main:                DemandForecast.hs
@@ -243,7 +242,8 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix
+
 
   # parallel:
   #   main:                Parallel.hs
@@ -259,7 +259,6 @@ executables:
   #   dependencies:
   #   - aral
   #   - experimenter
-  #   - hmatrix-glpk
 
   newsvendor:
     main:                NewsvendorModel.hs
@@ -275,8 +274,7 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
-
+    - hmatrix
 
   one-way-membran:
     main:                OneWayMembran.hs
@@ -292,4 +290,4 @@ executables:
     dependencies:
     - aral
     - experimenter
-    - hmatrix-glpk
+    - hmatrix

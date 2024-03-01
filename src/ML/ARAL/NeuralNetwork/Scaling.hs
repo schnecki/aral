@@ -9,10 +9,9 @@ import           Control.Lens
 import           Data.Serialize
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
+import           ML.ARAL.Vector
 import           Numeric
 import           Prelude              hiding (scaleDouble)
-
-import           Grenade.Utils.Vector
 
 import           ML.ARAL.Types
 

@@ -45,7 +45,6 @@ import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
-import           Grenade
 import           Prelude                hiding (Left, Right)
 import           System.Directory
 import           System.FilePath.Posix  ((</>))
@@ -138,7 +137,7 @@ actionFun _ _ (St x xDot theta thetaDot stepsBeyondTerminated) [action] = do
 expSetup :: ARAL St Act -> ExperimentSetting
 expSetup borl =
   ExperimentSetting
-    { _experimentBaseName = "cartpole_correct_epslen"
+    { _experimentBaseName = "cartpole"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
     , _preparationSteps = 500000
@@ -228,19 +227,19 @@ instance ExperimentDef (ARAL St Act)
     return (results, rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgARAL 0.8 1.0 ByStateValues
-                                                                  , AlgARAL 0.8 0.999 ByStateValues
-                                                                  , AlgARAL 0.8 0.99 ByStateValues
+                                                                  [ -- AlgARAL 0.8 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  , AlgDQN 0.999 Exact
+                                                                    AlgDQN 0.999 Exact
                                                                   , AlgDQN 0.99 Exact
                                                                   , AlgDQN 0.50 Exact
-								  , AlgRLearning
+								  -- , AlgRLearning
                                                                   ]) Nothing Nothing Nothing
 
-    -- , ParameterSetup "init lr" (set (B.parameters . gamma) (view (B.parameters . gamma)))
-    --   (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
+    , ParameterSetup "init lr" (set (B.parameters . gamma)) (view (B.parameters . gamma))
+      (Just $ const $ return [0.025, 0.05, 0.1, 0.2]) Nothing Nothing Nothing
     ]
 
   -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
@@ -336,7 +335,7 @@ main = do
 
 experimentMode :: IO ()
 experimentMode = do
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -391,19 +390,6 @@ usermode = do
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
-  where
-    lenOut = lenActs * cols
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
-  inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> -- dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
 

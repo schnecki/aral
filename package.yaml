@@ -39,9 +39,8 @@ dependencies:
   - singletons
   - singletons-base
   - ghc-typelits-knownnat
-  - hmatrix
   - vector
-  - grenade
+  - hmatrix
   - bytestring
   - exceptions
   - directory
@@ -62,12 +61,14 @@ dependencies:
   - random-shuffle
   - data-default
   - constraints
-  - cuda
   - experimenter >= 0.1.0.10
   - say
   - easy-logger
   - hasktorch
   - libtorch-ffi
+  - libtorch-ffi-helper
+  - ghc-typelits-extra
+  - ghc-typelits-natnormalise
   - welford-online-mean-variance
   - ad
   - vector-algorithms
@@ -83,6 +84,7 @@ library:
     -Wincomplete-uni-patterns
     -Wredundant-constraints
     -fwarn-tabs
+
   default-extensions:
     - CPP
   when:

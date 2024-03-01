@@ -2,7 +2,6 @@
 -- average reward reinforcement learning. In ICML (pp. 328-336).
 
 
-
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
@@ -34,7 +33,6 @@ import qualified Data.Vector            as VB
 import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
-import           Grenade
 import           System.Directory
 import           System.IO
 import           System.Random
@@ -345,28 +343,12 @@ usermode = do
   writeFile queueLenFilePath "Queue Length\n"
 
   alg <- chooseAlg mRefStateAct
-  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings  (Just initVals)
-
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   let inverseSt | isAnn rl = mInverseSt
                 | otherwise = mInverseStTbl
   askUser (Just inverseSt) True usage cmds [] rl
   where cmds = []
         usage = []
-
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModel $
-  inputLayer1D lenIn >>
-  fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
-  fullyConnected (10 * lenIn) >> relu >>
-  fullyConnected (5 * lenIn) >> relu >>
-  fullyConnected (2*lenOut) >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  where
-    lenOut = lenActs * cols
-
 
 netInp :: St -> V.Vector Double
 netInp (St len arr) = V.fromList [scaleMinMax (0, fromIntegral maxQueueSize) $ fromIntegral len, scaleMinMax (0, 1) $ fromIntegral $ fromEnum arr]

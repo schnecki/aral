@@ -40,7 +40,6 @@ import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
-import           Grenade
 import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.Random
@@ -182,29 +181,13 @@ usermode :: IO ()
 usermode = do
 
   -- Approximate all fucntions using a single neural network
-  rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
-
   -- Use a table to approximate the function (tabular version)
-  -- rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
+  rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   askUser mInverseSt True usage cmds [] (flipObjective rl)
   where
     cmds = map (\(s, a) -> (fst s, maybe [0] return (elemIndex a actions))) (zip usage [Up, Left, Down, Right])
     usage = [("i", "Move up"), ("j", "Move left"), ("k", "Move down"), ("l", "Move right")]
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols)  =
-  buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
-  inputLayer1D lenIn >>
-  fullyConnected 20 >> leakyRelu >> dropout 0.90 >>
-  fullyConnected 10 >> leakyRelu >>
-  fullyConnected 10 >> leakyRelu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  where
-    lenOut = lenActs * cols
 
 
 netInp :: St -> V.Vector Double

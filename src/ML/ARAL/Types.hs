@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -17,9 +18,7 @@ import           Data.Vector.Serialize ()
 import qualified Data.Vector          as VB
 import qualified Data.Vector.Storable as V
 import           GHC.Generics
-
-import           Grenade.Utils.Vector
-
+import           ML.ARAL.Vector
 
 data Objective
   = Minimise

@@ -14,8 +14,8 @@ module Main where
 import           Control.DeepSeq
 import           Control.Lens
 import           Data.Default
-import           Data.IORef
 import           Data.Int             (Int64)
+import           Data.IORef
 import           Data.List            (genericLength)
 import qualified Data.Map.Strict      as M
 import           Data.Maybe           (fromMaybe)
@@ -24,7 +24,6 @@ import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
-import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 import           System.IO.Unsafe     (unsafePerformIO)
 import           System.Random
@@ -65,8 +64,6 @@ seasonMedianDemandFun diam day
   | x <= 0 = short
   where x = diam * 0.5 * sin ((fromIntegral day * pi) / (fromIntegral seasonDuration / 2))
 
-
-type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig
 nnConfig =
@@ -161,7 +158,6 @@ main = do
   -- runAralLp policy mRefState >>= print
   -- putStr "NOTE: Above you can see the solution generated using linear programming."
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (modelBuilderGrenade actions initState) nnConfig aralSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay aralSettings (Just $ defInitValues { defaultRho = fromIntegral maxDemand, defaultRhoMinimum = fromIntegral maxDemand })
   let ql = flipObjective rl
   let inverseSt | isAnn ql = mInverseSt
@@ -189,19 +185,6 @@ allStateInputs = unsafePerformIO $ newIORef $ M.fromList $ zip (map netInp [minB
 allStateInputsTbl :: IORef (M.Map NetInputWoAction St)
 allStateInputsTbl = unsafePerformIO $ newIORef $ M.fromList $ zip (map tblInp [minBound..maxBound]) [minBound..maxBound]
 {-# NOINLINE allStateInputsTbl #-}
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade acts initSt cols =
-  buildModel $
-  inputLayer1D lenIn >>
-  fullyConnected 6 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  where
-    lenOut = lenActs * cols
-    lenIn = fromIntegral $ V.length (netInp initSt)
-    lenActs = genericLength acts
 
 
 initState :: St

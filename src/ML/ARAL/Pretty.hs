@@ -32,7 +32,6 @@ import qualified Data.Set                            as S
 import qualified Data.Text                           as T
 import qualified Data.Vector                         as VB
 import qualified Data.Vector.Storable                as V
-import           Grenade
 import           Prelude                             hiding ((<>))
 -- import           RegNet
 import           System.IO.Unsafe                    (unsafePerformIO)
@@ -480,21 +479,14 @@ prettyARALHead' printRho prettyStateFun borl = do
       case borl ^. proxies . r1 of
         P.Table {}                                       -> empty
         -- px@P.RegressionProxy{}                           -> textRegressionConf (px ^?! proxyRegressionLayer)
-        P.Grenade _ _ _ conf _ _ _                       -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         P.Hasktorch _ _ _ conf _ _ _ _ _ _ nnActs        -> textGrenadeConf conf (conf ^. grenadeLearningParams) <> text "," <+> text "Single Net per Action: " <> text (show nnActs)
-        P.CombinedProxy (P.Grenade _ _ _ conf _ _ _) _ _ -> textGrenadeConf conf (conf ^. grenadeLearningParams)
         _                                                -> error "nnLearningParams in Pretty.hs"
       where
         -- textRegressionConf :: RegressionLayer -> Doc
         -- textRegressionConf lay =
         --   text "Regression Model" <> colon $$ nest nestCols (text $ show $ regConfigModel cfg)
         --   where cfg = regNodeConfig $ VB.head $ regressionLayerNodes lay
-        textGrenadeConf :: NNConfig -> Optimizer opt -> Doc
-        textGrenadeConf conf (OptSGD rate momentum l2) =
-          let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
-              l = realToFrac $ dec $ realToFrac rate
-           in text "NN Learning Rate/Momentum/L2" <> colon $$
-              nest nestCols (text "SGD Optimizer with" <+> text (show (printDoubleWith 8 (realToFrac l), printDoubleWith 8 (realToFrac momentum), printDoubleWith 8 (realToFrac l2))))
+        textGrenadeConf :: NNConfig -> Optimizer -> Doc
         textGrenadeConf conf (OptAdam alpha beta1 beta2 epsilon lambda) =
           let dec = decaySetup (conf ^. learningParamsDecay) (borl ^. t)
               l = realToFrac $ dec $ realToFrac alpha

@@ -13,7 +13,6 @@ import           Control.Lens
 import           Data.Serialize
 import           Data.Singletons
 import           GHC.Generics
-import           Grenade
 
 import           ML.ARAL.Decay
 import           ML.ARAL.NeuralNetwork.Scaling
@@ -35,6 +34,34 @@ data Clipping = NoClipping              -- ^ No Clipping
 
 ------------------------------ NN Config ------------------------------
 
+-- | The available optimizers to choose from. If an optimiser is not implemented for a layer SGD
+--   with the default settings (see @Default 'SGD@ instance) will be used instead. This is default
+--   and thus fallback optimizer.
+--
+--  Concreate instance for the optimizers.
+data Optimizer =
+  OptAdam
+    { adamAlpha             :: !Double -- ^ Alpha [Default: 0.001]
+    , adamBeta1             :: !Double -- ^ Beta 1 [Default: 0.9]
+    , adamBeta2             :: !Double -- ^ Beta 2 [Default: 0.999]
+    , adamEpsilon           :: !Double -- ^ Epsilon [Default: 1e-7]
+    , adamWeightDecayLambda :: !Double -- ^ Weight decay to use [Default: 0.001]
+    } deriving (Generic, Serialize)
+
+
+instance Show Optimizer where
+  show (OptAdam alpha beta1 beta2 epsilon wD) = "Adam" ++ show (alpha, beta1, beta2, epsilon, wD)
+
+instance NFData Optimizer where
+  rnf (OptAdam alpha beta1 beta2 epsilon wD) = rnf alpha `seq` rnf beta1 `seq` rnf beta2 `seq` rnf epsilon `seq` rnf wD
+
+instance Eq Optimizer where
+  (OptAdam al1 b11 b21 eps1 lmd1) == (OptAdam al2 b12 b22 eps2 lmd2) = (al1, b11, b21, eps1, lmd1) == (al2, b12, b22, eps2, lmd2)
+
+instance Ord Optimizer where
+  (OptAdam al1 b11 b21 eps1 lmd1) `compare` (OptAdam al2 b12 b22 eps2 lmd2) = (al1, b11, b21, eps1, lmd1) `compare` (al2, b12, b22, eps2, lmd2)
+
+
 data NNConfig =
   NNConfig
     { _replayMemoryMaxSize             :: !Int                     -- ^ Maximum size of the replay memory. If you set this to `trainBatchSize * nStep` then there is no random selection, but all
@@ -43,7 +70,7 @@ data NNConfig =
     , _trainBatchSize                  :: !Int                     -- ^ Batch size of each worker/of the main agent for training. Values are fed from the replay memory. Thus, resulting number of
                                                                    -- batchsize = #workers * trainBatchSize.
     , _trainingIterations              :: !Int                     -- ^ How often to repeat the training with the same gradients in each step.
-    , _grenadeLearningParams           :: !(Optimizer 'Adam)       -- ^ Grenade (not used for Tensorflow!) learning parameters.
+    , _grenadeLearningParams           :: !Optimizer               -- ^ Learning parameters.
     , _grenadeSmoothTargetUpdate       :: !Double                  -- ^ Rate of smooth updates of the target network. Set 0 to use hard updates using @_updateTargetInterval@.
     , _grenadeSmoothTargetUpdatePeriod :: !Int                     -- ^ Every x periods the smooth update will take place.
     , _learningParamsDecay             :: !DecaySetup              -- ^ Decay setup for grenade learning parameters
@@ -67,10 +94,8 @@ instance NFData NNConfig where
     `seq` rnf dropInactive `seq` rnf clip `seq` rnf autoNorm
 
 
-setLearningRate :: Double -> Optimizer opt -> Optimizer opt
-setLearningRate rate (OptSGD _ momentum l2) = OptSGD rate momentum l2
+setLearningRate :: Double -> Optimizer -> Optimizer
 setLearningRate rate (OptAdam _ b1 b2 e w)  = OptAdam rate b1 b2 e w
 
-getLearningRate :: Optimizer opt -> Double
-getLearningRate (OptSGD rate _ _)    = rate
+getLearningRate :: Optimizer -> Double
 getLearningRate (OptAdam a _ _ _ _ ) = a

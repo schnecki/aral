@@ -31,7 +31,6 @@ import           Data.Text              (Text)
 import qualified Data.Vector.Storable   as V
 import           GHC.Exts               (fromList)
 import           GHC.Generics
-import           Grenade                hiding (train)
 import           Prelude                hiding (Left, Right)
 
 expSetup :: ARAL St Act -> ExperimentSetting
@@ -253,7 +252,6 @@ usermode = do
   nn <- randomNetworkInitWith (NetworkInitSettings HeEtAl HMatrix Nothing) :: IO NN
 
   alg <- chooseAlg mRefState
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (\_ _ -> return $ SpecConcreteNetwork1D1D nn) nnConfig borlSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) (fromIntegral . fromEnum) actionFun actionFilter params decay borlSettings Nothing
   askUser Nothing True usage cmds [] rl   -- maybe increase learning by setting estimate of rho
 

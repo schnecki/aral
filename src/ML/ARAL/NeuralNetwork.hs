@@ -9,7 +9,6 @@ module ML.ARAL.NeuralNetwork
 
 import           ML.ARAL.NeuralNetwork.AdamW        as NN
 import           ML.ARAL.NeuralNetwork.Conversion   as NN
-import           ML.ARAL.NeuralNetwork.Grenade      as NN
 import           ML.ARAL.NeuralNetwork.Hasktorch    as NN
 import           ML.ARAL.NeuralNetwork.NNConfig     as NN
 import           ML.ARAL.NeuralNetwork.ReplayMemory as NN

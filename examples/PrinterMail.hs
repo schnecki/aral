@@ -39,7 +39,6 @@ import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
-import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
 nnConfig :: NNConfig
@@ -87,16 +86,6 @@ numInputs :: Int64
 numInputs = fromIntegral $ V.length (netInp initState)
 
 
-modelBuilderGrenade :: Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade  cols =
-  buildModel $
-  inputLayer1D (fromIntegral numInputs) >>
-  fullyConnected 20 >> relu >> dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
-  fullyConnected (cols * fromIntegral numActions) >> reshape (fromIntegral numActions, cols, 1) >> tanhLayer
-
-
 instance RewardFuture St where
   type StoreType St = ()
 
@@ -110,7 +99,6 @@ main :: IO ()
 main = do
   -- createModel >>= mapM_ testRun
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) actions actionFilter params decay modelBuilderGrenade nnConfig borlSettings
   alg <- chooseAlg Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actionFilter params decay borlSettings Nothing
 

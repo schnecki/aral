@@ -49,7 +49,6 @@ import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
-import           Grenade
 import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.IO.Unsafe
@@ -352,8 +351,6 @@ usermode = do
   alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
-  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainHasktorchAsSAMAC True Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
@@ -393,19 +390,6 @@ usermode = do
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
-  where
-    lenOut = lenActs * cols
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
-  inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> -- dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
 

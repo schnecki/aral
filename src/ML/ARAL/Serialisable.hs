@@ -38,7 +38,6 @@ import qualified Data.Vector.Storable    as V
 import           Data.Word
 import           GHC.Generics
 import           GHC.TypeLits
-import           Grenade
 import           System.IO
 import           System.IO.Unsafe
 import qualified Torch                   as Torch
@@ -174,7 +173,6 @@ instance (Serialize s, RewardFuture s) => Serialize (WorkerState s) where
 instance Serialize NNConfig where
   put (NNConfig memSz memStrat batchSz trainIter opt smooth smoothPer decaySetup prS scale scaleOutAlg crop stab stabDec clip autoScale) =
     case opt of
-      o@OptSGD{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >>  put scaleOutAlg >> put crop >> put stab >> put stabDec >> put clip >> put autoScale
       o@OptAdam{} -> put memSz >> put memStrat >> put batchSz >> put trainIter >> put o >> put smooth >> put smoothPer >> put decaySetup >> put (map V.toList prS) >> put scale >> put scaleOutAlg >> put crop >>  put stab >> put stabDec >> put clip >> put autoScale
   get = do
     memSz <- get
@@ -246,7 +244,6 @@ data AdamWOld = AdamWOld
 instance Serialize Proxy where
   put (Scalar x nrAs) = put (0 :: Int) >> put (V.toList x) >> put nrAs
   put (Table m d acts) = put (1 :: Int) >> put (M.mapKeys (first V.toList) . M.map V.toList $ m) >> put (V.toList d) >> put acts
-  put (Grenade t w tp conf nr agents wel) = put (2 :: Int) >> put (networkToSpecification t) >> put t >> put w >> put tp >> put conf >> put nr >> put agents >> put wel
   put (Hasktorch t w tp conf nr agents adamAC adam mdl wel nnActs) =
     put (3 :: Int) >> put (Torch.flattenParameters t) >> put (Torch.flattenParameters w) >> put tp >> put conf >> put nr >> put agents >> put adamAC >> put adam >> put mdl >> put wel >> put nnActs
   -- put (RegressionProxy m acts nnCfg) = put (4 :: Int) >> put m >> put acts >> put nnCfg
@@ -259,18 +256,7 @@ instance Serialize Proxy where
           m <- M.mapKeys (first V.fromList) . M.map V.fromList <$> get
           d <- V.fromList <$> get
           Table m d <$> get
-        2 -> do
-          (specT :: SpecNet) <- get
-          case unsafePerformIO (networkFromSpecificationWith (NetworkInitSettings UniformInit HMatrix Nothing) specT) of
-            SpecConcreteNetwork1D1D (_ :: Network tLayers tShapes) -> do
-              (t :: Network tLayers tShapes) <- get
-              (w :: Network tLayers tShapes) <- get
-              Grenade t w <$> get <*> get <*> get <*> get <*> get
-            SpecConcreteNetwork1D2D (_ :: Network tLayers tShapes) -> do
-              (t :: Network tLayers tShapes) <- get
-              (w :: Network tLayers tShapes) <- get
-              Grenade t w <$> get <*> get <*> get <*> get <*> get
-            _ -> error ("Network dimensions not implemented in Serialize Proxy in ML.ARAL.Serialisable")
+        2 -> error "Grenade support ended"
         3 -> do
           (paramsT :: [Torch.Parameter]) <- get
           (paramsW :: [Torch.Parameter]) <- get

@@ -71,7 +71,7 @@ calcFeatureImportance aral =
     avgOuts = (VB.map (/ fromIntegral nNormal)) . foldl1 (VB.zipWith (+))
     calcFeatureImportance :: Proxy -> StateFeatures -> Int -> IO [FeatureImportance]
     calcFeatureImportance px ft i
-      | isHasktorch px || isGrenade px = do
+      | isHasktorch px = do
         outs <- mkRandInputs mean stdDev >>= mapM ((`runANN` px) . (\x -> ft VS.// [(i, x)]))
         out <- avgOuts <$> replicateM nNormal (avgOut . fromValues <$> runANN ft (getPx aral)) -- TODO: run multiple times for ANNs with Dropout
         calcRes i . mkMeanAndVariance i out $ outs
@@ -80,7 +80,7 @@ calcFeatureImportance aral =
         (means, _, variance) = finalize wel
         mean = means VS.! i
         stdDev = sqrt (variance VS.! i)
-    calcFeatureImportance _ _ _ = $(pureLogPrintInfoText) "calcFeatureImportance only implemented for Hasktorch and Grenade" (return [])
+    calcFeatureImportance _ _ _ = $(pureLogPrintInfoText) "calcFeatureImportance only implemented for Hasktorch" (return [])
     mkMeanAndVariance :: Int -> VB.Vector Double -> [Values] -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double))
     mkMeanAndVariance i outBefore = finalize . addValues (newWelfordAggregate []) . VB.concat . map (VB.map (VB.zipWith subtract outBefore . VB.convert) . fromValues)
     calcRes :: Int -> (Mean (VB.Vector Double), Variance (VB.Vector Double), SampleVariance (VB.Vector Double)) -> IO [FeatureImportance]

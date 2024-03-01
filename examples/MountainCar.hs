@@ -46,7 +46,6 @@ import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.Int                (Int32, Int64)
 import           GHC.TypeLits
-import           Grenade
 import           Prelude                hiding (Left, Right)
 import           System.Directory
 import           System.FilePath.Posix  ((</>))
@@ -155,7 +154,7 @@ expSetup borl =
     { _experimentBaseName = "mountaincar_rew"
     , _experimentInfoParameters = [isNN]
     , _experimentRepetitions = 30
-    , _preparationSteps = 500001
+    , _preparationSteps = 500000
     , _evaluationWarmUpSteps = 0
     , _evaluationSteps = 10000
     , _evaluationReplications = 1
@@ -238,19 +237,19 @@ instance ExperimentDef (ARAL St Act)
     return (results, rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ AlgARAL 0.8 1.0 ByStateValues
-                                                                  , AlgARAL 0.8 0.999 ByStateValues
-                                                                  , AlgARAL 0.8 0.99 ByStateValues
+                                                                  [ -- AlgARAL 0.8 1.0 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.999 ByStateValues
+                                                                  -- , AlgARAL 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
-                                                                  , AlgDQN 0.999 Exact
+                                                                    AlgDQN 0.999 Exact
                                                                   , AlgDQN 0.99 Exact
                                                                   , AlgDQN 0.50 Exact
-								  , AlgRLearning
+								  -- , AlgRLearning
                                                                   ]) Nothing Nothing Nothing
 
-    -- , ParameterSetup "init lr" (set (B.parameters . gamma) (view (B.parameters . gamma)))
-    --   (Just $ const $ return [0.025, 0.05, 0.1]) Nothing Nothing Nothing
+    , ParameterSetup "init lr" (set (B.parameters . gamma)) (view (B.parameters . gamma))
+      (Just $ const $ return [0.025, 0.05, 0.1, 0.2]) Nothing Nothing Nothing
     ]
 
   -- beforeEvaluationHook :: ExperimentNumber -> RepetitionNumber -> ReplicationNumber -> GenIO -> a -> ExpM a a
@@ -297,7 +296,7 @@ borlSettings =
 params :: ParameterInitValues
 params =
   Parameters
-    { _alpha               = 0.01
+    { _alpha               = 0.2
     , _alphaRhoMin = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
@@ -351,7 +350,7 @@ main = do
 experimentMode :: IO ()
 experimentMode = do
   writeIORef renderEnabled False
-  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=experimenter password= port=5432" 10
+  let databaseSetup = DatabaseSetting "host=localhost dbname=experimenter user=schnecki password= port=5432" 10
   ---
   rl <- mkUnichainTabular (AlgARAL 0.8 1.0 ByStateValues) (const reset) tblInp actionFun actFilter params decay borlSettings (Just initVals)
   (changed, res) <- runExperiments liftIO databaseSetup expSetup () rl
@@ -392,8 +391,6 @@ usermode = do
   alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
-  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainHasktorchAsSAM (Just (1, 0.03)) [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainHasktorchAsSAMAC True Nothing [minBound..maxBound] alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderHasktorch nnConfig borlSettings (Just initVals)
 
@@ -412,19 +409,6 @@ usermode = do
 
 modelBuilderHasktorch :: Integer -> (Integer, Integer) -> MLPSpec
 modelBuilderHasktorch lenIn (lenActs, cols) = MLPSpec [lenIn, 20, 10, 10, lenOut] (HasktorchActivation HasktorchRelu []) (Just HasktorchTanh)
-  where
-    lenOut = lenActs * cols
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModelWith (NetworkInitSettings UniformInit HMatrix Nothing) def $
-  inputLayer1D lenIn >>
-  fullyConnected 20 >> relu >> -- dropout 0.90 >>
-  fullyConnected 10 >> relu >>
-  fullyConnected 10 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
   where
     lenOut = lenActs * cols
 

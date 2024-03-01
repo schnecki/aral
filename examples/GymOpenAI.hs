@@ -41,7 +41,6 @@ import qualified Data.Vector.Storable    as V
 import           EasyLogger
 import           GHC.Generics
 import           GHC.Int                 (Int64)
-import           Grenade
 import           System.Environment      (getArgs)
 import           System.IO
 import           System.IO.Unsafe        (unsafePerformIO)
@@ -180,23 +179,6 @@ instance Show St where
 maxX,maxY :: Int
 maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
-
-
-type NN = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 5, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 5, 'D1 5]
-type NNCombined = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 40, Relu, FullyConnected 40 40, Relu, FullyConnected 40 30, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 40, 'D1 40, 'D1 40, 'D1 40, 'D1 30, 'D1 30]
-type NNCombinedAvgFree = Network  '[ FullyConnected 2 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 10, Relu, FullyConnected 10 6, Tanh] '[ 'D1 2, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 10, 'D1 10, 'D1 6, 'D1 6]
-
-modelBuilderGrenade :: Integer -> (Integer, Integer) -> IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModelWith (def { cpuBackend = BLAS }) def $
-  inputLayer1D lenIn >>
-  -- fullyConnected (20*lenIn) >> relu >> dropout 0.90 >>
-  fullyConnected (10 * lenIn) >> relu >>
-  fullyConnected (5 * lenIn) >> relu >>
-  fullyConnected (2*lenOut) >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  where
-    lenOut = lenActs * cols
 
 
 nnConfig :: Gym -> Double -> NNConfig
@@ -485,9 +467,7 @@ usermode = do
   putStrLn $ "Actions Count: " ++ show actionNodes
   putStrLn $ "Observation Space: " ++ show (observationSpaceInfo name)
   putStrLn $ "Enforced observation bounds: " ++ show (observationSpaceBounds gym)
-  -- rl <- mkUnichainGrenadeCombinedNet alg initState (netInp False gym) actions actFilter (params gym maxRew) (decay gym) (modelBuilderGrenade gym initState actionNodes) (nnConfig gym maxRew) borlSettings initValues
   rl <- mkUnichainTabular alg (mkInitSt initState) (netInp True gym) actionFun actFilter (params gym maxRew) (decay gym) borlSettings initValues
-  -- rl <-  mkUnichainGrenade alg (mkInitSt initState) (netInp False gym) actionFun actFilter (params gym maxRew) (decay gym) modelBuilderGrenade (nnConfig gym maxRew) borlSettings initValues
   askUser (mInverseSt gym) True usage cmds qlCmds rl -- maybe increase learning by setting estimate of rho
   where
     cmds = []

@@ -38,7 +38,6 @@ import           Data.Text            (Text)
 import qualified Data.Vector.Storable as V
 import           GHC.Exts             (fromList)
 import           GHC.Generics
-import           Grenade              hiding (train)
 import           Prelude              hiding (Left, Right)
 
 import           ML.ARAL              hiding (actionFilter)
@@ -48,8 +47,6 @@ import           Helper
 
 import           Debug.Trace
 
-
-type NN = Network '[ FullyConnected 1 20, Relu, FullyConnected 20 10, Relu, FullyConnected 10 2, Tanh] '[ 'D1 1, 'D1 20, 'D1 20, 'D1 10, 'D1 10, 'D1 2, 'D1 2]
 
 nnConfig :: NNConfig
 nnConfig =
@@ -137,7 +134,6 @@ main = do
   runBorlLp policy mRefState >>= print
   putStr "NOTE: Above you can see the solution generated using linear programming."
 
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actionFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings Nothing
   rl <- mkUnichainTabular alg (liftInitSt initState) netInp actionFun actionFilter params decay borlSettings Nothing
   let inverseSt | isAnn rl = mInverseSt
                 | otherwise = mInverseStTbl
@@ -160,18 +156,6 @@ allStateInputs = M.fromList $ zip (map netInp [minBound..maxBound]) [minBound..m
 
 allStateInputsTbl :: M.Map NetInputWoAction St
 allStateInputsTbl = M.fromList $ zip (map tblInp [minBound..maxBound]) [minBound..maxBound]
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: [Action a] -> St -> Integer -> IO SpecConcreteNetwork
-modelBuilderGrenade acts initSt cols =
-  buildModel $
-  inputLayer1D lenIn >>
-  fullyConnected 6 >> relu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  where
-    lenOut = lenActs * cols
-    lenIn = fromIntegral $ V.length (netInp initSt)
-    lenActs = genericLength acts
 
 
 initState :: St

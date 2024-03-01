@@ -1,7 +1,6 @@
 flags: {}
 packages:
 - .
-- ../grenade
 - ../experimenter
 - ../easy-logger
 - ../hasktorch/hasktorch
@@ -21,8 +20,6 @@ extra-lib-dirs:
 
 extra-deps:
 - bytestring-0.10.12.1@sha256:82dba4c2de4fdd8b419ed28aec2c14cfe4a3f43d1d6e2263ab26962e7398048e,6254
-- cuda-0.11.0.0@sha256:4e572a36f9ed3d2f8b40d6ce582b98b9ee0f499ed4ef1e88a33bb691e5be28c7,5654
-- hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
 - git: https://github.com/fpco/inline-c.git
   commit: 2d0fe9b2f0aa0e1aefc7bfed95a501e59486afb0
   subdirs:
@@ -30,4 +27,4 @@ extra-deps:
   - inline-c
 
 allow-newer: true # false
-resolver: lts-19.33
+resolver: lts-19.25

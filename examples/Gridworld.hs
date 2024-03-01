@@ -33,7 +33,6 @@ import           Data.Serialize
 import qualified Data.Vector.Storable   as V
 import           GHC.Generics
 import           GHC.TypeLits
-import           Grenade
 import           Prelude                hiding (Left, Right)
 import           System.IO
 import           System.Random
@@ -256,11 +255,9 @@ usermode = do
   alg <- chooseAlg mRefState
 
   -- Approximate all fucntions using a single neural network
-  -- rl <- mkUnichainGrenadeCombinedNet alg (liftInitSt initState) netInp actionFun actFilter params decay modelBuilderGrenade nnConfig borlSettings (Just initVals)
   -- rl <- mkUnichainRegressionAs [minBound..maxBound] alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
 
   -- Use an own neural network for every function to approximate
-  -- rl <- mkUnichainGrenade alg (liftInitSt initState) netInp actionFun actFilter params decay (modelBuilderGrenade actions initState) nnConfig borlSettings (Just initVals)
 
   -- Use a table to approximate the function (tabular version)
   rl <- mkUnichainTabular alg (liftInitSt initState) tblInp actionFun actFilter params decay borlSettings (Just initVals)
@@ -277,29 +274,6 @@ maxX = 4                        -- [0..maxX]
 maxY = 4                        -- [0..maxY]
 goalX = 0
 goalY = 2
-
-
--- | The definition for a feed forward network using the dynamic module. Note the nested networks. This network clearly is over-engeneered for this example!
-modelBuilderGrenade :: Integer -> (Integer, Integer) ->IO SpecConcreteNetwork
-modelBuilderGrenade lenIn (lenActs, cols) =
-  buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
-  inputLayer1D lenIn >>
-  -- fullyConnected 20 >> relu >> -- dropout 0.90 >>
-  -- fullyConnected 10 >> relu >>
-  -- fullyConnected 10 >> relu >>
-  -- fullyConnected lenOut >> reshape (lenActs, cols, 1) >> tanhLayer
-  -- buildModelWith (def { cpuBackend = BLAS, gpuTriggerSize = Nothing } ) def $
-  -- inputLayer1D lenIn >>
-  -- fullyConnected 20 >> relu >>
-  -- fullyConnected 10 >> relu >>
-  -- fullyConnected 10 >> relu >>
-  -- fullyConnected lenOut >> tanhLayer
-  fullyConnected (200) >> leakyRelu >>
-  fullyConnected (round $ 1.75*fromIntegral lenIn) >> leakyRelu >>
-  fullyConnected ((lenIn + lenOut) `div` 2) >> leakyRelu >>
-  fullyConnected lenOut >> reshape (lenActs, cols, 1) -- >> tanhLayer -- leakyTanhLayer 0.98
-  where
-    lenOut = lenActs * cols
 
 
 netInp :: St -> V.Vector Double
