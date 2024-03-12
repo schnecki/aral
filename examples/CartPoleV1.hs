@@ -227,15 +227,15 @@ instance ExperimentDef (ARAL St Act)
     return (results, rl')
   parameters _ =
     [ParameterSetup "algorithm" (set algorithm) (view algorithm) (Just $ const $ return
-                                                                  [ -- AlgARAL 0.8 1.0 ByStateValues
-                                                                  -- , AlgARAL 0.8 0.999 ByStateValues
-                                                                  -- , AlgARAL 0.8 0.99 ByStateValues
+                                                                  [ AlgARAL 0.8 1.0 ByStateValues
+                                                                  , AlgARAL 0.8 0.999 ByStateValues
+                                                                  , AlgARAL 0.8 0.99 ByStateValues
                                                                   -- , AlgDQN 0.99 EpsilonSensitive
                                                                   -- , AlgDQN 0.5 EpsilonSensitive
-                                                                    AlgDQN 0.999 Exact
-                                                                  , AlgDQN 0.99 Exact
-                                                                  , AlgDQN 0.50 Exact
-								  -- , AlgRLearning
+                                                                  --   AlgDQN 0.999 Exact
+                                                                  -- , AlgDQN 0.99 Exact
+                                                                  -- , AlgDQN 0.50 Exact
+								  , AlgRLearning
                                                                   ]) Nothing Nothing Nothing
 
     , ParameterSetup "init lr" (set (B.parameters . gamma)) (view (B.parameters . gamma))
@@ -287,7 +287,7 @@ params =
     , _alphaRhoMin         = 2e-5
     , _beta                = 0.01
     , _delta               = 0.005
-    , _gamma               = 0.025
+    , _gamma               = 0.20 -- 0.025
     , _epsilon             = 0.025
 
     , _exploration         = 1.0

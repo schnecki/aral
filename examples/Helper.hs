@@ -256,9 +256,11 @@ chooseAlg mRefState = do
     [ "0: AlgARAL 0.8 0.99 ByStateValues (DEFAULT)"
     , "1: AlgARAL 0.8 1.0 ByStateValues"
     , "2: AlgDQN 0.99 Exact"
-    , "3: AlgRLearning"
-    , "4: AlgARAL 0.9 0.99 ByStateValues"
-    , "5: Q-Learning with gamma=0.99"
+    , "3: AlgDQN 0.999 Exact"
+    , "4: AlgRLearning"
+    , "5: AlgARAL 0.9 0.99 ByStateValues"
+    , "6: Q-Learning with gamma=0.99"
+    , "7: Q-Learning with gamma=0.5"
     ]
   putStr "Enter number [0]: "
   hFlush stdout
@@ -267,7 +269,9 @@ chooseAlg mRefState = do
     case nr of
       1 -> AlgARAL 0.8 1.0 ByStateValues
       2 -> AlgDQN 0.99 Exact
-      3 -> AlgRLearning
-      4 -> AlgARAL 0.9 0.99 ByStateValues
-      5 -> AlgDQN 0.99 Exact
+      3 -> AlgDQN 0.999 Exact
+      4 -> AlgRLearning
+      5 -> AlgARAL 0.9 0.99 ByStateValues
+      6 -> AlgDQN 0.99 Exact
+      7 -> AlgDQN 0.5 Exact
       _ -> AlgARAL 0.8 0.99 ByStateValues
